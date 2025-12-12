@@ -1,41 +1,52 @@
 import React from 'react';
-import { Bell, Search, User } from 'lucide-react';
+import { Bell, User, Menu } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 
-const TopBar: React.FC = () => {
+interface TopBarProps {
+  onMenuClick?: () => void;
+}
+
+const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
   const user = useUserStore((state) => state.user);
 
   return (
-    <header className="h-16 border-b border-dark-border bg-dark-surface/50 backdrop-blur-xl flex items-center justify-between px-8">
-      {/* Search */}
-      <div className="flex-1 max-w-xl">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search anything..."
-            className="w-full pl-10 pr-4 py-2 bg-dark-card border border-dark-border rounded-xl text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
-          />
-        </div>
+    <header className="h-16 sm:h-14 lg:h-16 border-b border-dark-border bg-dark-surface flex items-center justify-between px-4">
+      {/* Left section - Mobile menu button */}
+      <div className="lg:hidden">
+        <button
+          onClick={onMenuClick}
+          className="p-2 hover:bg-dark-hover rounded-lg transition-colors"
+          aria-label="Toggle menu"
+        >
+          <Menu className="w-6 h-6 text-gray-400" />
+        </button>
       </div>
 
+      {/* Center - Empty on mobile, can add breadcrumbs */}
+      <div className="hidden lg:block flex-1"></div>
+
       {/* Right section */}
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-3">
         {/* Notifications */}
-        <button className="relative p-2 hover:bg-dark-hover rounded-xl transition-colors">
+        <button className="relative p-2 hover:bg-dark-hover rounded-lg transition-colors">
           <Bell className="w-5 h-5 text-gray-400" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-accent-red rounded-full" />
+          <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
         </button>
 
         {/* User */}
-        <div className="flex items-center space-x-3 pl-4 border-l border-dark-border">
+        <div className="hidden sm:flex items-center space-x-2 pl-3 border-l border-dark-border">
           <div className="text-right">
-            <div className="text-sm font-medium text-gray-200">{user?.name}</div>
-            <div className="text-xs text-gray-400">{user?.email}</div>
+            <div className="text-xs font-medium text-gray-200">{user?.name}</div>
+            <div className="text-xs text-gray-500">{user?.email}</div>
           </div>
-          <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-accent-purple rounded-full flex items-center justify-center">
+          <div className="w-9 h-9 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center flex-shrink-0">
             <User className="w-5 h-5 text-white" />
           </div>
+        </div>
+
+        {/* Mobile user avatar only */}
+        <div className="sm:hidden w-9 h-9 bg-gradient-to-br from-primary-500 to-primary-600 rounded-full flex items-center justify-center">
+          <User className="w-5 h-5 text-white" />
         </div>
       </div>
     </header>

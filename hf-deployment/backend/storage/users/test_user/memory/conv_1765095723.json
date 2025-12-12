@@ -1,0 +1,17 @@
+{
+  "conversation_id": "conv_1765095723",
+  "user_id": "test_user",
+  "updated_at": "2025-12-07T13:52:04.788201",
+  "messages": [
+    {
+      "role": "user",
+      "content": "hello, what model are you?",
+      "timestamp": "2025-12-07T13:52:03.871225"
+    },
+    {
+      "role": "assistant",
+      "content": "Hey there! I\u2019m the GPT\u20114 model\u2014ready to help you dive into business data, spot trends, and generate insights whenever you need. Just let me know what you\u2019re working on!",
+      "timestamp": "2025-12-07T13:52:04.786438"
+    }
+  ]
+}

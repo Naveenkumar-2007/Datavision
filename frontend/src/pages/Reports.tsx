@@ -37,7 +37,7 @@ const Reports: React.FC = () => {
   // Auto-detect currency from analytics data
   const currency = analytics ? detectCurrency(analytics) : 'INR';
   const currencySymbol = getCurrencySymbol(currency);
-  
+
   // Currency Icon Component
   const CurrencyIcon = () => (
     <div className="w-8 h-8 flex items-center justify-center font-bold text-current">
@@ -74,7 +74,7 @@ const Reports: React.FC = () => {
 
   const handleDownload = () => {
     if (!report) return;
-    
+
     const content = `
 ${report.title}
 Generated: ${new Date(report.generatedAt).toLocaleString()}
@@ -98,29 +98,29 @@ ${section.content}
   };
 
   const reportTypes = [
-    { 
-      value: 'revenue', 
-      label: 'Revenue Report', 
+    {
+      value: 'revenue',
+      label: 'Revenue Report',
       description: 'Revenue analysis from uploaded files',
-      icon: CurrencyIcon 
+      icon: CurrencyIcon
     },
-    { 
-      value: 'customer', 
-      label: 'Customer Report', 
+    {
+      value: 'customer',
+      label: 'Customer Report',
       description: 'Customer insights from uploaded files',
-      icon: Users 
+      icon: Users
     },
-    { 
-      value: 'product', 
-      label: 'Product Report', 
+    {
+      value: 'product',
+      label: 'Product Report',
       description: 'Product performance from uploaded files',
-      icon: ShoppingCart 
+      icon: ShoppingCart
     },
-    { 
-      value: 'executive', 
-      label: 'Executive Summary', 
+    {
+      value: 'executive',
+      label: 'Executive Summary',
       description: 'High-level overview from uploaded files',
-      icon: TrendingUp 
+      icon: TrendingUp
     },
   ];
 
@@ -130,9 +130,13 @@ ${section.content}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
+        className="flex items-center gap-4 mb-2"
       >
-        <h1 className="text-4xl font-bold text-white mb-2">Business Reports</h1>
-        <p className="text-gray-400">Real reports generated from your uploaded files</p>
+        <img src="/logo.png" alt="Logo" className="w-12 h-12 rounded-xl shadow-lg shadow-orange-500/20" />
+        <div>
+          <h1 className="text-4xl font-bold text-white">Business Reports</h1>
+          <p className="text-gray-400">Real reports generated from your uploaded files</p>
+        </div>
       </motion.div>
 
       {/* Key Metrics Summary - REAL DATA */}
@@ -143,29 +147,29 @@ ${section.content}
           className="grid grid-cols-1 md:grid-cols-4 gap-4"
         >
           {[
-            { 
-              label: 'Total Revenue', 
-              value: formatCurrency(analytics.metrics.totalRevenue, currency), 
-              icon: CurrencyIcon, 
-              color: 'text-accent-green' 
+            {
+              label: 'Total Revenue',
+              value: formatCurrency(analytics.metrics.totalRevenue, currency),
+              icon: CurrencyIcon,
+              color: 'text-accent-green'
             },
-            { 
-              label: 'Customers', 
-              value: analytics.metrics.uniqueCustomers.toLocaleString(), 
-              icon: Users, 
-              color: 'text-primary-400' 
+            {
+              label: 'Customers',
+              value: analytics.metrics.uniqueCustomers.toLocaleString(),
+              icon: Users,
+              color: 'text-orange-400'
             },
-            { 
-              label: 'Orders', 
-              value: analytics.metrics.totalInvoices.toLocaleString(), 
-              icon: ShoppingCart, 
-              color: 'text-accent-purple' 
+            {
+              label: 'Orders',
+              value: analytics.metrics.totalInvoices.toLocaleString(),
+              icon: ShoppingCart,
+              color: 'text-accent-orange'
             },
-            { 
-              label: 'Avg Order', 
-              value: formatCurrency(analytics.metrics.averageOrderValue, currency), 
-              icon: TrendingUp, 
-              color: 'text-accent-orange' 
+            {
+              label: 'Avg Order',
+              value: formatCurrency(analytics.metrics.averageOrderValue, currency),
+              icon: TrendingUp,
+              color: 'text-accent-orange'
             },
           ].map((metric, i) => (
             <div key={i} className="glass-card p-4">
@@ -189,25 +193,22 @@ ${section.content}
         className="glass-card p-8"
       >
         <h2 className="text-2xl font-semibold text-white mb-6">Generate New Report</h2>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {reportTypes.map((type) => (
             <button
               key={type.value}
               onClick={() => setSelectedType(type.value)}
-              className={`p-4 rounded-xl transition-all text-left ${
-                selectedType === type.value
-                  ? 'bg-primary-500/20 border-2 border-primary-500'
-                  : 'bg-dark-card border border-dark-border hover:bg-dark-hover'
-              }`}
+              className={`p-4 rounded-xl transition-all text-left ${selectedType === type.value
+                ? 'bg-orange-500/20 border-2 border-orange-500'
+                : 'glass-card hover:border-orange-500/50'
+                }`}
             >
-              <type.icon className={`w-6 h-6 mb-2 ${selectedType === type.value ? 'text-primary-400' : 'text-gray-400'}`} />
-              <div className={`font-semibold mb-1 ${
-                selectedType === type.value ? 'text-white' : 'text-gray-300'
-              }`}>
+              <type.icon className={`w-6 h-6 mb-2 ${selectedType === type.value ? 'text-orange-400' : 'text-gray-400'}`} />
+              <div className="font-semibold mb-1">
                 {type.label}
               </div>
-              <div className="text-sm text-gray-400">{type.description}</div>
+              <div className="text-sm">{type.description}</div>
             </button>
           ))}
         </div>
@@ -215,11 +216,11 @@ ${section.content}
         <button
           onClick={handleGenerate}
           disabled={generating}
-          className="w-full px-6 py-4 bg-primary-500 hover:bg-primary-600 disabled:bg-gray-600 text-white font-semibold rounded-xl transition-colors flex items-center justify-center space-x-2"
+          className="w-full px-6 py-4 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-600 text-white font-semibold rounded-xl transition-colors flex items-center justify-center space-x-2"
         >
           {generating ? (
             <>
-              <Loader className="w-5 h-5 animate-spin" />
+              <Loader className="w-5 h-5 animate-spin text-orange-500" />
               <span>Generating Report from Real Data...</span>
             </>
           ) : (
@@ -255,13 +256,13 @@ ${section.content}
                 <h2 className="text-2xl font-semibold text-white">{report.title}</h2>
               </div>
               <div className="text-sm text-gray-400">
-                Generated: {new Date(report.generatedAt).toLocaleString()} | 
+                Generated: {new Date(report.generatedAt).toLocaleString()} |
                 Source: {report.dataSource}
               </div>
             </div>
             <button
               onClick={handleDownload}
-              className="px-4 py-2 bg-primary-500/10 border border-primary-500/20 rounded-xl text-primary-400 font-medium hover:bg-primary-500/20 transition-colors flex items-center space-x-2"
+              className="px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-xl text-orange-400 font-medium hover:bg-orange-500/20 transition-colors flex items-center space-x-2"
             >
               <Download className="w-4 h-4" />
               <span>Download</span>
@@ -276,7 +277,7 @@ ${section.content}
           ) : (
             <div className="space-y-6">
               {report.sections.map((section, i) => (
-                <div key={i} className="border-l-2 border-primary-500 pl-4">
+                <div key={i} className="border-l-2 border-orange-500 pl-4">
                   <h3 className="text-lg font-semibold text-white mb-2">{section.title}</h3>
                   <pre className="text-gray-300 whitespace-pre-wrap font-mono text-sm">
                     {section.content}
@@ -303,7 +304,7 @@ ${section.content}
           {!analytics?.hasData && (
             <a
               href="/data-hub"
-              className="inline-block px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl transition-colors"
+              className="inline-block px-6 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-xl transition-colors"
             >
               Upload Files First
             </a>

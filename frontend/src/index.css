@@ -1,218 +1,1354 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  * {
-    @apply border-dark-border;
-  }
-  
-  body {
-    @apply bg-dark-bg text-gray-100 antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+/* ==================================================================
+   AI BUSINESS ANALYST - ENTERPRISE THEME SYSTEM
+   COMPLETE FIX FOR LIGHT/DARK MODE CONSISTENCY
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   CSS VARIABLES - THE FOUNDATION OF THEME SYSTEM
+   ------------------------------------------------------------------ */
+:root {
+  /* DARK MODE (Default) - High Contrast Colors */
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #111118;
+  --bg-card: #18181b;
+  --bg-hover: #27272a;
+  --bg-active: #2a2a30;
+
+  --border-color: #3f3f46;
+  --border-hover: #52525b;
+
+  /* Text - HIGH VISIBILITY BOOSTED */
+  --text-primary: #ffffff;
+  --text-secondary: #e4e4e7;
+  /* Zinc 200 */
+  --text-tertiary: #d4d4d8;
+  /* Zinc 300 */
+  --text-muted: #a1a1aa;
+  /* Zinc 400 */
+
+  --accent-primary: #fb923c;
+  --accent-glow: rgba(249, 115, 22, 0.4);
+
+  /* Table */
+  --table-header-bg: rgba(249, 115, 22, 0.2);
+  --table-row-hover: rgba(255, 255, 255, 0.05);
+  --table-row-active: rgba(249, 115, 22, 0.1);
+}
+
+/* LIGHT MODE - Complete Override */
+html.light-theme {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-active: #e2e8f0;
+
+  --border-color: #cbd5e1;
+  --border-hover: #94a3b8;
+
+  /* Text - DARK & READABLE */
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-tertiary: #475569;
+  --text-muted: #64748b;
+
+  --accent-primary: #ea580c;
+  --accent-glow: rgba(234, 88, 12, 0.3);
+
+  /* Table */
+  --table-header-bg: #fff7ed;
+  --table-row-hover: #f8fafc;
+  --table-row-active: #fff7ed;
+}
+
+/* ------------------------------------------------------------------
+   GLOBAL STYLES
+   ------------------------------------------------------------------ */
+html,
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* GLOBAL SELECTION & FOCUS OVERRIDES */
+::selection {
+  background-color: rgba(249, 115, 22, 0.3) !important;
+  color: #ffedd5 !important;
+  /* Orange 100 */
+}
+
+/* Global Focus Ring */
+*:focus-visible {
+  outline: 2px solid #f97316 !important;
+  outline-offset: 2px;
+}
+
+/* ALL TEXT ELEMENTS - Use theme variables */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'Outfit', sans-serif;
+  color: var(--text-primary) !important;
+}
+
+p,
+span,
+div,
+label,
+a,
+li,
+td,
+th,
+pre,
+code {
+  color: inherit;
+}
+
+/* LIGHT MODE: Force dark text on ALL text elements */
+html.light-theme {
+  color: #0f172a !important;
+}
+
+html.light-theme h1,
+html.light-theme h2,
+html.light-theme h3,
+html.light-theme h4,
+html.light-theme h5,
+html.light-theme h6 {
+  color: #0f172a !important;
+}
+
+html.light-theme p,
+html.light-theme span,
+html.light-theme div,
+html.light-theme label,
+html.light-theme li,
+html.light-theme td,
+html.light-theme th,
+html.light-theme pre {
+  color: #1e293b !important;
+}
+
+/* ------------------------------------------------------------------
+   UNIVERSAL RESET - PREVENT FLASH ON CLICK
+   ------------------------------------------------------------------ */
+*,
+*::before,
+*::after {
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+button:active,
+a:active,
+div:active,
+tr:active,
+td:active {
+  background-color: inherit !important;
+}
+
+/* ------------------------------------------------------------------
+   BACKGROUND UTILITIES (Theme-Aware)
+   ------------------------------------------------------------------ */
+.bg-dark-bg {
+  background-color: var(--bg-primary) !important;
+}
+
+.bg-dark-surface {
+  background-color: var(--bg-secondary) !important;
+}
+
+.bg-dark-card {
+  background-color: var(--bg-card) !important;
+}
+
+.bg-dark-hover {
+  background-color: var(--bg-hover) !important;
+}
+
+.border-dark-border {
+  border-color: var(--border-color) !important;
+}
+
+/* ------------------------------------------------------------------
+   TEXT COLOR UTILITIES - HIGH VISIBILITY
+   ------------------------------------------------------------------ */
+.text-white {
+  color: var(--text-primary) !important;
+}
+
+.text-gray-100 {
+  color: var(--text-primary) !important;
+}
+
+.text-gray-200 {
+  color: var(--text-secondary) !important;
+}
+
+.text-gray-300 {
+  color: var(--text-secondary) !important;
+}
+
+.text-gray-400 {
+  color: var(--text-tertiary) !important;
+}
+
+.text-gray-500 {
+  color: var(--text-muted) !important;
+}
+
+/* LIGHT MODE: Force text to be dark and readable */
+html.light-theme .text-white,
+html.light-theme .text-gray-100,
+html.light-theme .text-gray-200 {
+  color: #0f172a !important;
+}
+
+html.light-theme .text-gray-300,
+html.light-theme .text-gray-400 {
+  color: #475569 !important;
+}
+
+html.light-theme .text-gray-500 {
+  color: #64748b !important;
+}
+
+/* KPI Cards, Glass Cards, Feature Cards - ensure dark text */
+html.light-theme .glass-card h1,
+html.light-theme .glass-card h2,
+html.light-theme .glass-card h3,
+html.light-theme .glass-card h4,
+html.light-theme .glass-card p,
+html.light-theme .glass-card span,
+html.light-theme .glass-card label,
+html.light-theme .glass-card div:not([class*="bg-"]):not([class*="gradient"]) {
+  color: #0f172a !important;
+}
+
+/* Main content areas */
+html.light-theme main h1,
+html.light-theme main h2,
+html.light-theme main h3,
+html.light-theme main h4,
+html.light-theme main h5,
+html.light-theme main h6,
+html.light-theme main p,
+html.light-theme main label,
+html.light-theme section h1,
+html.light-theme section h2,
+html.light-theme section h3,
+html.light-theme section p {
+  color: #0f172a !important;
+}
+
+/* CRITICAL EXCEPTIONS: Keep white text on colored backgrounds */
+html.light-theme .chat-bubble-user,
+html.light-theme .chat-bubble-user *,
+html.light-theme [class*="bg-purple-"],
+html.light-theme [class*="bg-purple-"] *,
+html.light-theme [class*="bg-primary-"],
+html.light-theme [class*="bg-primary-"] *,
+html.light-theme [class*="bg-gradient-to-r"][class*="from-primary-500"],
+html.light-theme [class*="bg-gradient-to-r"][class*="from-primary-500"] *,
+html.light-theme [class*="bg-gradient-to-br"][class*="from-purple"],
+html.light-theme [class*="bg-gradient-to-br"][class*="from-purple"] *,
+html.light-theme .bg-red-500,
+html.light-theme .bg-red-500 *,
+html.light-theme button[class*="bg-purple"],
+html.light-theme button[class*="bg-purple"] *,
+html.light-theme button[class*="bg-gradient"],
+html.light-theme button[class*="bg-gradient"] *,
+html.light-theme button[class*="bg-primary-5"],
+html.light-theme button[class*="bg-primary-5"] *,
+html.light-theme a[class*="bg-primary"],
+html.light-theme a[class*="bg-primary"] *,
+html.light-theme a[class*="bg-gradient"],
+html.light-theme a[class*="bg-gradient"] * {
+  color: #ffffff !important;
+}
+
+/* Selected report type cards - keep white text on purple background */
+html.light-theme button[class*="bg-primary-500/20"] div,
+html.light-theme button[class*="bg-primary-500/20"] span {
+  color: #0f172a !important;
+}
+
+/* Tooltip - keep as-is (dark on light) */
+html.light-theme .recharts-tooltip-wrapper {
+  color: #0f172a !important;
+}
+
+/* Ensure icons keep their colors */
+html.light-theme svg {
+  color: inherit !important;
+}
+
+/* Text inside colored accent buttons */
+html.light-theme .text-accent-green {
+  color: #059669 !important;
+}
+
+html.light-theme .text-accent-red {
+  color: #dc2626 !important;
+}
+
+html.light-theme .text-accent-orange {
+  color: #ea580c !important;
+}
+
+html.light-theme .text-accent-purple {
+  color: #f97316 !important;
+}
+
+html.light-theme .text-primary-400 {
+  color: #fb923c !important;
+}
+
+html.light-theme .text-primary-500 {
+  color: #f97316 !important;
+}
+
+html.light-theme .text-purple-300 {
+  color: #fb923c !important;
+}
+
+html.light-theme .text-purple-400 {
+  color: #f97316 !important;
+}
+
+/* Recharts Tooltips in Light Mode */
+html.light-theme .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+html.light-theme .recharts-tooltip-item,
+html.light-theme .recharts-tooltip-label {
+  color: #0f172a !important;
+}
+
+/* ------------------------------------------------------------------
+   GLASS CARD - Theme Aware
+   ------------------------------------------------------------------ */
+.glass-card {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+html.light-theme .glass-card {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+/* ------------------------------------------------------------------
+   FORM INPUTS - Proper Theme Colors
+   ------------------------------------------------------------------ */
+input,
+select,
+textarea {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+  transition: all 0.2s ease;
+}
+
+/* DARK MODE INPUT VISIBILITY BOOST */
+/* Make inputs slightly lighter than card background for contrast */
+input,
+select,
+textarea {
+  background-color: #27272a !important;
+  /* Zinc 800 */
+  border-color: #52525b !important;
+  /* Zinc 600 */
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent-primary) !important;
+  background-color: #27272a !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
+  outline: none !important;
+}
+
+html.light-theme input,
+html.light-theme select,
+html.light-theme textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* Autofill Fix */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px var(--bg-card) inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* ------------------------------------------------------------------
+   SIDEBAR & NAVIGATION
+   ------------------------------------------------------------------ */
+.nav-item,
+.sidebar-item {
+  color: var(--text-secondary) !important;
+  background-color: transparent !important;
+  border: 1px solid transparent !important;
+  transition: all 0.15s ease;
+}
+
+.nav-item:hover,
+.sidebar-item:hover {
+  background-color: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.nav-item.active,
+.sidebar-item.active {
+  background-color: rgba(249, 115, 22, 0.15) !important;
+  color: var(--accent-primary) !important;
+  border-color: rgba(249, 115, 22, 0.3) !important;
+}
+
+html.light-theme .nav-item.active,
+html.light-theme .sidebar-item.active {
+  background-color: #fff7ed !important;
+  color: #ea580c !important;
+  border-color: #fed7aa !important;
+}
+
+/* ------------------------------------------------------------------
+   CHAT HISTORY ITEMS - NO DARK FLASH
+   ------------------------------------------------------------------ */
+.chat-item {
+  color: var(--text-secondary) !important;
+  background-color: transparent !important;
+  border: 1px solid transparent !important;
+  transition: all 0.15s ease;
+}
+
+.chat-item:hover {
+  background-color: var(--bg-hover) !important;
+}
+
+.chat-item.active {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+html.light-theme .chat-item.active {
+  background-color: #ffffff !important;
+  border-color: #fb923c !important;
+}
+
+/* ------------------------------------------------------------------
+   NEW CHAT BUTTON
+   ------------------------------------------------------------------ */
+.btn-new-chat {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-color) !important;
+  transition: all 0.15s ease;
+}
+
+.btn-new-chat:hover {
+  background-color: var(--bg-hover) !important;
+  border-color: var(--accent-primary) !important;
+}
+
+html.light-theme .btn-new-chat {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.light-theme .btn-new-chat:hover {
+  background-color: #f8fafc !important;
+  border-color: #f97316 !important;
+}
+
+/* ------------------------------------------------------------------
+   CHAT BUBBLES
+   ------------------------------------------------------------------ */
+.chat-bubble-user {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.3);
+}
+
+.chat-bubble-user * {
+  color: #ffffff !important;
+}
+
+.chat-bubble-bot {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+html.light-theme .chat-bubble-bot {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* ------------------------------------------------------------------
+   TABLES - FIXED HOVER/CLICK STATES
+   ------------------------------------------------------------------ */
+table {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+thead,
+thead tr,
+thead th {
+  background-color: var(--table-header-bg) !important;
+  color: var(--text-primary) !important;
+}
+
+tbody tr {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  transition: background-color 0.1s ease;
+}
+
+tbody tr:hover {
+  background-color: var(--table-row-hover) !important;
+}
+
+tbody tr:active,
+tbody tr.active {
+  background-color: var(--table-row-active) !important;
+}
+
+td,
+th {
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+html.light-theme table {
+  background-color: #ffffff !important;
+}
+
+html.light-theme thead,
+html.light-theme thead tr,
+html.light-theme thead th {
+  background-color: #fff7ed !important;
+  color: #7c2d12 !important;
+}
+
+html.light-theme tbody tr {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html.light-theme tbody tr:hover {
+  background-color: #f8fafc !important;
+}
+
+html.light-theme tbody tr:active,
+html.light-theme tbody tr.active {
+  background-color: #fff7ed !important;
+}
+
+html.light-theme td,
+html.light-theme th {
+  color: #0f172a !important;
+}
+
+/* ------------------------------------------------------------------
+   SCROLLBARS
+   ------------------------------------------------------------------ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* ------------------------------------------------------------------
+   ANIMATIONS
+   ------------------------------------------------------------------ */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
 
-  /* Premium Light Theme - $50,000 Product Quality */
-  .light-theme {
-    color: #111827;
-    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-  }
-
-  .light-theme .bg-dark-bg {
-    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%) !important;
-  }
-
-  .light-theme .bg-dark-surface {
-    background-color: #ffffff;
-    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  }
-
-  .light-theme .bg-dark-card {
-    background-color: #ffffff;
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    border: 1px solid #e2e8f0 !important;
-  }
-
-  .light-theme .bg-dark-hover {
-    background-color: #f9fafb;
-  }
-
-  /* Text colors - Critical fix for visibility */
-  .light-theme .text-white {
-    color: #111827 !important;
-  }
-
-  .light-theme .text-gray-100 {
-    color: #111827 !important;
-  }
-
-  .light-theme .text-gray-200 {
-    color: #1f2937 !important;
-  }
-
-  .light-theme .text-gray-300 {
-    color: #374151 !important;
-  }
-
-  .light-theme .text-gray-400 {
-    color: #4b5563 !important;
-  }
-
-  .light-theme .text-gray-500 {
-    color: #6b7280 !important;
-  }
-
-  .light-theme .text-gray-600 {
-    color: #4b5563 !important;
-  }
-
-  /* Border colors */
-  .light-theme .border-dark-border {
-    border-color: #e5e7eb !important;
-  }
-
-  /* Cards and glass effects */
-  .light-theme .glass-card {
-    background-color: rgba(255, 255, 255, 0.95);
-    border-color: #e5e7eb;
-    box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-    backdrop-filter: blur(10px);
-  }
-
-  /* Sidebar and navigation */
-  .light-theme aside {
-    background-color: #ffffff;
-    border-right: 1px solid #e5e7eb;
-    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  }
-
-  /* Primary colors - maintain brand colors in light theme */
-  .light-theme .text-primary-400,
-  .light-theme .text-primary-500 {
-    color: #3b82f6 !important;
-  }
-
-  .light-theme .text-accent-green {
-    color: #10b981 !important;
-  }
-
-  .light-theme .text-accent-purple {
-    color: #8b5cf6 !important;
-  }
-
-  .light-theme .text-accent-orange {
-    color: #f59e0b !important;
-  }
-
-  /* Buttons - ensure visibility and proper states */
-  .light-theme button {
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    transition: all 0.3s;
-  }
-
-  .light-theme button:hover {
-    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  }
-
-  .light-theme button:not(.bg-primary-500):not(.bg-accent-green):not(.bg-red-500) {
-    color: #111827;
-  }
-
-  /* Inputs, selects, textareas */
-  .light-theme input,
-  .light-theme select,
-  .light-theme textarea {
-    background-color: #ffffff;
-    border-color: #d1d5db;
-    color: #111827;
-  }
-
-  .light-theme input::placeholder,
-  .light-theme textarea::placeholder {
-    color: #9ca3af;
-  }
-
-  .light-theme input:focus,
-  .light-theme select:focus,
-  .light-theme textarea:focus {
-    border-color: #3b82f6;
-    --tw-ring-color: #dbeafe;
-    --tw-ring-offset-shadow: 0 0 0 0px #fff;
-    --tw-ring-shadow: 0 0 0 2px var(--tw-ring-color);
-    box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow);
-  }
-
-  /* Ensure chart text visibility */
-  .light-theme .recharts-text {
-    fill: #374151 !important;
-  }
-
-  .light-theme .recharts-label {
-    fill: #374151 !important;
-  }
-
-  ::-webkit-scrollbar {
-    @apply w-2 h-2;
-  }
-
-  ::-webkit-scrollbar-track {
-    @apply bg-dark-surface;
-  }
-
-  .light-theme ::-webkit-scrollbar-track {
-    @apply bg-gray-100;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    @apply bg-dark-border rounded-full hover:bg-gray-700;
-  }
-
-  .light-theme ::-webkit-scrollbar-thumb {
-    @apply bg-gray-300 hover:bg-gray-400;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-@layer components {
-  .glass-card {
-    @apply bg-dark-card/80 backdrop-blur-xl border border-dark-border rounded-2xl;
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   PURPLE/ACCENT BUTTONS - Always white text
+   ------------------------------------------------------------------ */
+button[class*="bg-purple"],
+button[class*="bg-primary"],
+button[class*="bg-gradient"],
+.bg-purple-600,
+.bg-purple-500,
+.bg-primary-500,
+.bg-primary-600 {
+  color: #ffffff !important;
+}
+
+/* Force Primary Orange Backgrounds in Light Mode */
+html.light-theme .bg-primary-500 {
+  background-color: #f97316 !important;
+}
+
+html.light-theme .bg-primary-600 {
+  background-color: #ea580c !important;
+}
+
+/* Force Primary Orange Backgrounds in Dark Mode (Safety Net) */
+.bg-primary-500 {
+  background-color: #f97316 !important;
+}
+
+.bg-primary-600 {
+  background-color: #ea580c !important;
+}
+
+/* LIGHT MODE GRADIENT & TOGGLE FIXES */
+html.light-theme .from-primary-500 {
+  --tw-gradient-from: #f97316 !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(249, 115, 22, 0)) !important;
+}
+
+html.light-theme .to-primary-600 {
+  --tw-gradient-to: #ea580c !important;
+}
+
+/* Fix Toggles in Light Mode */
+html.light-theme .peer:checked~div {
+  background-color: #f97316 !important;
+}
+
+html.light-theme .bg-primary-500\/20 {
+  background-color: rgba(249, 115, 22, 0.2) !important;
+}
+
+button[class*="bg-purple"] *,
+button[class*="bg-primary"] *,
+button[class*="bg-gradient"] *,
+.bg-purple-600 *,
+.bg-purple-500 *,
+.bg-primary-500 *,
+.bg-primary-600 * {
+  color: #ffffff !important;
+}
+
+/* ------------------------------------------------------------------
+   CLAUDE-STYLE CHAT INTERFACE COMPONENTS
+   ------------------------------------------------------------------ */
+
+/* Claude-style Input Bar */
+.claude-input-bar {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 1rem;
+  transition: all 0.2s ease;
+}
+
+.claude-input-bar:focus-within {
+  border-color: rgba(249, 115, 22, 0.5) !important;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.1);
+}
+
+/* Claude-style Dropdown Menu */
+.claude-dropdown {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.claude-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  width: 100%;
+  text-align: left;
+  transition: background-color 0.15s ease;
+  color: var(--text-secondary) !important;
+}
+
+.claude-dropdown-item:hover {
+  background-color: var(--bg-hover) !important;
+}
+
+.claude-dropdown-item.active {
+  background-color: var(--bg-hover) !important;
+}
+
+/* Claude-style Mode Selector Button */
+.claude-mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background-color: var(--bg-hover) !important;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary) !important;
+  transition: all 0.15s ease;
+}
+
+.claude-mode-selector:hover {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Claude-style Action Button */
+.claude-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  color: var(--text-muted) !important;
+  transition: all 0.15s ease;
+}
+
+.claude-action-btn:hover {
+  background-color: var(--bg-hover) !important;
+  color: var(--text-secondary) !important;
+}
+
+/* Claude-style Send Button */
+.claude-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem;
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%) !important;
+  border-radius: 0.75rem;
+  color: #ffffff !important;
+  transition: all 0.15s ease;
+}
+
+.claude-send-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.4);
+}
+
+.claude-send-btn:disabled {
+  background: var(--bg-hover) !important;
+  color: var(--text-muted) !important;
+  transform: none;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* Claude-style History Panel */
+.claude-history-panel {
+  background-color: var(--bg-secondary) !important;
+  border-right: 1px solid var(--border-color) !important;
+}
+
+/* Claude-style Chat Messages */
+.claude-message-user {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%) !important;
+  color: #ffffff !important;
+  padding: 0.75rem 1rem;
+  border-radius: 1.25rem;
+  border-bottom-right-radius: 0.375rem;
+  max-width: 85%;
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
+}
+
+.claude-message-bot {
+  color: var(--text-primary) !important;
+}
+
+/* Badge Styles */
+.claude-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.625rem;
+  font-weight: 500;
+  background-color: rgba(249, 115, 22, 0.2);
+  color: #fb923c;
+  border-radius: 0.25rem;
+}
+
+/* Claude-style MCP Toggle */
+.claude-mcp-toggle {
+  width: 2rem;
+  height: 1rem;
+  border-radius: 999px;
+  transition: background-color 0.2s ease;
+  position: relative;
+}
+
+.claude-mcp-toggle-thumb {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 999px;
+  background-color: #ffffff;
+  position: absolute;
+  top: 0.125rem;
+  transition: transform 0.2s ease;
+}
+
+.claude-mcp-toggle.active {
+  background-color: #f97316;
+}
+
+.claude-mcp-toggle.active .claude-mcp-toggle-thumb {
+  transform: translateX(1rem);
+}
+
+.claude-mcp-toggle.inactive {
+  background-color: #3f3f46;
+}
+
+.claude-mcp-toggle.inactive .claude-mcp-toggle-thumb {
+  transform: translateX(0.125rem);
+}
+
+/* Spinner Animation for Claude-style Loading */
+@keyframes claude-spin {
+  from {
+    transform: rotate(0deg);
   }
 
-  .gradient-border {
-    @apply relative overflow-hidden;
-  }
-
-  .gradient-border::before {
-    content: '';
-    @apply absolute inset-0 rounded-2xl p-[1px] bg-gradient-to-r from-primary-500 to-accent-purple;
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-  }
-
-  .glow-effect {
-    @apply shadow-glow transition-shadow duration-300;
-  }
-
-  .glow-effect:hover {
-    @apply shadow-[0_0_30px_rgba(59,130,246,0.5)];
+  to {
+    transform: rotate(360deg);
   }
 }
 
-@layer utilities {
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-400 to-accent-purple;
+.claude-spinner {
+  animation: claude-spin 1s linear infinite;
+}
+
+/* Light Mode Overrides for Claude Components */
+html.light-theme .claude-input-bar {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light-theme .claude-dropdown {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+html.light-theme .claude-dropdown-item {
+  color: #334155 !important;
+}
+
+html.light-theme .claude-dropdown-item:hover {
+  background-color: #f1f5f9 !important;
+}
+
+html.light-theme .claude-mode-selector {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+html.light-theme .claude-mode-selector:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.light-theme .claude-action-btn {
+  color: #64748b !important;
+}
+
+html.light-theme .claude-action-btn:hover {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+html.light-theme .claude-message-bot {
+  color: #0f172a !important;
+}
+
+/* ==================================================================
+   $50,000 ENTERPRISE PREMIUM ANIMATIONS
+   Apple + OpenAI + Palantir Quality
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   CHART FADE-IN ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes chartFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
   }
 
-  .animate-float {
-    animation: float 6s ease-in-out infinite;
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chart-fade-in {
+  animation: chartFadeIn 0.4s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   INSIGHT CARD SLIDE-UP ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
   }
 
-  @keyframes float {
-    0%, 100% {
-      transform: translateY(0px);
-    }
-    50% {
-      transform: translateY(-20px);
-    }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
+}
+
+.slide-up {
+  animation: slideUp 0.4s ease-out forwards;
+}
+
+.slide-up-delay-1 {
+  animation-delay: 0.1s;
+  opacity: 0;
+}
+
+.slide-up-delay-2 {
+  animation-delay: 0.2s;
+  opacity: 0;
+}
+
+.slide-up-delay-3 {
+  animation-delay: 0.3s;
+  opacity: 0;
+}
+
+.slide-up-delay-4 {
+  animation-delay: 0.4s;
+  opacity: 0;
+}
+
+/* ------------------------------------------------------------------
+   TYPING ANIMATION (ChatGPT Style)
+   ------------------------------------------------------------------ */
+@keyframes typingBounce {
+
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+
+  30% {
+    transform: translateY(-4px);
+  }
+}
+
+.typing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #f97316;
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+/* ------------------------------------------------------------------
+   NUMBER COUNTER ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes countUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.count-up {
+  animation: countUp 0.6s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM CARD STYLES
+   ------------------------------------------------------------------ */
+.premium-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.premium-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.15);
+  border-color: rgba(249, 115, 22, 0.3);
+}
+
+/* ------------------------------------------------------------------
+   INSIGHT CARD STYLES
+   ------------------------------------------------------------------ */
+.insight-card {
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(249, 115, 22, 0.05) 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  transition: all 0.3s ease;
+}
+
+.insight-card:hover {
+  border-color: rgba(249, 115, 22, 0.4);
+  box-shadow: 0 8px 16px -4px rgba(249, 115, 22, 0.15);
+}
+
+.insight-card.risk {
+  border-left: 3px solid #ef4444;
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(239, 68, 68, 0.05) 100%);
+}
+
+.insight-card.opportunity {
+  border-left: 3px solid #22c55e;
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(34, 197, 94, 0.05) 100%);
+}
+
+.insight-card.trend {
+  border-left: 3px solid #3b82f6;
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(59, 130, 246, 0.05) 100%);
+}
+
+/* ------------------------------------------------------------------
+   SUGGESTION CHIPS
+   ------------------------------------------------------------------ */
+.suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.suggestion-chip:hover {
+  background: var(--bg-hover);
+  border-color: #f97316;
+  color: #f97316;
+  transform: translateY(-1px);
+}
+
+.suggestion-chip:active {
+  transform: translateY(0);
+}
+
+/* ------------------------------------------------------------------
+   CONFIDENCE SCORE BADGE
+   ------------------------------------------------------------------ */
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.confidence-high {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.confidence-medium {
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+}
+
+.confidence-low {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* ------------------------------------------------------------------
+   APPLE-STYLE BLUR BACKDROP
+   ------------------------------------------------------------------ */
+.apple-blur {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(17, 17, 24, 0.8);
+}
+
+html.light-theme .apple-blur {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* ------------------------------------------------------------------
+   DASHBOARD BAR CHART ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes barGrow {
+  from {
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+
+  to {
+    transform: scaleY(1);
+    transform-origin: bottom;
+  }
+}
+
+.bar-animate {
+  animation: barGrow 0.6s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   LINE CHART DRAW ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes lineDraw {
+  from {
+    stroke-dashoffset: 1000;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.line-animate {
+  stroke-dasharray: 1000;
+  animation: lineDraw 1.5s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   PIE CHART FILL ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes pieFill {
+  from {
+    stroke-dashoffset: 100;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.pie-animate {
+  animation: pieFill 1s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   FLOATING ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.float-animation {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------
+   PULSE GLOW ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes pulseGlow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgba(249, 115, 22, 0);
+  }
+}
+
+.pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------
+   SHIMMER LOADING ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg,
+      var(--bg-card) 25%,
+      var(--bg-hover) 50%,
+      var(--bg-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ------------------------------------------------------------------
+   RESPONSE SECTION STYLES
+   ------------------------------------------------------------------ */
+.response-section {
+  padding: 1rem;
+  margin: 0.75rem 0;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+}
+
+.response-section.summary {
+  background: linear-gradient(135deg, rgba(249, 115, 22, 0.1) 0%, var(--bg-card) 100%);
+  border-color: rgba(249, 115, 22, 0.3);
+}
+
+.response-section.actions {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, var(--bg-card) 100%);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.response-section.risks {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-card) 100%);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.response-section.opportunities {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, var(--bg-card) 100%);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+/* ------------------------------------------------------------------
+   SOURCE CITATION CARD
+   ------------------------------------------------------------------ */
+.source-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(249, 115, 22, 0.1);
+  border: 1px solid rgba(249, 115, 22, 0.2);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: #fb923c;
+  transition: all 0.2s ease;
+}
+
+.source-card:hover {
+  background: rgba(249, 115, 22, 0.2);
+  border-color: rgba(249, 115, 22, 0.4);
+}
+
+/* ------------------------------------------------------------------
+   STAGGER CHILDREN ANIMATION
+   ------------------------------------------------------------------ */
+.stagger-children>* {
+  opacity: 0;
+  animation: slideUp 0.4s ease-out forwards;
+}
+
+.stagger-children>*:nth-child(1) {
+  animation-delay: 0.05s;
+}
+
+.stagger-children>*:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.stagger-children>*:nth-child(3) {
+  animation-delay: 0.15s;
+}
+
+.stagger-children>*:nth-child(4) {
+  animation-delay: 0.2s;
+}
+
+.stagger-children>*:nth-child(5) {
+  animation-delay: 0.25s;
+}
+
+.stagger-children>*:nth-child(6) {
+  animation-delay: 0.3s;
+}
+
+.stagger-children>*:nth-child(7) {
+  animation-delay: 0.35s;
+}
+
+.stagger-children>*:nth-child(8) {
+  animation-delay: 0.4s;
 }

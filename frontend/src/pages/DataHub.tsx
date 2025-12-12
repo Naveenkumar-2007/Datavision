@@ -28,24 +28,7 @@ interface FileItem {
 }
 
 const DataHub: React.FC = () => {
-  const [files, setFiles] = useState<FileItem[]>([
-    {
-      id: '1',
-      name: 'sales_data_2024.xlsx',
-      size: 2048576,
-      type: 'excel',
-      uploadedAt: '2024-01-15T10:30:00',
-      status: 'completed',
-    },
-    {
-      id: '2',
-      name: 'customer_report.pdf',
-      size: 1536000,
-      type: 'pdf',
-      uploadedAt: '2024-01-14T15:20:00',
-      status: 'completed',
-    },
-  ]);
+  const [files, setFiles] = useState<FileItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -107,7 +90,7 @@ const DataHub: React.FC = () => {
 
   const handleDelete = async (fileId: string) => {
     if (!confirm(`Are you sure you want to delete ${fileId}?`)) return;
-    
+
     try {
       const response = await apiService.deleteFile(fileId);
       if (response.data.success) {
@@ -124,7 +107,7 @@ const DataHub: React.FC = () => {
 
   const handleDeleteAll = async () => {
     if (!confirm('⚠️ WARNING: This will delete ALL your files and indexes. Are you absolutely sure?')) return;
-    
+
     try {
       const response = await apiService.deleteAllFiles();
       if (response.data.success) {
@@ -139,7 +122,7 @@ const DataHub: React.FC = () => {
 
   const handleRebuild = async () => {
     if (!confirm('🎯 RETRAIN: This will rebuild AI training from all files in Data Hub. Continue?')) return;
-    
+
     setUploading(true);
     try {
       const response = await apiService.rebuildIndex();
@@ -164,11 +147,11 @@ const DataHub: React.FC = () => {
       const response = await fetch(`http://localhost:8000/api/v1/files/${userId}/${fileId}/download`, {
         method: 'GET'
       });
-      
+
       if (!response.ok) {
         throw new Error('Download failed');
       }
-      
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -191,10 +174,24 @@ const DataHub: React.FC = () => {
   };
 
   const getFileIcon = (type: string) => {
-    if (type.includes('pdf')) return <FileText className="w-5 h-5 text-accent-red" />;
-    if (type.includes('excel') || type.includes('spreadsheet')) return <Database className="w-5 h-5 text-accent-green" />;
-    if (type.includes('image')) return <Image className="w-5 h-5 text-primary-400" />;
-    return <File className="w-5 h-5 text-gray-400" />;
+    // Excel/Spreadsheet files - bright green
+    if (type.includes('excel') || type.includes('spreadsheet') || type.includes('xlsx') || type.includes('csv')) {
+      return <Database className="w-5 h-5 text-emerald-400" />;
+    }
+    // PDF files - bright red
+    if (type.includes('pdf')) {
+      return <FileText className="w-5 h-5 text-red-400" />;
+    }
+    // Image files - bright orange
+    if (type.includes('image') || type.includes('png') || type.includes('jpg')) {
+      return <Image className="w-5 h-5 text-orange-400" />;
+    }
+    // Word/Document files - bright blue
+    if (type.includes('word') || type.includes('docx') || type.includes('doc')) {
+      return <FileText className="w-5 h-5 text-blue-400" />;
+    }
+    // Default - gray
+    return <File className="w-5 h-5 text-gray-300" />;
   };
 
   const filteredFiles = files.filter(file =>
@@ -240,17 +237,16 @@ const DataHub: React.FC = () => {
       >
         <div
           {...getRootProps()}
-          className={`glass-card p-12 border-2 border-dashed transition-all cursor-pointer ${
-            isDragActive
-              ? 'border-primary-500 bg-primary-500/5'
-              : 'border-dark-border hover:border-primary-500/50 hover:bg-dark-hover'
-          }`}
+          className={`glass-card p-12 border-2 border-dashed transition-all cursor-pointer ${isDragActive
+            ? 'border-primary-500 bg-primary-500/5'
+            : 'border-dark-border hover:border-primary-500/50 hover:bg-dark-hover'
+            }`}
         >
           <input {...getInputProps()} />
           <div className="text-center">
             {uploading ? (
               <>
-                <Loader className="w-16 h-16 text-primary-400 mx-auto mb-4 animate-spin" />
+                <Loader className="w-16 h-16 text-orange-400 mx-auto mb-4 animate-spin" />
                 <p className="text-xl font-semibold text-white mb-2">Uploading files...</p>
               </>
             ) : (
@@ -263,29 +259,24 @@ const DataHub: React.FC = () => {
                   or click to browse • Files auto-train immediately after upload
                 </p>
                 <div className="mb-4">
-                  <p className="text-sm text-primary-400 font-semibold mb-2">🎯 $50,000 Premium - Multi-Format Support:</p>
+                  <p className="text-sm text-primary-400 font-semibold mb-3">Supported Formats:</p>
                   <div className="flex flex-wrap justify-center gap-2">
                     {[
-                      { name: 'PDF', icon: '📄' },
-                      { name: 'Excel', icon: '📊' },
-                      { name: 'CSV', icon: '📈' },
-                      { name: 'Word', icon: '📝' },
-                      { name: 'PowerPoint', icon: '📊' },
-                      { name: 'JSON', icon: '💾' },
-                      { name: 'TXT', icon: '📃' },
-                      { name: 'Markdown', icon: '📋' },
-                      { name: 'HTML', icon: '🔗' },
-                      { name: 'Images', icon: '🖼️' }
+                      { name: 'PDF', color: 'bg-red-500' },
+                      { name: 'Excel', color: 'bg-emerald-500' },
+                      { name: 'CSV', color: 'bg-green-500' },
+                      { name: 'Word', color: 'bg-blue-500' },
+                      { name: 'Images', color: 'bg-orange-500' },
                     ].map((format) => (
                       <span
                         key={format.name}
-                        className="px-3 py-1.5 bg-gradient-to-r from-primary-500/10 to-accent-purple/10 border border-primary-500/20 rounded-lg text-sm text-white font-medium hover:from-primary-500/20 hover:to-accent-purple/20 transition-all"
+                        className={`px-3 py-1.5 ${format.color} rounded-lg text-sm text-white font-semibold shadow-md`}
                       >
-                        {format.icon} {format.name}
+                        {format.name}
                       </span>
                     ))}
                   </div>
-                  <p className="text-xs text-gray-500 mt-3">✅ All files trained instantly • 🧠 Persistent memory • 🔍 RAG + Graph + Hybrid modes</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">✅ Auto-trained • 🧠 Persistent memory • 🔍 RAG + Graph + Hybrid modes</p>
                 </div>
               </>
             )}
@@ -335,7 +326,7 @@ const DataHub: React.FC = () => {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4 + i * 0.05 }}
-              className="p-6 hover:bg-dark-hover transition-colors flex items-center justify-between"
+              className="data-hub-item p-6 hover:bg-dark-hover active:bg-dark-hover focus:bg-dark-hover transition-colors flex items-center justify-between group cursor-pointer"
             >
               <div className="flex items-center space-x-4 flex-1">
                 <div className="w-12 h-12 bg-dark-card rounded-xl flex items-center justify-center">
@@ -362,8 +353,8 @@ const DataHub: React.FC = () => {
                   )}
                   {file.status === 'processing' && (
                     <>
-                      <Loader className="w-5 h-5 text-primary-400 animate-spin" />
-                      <span className="text-sm text-primary-400 font-medium">Processing</span>
+                      <Loader className="w-5 h-5 text-orange-400 animate-spin" />
+                      <span className="text-sm text-orange-400 font-medium">Processing</span>
                     </>
                   )}
                   {file.status === 'failed' && (
@@ -376,7 +367,7 @@ const DataHub: React.FC = () => {
 
                 {/* Actions */}
                 <div className="flex space-x-2">
-                  <button 
+                  <button
                     onClick={() => handleDownload(file.id)}
                     className="p-2 hover:bg-dark-card rounded-lg transition-colors"
                     title="Download file"

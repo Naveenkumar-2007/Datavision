@@ -1,63 +1,87 @@
-import React from 'react';
-import { NavLink } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Database, 
-  MessageSquare, 
-  BarChart3, 
-  FileText, 
+import React, { useEffect } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  Database,
+  MessageSquare,
+  BarChart3,
+  FileText,
   Settings,
-  Sparkles,
+  LogOut,
+  X,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import Logo from '@/components/Logo';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
   { path: '/overview', icon: LayoutDashboard, label: 'Overview' },
   { path: '/data-hub', icon: Database, label: 'Data Hub' },
-  { path: '/chat', icon: MessageSquare, label: 'AI Analyst' },
+  { path: '/chat', icon: MessageSquare, label: 'Chat' },
   { path: '/dashboards', icon: BarChart3, label: 'Dashboards' },
   { path: '/reports', icon: FileText, label: 'Reports' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
-const Sidebar: React.FC = () => {
+interface SidebarProps {
+  isMobileMenuOpen?: boolean;
+  onClose?: () => void;
+}
+
+const Sidebar: React.FC<SidebarProps> = ({ isMobileMenuOpen = false, onClose }) => {
+  const { signOut, user } = useAuth();
+  const location = useLocation();
+
+  // Close menu on route change
+  useEffect(() => {
+    if (onClose) onClose();
+  }, [location.pathname]);
+
+  const handleLogout = async () => {
+    if (confirm('Are you sure you want to sign out?')) {
+      await signOut();
+    }
+  };
+
   return (
     <motion.aside
-      initial={{ x: -300 }}
+      initial={false}
       animate={{ x: 0 }}
-      transition={{ duration: 0.3 }}
-      className="w-64 bg-dark-surface border-r border-dark-border flex flex-col"
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
+      className={`
+        w-64 bg-dark-surface border-r border-dark-border flex-col
+        fixed lg:relative inset-y-0 left-0 z-50
+        ${isMobileMenuOpen ? 'flex' : 'hidden'} lg:flex
+      `}
     >
+      {/* Mobile close button */}
+      <div className="lg:hidden absolute top-4 right-4">
+        <button
+          onClick={onClose}
+          className="p-2 rounded-lg hover:bg-dark-card transition-colors"
+        >
+          <X className="w-5 h-5 text-gray-400" />
+        </button>
+      </div>
+
       {/* Logo */}
-      <div className="p-6 border-b border-dark-border">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-accent-purple rounded-xl flex items-center justify-center">
-            <Sparkles className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-white">AI Analyst</h1>
-            <p className="text-xs text-gray-400">Enterprise Edition</p>
-          </div>
-        </div>
+      <div className="p-4 border-b border-dark-border">
+        <Logo size="md" showText={true} />
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
-              `flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-                isActive
-                  ? 'bg-primary-500/10 text-primary-400 border border-primary-500/20'
-                  : 'text-gray-400 hover:bg-dark-hover hover:text-gray-200'
-              }`
+              `sidebar-item flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${isActive ? 'active' : ''}`
             }
           >
             {({ isActive }) => (
               <>
-                <item.icon className={`w-5 h-5 ${isActive ? 'text-primary-400' : ''}`} />
+                <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-primary-400' : ''}`} />
                 <span className="font-medium">{item.label}</span>
               </>
             )}
@@ -65,16 +89,24 @@ const Sidebar: React.FC = () => {
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-dark-border">
-        <div className="glass-card p-3 text-center">
-          <div className="text-sm font-semibold text-gray-200">Premium Plan</div>
-          <div className="text-xs text-gray-400 mt-1">Unlimited Access</div>
-          <div className="mt-2 h-1.5 bg-dark-bg rounded-full overflow-hidden">
-            <div className="h-full w-4/5 bg-gradient-to-r from-primary-500 to-accent-green" />
+      {/* User Info & Logout */}
+      <div className="p-4 border-t border-dark-border space-y-3">
+        {/* User Email */}
+        {user && (
+          <div className="px-3 py-2 bg-dark-card rounded-lg">
+            <p className="text-xs text-gray-400">Signed in as</p>
+            <p className="text-sm text-white truncate" title={user.email || ''}>{user.email}</p>
           </div>
-          <div className="text-xs text-gray-400 mt-1">80% storage used</div>
-        </div>
+        )}
+
+        {/* Logout Button */}
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-400 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+        >
+          <LogOut className="w-5 h-5 flex-shrink-0" />
+          <span className="font-medium">Sign Out</span>
+        </button>
       </div>
     </motion.aside>
   );

@@ -45,6 +45,9 @@ logs/
 # Cache
 .cache/
 *.cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Build
 frontend/dist/
@@ -53,5 +56,22 @@ frontend/dist/
 *.tmp
 *.temp
 
-# Lock files (optional, can be included if needed)
+# Lock files
 uv.lock
+
+# Model files
+*.bin
+*.ckpt
+*.pth
+*.safetensors
+*.onnx
+
+# Test output files
+*_results.txt
+*_output.txt
+models_list.txt
+
+# Large files
+*.zip
+*.tar.gz
+

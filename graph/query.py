@@ -1,9 +1,25 @@
 # Graph query module
 import networkx as nx
 import pandas as pd
+import json
 from pathlib import Path
 from config.settings import Settings
 from core.llm import chat
+
+
+def get_user_currency(user_id: str) -> tuple:
+    """Get user's detected currency symbol and code from metadata"""
+    try:
+        metadata_path = Settings.STORAGE / "users" / user_id / "metadata.json"
+        if metadata_path.exists():
+            with open(metadata_path, 'r') as f:
+                data = json.load(f)
+                code = data.get('currency', 'INR')
+                symbols = {'USD': '$', 'EUR': '€', 'GBP': '£', 'INR': '₹', 'JPY': '¥'}
+                return symbols.get(code, '₹'), code
+    except Exception as e:
+        print(f"⚠️ Currency detection error: {e}")
+    return '₹', 'INR'  # Default to INR
 
 
 def load_graph(company_id: str):
@@ -76,7 +92,9 @@ def graph_snapshot(company_id: str, max_nodes: int = None) -> str:
 
 def revenue_dataframe(company_id: str) -> pd.DataFrame:
     """
-    Extract revenue/invoice data from graph as DataFrame
+    Extract revenue/invoice data from graph as DataFrame.
+    Works with or without date information.
+    Includes currency per invoice for multi-currency support.
     """
     G = load_graph(company_id)
     if not G:
@@ -90,6 +108,7 @@ def revenue_dataframe(company_id: str) -> pd.DataFrame:
             product = None
             date = None
             amount = 0.0
+            currency = data.get("currency", "USD")  # Get currency from invoice node
 
             # Find connected nodes
             for neighbor in G.neighbors(node):
@@ -106,13 +125,15 @@ def revenue_dataframe(company_id: str) -> pd.DataFrame:
             # Get amount from invoice node itself
             amount = data.get("amount", 0.0)
             
-            if customer and product and date:
+            # Only require customer and product - date is optional
+            if customer and product:
                 rows.append({
                     "invoice": invoice_id,
                     "customer": customer,
                     "product": product,
-                    "date": date,
-                    "amount": float(amount) if amount else 0.0
+                    "date": date if date else "Unknown",  # Default to "Unknown" if no date
+                    "amount": float(amount) if amount else 0.0,
+                    "currency": currency  # Include currency for multi-currency support
                 })
 
     return pd.DataFrame(rows)
@@ -152,6 +173,9 @@ Upload files to unlock GraphRAG insights!"""
     df = revenue_dataframe(company_id)
     revenue_insights = ""
     
+    # Get user's currency
+    currency_symbol, currency_code = get_user_currency(company_id)
+    
     if df is not None and not df.empty:
         amount_col = 'amount' if 'amount' in df.columns else 'total_amount'
         
@@ -164,8 +188,8 @@ Upload files to unlock GraphRAG insights!"""
             
             revenue_insights = f"""
 **Revenue Data Summary:**
-• Total Revenue: ${total_revenue:,.2f}
-• Average Order Value: ${avg_order:,.2f}
+• Total Revenue: {currency_symbol}{total_revenue:,.2f}
+• Average Order Value: {currency_symbol}{avg_order:,.2f}
 • Unique Customers: {num_customers}
 • Product Variety: {num_products}
 • Total Transactions: {len(df)}
@@ -188,25 +212,67 @@ Upload files to unlock GraphRAG insights!"""
                         
                         trend = "📈 INCREASE" if change_pct > 0 else "📉 DECREASE"
                         revenue_insights += f"""**Monthly Trend Analysis:**
-• Latest Month: ${latest_month_revenue:,.2f}
-• Previous Month: ${prev_month_revenue:,.2f}
+• Latest Month: {currency_symbol}{latest_month_revenue:,.2f}
+• Previous Month: {currency_symbol}{prev_month_revenue:,.2f}
 • Change: {change_pct:+.1f}% {trend}
 
 """
             
-            # Top performers
+            # ALL customer data (not just top 3)
             if 'customer' in df.columns:
-                top_customer_rev = df.groupby('customer')[amount_col].sum().sort_values(ascending=False).head(3)
-                revenue_insights += "**Top 3 Customers:**\n"
-                for i, (cust, rev) in enumerate(top_customer_rev.items(), 1):
-                    revenue_insights += f"  {i}. {cust}: ${rev:,.2f}\n"
+                all_customer_rev = df.groupby('customer')[amount_col].sum().sort_values(ascending=False)
+                customer_orders = df.groupby('customer').size()
+                
+                # Top customers
+                revenue_insights += "**Top Customers by Revenue:**\n"
+                for i, (cust, rev) in enumerate(all_customer_rev.head(3).items(), 1):
+                    orders = customer_orders.get(cust, 0)
+                    revenue_insights += f"  {i}. {cust}: {currency_symbol}{rev:,.2f} ({orders} orders)\n"
+                
+                # Lowest customer
+                lowest_customer = all_customer_rev.sort_values(ascending=True).head(1)
+                if len(lowest_customer) > 0:
+                    lowest_name = lowest_customer.index[0]
+                    lowest_rev = lowest_customer.iloc[0]
+                    lowest_orders = customer_orders.get(lowest_name, 0)
+                    revenue_insights += f"\n**Lowest-Spending Customer:**\n"
+                    revenue_insights += f"  • {lowest_name}: {currency_symbol}{lowest_rev:,.2f} ({lowest_orders} orders)\n"
+                
+                # Complete customer table
+                revenue_insights += "\n**All Customers (Complete Data):**\n"
+                revenue_insights += f"| Customer | Revenue ({currency_symbol}) | Orders |\n"
+                revenue_insights += "|----------|-------------|--------|\n"
+                for cust, rev in all_customer_rev.items():
+                    orders = customer_orders.get(cust, 0)
+                    revenue_insights += f"| {cust} | {rev:,.2f} | {orders} |\n"
                 revenue_insights += "\n"
             
             if 'product' in df.columns:
-                top_product_rev = df.groupby('product')[amount_col].sum().sort_values(ascending=False).head(3)
-                revenue_insights += "**Top 3 Products:**\n"
-                for i, (prod, rev) in enumerate(top_product_rev.items(), 1):
-                    revenue_insights += f"  {i}. {prod}: ${rev:,.2f}\n"
+                all_product_rev = df.groupby('product')[amount_col].sum().sort_values(ascending=False)
+                product_counts = df.groupby('product').size()
+                
+                # Top products
+                revenue_insights += "**Top Products by Revenue:**\n"
+                for i, (prod, rev) in enumerate(all_product_rev.head(3).items(), 1):
+                    count = product_counts.get(prod, 0)
+                    revenue_insights += f"  {i}. {prod}: {currency_symbol}{rev:,.2f} ({count} sales)\n"
+                
+                # Lowest product
+                lowest_products = all_product_rev.sort_values(ascending=True)
+                if len(lowest_products) > 0:
+                    lowest_name = lowest_products.index[0]
+                    lowest_rev = lowest_products.iloc[0]
+                    lowest_count = product_counts.get(lowest_name, 0)
+                    revenue_insights += f"\n**Lowest-Performing Product:**\n"
+                    revenue_insights += f"  • {lowest_name}: {currency_symbol}{lowest_rev:,.2f} ({lowest_count} sales)\n"
+                
+                # Complete product table
+                revenue_insights += "\n**All Products (Complete Data):**\n"
+                revenue_insights += f"| Product | Revenue ({currency_symbol}) | Sales |\n"
+                revenue_insights += "|---------|-------------|-------|\n"
+                for prod, rev in all_product_rev.items():
+                    count = product_counts.get(prod, 0)
+                    revenue_insights += f"| {prod} | {rev:,.2f} | {count} |\n"
                 revenue_insights += "\n"
                 
         except Exception as e:
@@ -339,6 +405,9 @@ def get_graph_analysis(company_id: str, question: str) -> str:
     amount_col = 'amount' if 'amount' in df.columns else 'total_amount'
     question_lower = question.lower()
     
+    # Get user's currency
+    currency_symbol, currency_code = get_user_currency(company_id)
+    
     analysis = []
     
     # Total/Revenue queries
@@ -346,27 +415,89 @@ def get_graph_analysis(company_id: str, question: str) -> str:
         total = df[amount_col].sum()
         avg = df[amount_col].mean()
         count = len(df)
-        analysis.append(f"**Total Revenue:** ${total:,.2f}")
+        analysis.append(f"**Total Revenue:** {currency_symbol}{total:,.2f}")
         analysis.append(f"**Total Transactions:** {count:,}")
-        analysis.append(f"**Average Order Value:** ${avg:,.2f}")
+        analysis.append(f"**Average Order Value:** {currency_symbol}{avg:,.2f}")
     
-    # Customer queries
-    if any(word in question_lower for word in ['customer', 'client', 'buyer', 'who', 'top']):
+    # Customer queries - handle both top and bottom performers
+    if any(word in question_lower for word in ['customer', 'client', 'buyer', 'who', 'top', 'lowest', 'minimum', 'least', 'bottom', 'worst', 'smallest', 'min']):
         if 'customer' in df.columns:
-            customer_rev = df.groupby('customer')[amount_col].sum().sort_values(ascending=False)
-            analysis.append("\n**Customer Revenue Breakdown:**")
-            for i, (cust, rev) in enumerate(customer_rev.head(5).items(), 1):
-                pct = (rev / df[amount_col].sum()) * 100
-                analysis.append(f"  {i}. **{cust}**: ${rev:,.2f} ({pct:.1f}%)")
+            customer_rev = df.groupby('customer')[amount_col].sum()
+            customer_orders = df.groupby('customer').size()
+            
+            # Check if asking for lowest/minimum/least
+            is_lowest_query = any(word in question_lower for word in ['lowest', 'minimum', 'least', 'bottom', 'worst', 'smallest', 'min'])
+            
+            if is_lowest_query:
+                # Sort ascending for lowest
+                customer_rev_sorted = customer_rev.sort_values(ascending=True)
+                analysis.append("\n**Lowest-Spending Customers:**")
+                lowest_cust = customer_rev_sorted.iloc[0]
+                lowest_name = customer_rev_sorted.index[0]
+                lowest_orders = customer_orders.get(lowest_name, 0)
+                analysis.append(f"  🔻 **{lowest_name}**: {currency_symbol}{lowest_cust:,.2f} ({lowest_orders} orders) - LOWEST")
+                analysis.append("\n**All Customers (Low to High):**")
+                for i, (cust, rev) in enumerate(customer_rev_sorted.items(), 1):
+                    orders = customer_orders.get(cust, 0)
+                    pct = (rev / df[amount_col].sum()) * 100
+                    marker = " ← LOWEST" if i == 1 else ""
+                    analysis.append(f"  {i}. **{cust}**: {currency_symbol}{rev:,.2f} ({orders} orders, {pct:.1f}%){marker}")
+            else:
+                # Sort descending for top
+                customer_rev_sorted = customer_rev.sort_values(ascending=False)
+                analysis.append("\n**Top Customers by Revenue:**")
+                for i, (cust, rev) in enumerate(customer_rev_sorted.head(5).items(), 1):
+                    orders = customer_orders.get(cust, 0)
+                    pct = (rev / df[amount_col].sum()) * 100
+                    analysis.append(f"  {i}. **{cust}**: {currency_symbol}{rev:,.2f} ({orders} orders, {pct:.1f}%)")
+            
+            # Always include complete customer summary for context
+            analysis.append("\n**Complete Customer Data:**")
+            analysis.append(f"| Customer | Revenue ({currency_symbol}) | Orders |")
+            analysis.append("|----------|---------|--------|")
+            for cust, rev in customer_rev.sort_values(ascending=False).items():
+                orders = customer_orders.get(cust, 0)
+                analysis.append(f"| {cust} | {rev:,.2f} | {orders} |")
     
-    # Product queries
-    if any(word in question_lower for word in ['product', 'item', 'goods', 'selling']):
+    # Product queries - handle both top and lowest performers
+    if any(word in question_lower for word in ['product', 'item', 'goods', 'selling', 'performance', 'perform']):
         if 'product' in df.columns:
-            product_rev = df.groupby('product')[amount_col].sum().sort_values(ascending=False)
-            analysis.append("\n**Product Performance:**")
-            for i, (prod, rev) in enumerate(product_rev.head(5).items(), 1):
-                pct = (rev / df[amount_col].sum()) * 100
-                analysis.append(f"  {i}. **{prod}**: ${rev:,.2f} ({pct:.1f}%)")
+            product_rev = df.groupby('product')[amount_col].sum()
+            product_counts = df.groupby('product').size()
+            
+            # Check if asking for lowest/minimum/least
+            is_lowest_query = any(word in question_lower for word in ['lowest', 'minimum', 'least', 'bottom', 'worst', 'smallest', 'min', 'poor', 'bad'])
+            
+            if is_lowest_query:
+                # Sort ascending for lowest
+                product_rev_sorted = product_rev.sort_values(ascending=True)
+                analysis.append("\n**Lowest-Performing Products:**")
+                lowest_prod = product_rev_sorted.iloc[0]
+                lowest_name = product_rev_sorted.index[0]
+                lowest_count = product_counts.get(lowest_name, 0)
+                analysis.append(f"  🔻 **{lowest_name}**: {currency_symbol}{lowest_prod:,.2f} ({lowest_count} sales) - LOWEST")
+                analysis.append("\n**All Products (Low to High):**")
+                for i, (prod, rev) in enumerate(product_rev_sorted.items(), 1):
+                    count = product_counts.get(prod, 0)
+                    pct = (rev / df[amount_col].sum()) * 100
+                    marker = " ← LOWEST" if i == 1 else ""
+                    analysis.append(f"  {i}. **{prod}**: {currency_symbol}{rev:,.2f} ({count} sales, {pct:.1f}%){marker}")
+            else:
+                # Sort descending for top
+                product_rev_sorted = product_rev.sort_values(ascending=False)
+                analysis.append("\n**Top Products by Revenue:**")
+                for i, (prod, rev) in enumerate(product_rev_sorted.head(5).items(), 1):
+                    count = product_counts.get(prod, 0)
+                    pct = (rev / df[amount_col].sum()) * 100
+                    analysis.append(f"  {i}. **{prod}**: {currency_symbol}{rev:,.2f} ({count} sales, {pct:.1f}%)")
+            
+            # Always include complete product summary for context
+            analysis.append("\n**Complete Product Data:**")
+            analysis.append(f"| Product | Revenue ({currency_symbol}) | Sales |")
+            analysis.append("|---------|---------|-------|")
+            for prod, rev in product_rev.sort_values(ascending=False).items():
+                count = product_counts.get(prod, 0)
+                analysis.append(f"| {prod} | {rev:,.2f} | {count} |")
     
     # Monthly/Time queries
     if any(word in question_lower for word in ['month', 'trend', 'time', 'period', 'when', 'growth']):
@@ -380,7 +511,7 @@ def get_graph_analysis(company_id: str, question: str) -> str:
                 
                 analysis.append("\n**Monthly Revenue Trend:**")
                 for month, rev in monthly.items():
-                    analysis.append(f"  • **{month}**: ${rev:,.2f}")
+                    analysis.append(f"  • **{month}**: {currency_symbol}{rev:,.2f}")
                 
                 if len(monthly) >= 2:
                     first_val = monthly.iloc[0]
@@ -398,7 +529,7 @@ def get_graph_analysis(company_id: str, question: str) -> str:
                 c1, v1 = list(top_cust.items())[0]
                 c2, v2 = list(top_cust.items())[1]
                 diff = v1 - v2
-                analysis.append(f"  • **{c1}** vs **{c2}**: ${diff:,.2f} difference")
+                analysis.append(f"  • **{c1}** vs **{c2}**: {currency_symbol}{diff:,.2f} difference")
         
         if 'product' in df.columns:
             top_prod = df.groupby('product')[amount_col].sum().nlargest(2)
@@ -406,7 +537,7 @@ def get_graph_analysis(company_id: str, question: str) -> str:
                 p1, v1 = list(top_prod.items())[0]
                 p2, v2 = list(top_prod.items())[1]
                 diff = v1 - v2
-                analysis.append(f"  • **{p1}** vs **{p2}**: ${diff:,.2f} difference")
+                analysis.append(f"  • **{p1}** vs **{p2}**: {currency_symbol}{diff:,.2f} difference")
     
     return "\n".join(analysis) if analysis else None
 
@@ -422,6 +553,9 @@ def get_graph_summary(company_id: str) -> str:
     stats = get_graph_stats(company_id)
     df = revenue_dataframe(company_id)
     
+    # Get user's currency
+    currency_symbol, currency_code = get_user_currency(company_id)
+    
     summary_parts = [
         "**Knowledge Graph Structure:**",
         f"• **Entities:** {stats['total_nodes']:,} nodes",
@@ -435,7 +569,7 @@ def get_graph_summary(company_id: str) -> str:
         amount_col = 'amount' if 'amount' in df.columns else 'total_amount'
         total = df[amount_col].sum()
         summary_parts.append(f"\n**Data Coverage:**")
-        summary_parts.append(f"• **Total Revenue:** ${total:,.2f}")
+        summary_parts.append(f"• **Total Revenue:** {currency_symbol}{total:,.2f}")
         summary_parts.append(f"• **Transactions:** {len(df):,}")
     
     return "\n".join(summary_parts)

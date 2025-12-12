@@ -212,6 +212,14 @@ class QueryCache:
         self.invalidate(user_id=user_id)
         print(f"🔄 User cache invalidated due to data change: {user_id}")
     
+    def clear_all(self):
+        """Clear entire cache - useful when defaults change"""
+        with self._lock:
+            count = len(self._cache)
+            self._cache.clear()
+            print(f"🗑️ Cleared entire cache: {count} entries removed")
+            return count
+    
     def _semantic_lookup(self, query: str, user_id: str) -> Optional[CacheEntry]:
         """
         Find semantically similar cached query
