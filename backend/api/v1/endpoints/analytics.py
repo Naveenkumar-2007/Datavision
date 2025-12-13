@@ -303,7 +303,16 @@ async def get_analytics_overview(user_id: str):
             
     except Exception as e:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "message": f"Error: {str(e)}",
+            "metrics": {
+                "totalRevenue": 0,
+                "totalInvoices": 0,
+                "uniqueCustomers": 0,
+                "averageOrderValue": 0
+            },
+            "hasData": False
+        }
 
 @router.get("/revenue/{user_id}")
 async def get_revenue_details(

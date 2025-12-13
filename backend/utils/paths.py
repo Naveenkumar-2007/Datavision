@@ -4,8 +4,20 @@ Consolidates duplicate get_user_paths() from endpoints
 """
 
 from pathlib import Path
+import os
 
-STORAGE_BASE = Path("storage/users")
+# Import Settings to get the canonical storage path
+from config.settings import Settings
+
+# Detect if running in Docker (Hugging Face Spaces)
+if os.path.exists("/app"):
+    STORAGE_BASE = Path("/app/storage/users")
+else:
+    # Use Settings.STORAGE for consistency (anchored to __file__)
+    STORAGE_BASE = Settings.STORAGE / "users"
+    STORAGE_BASE.mkdir(parents=True, exist_ok=True)
+
+print(f"📂 Storage Base Path: {STORAGE_BASE}")
 
 
 def get_user_paths(user_id: str) -> dict:

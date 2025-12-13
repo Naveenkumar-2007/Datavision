@@ -1,11 +1,17 @@
 # Report generation module
-"""Weekly & Monthly business report generator."""
+"""Weekly & Monthly business report generator with multi-currency support."""
 
 import pandas as pd
 from datetime import datetime, timedelta
 from core.llm import chat
-from graph.query import revenue_dataframe
-
+from graph.query import revenue_dataframe, get_user_currency
+from utils.currency import (
+    format_currency, 
+    get_currency_symbol, 
+    calculate_currency_breakdown,
+    convert_to_usd,
+    CURRENCY_CONFIG
+)
 
 def generate_weekly_report(company_id: str) -> str:
     """
@@ -17,27 +23,51 @@ def generate_weekly_report(company_id: str) -> str:
         return "No data available for weekly report. Please upload business data first."
     
     # Get last 7 days
-    df['date'] = pd.to_datetime(df['date'])
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
     last_week = datetime.now() - timedelta(days=7)
-    df_week = df[df['date'] >= last_week]
+    df_week = df[df['date'] >= last_week] if 'date' in df.columns else df
     
-    # Calculate metrics
-    total_revenue = df_week['amount'].sum()
+    # If no data in last week, use all data
+    if df_week.empty:
+        df_week = df
+    
+    # Detect user's currency
+    currency_symbol, currency_code = get_user_currency(company_id)
+    
+    # Calculate metrics with multi-currency support
+    has_currency_col = 'currency' in df_week.columns
+    
+    # Calculate totals by currency
+    if has_currency_col:
+        currency_totals = df_week.groupby('currency')['amount'].sum().to_dict()
+        currency_breakdown = calculate_currency_breakdown(currency_totals)
+        total_revenue_usd = currency_breakdown['total_usd_equivalent']
+        currency_summary = "\n".join([
+            f"• {item['currency']}: {item['formatted']} (≈ ${item['usd_equivalent']:,.2f} USD)"
+            for item in currency_breakdown['breakdown']
+        ])
+    else:
+        total_revenue = df_week['amount'].sum()
+        total_revenue_usd = convert_to_usd(total_revenue, currency_code)
+        currency_summary = f"• {currency_code}: {currency_symbol}{total_revenue:,.2f}"
+    
     total_invoices = len(df_week)
     avg_invoice = df_week['amount'].mean() if total_invoices > 0 else 0
     top_customer = df_week.groupby('customer')['amount'].sum().idxmax() if total_invoices > 0 else "N/A"
     top_product = df_week.groupby('product')['amount'].sum().idxmax() if total_invoices > 0 else "N/A"
     
-    # Create context for LLM
+    # Create context for LLM with multi-currency breakdown
     context = f"""Weekly Business Data (Last 7 Days):
-- Total Revenue: ₹{total_revenue:,.2f}
+
+💰 Revenue by Currency:
+{currency_summary}
+📊 Total USD Equivalent: ${total_revenue_usd:,.2f}
+
+📈 Key Metrics:
 - Total Invoices: {total_invoices}
-- Average Invoice Value: ₹{avg_invoice:,.2f}
+- Average Invoice Value: {currency_symbol}{avg_invoice:,.2f}
 - Top Customer: {top_customer}
 - Top Product: {top_product}
-
-Daily Breakdown:
-{df_week.groupby('date')['amount'].sum().to_string()}
 
 Top 5 Customers by Revenue:
 {df_week.groupby('customer')['amount'].sum().nlargest(5).to_string()}
@@ -78,8 +108,8 @@ Generate a comprehensive weekly business report for the executive team."""
         <p><strong>Company ID:</strong> {company_id}</p>
         
         <div class="metric">
-            <div>Total Revenue</div>
-            <div class="metric-value">₹{total_revenue:,.2f}</div>
+            <div>Total Revenue (USD Equivalent)</div>
+            <div class="metric-value">${total_revenue_usd:,.2f}</div>
         </div>
         
         <div class="metric">
@@ -89,7 +119,7 @@ Generate a comprehensive weekly business report for the executive team."""
         
         <div class="metric">
             <div>Average Transaction Value</div>
-            <div class="metric-value">₹{avg_invoice:,.2f}</div>
+            <div class="metric-value">{currency_symbol}{avg_invoice:,.2f}</div>
         </div>
         
         <h2>📈 Analysis & Insights</h2>
@@ -115,12 +145,20 @@ def generate_monthly_report(company_id: str) -> str:
         return "No data available for monthly report. Please upload business data first."
     
     # Get last 30 days
-    df['date'] = pd.to_datetime(df['date'])
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
     last_month = datetime.now() - timedelta(days=30)
-    df_month = df[df['date'] >= last_month]
+    df_month = df[df['date'] >= last_month] if 'date' in df.columns else df
+    
+    # If no data in last month, use all data
+    if df_month.empty:
+        df_month = df
+    
+    # Detect user's currency
+    currency_symbol, currency_code = get_user_currency(company_id)
     
     # Calculate metrics
     total_revenue = df_month['amount'].sum()
+    total_revenue_usd = convert_to_usd(total_revenue, currency_code)
     total_invoices = len(df_month)
     unique_customers = df_month['customer'].nunique()
     unique_products = df_month['product'].nunique()
@@ -133,12 +171,12 @@ def generate_monthly_report(company_id: str) -> str:
     growth_rate = ((total_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue > 0 else 0
     
     context = f"""Monthly Business Data (Last 30 Days):
-- Total Revenue: ₹{total_revenue:,.2f}
+- Total Revenue: {currency_symbol}{total_revenue:,.2f} (≈ ${total_revenue_usd:,.2f} USD)
 - Growth Rate: {growth_rate:+.1f}% vs previous month
 - Total Invoices: {total_invoices}
 - Unique Customers: {unique_customers}
 - Unique Products Sold: {unique_products}
-- Average Invoice Value: ₹{avg_invoice:,.2f}
+- Average Invoice Value: {currency_symbol}{avg_invoice:,.2f}
 
 Weekly Breakdown:
 {df_month.groupby(pd.Grouper(key='date', freq='W'))['amount'].sum().to_string()}
@@ -188,8 +226,8 @@ Generate a comprehensive monthly business report for the executive team and boar
         
         <div class="metric-grid">
             <div class="metric">
-                <div class="metric-label">Total Revenue</div>
-                <div class="metric-value">₹{total_revenue:,.2f}</div>
+                <div class="metric-label">Total Revenue (USD)</div>
+                <div class="metric-value">${total_revenue_usd:,.2f}</div>
             </div>
             <div class="metric">
                 <div class="metric-label">Transactions</div>
@@ -197,7 +235,7 @@ Generate a comprehensive monthly business report for the executive team and boar
             </div>
             <div class="metric">
                 <div class="metric-label">Avg Transaction</div>
-                <div class="metric-value">₹{avg_invoice:,.2f}</div>
+                <div class="metric-value">{currency_symbol}{avg_invoice:,.2f}</div>
             </div>
             <div class="metric">
                 <div class="metric-label">Growth Rate</div>

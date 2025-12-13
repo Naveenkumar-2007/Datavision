@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Force rebuild with updated requirements - 2025-12-12
+# Force rebuild with updated requirements - 2025-12-12-v2
 WORKDIR /app
 
 # Install Node.js for frontend build

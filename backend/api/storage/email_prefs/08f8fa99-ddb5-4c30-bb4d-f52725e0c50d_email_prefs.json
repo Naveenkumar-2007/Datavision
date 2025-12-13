@@ -1,0 +1,10 @@
+{
+  "daily_report_enabled": true,
+  "daily_report_hour": 18,
+  "daily_report_minute": 15,
+  "weekly_report_enabled": false,
+  "weekly_report_day": 1,
+  "weekly_report_hour": 9,
+  "weekly_report_minute": 0,
+  "email_address": "192425151.simats@saveetha.com"
+}

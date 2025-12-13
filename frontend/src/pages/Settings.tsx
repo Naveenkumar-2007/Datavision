@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   User,
-  Bell,
   Shield,
   Database,
   Trash2,
@@ -10,9 +9,14 @@ import {
   RefreshCw,
   Save,
   Key,
+  Mail,
+  Clock,
+  Calendar,
+  Send,
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 const Settings: React.FC = () => {
   const { user: authUser } = useAuth();
@@ -61,12 +65,105 @@ const Settings: React.FC = () => {
     }
   }, [profile, authUser, setStoreUser]);
 
-  const [notifications, setNotifications] = useState({
-    email: true,
-    push: false,
-    reports: true,
-    insights: true,
+
+  // Email Report Preferences (daily/weekly scheduling)
+  const [emailPrefs, setEmailPrefs] = useState({
+    daily_report_enabled: false,
+    daily_report_hour: 8,
+    daily_report_minute: 0,
+    weekly_report_enabled: true,
+    weekly_report_day: 1, // Monday
+    weekly_report_hour: 9,
+    weekly_report_minute: 0,
+    email_address: '',
   });
+  const [emailPrefsLoading, setEmailPrefsLoading] = useState(false);
+  const [testEmailSending, setTestEmailSending] = useState(false);
+
+  // Load email preferences from backend
+  useEffect(() => {
+    const loadEmailPrefs = async () => {
+      try {
+        const userId = authUser?.id || localStorage.getItem('userId') || 'default';
+        const response = await fetch(`/api/v1/settings/email-prefs`, {
+          headers: { 'X-User-ID': userId }
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data.preferences) {
+            setEmailPrefs(data.preferences);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load email preferences:', error);
+      }
+    };
+    loadEmailPrefs();
+  }, [authUser]);
+
+  // Save email preferences to backend
+  const saveEmailPrefs = async () => {
+    setEmailPrefsLoading(true);
+    try {
+      const userId = authUser?.id || localStorage.getItem('userId') || 'default';
+      const response = await fetch(`/api/v1/settings/email-prefs`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': userId
+        },
+        body: JSON.stringify(emailPrefs)
+      });
+      if (response.ok) {
+        alert('✅ Email report preferences saved!');
+      } else {
+        throw new Error('Failed to save');
+      }
+    } catch (error) {
+      console.error('Failed to save email preferences:', error);
+      alert('❌ Failed to save email preferences');
+    } finally {
+      setEmailPrefsLoading(false);
+    }
+  };
+
+  // Send test email
+  const sendTestEmail = async () => {
+    if (!emailPrefs.email_address) {
+      alert('Please enter your email address first');
+      return;
+    }
+    setTestEmailSending(true);
+    try {
+      const userId = authUser?.id || localStorage.getItem('userId') || 'default';
+      const response = await fetch(`/api/v1/settings/email-prefs/test`, {
+        method: 'POST',
+        headers: { 'X-User-ID': userId }
+      });
+      if (response.ok) {
+        alert('✅ Test email sent! Check your inbox.');
+      } else {
+        const data = await response.json();
+        throw new Error(data.detail || 'Failed to send');
+      }
+    } catch (error: any) {
+      console.error('Failed to send test email:', error);
+      alert('❌ ' + (error.message || 'Failed to send test email'));
+    } finally {
+      setTestEmailSending(false);
+    }
+  };
+
+  const dayOptions = [
+    { value: 0, label: 'Sunday' },
+    { value: 1, label: 'Monday' },
+    { value: 2, label: 'Tuesday' },
+    { value: 3, label: 'Wednesday' },
+    { value: 4, label: 'Thursday' },
+    { value: 5, label: 'Friday' },
+    { value: 6, label: 'Saturday' },
+  ];
+
 
   const [preferences, setPreferences] = useState(() => {
     const userId = authUser?.id || localStorage.getItem('userId') || 'default';
@@ -95,10 +192,10 @@ const Settings: React.FC = () => {
     localStorage.setItem(`userProfile_${userId}`, JSON.stringify(profile));
 
     // Save preferences per user
-    localStorage.setItem(`userPreferences_${userId}`, JSON.stringify({ notifications, preferences }));
+    localStorage.setItem(`userPreferences_${userId}`, JSON.stringify({ preferences }));
 
     // Also save to global userPreferences for other components to read
-    localStorage.setItem('userPreferences', JSON.stringify({ notifications, preferences }));
+    localStorage.setItem('userPreferences', JSON.stringify({ preferences }));
 
     // Apply theme immediately
     if (preferences.theme === 'light') {
@@ -215,8 +312,52 @@ const Settings: React.FC = () => {
     }
   };
 
-  const handleChangePassword = () => {
-    alert('🔒 Password change feature coming soon!');
+  const handleChangePassword = async () => {
+    // Get password values from inputs
+    const currentPasswordInput = document.getElementById('current-password') as HTMLInputElement;
+    const newPasswordInput = document.getElementById('new-password') as HTMLInputElement;
+    const confirmPasswordInput = document.getElementById('confirm-password') as HTMLInputElement;
+
+    const _currentPassword = currentPasswordInput?.value || ''; // Reserved for future use
+    const newPassword = newPasswordInput?.value || '';
+    const confirmPassword = confirmPasswordInput?.value || '';
+
+    // Validation
+    if (!newPassword || !confirmPassword) {
+      alert('❌ Please enter new password and confirm it.');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      alert('❌ Password must be at least 6 characters.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      alert('❌ Passwords do not match!');
+      return;
+    }
+
+    try {
+      // Update password using Supabase
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      // Clear inputs
+      if (currentPasswordInput) currentPasswordInput.value = '';
+      if (newPasswordInput) newPasswordInput.value = '';
+      if (confirmPasswordInput) confirmPasswordInput.value = '';
+
+      alert('✅ Password changed successfully!');
+    } catch (error: any) {
+      console.error('Password change failed:', error);
+      alert('❌ Failed to change password: ' + (error.message || 'Unknown error'));
+    }
   };
 
   const handleResetTheme = () => {
@@ -333,7 +474,7 @@ const Settings: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* Notifications */}
+      {/* Preferences */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -341,136 +482,228 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <Bell className="w-6 h-6 text-orange-400" />
-          <h2 className="text-2xl font-semibold text-white">Notifications</h2>
+          <Shield className="w-6 h-6 text-orange-400" />
+          <h2 className="text-2xl font-semibold text-white">Preferences</h2>
         </div>
 
-        <div className="space-y-4">
-          {[
-            { key: 'email', label: 'Email Notifications', description: 'Receive updates via email' },
-            { key: 'push', label: 'Push Notifications', description: 'Get browser notifications' },
-            { key: 'reports', label: 'Weekly Reports', description: 'Automatic weekly business reports' },
-            { key: 'insights', label: 'AI Insights', description: 'Get notified about new insights' },
-          ].map((item) => (
-            <div key={item.key} className="flex items-center justify-between p-4 bg-dark-card rounded-xl">
-              <div>
-                <div className="text-white font-medium mb-1">{item.label}</div>
-                <div className="text-sm text-gray-400">{item.description}</div>
+        <div className="space-y-6">
+          {/* Theme and Language Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Theme */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Theme</label>
+              <select
+                value={preferences.theme}
+                onChange={(e) => setPreferences({ ...preferences, theme: e.target.value })}
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500 appearance-none cursor-pointer"
+              >
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+              <button
+                onClick={handleResetTheme}
+                className="text-orange-400 text-sm mt-2 hover:underline"
+              >
+                Reset to Dark Mode
+              </button>
+            </div>
+
+            {/* Language */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Language</label>
+              <select
+                value={preferences.language || 'en'}
+                onChange={(e) => setPreferences({ ...preferences, language: e.target.value })}
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500 appearance-none cursor-pointer"
+              >
+                <option value="en">English (Only)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Currency */}
+          <div className="max-w-md">
+            <label className="block text-sm text-gray-400 mb-2">Currency (All values will be converted to this)</label>
+            <select
+              value={preferences.currency}
+              onChange={(e) => setPreferences({ ...preferences, currency: e.target.value })}
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500 appearance-none cursor-pointer"
+            >
+              <option value="INR">₹ Indian Rupee (INR)</option>
+              <option value="USD">$ US Dollar (USD)</option>
+              <option value="EUR">€ Euro (EUR)</option>
+              <option value="GBP">£ British Pound (GBP)</option>
+              <option value="JPY">¥ Japanese Yen (JPY)</option>
+              <option value="AUD">A$ Australian Dollar (AUD)</option>
+              <option value="CAD">C$ Canadian Dollar (CAD)</option>
+              <option value="CHF">CHF Swiss Franc (CHF)</option>
+              <option value="CNY">¥ Chinese Yuan (CNY)</option>
+              <option value="SGD">S$ Singapore Dollar (SGD)</option>
+            </select>
+            <p className="text-sm text-gray-500 mt-2">Uploaded data in other currencies will be auto-converted</p>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Email Reports Scheduling */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.25 }}
+        className="glass-card p-8"
+      >
+        <div className="flex items-center space-x-4 mb-6">
+          <Mail className="w-6 h-6 text-orange-400" />
+          <h2 className="text-2xl font-semibold text-white">Email Reports</h2>
+        </div>
+
+        <div className="space-y-6">
+          {/* Email Address */}
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Email Address for Reports</label>
+            <input
+              type="email"
+              placeholder="your@email.com"
+              value={emailPrefs.email_address || ''}
+              onChange={(e) => setEmailPrefs({ ...emailPrefs, email_address: e.target.value })}
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">Leave blank to use your account email</p>
+          </div>
+
+          {/* Daily Reports */}
+          <div className="p-4 bg-dark-card rounded-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Clock className="w-5 h-5 text-orange-400" />
+                <div>
+                  <div className="text-white font-medium">Daily Reports</div>
+                  <div className="text-sm text-gray-400">Receive daily business summary</div>
+                </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={notifications[item.key as keyof typeof notifications]}
-                  onChange={(e) =>
-                    setNotifications({ ...notifications, [item.key]: e.target.checked })
-                  }
+                  checked={emailPrefs.daily_report_enabled}
+                  onChange={(e) => setEmailPrefs({ ...emailPrefs, daily_report_enabled: e.target.checked })}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
               </label>
             </div>
-          ))}
-        </div>
-      </motion.div>
 
-      {/* Preferences */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className="glass-card p-8"
-      >
-        <div className="flex items-center space-x-4 mb-6">
-          <Shield className="w-6 h-6 text-orange-400" />
-          <h2 className="text-2xl font-semibold text-white">Preferences</h2>
-        </div>
+            {emailPrefs.daily_report_enabled && (
+              <div className="ml-8 flex items-center space-x-3">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Hour</label>
+                  <select
+                    value={emailPrefs.daily_report_hour}
+                    onChange={(e) => setEmailPrefs({ ...emailPrefs, daily_report_hour: parseInt(e.target.value) })}
+                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>{i.toString().padStart(2, '0')}</option>
+                    ))}
+                  </select>
+                </div>
+                <span className="text-gray-400 mt-6">:</span>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Minute</label>
+                  <select
+                    value={emailPrefs.daily_report_minute}
+                    onChange={(e) => setEmailPrefs({ ...emailPrefs, daily_report_minute: parseInt(e.target.value) })}
+                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                  >
+                    {[0, 15, 30, 45].map((m) => (
+                      <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Theme</label>
-            <select
-              value={preferences.theme}
-              onChange={(e) => setPreferences({ ...preferences, theme: e.target.value })}
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
-            >
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
+          {/* Weekly Reports */}
+          <div className="p-4 bg-dark-card rounded-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <Calendar className="w-5 h-5 text-orange-400" />
+                <div>
+                  <div className="text-white font-medium">Weekly Reports</div>
+                  <div className="text-sm text-gray-400">Comprehensive weekly analysis with graphs</div>
+                </div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={emailPrefs.weekly_report_enabled}
+                  onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_enabled: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+              </label>
+            </div>
+
+            {emailPrefs.weekly_report_enabled && (
+              <div className="ml-8 grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Day</label>
+                  <select
+                    value={emailPrefs.weekly_report_day}
+                    onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_day: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                  >
+                    {dayOptions.map((day) => (
+                      <option key={day.value} value={day.value}>{day.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Hour</label>
+                  <select
+                    value={emailPrefs.weekly_report_hour}
+                    onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_hour: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>{i.toString().padStart(2, '0')}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Minute</label>
+                  <select
+                    value={emailPrefs.weekly_report_minute}
+                    onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_minute: parseInt(e.target.value) })}
+                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                  >
+                    {[0, 15, 30, 45].map((m) => (
+                      <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex space-x-3">
             <button
-              onClick={handleResetTheme}
-              className="mt-2 text-xs text-orange-400 hover:text-orange-300 underline"
+              onClick={saveEmailPrefs}
+              disabled={emailPrefsLoading}
+              className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-600 rounded-xl text-white font-medium hover:shadow-glow transition-all disabled:opacity-50 flex items-center space-x-2"
             >
-              Reset to Dark Mode
+              <Save className="w-4 h-4" />
+              <span>{emailPrefsLoading ? 'Saving...' : 'Save Email Preferences'}</span>
             </button>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Language</label>
-            <select
-              value={preferences.language}
-              onChange={(e) => setPreferences({ ...preferences, language: e.target.value })}
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
+            <button
+              onClick={sendTestEmail}
+              disabled={testEmailSending}
+              className="px-6 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 font-medium hover:bg-dark-hover transition-colors disabled:opacity-50 flex items-center space-x-2"
             >
-              <option value="en">English (Only)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-400 mb-2">Currency (All values will be converted to this)</label>
-            <select
-              value={preferences.currency || 'INR'}
-              onChange={(e) => setPreferences({ ...preferences, currency: e.target.value })}
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
-            >
-              <optgroup label="Major Currencies">
-                <option value="USD">$ US Dollar (USD)</option>
-                <option value="EUR">€ Euro (EUR)</option>
-                <option value="GBP">£ British Pound (GBP)</option>
-                <option value="JPY">¥ Japanese Yen (JPY)</option>
-                <option value="CHF">Fr Swiss Franc (CHF)</option>
-                <option value="CAD">C$ Canadian Dollar (CAD)</option>
-                <option value="AUD">A$ Australian Dollar (AUD)</option>
-              </optgroup>
-              <optgroup label="Asian Currencies">
-                <option value="INR">₹ Indian Rupee (INR)</option>
-                <option value="CNY">¥ Chinese Yuan (CNY)</option>
-                <option value="HKD">HK$ Hong Kong Dollar (HKD)</option>
-                <option value="SGD">S$ Singapore Dollar (SGD)</option>
-                <option value="KRW">₩ South Korean Won (KRW)</option>
-                <option value="THB">฿ Thai Baht (THB)</option>
-                <option value="MYR">RM Malaysian Ringgit (MYR)</option>
-                <option value="IDR">Rp Indonesian Rupiah (IDR)</option>
-                <option value="PHP">₱ Philippine Peso (PHP)</option>
-                <option value="VND">₫ Vietnamese Dong (VND)</option>
-                <option value="BDT">৳ Bangladeshi Taka (BDT)</option>
-                <option value="PKR">₨ Pakistani Rupee (PKR)</option>
-              </optgroup>
-              <optgroup label="Middle East & Africa">
-                <option value="AED">د.إ UAE Dirham (AED)</option>
-                <option value="SAR">﷼ Saudi Riyal (SAR)</option>
-                <option value="ZAR">R South African Rand (ZAR)</option>
-                <option value="EGP">E£ Egyptian Pound (EGP)</option>
-                <option value="NGN">₦ Nigerian Naira (NGN)</option>
-              </optgroup>
-              <optgroup label="Americas">
-                <option value="BRL">R$ Brazilian Real (BRL)</option>
-                <option value="MXN">Mex$ Mexican Peso (MXN)</option>
-                <option value="ARS">AR$ Argentine Peso (ARS)</option>
-                <option value="CLP">CLP$ Chilean Peso (CLP)</option>
-                <option value="COP">COL$ Colombian Peso (COP)</option>
-              </optgroup>
-              <optgroup label="Europe">
-                <option value="SEK">kr Swedish Krona (SEK)</option>
-                <option value="NOK">kr Norwegian Krone (NOK)</option>
-                <option value="DKK">kr Danish Krone (DKK)</option>
-                <option value="PLN">zł Polish Zloty (PLN)</option>
-                <option value="CZK">Kč Czech Koruna (CZK)</option>
-                <option value="RUB">₽ Russian Ruble (RUB)</option>
-                <option value="TRY">₺ Turkish Lira (TRY)</option>
-              </optgroup>
-              <optgroup label="Oceania">
-                <option value="NZD">NZ$ New Zealand Dollar (NZD)</option>
-              </optgroup>
-            </select>
-            <p className="text-xs text-gray-500 mt-2">Uploaded data in other currencies will be auto-converted</p>
+              <Send className="w-4 h-4" />
+              <span>{testEmailSending ? 'Sending...' : 'Send Test Email'}</span>
+            </button>
           </div>
         </div>
       </motion.div>
@@ -548,21 +781,28 @@ const Settings: React.FC = () => {
           <div>
             <label className="block text-sm text-gray-400 mb-2">Current Password</label>
             <input
+              id="current-password"
               type="password"
+              placeholder="Enter current password (optional)"
               className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
             />
+            <p className="text-xs text-gray-500 mt-1">For OAuth users, leave this blank</p>
           </div>
           <div>
             <label className="block text-sm text-gray-400 mb-2">New Password</label>
             <input
+              id="new-password"
               type="password"
+              placeholder="Enter new password (min 6 characters)"
               className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
             />
           </div>
           <div>
             <label className="block text-sm text-gray-400 mb-2">Confirm New Password</label>
             <input
+              id="confirm-password"
               type="password"
+              placeholder="Confirm new password"
               className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
             />
           </div>

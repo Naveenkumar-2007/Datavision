@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="AI Business Analyst & Decision-Maker - Enterprise Edition" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <title>AI Business Analyst - Enterprise Edition</title>
+  <script>
+    // theme-script.js
+    (function () {
+      try {
+        // Check local storage
+        var saved = localStorage.getItem('userPreferences');
+        if (saved) {
+          var parsed = JSON.parse(saved);
+          // If explicit light mode
+          if (parsed.preferences && parsed.preferences.theme === 'light') {
+            document.documentElement.classList.add('light-theme');
+            document.documentElement.classList.remove('dark');
+            document.body.classList.add('light-theme');
+          } else {
+            // Ensure we are in dark mode (default)
+            document.documentElement.classList.remove('light-theme');
+            document.documentElement.classList.add('dark');
+            document.body.classList.remove('light-theme');
+          }
+        }
+      } catch (e) {
+        console.error('Theme load error', e);
+      }
+    })();
+  </script>
+  <script type="module" crossorigin src="/assets/index-GxzKJQEZ.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-CXwk5E4l.css">
+</head>
+
+<body>
+  <div id="root"></div>
+</body>
+
+</html>

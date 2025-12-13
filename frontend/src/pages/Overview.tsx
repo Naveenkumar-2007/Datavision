@@ -138,12 +138,15 @@ const Overview: React.FC = () => {
   const hasMultipleCurrencies = data.currencyBreakdown && data.currencyBreakdown.currencies_count > 1;
   const displayCurrency = userPreferredCurrency; // Use user's preference
   const displaySymbol = userCurrencySymbol;
-  const displayRevenue = hasMultipleCurrencies
+
+  // Get raw USD value and convert to user's preferred currency
+  const rawUsdRevenue = hasMultipleCurrencies
     ? data.currencyBreakdown!.total_usd_equivalent
     : data.metrics.totalRevenue;
-  const displayAvgOrder = hasMultipleCurrencies
-    ? (data.currencyBreakdown!.total_usd_equivalent / data.metrics.totalInvoices)
-    : data.metrics.averageOrderValue;
+  const displayRevenue = userPreferredCurrency !== 'USD' && hasMultipleCurrencies
+    ? convertCurrency(rawUsdRevenue, 'USD', userPreferredCurrency)
+    : rawUsdRevenue;
+  const displayAvgOrder = displayRevenue / (data.metrics.totalInvoices || 1);
 
   // Currency Icon for KPIs - uses display currency
   const DisplayCurrencyIcon = () => (
@@ -154,7 +157,7 @@ const Overview: React.FC = () => {
 
   const kpis = [
     {
-      label: hasMultipleCurrencies ? 'Total Revenue (USD)' : 'Total Revenue',
+      label: 'Total Revenue',
       value: formatCurrency(displayRevenue, displayCurrency),
       change: '+12.5%',
       trend: 'up',

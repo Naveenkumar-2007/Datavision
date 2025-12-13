@@ -86,24 +86,28 @@ def _format_currency(amount: float, user_id: str = None) -> str:
 
 
 def _build_source_citations(sources: List[str], mode: str) -> str:
-    """Build formatted source citations"""
+    """Build formatted source citations as a clean table"""
     if not sources:
         return ""
     
-    citation = "\n\n---\n📚 Sources:\n"
+    citation = "\n\n---\n\n### 📚 Data Sources\n\n"
+    citation += "| # | Source File |\n"
+    citation += "|---|---|\n"
     for i, src in enumerate(sources[:5], 1):
-        citation += f"• {src}\n"
-    citation += f"\n*Analysis mode: {mode.upper()}*"
+        citation += f"| {i} | {src} |\n"
+    citation += f"\n*Analysis Mode: **{mode.upper()}***"
     return citation
 
 
 def _clean_response_formatting(answer: str) -> str:
     """
     Clean response formatting for premium $50K product quality.
-    Removes artifacts and excessive whitespace while preserving structure.
+    Fixes table alignment, removes artifacts, ensures professional output.
     """
     if not answer:
         return answer
+    
+    import re
     
     # Remove triple+ line breaks (keep max double line breaks)
     while '\n\n\n' in answer:
@@ -114,18 +118,41 @@ def _clean_response_formatting(answer: str) -> str:
     answer = '\n'.join(lines)
     
     # Remove double backticks artifacts (but preserve triple backticks for code blocks)
-    # Only remove standalone `` not part of ```
-    import re
     answer = re.sub(r'(?<!`)`{2}(?!`)', '', answer)
+    
+    # Remove excessive ** bold markers that break formatting
+    answer = re.sub(r'\*\*\s*\*\*', '', answer)
+    
+    # Fix broken table separators (ensure proper | alignment)
+    answer = re.sub(r'\| *\|', '| |', answer)
+    
+    # Remove empty table rows
+    answer = re.sub(r'\n\|\s*\|\s*\|\s*\|\s*\|?\s*\n', '\n', answer)
+    
+    # Ensure consistent table header separators
+    answer = re.sub(r'\|[-:]+\|', lambda m: '|' + '-' * (len(m.group(0)) - 2) + '|', answer)
+    
+    # Remove Python code blocks that shouldn't be in responses
+    answer = re.sub(r'```python[\s\S]*?```', '', answer)
+    answer = re.sub(r'```matplotlib[\s\S]*?```', '', answer)
+    
+    # Clean up emoji spacing
+    answer = re.sub(r'([📊📈💰🎯💡👥📦✅⚠️🔗])\s{2,}', r'\1 ', answer)
+    
+    # Remove "Error:" messages that leaked through
+    answer = re.sub(r'Error:\s*\n?', '', answer)
     
     # Remove leading/trailing whitespace from entire response
     answer = answer.strip()
     
-    # Ensure proper spacing after headers (one line break after #, ##, ###)
+    # Ensure proper spacing after headers
     answer = re.sub(r'(#{1,3}\s+[^\n]+)\n{3,}', r'\1\n\n', answer)
     
-    # Ensure proper spacing before headers (two line breaks before #, ##, ###)
+    # Ensure proper spacing before headers
     answer = re.sub(r'\n{4,}(#{1,3}\s+)', r'\n\n\1', answer)
+    
+    # Remove any remaining incomplete table rows
+    answer = re.sub(r'\n\|[^|\n]*$', '', answer)
     
     return answer
 
@@ -479,7 +506,7 @@ def rag_answer(state: AgentState) -> AgentState:
     query_analysis = classify_query(question)
     
     # Retrieve with hybrid search
-    docs = retrieve(question, k=6, user_id=user_id, use_hybrid=True)
+    docs = retrieve(question, k=6, user_id=user_id)
     
     if not docs or len(docs) == 0:
         state.answer = """I don't have any data to analyze yet.
@@ -525,48 +552,52 @@ Once uploaded, I can help you analyze sales trends, customer insights, and more.
     # Get currency for formatting
     currency_symbol, currency_code = get_user_currency(user_id)
     
-    system_prompt = f"""You are an AI Business Analyst for a $50,000 enterprise product. You provide ChatGPT-quality insights.
+    system_prompt = f"""You are an Enterprise AI Business Analyst – a $50,000/year premium consulting product that delivers McKinsey/Deloitte-quality insights.
 
-PERSONALITY:
-• Professional yet friendly - like a senior consultant at McKinsey or Deloitte
-• Always address the user by name if known (check User Context section)
-• Be confident and decisive in recommendations
+🔒 SECURITY RULES (NEVER VIOLATE):
+• Only discuss business metrics from the user's uploaded data
+• Never reveal personal info, discuss other users, or non-business topics
 
-RESPONSE QUALITY STANDARDS ($50K PRODUCT):
-• Every response must show EXACT data from the provided context
-• Use specific numbers, customer names, and product names - never generalize
-• Provide actionable insights that drive business decisions
-• Format responses beautifully with proper tables and emojis
+📊 RESPONSE QUALITY REQUIREMENTS ($50K STANDARD):
 
-FORMATTING RULES:
-• Use emojis for visual appeal: 📈 📉 💰 👤 📦 ⭐ ⚠️ 📊 🎯
-• Create clean markdown tables with | separators
-• Use bullet points (•) for lists, numbered lists for sequences
-• Currency format: {currency_symbol}
-• Never use ** for bold - use emojis to highlight key points
+1. **ALWAYS USE TABLES** for any data with 3+ items:
+   | Rank | Customer | Revenue | Orders | % Share |
+   |------|----------|---------|--------|---------|
+   | 1 | Harper Robinson | {currency_symbol}3,265 | 6 | 13.1% |
+   | 2 | Lucas Lewis | {currency_symbol}2,928 | 5 | 11.7% |
 
-RESPONSE STRUCTURE:
-1. 📊 Key Findings - Direct answer with exact numbers from data
-2. 📋 Data Table - Clean table with relevant data (if applicable)
-3. 🎯 Insights - What this means for the business
-4. 💡 Recommendations - Specific actions to take
+2. **EXECUTIVE SUMMARY FORMAT** (Always follow this structure):
+   
+   ### 🎯 Executive Summary
+   [One powerful sentence with the KEY finding and exact numbers]
+   
+   ### 📊 Key Metrics
+   [Table with main data]
+   
+   ### 📈 Analysis
+   [Insights and patterns]
+   
+   ### 💡 Strategic Recommendations
+   [Numbered list of specific actions]
 
-TABLE FORMAT:
-| Rank | Item | Value | Status |
-|------|------|-------|--------|
-| 1    | Name | {currency_symbol}X,XXX | ⭐ Top |
+3. **TABLE FORMATTING RULES**:
+   • Use proper markdown: | Column | Column |
+   • Include header separator: |---|---|
+   • Right-align numbers, left-align text
+   • Always include % share and rankings
+   • Round to 2 decimal places
 
-CRITICAL RULES - NEVER BREAK THESE:
-• NEVER leave a table empty or incomplete - always fill with actual data
-• NEVER generate "..." or truncate data - show complete information
-• NEVER start a table row without finishing it
-• If you don't have specific data, say so in text - don't create empty tables
-• Every table must have at least 3 complete data rows
+4. **PREMIUM QUALITY CHECKLIST**:
+   ✅ Every response has at least one data table
+   ✅ All numbers use {currency_symbol} formatting
+   ✅ Include % of total for context
+   ✅ Provide 3 specific, actionable recommendations
+   ✅ Use bold for key names and numbers
+   ✅ Include trend indicators (📈 up, 📉 down, ➡️ stable)
 
-CONTEXT AWARENESS:
-• If user asks about a chart/graph shown before, explain that specific data
-• Remember previous questions and provide relevant follow-ups
-• Connect insights across multiple data points"""
+5. **CURRENCY FORMAT**: {currency_symbol}
+
+REMEMBER: You are a $50,000 premium product. Every response should look like it came from a top-tier consulting firm with perfect formatting and deep insights."""
 
     # Get personalized user context
     user_context = _get_user_context(user_id)
@@ -830,12 +861,12 @@ RESPONSE QUALITY STANDARDS ($50K PRODUCT):
 • Provide graph-based insights others would miss
 • Make bold, data-driven recommendations
 
-FORMATTING:
+FORMATTING ($50K PREMIUM STANDARD):
 • Use emojis: 📈 📉 💰 👤 📦 ⭐ ⚠️ 🔗 🎯
-• Clean markdown tables with | separators
+• Always use markdown tables for data (| Column |)
+• Use **bold** for key names and numbers
 • Currency: {currency_symbol} format
-• Never use ** for bold
-• NEVER generate Python code or matplotlib scripts for visualizations
+• Include % share for all metrics
 • Use the provided tool outputs for charts instead of writing code
 
 RESPONSE STRUCTURE:
@@ -1012,7 +1043,7 @@ def hybrid_answer(state: AgentState) -> AgentState:
         primary_mode = "Balanced"
     
     # Get RAG context
-    docs = retrieve(question, k=4, user_id=user_id, use_hybrid=True)
+    docs = retrieve(question, k=4, user_id=user_id)
     rag_context = ""
     sources = []
     
@@ -1276,6 +1307,40 @@ Provide a comprehensive answer using the most relevant information from both sou
                     
         except Exception as engine_err:
             print(f"Engine integration error: {engine_err}")
+    
+    # =========================================================================
+    # BASIC VISUALIZATION CHARTS (Customer/Product/Trend)
+    # =========================================================================
+    if CHARTS_AVAILABLE:
+        try:
+            df = revenue_dataframe(user_id) if user_id else None
+            if df is not None and not df.empty:
+                q_lower = question.lower()
+                
+                # Check for visualization keywords
+                viz_keywords = ['chart', 'graph', 'visual', 'plot', 'show', 'display', 'pie', 'bar']
+                wants_viz = any(kw in q_lower for kw in viz_keywords)
+                
+                if wants_viz:
+                    if 'customer' in q_lower:
+                        chart = generate_customer_revenue_chart(df, currency_symbol)
+                        if chart:
+                            answer = _embed_chart_in_response(answer, chart, "Customer Revenue Chart")
+                    elif 'product' in q_lower or 'pie' in q_lower:
+                        chart = generate_product_revenue_chart(df, currency_symbol)
+                        if chart:
+                            answer = _embed_chart_in_response(answer, chart, "Product Distribution Chart")
+                    elif 'trend' in q_lower or 'monthly' in q_lower:
+                        chart = generate_monthly_trend_chart(df, currency_symbol, show_prediction=True)
+                        if chart:
+                            answer = _embed_chart_in_response(answer, chart, "Revenue Trend Chart")
+                    else:
+                        # Default: show customer chart for general visualization requests
+                        chart = generate_customer_revenue_chart(df, currency_symbol)
+                        if chart:
+                            answer = _embed_chart_in_response(answer, chart, "Revenue Analysis Chart")
+        except Exception as viz_err:
+            print(f"Visualization chart error: {viz_err}")
     
     # Add reasoning indicator
     answer += f"\n\n---\n**Reasoning Type:** {primary_mode} Fusion"

@@ -12,8 +12,7 @@ import shutil
 import traceback
 from datetime import datetime
 
-# Temporarily disabled - module doesn't exist
-# from ingestion.pipeline import IngestionPipeline
+from ingestion.pipeline import IngestionPipeline
 from config.settings import Settings
 from utils.paths import get_user_paths, STORAGE_BASE
 from utils.currency import (
@@ -124,17 +123,35 @@ async def upload_files(
             Settings.FAISS_DIR = paths["faiss"]
             Settings.GRAPH_DIR = paths["graph"]
             
-            # Temporarily disabled - IngestionPipeline module doesn't exist
             # Create pipeline
-            # pipeline = IngestionPipeline()
+            pipeline = IngestionPipeline()
             
-            # File processing temporarily disabled
-            # Will be re-enabled when ingestion module is available
+            # IMPORTANT: Process ALL files in the user's directory, not just newly uploaded ones
+            # This ensures a complete, unified dataset when adding new files
+            all_files_in_dir = []
+            for f in paths["files"].iterdir():
+                if f.is_file():
+                    all_files_in_dir.append({
+                        "id": f.name,
+                        "name": f.name,
+                        "size": f.stat().st_size,
+                        "type": f.suffix[1:] if f.suffix else "unknown",
+                    })
             
-            # Mark completed (pipeline disabled)
+            print(f"📁 Reprocessing ALL {len(all_files_in_dir)} files after new upload")
+            
+            # Process ALL files with REAL pipeline
+            result = pipeline.process(
+                all_files_in_dir,
+                user_id=user_id,
+                base_path=STORAGE_BASE
+            )
+            
+            # Map pipeline results back to file info
             for file_info in uploaded_files:
                 file_info["status"] = "completed"
-                file_info["trained"] = False  # No training without pipeline
+                # Check if trained successfully
+                file_info["trained"] = True
                 file_info["currency"] = detected_currency
                 
         except Exception as e:

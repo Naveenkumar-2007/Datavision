@@ -11,7 +11,7 @@ import {
   CheckCircle,
 } from 'lucide-react';
 import { apiService } from '@/services/api';
-import { formatCurrency, getCurrencySymbol, detectCurrency } from '@/utils/currency';
+import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency, convertCurrency } from '@/utils/currency';
 
 interface ReportSection {
   title: string;
@@ -34,9 +34,22 @@ const Reports: React.FC = () => {
   const [selectedType, setSelectedType] = useState<string>('revenue');
   const [analytics, setAnalytics] = useState<any>(null);
 
-  // Auto-detect currency from analytics data
-  const currency = analytics ? detectCurrency(analytics) : 'INR';
+  // Use user's preferred currency from Settings
+  const userPreferredCurrency = getUserPreferredCurrency();
+  const currency = userPreferredCurrency;
   const currencySymbol = getCurrencySymbol(currency);
+
+  // Check if there are multiple currencies in the data
+  const hasMultipleCurrencies = analytics?.currencyBreakdown?.currencies_count > 1;
+
+  // Get display values - convert to user's preferred currency
+  const rawRevenue = hasMultipleCurrencies
+    ? analytics?.currencyBreakdown?.total_usd_equivalent || analytics?.metrics?.totalRevenue
+    : analytics?.metrics?.totalRevenue || 0;
+  const displayRevenue = hasMultipleCurrencies && currency !== 'USD'
+    ? convertCurrency(rawRevenue, 'USD', currency)
+    : rawRevenue;
+  const displayAvgOrder = displayRevenue / (analytics?.metrics?.totalInvoices || 1);
 
   // Currency Icon Component
   const CurrencyIcon = () => (
@@ -144,44 +157,76 @@ ${section.content}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="grid grid-cols-1 md:grid-cols-4 gap-4"
+          className="space-y-4"
         >
-          {[
-            {
-              label: 'Total Revenue',
-              value: formatCurrency(analytics.metrics.totalRevenue, currency),
-              icon: CurrencyIcon,
-              color: 'text-accent-green'
-            },
-            {
-              label: 'Customers',
-              value: analytics.metrics.uniqueCustomers.toLocaleString(),
-              icon: Users,
-              color: 'text-orange-400'
-            },
-            {
-              label: 'Orders',
-              value: analytics.metrics.totalInvoices.toLocaleString(),
-              icon: ShoppingCart,
-              color: 'text-accent-orange'
-            },
-            {
-              label: 'Avg Order',
-              value: formatCurrency(analytics.metrics.averageOrderValue, currency),
-              icon: TrendingUp,
-              color: 'text-accent-orange'
-            },
-          ].map((metric, i) => (
-            <div key={i} className="glass-card p-4">
-              <div className="flex items-center space-x-3">
-                <metric.icon className={`w-8 h-8 ${metric.color}`} />
-                <div>
-                  <div className="text-2xl font-bold text-white">{metric.value}</div>
-                  <div className="text-sm text-gray-400">{metric.label}</div>
+          {/* Currency Info Banner */}
+          {hasMultipleCurrencies && (
+            <div className="glass-card p-4 border border-orange-500/30">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">💰</span>
+                  <div>
+                    <div className="text-white font-semibold">
+                      {analytics.currencyBreakdown?.currencies_count} Currencies Detected
+                    </div>
+                    <div className="text-sm text-gray-400">
+                      Data auto-converted to {currencySymbol} ({currency})
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-500">Original currencies:</div>
+                  <div className="flex flex-wrap gap-1 justify-end mt-1">
+                    {analytics.currencyBreakdown?.breakdown?.map((item: any, i: number) => (
+                      <span key={i} className="px-2 py-1 bg-dark-card rounded text-xs text-gray-300">
+                        {item.symbol} {item.currency}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
-          ))}
+          )}
+
+          {/* Metrics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {[
+              {
+                label: 'Total Revenue',
+                value: formatCurrency(displayRevenue || 0, currency),
+                icon: CurrencyIcon,
+                color: 'text-accent-green'
+              },
+              {
+                label: 'Customers',
+                value: analytics.metrics.uniqueCustomers.toLocaleString(),
+                icon: Users,
+                color: 'text-orange-400'
+              },
+              {
+                label: 'Orders',
+                value: analytics.metrics.totalInvoices.toLocaleString(),
+                icon: ShoppingCart,
+                color: 'text-accent-orange'
+              },
+              {
+                label: 'Avg Order',
+                value: formatCurrency(displayAvgOrder || 0, currency),
+                icon: TrendingUp,
+                color: 'text-accent-orange'
+              },
+            ].map((metric, i) => (
+              <div key={i} className="glass-card p-4">
+                <div className="flex items-center space-x-3">
+                  <metric.icon className={`w-8 h-8 ${metric.color}`} />
+                  <div>
+                    <div className="text-2xl font-bold text-white">{metric.value}</div>
+                    <div className="text-sm text-gray-400">{metric.label}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </motion.div>
       )}
 

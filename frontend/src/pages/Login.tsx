@@ -11,14 +11,13 @@ import { useAuth } from '../contexts/AuthContext';
 export default function Login() {
     const navigate = useNavigate();
     const location = useLocation();
-    const { signIn, signInWithMagicLink, signInWithGoogle, signInWithGithub } = useAuth();
+    const { signIn, signInWithGoogle, signInWithGithub } = useAuth();
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [magicLinkSent, setMagicLinkSent] = useState(false);
-    const [loginMethod, setLoginMethod] = useState<'password' | 'magic-link'>('password');
+
 
     // Get redirect path from location state
     const from = (location.state as any)?.from?.pathname || '/overview';
@@ -29,39 +28,21 @@ export default function Login() {
         setError('');
 
         try {
+            console.log("🔐 Attempting login for:", email);
             const { error } = await signIn(email, password);
+            console.log("🔐 Login result error:", error);
 
             if (error) {
                 // Handle specific error for email not confirmed
                 if (error.message?.toLowerCase().includes('email not confirmed')) {
-                    setError('Please confirm your email first. Check your inbox for a confirmation link, or click "Use Magic Link" to get a new login link.');
+                    setError('Please confirm your email first. Check your inbox for a confirmation link.');
                 } else if (error.message?.toLowerCase().includes('invalid login credentials')) {
-                    setError('Invalid email or password. Please try again.');
+                    setError('Invalid email or password. If you just signed up, please check your email to confirm your account.');
                 } else {
                     setError(error.message || 'Login failed');
                 }
             } else {
                 navigate(from, { replace: true });
-            }
-        } catch (err: any) {
-            setError(err.message || 'An error occurred');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleMagicLink = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
-
-        try {
-            const { error } = await signInWithMagicLink(email);
-
-            if (error) {
-                setError(error.message || 'Failed to send magic link');
-            } else {
-                setMagicLinkSent(true);
             }
         } catch (err: any) {
             setError(err.message || 'An error occurred');
@@ -102,35 +83,6 @@ export default function Login() {
         }
     };
 
-    if (magicLinkSent) {
-        return (
-            <div className="min-h-screen flex items-center justify-center p-4 
-                bg-gradient-to-br from-gray-50 to-gray-100 
-                dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-                <div className="max-w-md w-full rounded-2xl p-8 text-center
-                    bg-white border border-gray-200 shadow-xl
-                    dark:bg-gray-800/50 dark:backdrop-blur-xl dark:border-gray-700/50">
-                    <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-                    <h2 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white">Check your email</h2>
-                    <p className="mb-6 text-gray-600 dark:text-gray-400">
-                        We've sent a magic link to <span className="text-orange-500 dark:text-orange-400">{email}</span>.
-                        Click the link in your email to sign in.
-                    </p>
-                    <button
-                        onClick={() => setMagicLinkSent(false)}
-                        className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 transition-colors"
-                    >
-                        ← Back to login
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="min-h-screen flex items-center justify-center p-4
             bg-gradient-to-br from-gray-50 to-gray-100 
@@ -160,30 +112,11 @@ export default function Login() {
                         </div>
                     )}
 
-                    {/* Login Method Toggle */}
-                    <div className="flex gap-2 mb-6 p-1 rounded-lg bg-gray-100 dark:bg-gray-700/50">
-                        <button
-                            onClick={() => setLoginMethod('password')}
-                            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${loginMethod === 'password'
-                                ? 'bg-orange-500 text-white'
-                                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
-                                }`}
-                        >
-                            Password
-                        </button>
-                        <button
-                            onClick={() => setLoginMethod('magic-link')}
-                            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${loginMethod === 'magic-link'
-                                ? 'bg-orange-500 text-white'
-                                : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
-                                }`}
-                        >
-                            Magic Link
-                        </button>
-                    </div>
+                    {/* Login Method Toggle REMOVED */}
+
 
                     {/* Login Form */}
-                    <form onSubmit={loginMethod === 'password' ? handlePasswordLogin : handleMagicLink}>
+                    <form onSubmit={handlePasswordLogin}>
                         <div className="space-y-4">
                             <div>
                                 <label htmlFor="email" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
@@ -203,25 +136,23 @@ export default function Login() {
                                 />
                             </div>
 
-                            {loginMethod === 'password' && (
-                                <div>
-                                    <label htmlFor="password" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                                        Password
-                                    </label>
-                                    <input
-                                        id="password"
-                                        type="password"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        required
-                                        className="w-full px-4 py-3 rounded-lg transition-all
-                                            bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400
-                                            dark:bg-gray-700/50 dark:border-gray-600 dark:text-white dark:placeholder-gray-400
-                                            focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                                        placeholder="••••••••"
-                                    />
-                                </div>
-                            )}
+                            <div>
+                                <label htmlFor="password" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                                    Password
+                                </label>
+                                <input
+                                    id="password"
+                                    type="password"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    required
+                                    className="w-full px-4 py-3 rounded-lg transition-all
+                                        bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400
+                                        dark:bg-gray-700/50 dark:border-gray-600 dark:text-white dark:placeholder-gray-400
+                                        focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                                    placeholder="••••••••"
+                                />
+                            </div>
 
                             <button
                                 type="submit"
@@ -236,10 +167,8 @@ export default function Login() {
                                         </svg>
                                         Signing in...
                                     </span>
-                                ) : loginMethod === 'password' ? (
-                                    'Sign in'
                                 ) : (
-                                    'Send Magic Link'
+                                    'Sign in'
                                 )}
                             </button>
                         </div>
@@ -255,13 +184,14 @@ export default function Login() {
                         </div>
                     </div>
 
-                    {/* OAuth Buttons */}
+                    {/* OAuth Buttons - Enhanced */}
                     <div className="grid grid-cols-2 gap-4">
                         <button
                             onClick={handleGoogleLogin}
                             disabled={loading}
+                            type="button"
                             className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50
-                                bg-white border border-gray-300 text-gray-800 hover:bg-gray-50
+                                bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 shadow-sm hover:shadow-md
                                 dark:bg-white dark:text-gray-800 dark:hover:bg-gray-100"
                         >
                             <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -275,11 +205,12 @@ export default function Login() {
                         <button
                             onClick={handleGithubLogin}
                             disabled={loading}
+                            type="button"
                             className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50
-                                bg-gray-100 border border-gray-300 text-gray-900 hover:bg-gray-200
-                                dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600"
+                                bg-gray-900 border border-gray-800 text-white hover:bg-black shadow-sm hover:shadow-md
+                                dark:bg-black dark:border-gray-800 dark:text-white dark:hover:bg-gray-900"
                         >
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                                 <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
                             </svg>
                             GitHub
@@ -287,13 +218,12 @@ export default function Login() {
                     </div>
 
                     {/* Forgot Password */}
-                    {loginMethod === 'password' && (
-                        <div className="mt-4 text-center">
-                            <Link to="/forgot-password" className="text-sm text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 transition-colors">
-                                Forgot your password?
-                            </Link>
-                        </div>
-                    )}
+                    {/* Forgot Password */}
+                    <div className="mt-4 text-center">
+                        <Link to="/forgot-password" className="text-sm text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 transition-colors">
+                            Forgot your password?
+                        </Link>
+                    </div>
 
                     {/* Sign Up Link */}
                     <div className="mt-6 text-center">

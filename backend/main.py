@@ -26,7 +26,7 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(backend_root))
 
 # Import routers
-from api.v1.endpoints import files, chat, analytics, reports, graph, auth, admin, notifications
+from api.v1.endpoints import files, chat, analytics, reports, graph, auth, admin, notifications, email_prefs
 
 app = FastAPI(
     title="AI Business Analyst API - Enterprise Edition",
@@ -47,12 +47,9 @@ async def http_exception_handler(request: Request, exc: HTTPException):
                 "code": exc.status_code,
                 "message": exc.detail,
                 "type": "HTTPException"
-            },
-            "timestamp": datetime.now().isoformat(),
-            "path": str(request.url.path)
+            }
         }
     )
-
 
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
@@ -64,22 +61,15 @@ async def value_error_handler(request: Request, exc: ValueError):
             "error": {
                 "code": 400,
                 "message": str(exc),
-                "type": "ValidationError"
-            },
-            "timestamp": datetime.now().isoformat(),
-            "path": str(request.url.path)
+                "type": "ValueError"
+            }
         }
     )
-
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle all unhandled exceptions"""
-    # Log the full error
-    error_id = datetime.now().strftime("%Y%m%d%H%M%S")
-    print(f"❌ Error ID: {error_id}")
-    print(f"❌ Path: {request.url.path}")
-    print(f"❌ Error: {type(exc).__name__}: {exc}")
+    # Print stack trace for debugging
     traceback.print_exc()
     
     return JSONResponse(
@@ -88,12 +78,11 @@ async def general_exception_handler(request: Request, exc: Exception):
             "success": False,
             "error": {
                 "code": 500,
-                "message": "An internal error occurred. Please try again.",
+                "message": str(exc),
                 "type": type(exc).__name__,
-                "error_id": error_id
-            },
-            "timestamp": datetime.now().isoformat(),
-            "path": str(request.url.path)
+                "timestamp": datetime.now().isoformat(),
+                "path": str(request.url.path)
+            }
         }
     )
 
@@ -121,133 +110,174 @@ app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(graph.router, prefix="/api/v1/graph", tags=["Graph"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
+app.include_router(email_prefs.router, prefix="/api/v1/settings", tags=["Settings"])
+
+# ===== AUTOMATIC EMAIL SCHEDULER =====
+import asyncio
+import threading
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+
+# Global scheduler instance
+email_scheduler = None
+
+def run_email_check():
+    """Background task to check and send scheduled emails"""
+    try:
+        from scheduler.scheduled_reporter import check_and_send_reports
+        # Run the async function in a new event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(check_and_send_reports())
+        loop.close()
+        print(f"✅ Email scheduler check completed at {datetime.now().strftime('%H:%M')}")
+    except Exception as e:
+        print(f"❌ Email scheduler error: {e}")
+
+@app.on_event("startup")
+async def start_email_scheduler():
+    """Start the background email scheduler on app startup"""
+    global email_scheduler
+    try:
+        email_scheduler = BackgroundScheduler()
+        # Run every minute to check for scheduled reports
+        email_scheduler.add_job(
+            run_email_check,
+            CronTrigger(minute='*'),  # Every minute
+            id='email_report_checker',
+            name='Check and send scheduled email reports',
+            replace_existing=True
+        )
+        email_scheduler.start()
+        print("📧 Email scheduler started - checking every minute for scheduled reports")
+    except Exception as e:
+        print(f"❌ Failed to start email scheduler: {e}")
+
+@app.on_event("shutdown")
+async def stop_email_scheduler():
+    """Stop the background email scheduler on app shutdown"""
+    global email_scheduler
+    if email_scheduler:
+        email_scheduler.shutdown()
+        print("📧 Email scheduler stopped")
+
 
 # Serve frontend static files in production
 import os
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 static_dir = Path("/app/static")
+# Search for possible static locations
+possible_static_dirs = [
+    Path("static"),
+    Path("../frontend/dist"),
+    Path("frontend/dist"),
+]
+
+for d in possible_static_dirs:
+    if d.exists() and d.is_dir():
+        static_dir = d
+        break
+
+print(f"📁 Static directory exists: {static_dir.exists()}")
+
 if static_dir.exists():
-    # Mount static files
-    app.mount("/assets", StaticFiles(directory=str(static_dir / "assets")), name="assets")
+    app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
+
+    def get_index_with_env():
+        """Inject environment variables into index.html"""
+        index_path = static_dir / "index.html"
+        if not index_path.exists():
+            return "index.html not found"
+        
+        content = index_path.read_text(encoding="utf-8")
+        
+        # Inject detailed environment config
+        env_config = f"""
+        <script>
+            window.ENV = {{
+                API_URL: "/api/v1",
+                VITE_API_URL: "/api/v1",
+                VITE_SUPABASE_URL: "{os.getenv('VITE_SUPABASE_URL', '')}",
+                VITE_SUPABASE_ANON_KEY: "{os.getenv('VITE_SUPABASE_ANON_KEY', '')}",
+                MODE: "production"
+            }};
+            console.log("🚀 Environment injected:", window.ENV);
+        </script>
+        """
+        return content.replace("</head>", f"{env_config}</head>")
+
+    # Serve index.html for root
+    @app.get("/")
+    async def serve_root():
+        return HTMLResponse(content=get_index_with_env())
     
-    # Serve index.html for all other routes (SPA routing)
+    # Serve index.html for all SPA routes (but not API/docs routes)
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        """Serve the SPA for all non-API routes"""
-        # Don't intercept API routes
-        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi"):
-            raise HTTPException(status_code=404, detail="Not found")
-        
-        # Serve index.html for all other routes
-        index_file = static_dir / "index.html"
-        if index_file.exists():
-            return FileResponse(index_file)
-        raise HTTPException(status_code=404, detail="Frontend not found")
+        if full_path.startswith("api") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
+            raise HTTPException(status_code=404, detail="Not Found")
+            
+        # Check if file exists in static (e.g. icons)
+        file_path = static_dir / full_path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+            
+        return HTMLResponse(content=get_index_with_env())
+else:
+    # No static dir - just serve API info
+    @app.get("/")
+    async def root():
+        return {
+            "message": "AI Business Analyst API - Enterprise Edition",
+            "version": "2.0.0",
+            "status": "online",
+            "docs": "/docs"
+        }
 
-@app.get("/")
-async def root():
-    return {
-        "message": "AI Business Analyst API - Enterprise Edition",
-        "version": "2.0.0",
-        "status": "running",
-        "features": [
-            "Multi-tenant RAG",
-            "Real data processing",
-            "FAISS vector search",
-            "Knowledge graph",
-            "Chat history per user",
-            "Real analytics from uploaded data"
-        ],
-        "docs": "/docs"
-    }
-
-@app.get("/health")
+@app.get("/api/health")
 async def health_check():
-    return {
-        "status": "healthy",
-        "version": "2.0.0",
-        "database": "file-based",
-        "vector_store": "FAISS",
-        "graph": "NetworkX"
-    }
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 # ===== TEST ENDPOINTS FOR NOTIFICATION SYSTEM =====
-@app.post("/test-email")
+
+@app.get("/test-email")
 async def test_email_notification():
     """Send a test email notification"""
-    from services.email_service import send_insight_email
-    
     try:
-        await send_insight_email(
-            to_email="naveenkumarchapala123@gmail.com",
-            title="🎉 Test AI Insight - Revenue Alert",
-            body="This is a test notification from your AI Business Analyst. Your revenue increased by 25% this week! Great work!",
-            chart_payload=None,
-            workspace_id="test-workspace"
+        from services.email_service import send_email
+        
+        success = await send_email(
+            to_email="test@example.com", 
+            subject="Test Notification",
+            body="<h1>It Works!</h1><p>This is a test email from the AI Business Analyst.</p>"
         )
-        return {
-            "success": True,
-            "message": "Test email sent to naveenkumarchapala123@gmail.com! Check your inbox.",
-            "email": "naveenkumarchapala123@gmail.com"
-        }
+        
+        return {"success": success, "message": "Email sent" if success else "Failed to send email"}
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Failed to send email. Check your Resend API key and console logs."
-        }
+        return {"success": False, "error": str(e)}
 
-@app.post("/test-agent")
+@app.get("/test-agent")
 async def test_monitoring_agent():
     """Run the MonitoringAgent to create insights"""
-    from agents.monitoring_agent import MonitoringAgent
-    
-    # Use a test workspace ID - replace with real ID if you have one
-    workspace_id = "00000000-0000-0000-0000-000000000000"
-    
     try:
+        from agents.monitoring import MonitoringAgent
+        
+        # Run agent for a default user
         agent = MonitoringAgent()
-        await agent.run(workspace_id)
+        insights = await agent.run("default_user")
         
         return {
-            "success": True,
-            "message": "MonitoringAgent completed! Check Supabase ai_insights table.",
-            "workspace_id": workspace_id
+            "success": True, 
+            "insights_generated": len(insights),
+            "insights": insights
         }
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "message": "Agent failed. Check console logs for details."
-        }
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
 
 
-# ===== STATIC FILE SERVING FOR PRODUCTION =====
-# Serve React frontend build in production (Hugging Face Spaces)
-import os
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-
-frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
-    # Serve static assets (JS, CSS, images)
-    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="static")
-    
-    # Serve index.html for all other routes (SPA routing)
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        """Serve React SPA - all routes go to index.html"""
-        # If it's an API route, skip
-        if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("openapi"):
-            raise HTTPException(status_code=404, detail="Not found")
-        
-        # Serve index.html
-        index_file = frontend_dist / "index.html"
-        if index_file.exists():
-            return FileResponse(str(index_file))
-        raise HTTPException(status_code=404, detail="Frontend not built")
 
 if __name__ == "__main__":
     # Use PORT environment variable for Hugging Face (7860) or default to 8000
