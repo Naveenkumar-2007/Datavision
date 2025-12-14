@@ -123,6 +123,17 @@ email_scheduler = None
 
 def run_email_check():
     """Background task to check and send scheduled emails"""
+    import traceback
+    from datetime import timezone, timedelta
+    
+    # Get IST time for logging
+    IST = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(IST)
+    
+    print(f"\n{'='*50}")
+    print(f"🕐 SCHEDULER CHECK at {now_ist.strftime('%H:%M:%S')} IST")
+    print(f"{'='*50}")
+    
     try:
         from scheduler.scheduled_reporter import check_and_send_reports
         # Run the async function in a new event loop
@@ -130,9 +141,12 @@ def run_email_check():
         asyncio.set_event_loop(loop)
         loop.run_until_complete(check_and_send_reports())
         loop.close()
-        print(f"✅ Email scheduler check completed at {datetime.now().strftime('%H:%M')}")
+        print(f"✅ Scheduler check COMPLETED at {now_ist.strftime('%H:%M:%S')} IST")
+        print(f"{'='*50}\n")
     except Exception as e:
-        print(f"❌ Email scheduler error: {e}")
+        print(f"❌ SCHEDULER ERROR: {e}")
+        traceback.print_exc()
+        print(f"{'='*50}\n")
 
 @app.on_event("startup")
 async def start_email_scheduler():
@@ -193,17 +207,23 @@ if static_dir.exists():
         
         content = index_path.read_text(encoding="utf-8")
         
-        # Inject detailed environment config
+        # Get Supabase env vars (check multiple possible names)
+        supabase_url = os.getenv('VITE_SUPABASE_URL') or os.getenv('SUPABASE_URL', '')
+        supabase_anon_key = os.getenv('VITE_SUPABASE_ANON_KEY') or os.getenv('SUPABASE_ANON_KEY', '')
+        
+        # Inject detailed environment config - use window._env_ to match frontend
         env_config = f"""
         <script>
-            window.ENV = {{
+            window._env_ = {{
                 API_URL: "/api/v1",
                 VITE_API_URL: "/api/v1",
-                VITE_SUPABASE_URL: "{os.getenv('VITE_SUPABASE_URL', '')}",
-                VITE_SUPABASE_ANON_KEY: "{os.getenv('VITE_SUPABASE_ANON_KEY', '')}",
+                VITE_SUPABASE_URL: "{supabase_url}",
+                VITE_SUPABASE_ANON_KEY: "{supabase_anon_key}",
                 MODE: "production"
             }};
-            console.log("🚀 Environment injected:", window.ENV);
+            // Also set window.ENV for backwards compatibility
+            window.ENV = window._env_;
+            console.log("🚀 Environment injected:", window._env_);
         </script>
         """
         return content.replace("</head>", f"{env_config}</head>")
@@ -213,17 +233,17 @@ if static_dir.exists():
     async def serve_root():
         return HTMLResponse(content=get_index_with_env())
     
-    # Serve index.html for all SPA routes (but not API/docs routes)
+    # Serve index.html for all SPA routes
+    # API routes are handled by the routers mounted before this catch-all
+    # FastAPI processes routes in order, so API routes will be matched first
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        if full_path.startswith("api") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
-            raise HTTPException(status_code=404, detail="Not Found")
-            
-        # Check if file exists in static (e.g. icons)
+        # Check if file exists in static (e.g. icons, images)
         file_path = static_dir / full_path
         if file_path.exists() and file_path.is_file():
             return FileResponse(file_path)
-            
+        
+        # For all other paths (SPA routes), return index.html
         return HTMLResponse(content=get_index_with_env())
 else:
     # No static dir - just serve API info
@@ -239,6 +259,45 @@ else:
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+@app.get("/api/scheduler-status")
+async def scheduler_status():
+    """Check scheduler status and list pending jobs"""
+    from datetime import timezone, timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(IST)
+    
+    global email_scheduler
+    if email_scheduler:
+        jobs = []
+        for job in email_scheduler.get_jobs():
+            jobs.append({
+                "id": job.id,
+                "name": job.name,
+                "next_run": str(job.next_run_time) if job.next_run_time else "None"
+            })
+        return {
+            "scheduler_running": email_scheduler.running,
+            "current_time_ist": now_ist.strftime("%Y-%m-%d %H:%M:%S IST"),
+            "jobs": jobs
+        }
+    return {"scheduler_running": False, "error": "Scheduler not initialized"}
+
+@app.post("/api/trigger-scheduler")
+async def trigger_scheduler():
+    """Manually trigger the scheduler check"""
+    from datetime import timezone, timedelta
+    IST = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(IST)
+    
+    try:
+        run_email_check()
+        return {
+            "success": True,
+            "message": f"Scheduler check triggered at {now_ist.strftime('%H:%M:%S')} IST"
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 # ===== TEST ENDPOINTS FOR NOTIFICATION SYSTEM =====
 

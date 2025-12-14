@@ -3,20 +3,27 @@
  * DO NOT manually write to localStorage - Supabase handles this
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Support runtime env injection for Docker (Hugging Face Spaces)
 // AND Vite dev mode (import.meta.env)
-const getEnv = (key: string) => {
-    // 1. Check runtime injection (Docker/Production)
-    if (typeof window !== 'undefined' && window._env_ && window._env_[key]) {
-        return window._env_[key];
+const getEnv = (key: string): string => {
+    const win = window as any;
+
+    // 1. Check runtime injection (Docker/Production) - window._env_
+    if (typeof window !== 'undefined' && win._env_ && win._env_[key]) {
+        return win._env_[key];
     }
 
-    // 2. Fallback to Vite build-time replacement (Local Dev)
+    // 2. Also check window.ENV for backwards compatibility
+    if (typeof window !== 'undefined' && win.ENV && win.ENV[key]) {
+        return win.ENV[key];
+    }
+
+    // 3. Fallback to Vite build-time replacement (Local Dev)
     // We MUST access these explicitly for Vite to replace them statically
-    if (key === 'VITE_SUPABASE_URL') return import.meta.env.VITE_SUPABASE_URL;
-    if (key === 'VITE_SUPABASE_ANON_KEY') return import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (key === 'VITE_SUPABASE_URL') return import.meta.env.VITE_SUPABASE_URL || '';
+    if (key === 'VITE_SUPABASE_ANON_KEY') return import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
     return '';
 };
@@ -24,14 +31,29 @@ const getEnv = (key: string) => {
 const SUPABASE_URL = getEnv('VITE_SUPABASE_URL');
 const SUPABASE_ANON_KEY = getEnv('VITE_SUPABASE_ANON_KEY');
 
-// Create Supabase client - handles all session storage automatically
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-        autoRefreshToken: true,
-        persistSession: true,
-        detectSessionInUrl: true
-    }
-});
+// Create Supabase client only if credentials are available
+let supabase: SupabaseClient;
+
+if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+            autoRefreshToken: true,
+            persistSession: true,
+            detectSessionInUrl: true
+        }
+    });
+    console.log('✅ Supabase client initialized');
+} else {
+    // Create a mock/placeholder client that won't crash
+    console.warn('⚠️ Supabase credentials not configured - auth features disabled');
+    supabase = createClient('https://placeholder.supabase.co', 'placeholder-key', {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+            detectSessionInUrl: false
+        }
+    });
+}
 
 // Simple auth helpers
 export const auth = {
@@ -84,4 +106,5 @@ export const auth = {
     }
 };
 
+export { supabase };
 export default supabase;

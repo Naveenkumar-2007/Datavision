@@ -1,7 +1,7 @@
 {
   "daily_report_enabled": true,
-  "daily_report_hour": 18,
-  "daily_report_minute": 15,
+  "daily_report_hour": 17,
+  "daily_report_minute": 30,
   "weekly_report_enabled": false,
   "weekly_report_day": 1,
   "weekly_report_hour": 9,

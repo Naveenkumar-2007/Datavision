@@ -485,11 +485,16 @@ async def send_message(
             'remember me', 'do you remember', 'who am i'
         ]
         
+        # EXACT MATCH for very short greetings - these ALWAYS go to chat
+        exact_greetings = ['hi', 'hello', 'hey', 'hii', 'hiii', 'howdy', 'yo', 'hola', 
+                          'good morning', 'good afternoon', 'good evening', 'thanks', 'thank you']
+        is_exact_greeting = query_lower.strip() in exact_greetings
+        
         # Check if query is purely conversational (NOT a business query)
         is_short_message = len(query_lower.split()) <= 5
         is_personal = any(kw in query_lower for kw in personal_keywords) and is_short_message and not is_business_query
         
-        print(f"👤 Is personal: {is_personal}, Is business: {is_business_query}, Query length: {len(query_lower.split())} words")
+        print(f"👤 Is personal: {is_personal}, Is exact greeting: {is_exact_greeting}, Is business: {is_business_query}")
         
         # Keywords that indicate user wants data analysis, not image analysis
         data_query_keywords = ['predict', 'forecast', 'revenue', 'chart', 'visualization', 
@@ -497,10 +502,22 @@ async def send_message(
                                'total', 'average', 'highest', 'lowest', 'best', 'worst']
         is_data_query = any(kw in query_lower for kw in data_query_keywords)
         
-        # PRIORITY 1: RESPECT EXPLICIT MODE SELECTION
-        # If user explicitly selected a mode (not "auto"), use that mode
-        explicit_modes = ["graphrag", "graph", "hybrid", "rag", "vision"]
-        if mode in explicit_modes:
+        # ========================================
+        # MODE ROUTING - PRIORITY ORDER IS CRITICAL
+        # ========================================
+        
+        # PRIORITY 1: EXACT GREETINGS - ALWAYS chat mode (hi, hello, hey)
+        if is_exact_greeting:
+            mode = "chat"
+            print(f"💬 EXACT GREETING DETECTED: '{query_lower}' → CHAT mode")
+        
+        # PRIORITY 2: Personal/conversational queries
+        elif is_personal and not has_image:
+            mode = "chat"
+            print(f"💬 PERSONAL CHAT MODE - Greeting/conversational query detected")
+        
+        # PRIORITY 3: RESPECT EXPLICIT MODE SELECTION
+        elif mode in ["graphrag", "graph", "hybrid", "rag", "vision"]:
             # SPECIAL CASE: Vision mode selected but query is about DATA (not image)
             if mode == "vision" and not has_image and is_data_query:
                 mode = "graph"  # Redirect to GraphRAG for data analysis
@@ -510,7 +527,8 @@ async def send_message(
                 print(f"🟩 VISION MODE - No image attached, showing instructions")
             else:
                 print(f"🎯 EXPLICIT MODE SELECTED: {mode.upper()} - Respecting user choice")
-        # PRIORITY 2: Business queries with auto mode - use intelligent routing
+        
+        # PRIORITY 4: Business queries with auto mode - use intelligent routing
         elif is_business_query and mode == "auto":
             mode = route_question(query, has_image=has_image, mode="auto")
             # Override: If routed to "vision" but no image, use "graph" instead
@@ -519,15 +537,13 @@ async def send_message(
                 print(f"📊 Visualization request without image → Using GRAPH mode to generate charts")
             else:
                 print(f"📊 BUSINESS QUERY - Auto-routed to: {mode}")
-        # PRIORITY 3: Personal/greeting queries
-        elif is_personal and not has_image:
-            mode = "chat"
-            print(f"💬 PERSONAL CHAT MODE - Greeting/conversational query detected")
-        # PRIORITY 4: Image attached
+        
+        # PRIORITY 5: Image attached
         elif has_image:
             mode = "vision"
             print(f"🟩 VISION MODE - Image detected")
-        # PRIORITY 5: Default auto-routing
+        
+        # PRIORITY 6: Default auto-routing
         elif mode == "auto":
             mode = route_question(query, has_image=False, mode="auto")
             # Override: If routed to "vision" but no image, use "graph"
@@ -695,26 +711,17 @@ async def send_message(
             file_metadata = get_file_metadata(user_id)
             file_count = len(file_metadata)
             
-            prompt = f"""You are a friendly AI Business Analyst assistant. 
-Respond naturally, warmly, and conversationally - like a helpful colleague.
+            # SHORT prompt to avoid context length issues with Groq
+            prompt = f"""You are an AI Business Analyst assistant. Be friendly and helpful.
 
-IMPORTANT - Previous conversation (USE THIS FOR CONTEXT):
-{conversation_context if conversation_context else "No previous messages"}
+User: {query}
 
-Current user message: {query}
-
-CRITICAL RULES:
-1. REMEMBER what the user told you in the conversation above
-2. If user said "I am [NAME]" earlier, remember their name
-3. If user asks "what is my name" or "tell me my name", look at the conversation history above for when they introduced themselves
-4. Be brief and friendly (1-3 sentences max)
-5. If greeting (hi/hello), greet back warmly and offer help
-6. If asked what you can do: mention you can analyze business data, answer questions about {file_count} uploaded files, visualize trends, generate insights
-7. Don't dump data analysis unless specifically asked
-8. Keep it conversational, not robotic
-
-Respond naturally:"""
-            response = chat(prompt)
+Rules:
+- If greeting (hi/hello): Say hello, mention you have {file_count} data files, offer to help with revenue, customers, products, or trends.
+- If asked "who are you": Briefly explain you're an AI that analyzes business data.
+- If thanked: Say "You're welcome!"
+- Keep response under 3 sentences. Be warm and natural."""
+            response = chat(prompt, max_tokens=200)
         
         # Safety check: ensure response is valid
         if not response or not isinstance(response, str):

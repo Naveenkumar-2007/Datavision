@@ -21,6 +21,10 @@ python-multipart
 rank-bm25
 google-generativeai
 
+# LLM Integration
+litellm>=1.30.0
+aiohttp>=3.9.0
+
 # Statistical Forecasting
 prophet>=1.1.0
 statsmodels>=0.14.0

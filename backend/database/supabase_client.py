@@ -21,7 +21,7 @@ _supabase_client: Optional[Client] = None
 _supabase_admin_client: Optional[Client] = None
 
 
-def get_supabase_client() -> Client:
+def get_supabase_client() -> Optional[Client]:
     """
     Get Supabase client with anon key (for user-context operations).
     Use this when you have a user's JWT token.
@@ -29,12 +29,13 @@ def get_supabase_client() -> Client:
     global _supabase_client
     if _supabase_client is None:
         if not SUPABASE_ANON_KEY:
-            raise ValueError("SUPABASE_ANON_KEY not configured")
+            print("⚠️ SUPABASE_ANON_KEY not configured")
+            return None
         _supabase_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
     return _supabase_client
 
 
-def get_supabase_admin_client() -> Client:
+def get_supabase_admin_client() -> Optional[Client]:
     """
     Get Supabase client with service role key (for admin operations).
     Use this for operations that bypass RLS.
@@ -43,16 +44,20 @@ def get_supabase_admin_client() -> Client:
     global _supabase_admin_client
     if _supabase_admin_client is None:
         if not SUPABASE_SERVICE_ROLE_KEY:
-            raise ValueError("SUPABASE_SERVICE_ROLE_KEY not configured")
+            print("⚠️ SUPABASE_SERVICE_ROLE_KEY not configured")
+            return None
         _supabase_admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     return _supabase_admin_client
 
 
-def get_user_client(access_token: str) -> Client:
+def get_user_client(access_token: str) -> Optional[Client]:
     """
     Get Supabase client authenticated with user's access token.
     This respects RLS policies.
     """
+    if not SUPABASE_ANON_KEY:
+        print("⚠️ SUPABASE_ANON_KEY not configured")
+        return None
     client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
     client.auth.set_session(access_token, "")
     return client
@@ -68,6 +73,7 @@ class SupabaseStorage:
     def __init__(self, client: Optional[Client] = None):
         self.client = client or get_supabase_admin_client()
         self.bucket = STORAGE_BUCKET
+        self.available = self.client is not None
     
     def upload_file(self, user_id: str, filename: str, file_data: bytes, content_type: str = "application/octet-stream") -> dict:
         """

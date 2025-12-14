@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 
 # Email configuration
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
-FROM_EMAIL = "insights@ai20insights.tech"  # Your professional domain
-APP_URL = "https://naveen-2007-ai-business-analyst.hf.space"  # Your production website
+# FROM_EMAIL must be from a verified domain in Resend
+# User has verified: ai20insights.tech
+FROM_EMAIL = os.getenv("FROM_EMAIL", "insights@ai20insights.tech")
+APP_URL = os.getenv("APP_URL", "https://killerkumar-ai-business-analyst.hf.space")
 
 
 async def send_insight_email(
@@ -27,33 +29,51 @@ async def send_insight_email(
     html_content = render_insight_email_template(title, body, chart_payload, workspace_id)
     
     if not RESEND_API_KEY:
-        logger.warning("RESEND_API_KEY not configured, skipping email send")
-        return
+        error_msg = "RESEND_API_KEY not configured, skipping email send"
+        logger.warning(error_msg)
+        raise Exception(error_msg)
+    
+    # Log configuration for debugging
+    logger.info(f"📧 Sending email from {FROM_EMAIL} to {to_email}")
+    logger.info(f"📧 RESEND_API_KEY present: {bool(RESEND_API_KEY)}")
     
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            payload = {
+                "from": f"AI Business Analyst <{FROM_EMAIL}>",
+                "to": [to_email],
+                "subject": f"🤖 AI Insight: {title}",
+                "html": html_content,
+                "text": render_plain_text_email(title, body),
+            }
+            
             response = await client.post(
                 "https://api.resend.com/emails",
                 headers={
                     "Authorization": f"Bearer {RESEND_API_KEY}",
                     "Content-Type": "application/json"
                 },
-                json={
-                    "from": f"AI Business Analyst <{FROM_EMAIL}>",
-                    "to": [to_email],
-                    "subject": f"🤖 AI Insight: {title}",
-                    "html": html_content,
-                    "text": render_plain_text_email(title, body),  # Plain text version
-                    "reply_to": FROM_EMAIL,
-                    "headers": {
-                        "X-Entity-Ref-ID": workspace_id or "default",
-                    }
-                }
+                json=payload
             )
-            response.raise_for_status()
-            logger.info(f"Email sent to {to_email}: {title}")
+            
+            # Log response for debugging
+            logger.info(f"📧 Resend response status: {response.status_code}")
+            
+            if response.status_code != 200:
+                error_detail = response.text
+                logger.error(f"📧 Resend API error: {error_detail}")
+                raise Exception(f"Resend API error ({response.status_code}): {error_detail}")
+            
+            result = response.json()
+            logger.info(f"✅ Email sent successfully! ID: {result.get('id', 'unknown')}")
+            return result
+            
+    except httpx.TimeoutException:
+        error_msg = "Email request timed out"
+        logger.error(error_msg)
+        raise Exception(error_msg)
     except Exception as e:
-        logger.error(f"Failed to send email: {e}")
+        logger.error(f"❌ Failed to send email: {str(e)}")
         raise
 
 

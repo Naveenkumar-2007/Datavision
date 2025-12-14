@@ -154,6 +154,36 @@ const Settings: React.FC = () => {
     }
   };
 
+  // State for daily report sending
+  const [dailyReportSending, setDailyReportSending] = useState(false);
+
+  // Send daily report NOW (bypasses scheduler for testing)
+  const sendDailyReportNow = async () => {
+    if (!emailPrefs.email_address) {
+      alert('Please enter your email address first and save preferences');
+      return;
+    }
+    setDailyReportSending(true);
+    try {
+      const userId = authUser?.id || localStorage.getItem('userId') || 'default';
+      const response = await fetch(`/api/v1/settings/email-prefs/send-daily-report`, {
+        method: 'POST',
+        headers: { 'X-User-ID': userId }
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        alert('✅ Daily report sent! Check your inbox for the full business summary.');
+      } else {
+        throw new Error(data.detail || data.error?.message || 'Failed to send daily report');
+      }
+    } catch (error: any) {
+      console.error('Failed to send daily report:', error);
+      alert('❌ ' + (error.message || 'Failed to send daily report'));
+    } finally {
+      setDailyReportSending(false);
+    }
+  };
+
   const dayOptions = [
     { value: 0, label: 'Sunday' },
     { value: 1, label: 'Monday' },
@@ -318,7 +348,6 @@ const Settings: React.FC = () => {
     const newPasswordInput = document.getElementById('new-password') as HTMLInputElement;
     const confirmPasswordInput = document.getElementById('confirm-password') as HTMLInputElement;
 
-    const _currentPassword = currentPasswordInput?.value || ''; // Reserved for future use
     const newPassword = newPasswordInput?.value || '';
     const confirmPassword = confirmPasswordInput?.value || '';
 
@@ -687,7 +716,7 @@ const Settings: React.FC = () => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex space-x-3">
+          <div className="flex flex-wrap gap-3">
             <button
               onClick={saveEmailPrefs}
               disabled={emailPrefsLoading}
@@ -703,6 +732,14 @@ const Settings: React.FC = () => {
             >
               <Send className="w-4 h-4" />
               <span>{testEmailSending ? 'Sending...' : 'Send Test Email'}</span>
+            </button>
+            <button
+              onClick={sendDailyReportNow}
+              disabled={dailyReportSending}
+              className="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-xl text-white font-medium hover:shadow-lg transition-all disabled:opacity-50 flex items-center space-x-2"
+            >
+              <Mail className="w-4 h-4" />
+              <span>{dailyReportSending ? 'Sending Report...' : '📊 Send Daily Report Now'}</span>
             </button>
           </div>
         </div>

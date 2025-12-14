@@ -9,19 +9,56 @@ from datetime import datetime
 from pathlib import Path
 import json
 
-from services.email_service import send_insight_email, RESEND_API_KEY
+from services.email_service import send_insight_email, RESEND_API_KEY, APP_URL
 from agents.reports import generate_weekly_report, generate_monthly_report
 from graph.query import revenue_dataframe, get_user_currency
 
 logger = logging.getLogger(__name__)
 
-# Storage directory for email preferences  
+# Storage directory for email preferences
+# scheduled_reporter.py is at: backend/scheduler/scheduled_reporter.py
+# We need to get to: backend/storage/email_prefs
+# So we need 2 parent levels: scheduler -> backend
+import os
+
 PREFS_DIR = Path(__file__).parent.parent / "storage" / "email_prefs"
 USERS_DIR = Path(__file__).parent.parent / "storage" / "users"
 
+# Ensure directories exist
+PREFS_DIR.mkdir(parents=True, exist_ok=True)
+
+print(f"📁 Scheduler PREFS_DIR: {PREFS_DIR.absolute()}")
+print(f"📁 PREFS_DIR exists: {PREFS_DIR.exists()}")
+
+
+def get_all_user_ids_with_email_prefs():
+    """Get all user IDs that have email preferences configured"""
+    print(f"📂 Scheduler checking PREFS_DIR: {PREFS_DIR.absolute()}")
+    print(f"📂 PREFS_DIR exists: {PREFS_DIR.exists()}")
+    
+    if not PREFS_DIR.exists():
+        print(f"⚠️ Email prefs directory does not exist: {PREFS_DIR}")
+        return []
+    
+    # List ALL files in directory for debugging
+    all_files = list(PREFS_DIR.iterdir()) if PREFS_DIR.exists() else []
+    print(f"📂 All files in PREFS_DIR ({len(all_files)} total):")
+    for f in all_files:
+        print(f"   - {f.name}")
+    
+    user_ids = []
+    for pref_file in PREFS_DIR.glob("*_email_prefs.json"):
+        # Extract user_id from filename: {user_id}_email_prefs.json
+        user_id = pref_file.stem.replace("_email_prefs", "")
+        user_ids.append(user_id)
+        print(f"📧 Found email prefs for user: '{user_id}'")
+    
+    print(f"📧 Total users with email prefs: {len(user_ids)}")
+    return user_ids
+
 
 def get_all_user_ids():
-    """Get all user IDs that have uploaded data"""
+    """Get all user IDs that have uploaded data (legacy, kept for compatibility)"""
     if not USERS_DIR.exists():
         return []
     
@@ -135,7 +172,7 @@ async def generate_daily_report_html(user_id: str) -> str:
         
         <p style="color: #64748b; font-size: 14px;">
             This is your automated daily summary from AI Business Analyst.
-            <a href="https://naveen-2007-ai-business-analyst.hf.space/chat" style="color: #f97316;">Ask AI for more insights →</a>
+            <a href="{APP_URL}/chat" style="color: #f97316;">Ask AI for more insights →</a>
         </p>
         """
         
@@ -148,36 +185,48 @@ async def generate_daily_report_html(user_id: str) -> str:
 
 async def send_daily_reports():
     """Send daily reports to all users who have it enabled at the current time"""
-    current_hour = datetime.now().hour
-    current_minute = datetime.now().minute
-    print(f"📧 Checking for daily reports at {current_hour:02d}:{current_minute:02d}")
+    from datetime import timezone, timedelta
+    
+    # HF servers run on UTC, but users are typically in IST (India Standard Time = UTC+5:30)
+    IST = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(IST)
+    current_hour = now_ist.hour
+    current_minute = now_ist.minute
+    print(f"📧 Checking for daily reports at {current_hour:02d}:{current_minute:02d} IST")
     
     if not RESEND_API_KEY:
         print("⚠️ RESEND_API_KEY not configured, skipping email send")
         return
     
-    user_ids = get_all_user_ids()
+    # Get ALL users who have configured email preferences (not just those with data)
+    user_ids = get_all_user_ids_with_email_prefs()
+    print(f"📧 Scanning {len(user_ids)} users for daily reports")
     
     for user_id in user_ids:
         try:
             prefs = get_user_email_prefs(user_id)
             
             if not prefs:
+                print(f"  ⏭️ No prefs found for {user_id}")
                 continue
             
             # Check if daily reports enabled and it's the right hour AND minute
             pref_hour = prefs.get('daily_report_hour', 8)
             pref_minute = prefs.get('daily_report_minute', 0)
+            daily_enabled = prefs.get('daily_report_enabled', False)
             
-            if (prefs.get('daily_report_enabled') and 
+            print(f"  📋 User {user_id}: enabled={daily_enabled}, scheduled={pref_hour:02d}:{pref_minute:02d}, current={current_hour:02d}:{current_minute:02d}")
+            
+            if (daily_enabled and 
                 pref_hour == current_hour and 
                 pref_minute == current_minute):
                 email = get_user_email(user_id)
                 
                 if not email:
-                    logger.warning(f"No email for user {user_id}, skipping daily report")
+                    print(f"  ⚠️ No email for user {user_id}, skipping")
                     continue
                 
+                print(f"  📧 TIME MATCH! Generating report for {email}...")
                 report_html = await generate_daily_report_html(user_id)
                 
                 if report_html:
@@ -187,7 +236,7 @@ async def send_daily_reports():
                         body=report_html,
                         workspace_id=user_id
                     )
-                    print(f"✅ Sent daily report to {email} for user {user_id}")
+                    print(f"  ✅ Sent daily report to {email} for user {user_id}")
                     
         except Exception as e:
             logger.error(f"Error sending daily report to {user_id}: {e}")
@@ -195,13 +244,18 @@ async def send_daily_reports():
 
 async def send_weekly_reports():
     """Send weekly reports to all users who have it enabled on the correct day/hour/minute"""
-    current_day = datetime.now().weekday()  # 0=Monday, 6=Sunday
+    from datetime import timezone, timedelta
+    
+    # Use IST timezone (India Standard Time = UTC+5:30)
+    IST = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(IST)
+    current_day = now_ist.weekday()  # 0=Monday, 6=Sunday
     # Convert to our format (0=Sunday, 1=Monday, ..., 6=Saturday)
     current_day_our_format = (current_day + 1) % 7
-    current_hour = datetime.now().hour
-    current_minute = datetime.now().minute
+    current_hour = now_ist.hour
+    current_minute = now_ist.minute
     
-    print(f"📧 Checking for weekly reports on day {current_day_our_format} at {current_hour:02d}:{current_minute:02d}")
+    print(f"📧 Checking for weekly reports on day {current_day_our_format} at {current_hour:02d}:{current_minute:02d} IST")
     
     if not RESEND_API_KEY:
         print("⚠️ RESEND_API_KEY not configured, skipping email send")

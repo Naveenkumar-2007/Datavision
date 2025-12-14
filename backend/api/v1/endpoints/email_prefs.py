@@ -15,8 +15,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Storage directory for user preferences
-PREFS_DIR = Path(__file__).parent.parent.parent / "storage" / "email_prefs"
+# email_prefs.py is at: backend/api/v1/endpoints/email_prefs.py
+# We need to get to: backend/storage/email_prefs
+# So we need 4 parent levels: endpoints -> v1 -> api -> backend
+import os
+
+# Use absolute path that matches scheduler
+PREFS_DIR = Path(__file__).parent.parent.parent.parent / "storage" / "email_prefs"
+
 PREFS_DIR.mkdir(parents=True, exist_ok=True)
+print(f"📁 Email Prefs PREFS_DIR: {PREFS_DIR.absolute()}")
 
 
 class EmailPreferences(BaseModel):
@@ -57,10 +65,13 @@ def save_user_prefs(user_id: str, prefs: EmailPreferences) -> None:
     prefs_path = get_prefs_path(user_id)
     
     try:
+        print(f"💾 SAVING email prefs for user '{user_id}' to: {prefs_path.absolute()}")
         with open(prefs_path, 'w') as f:
             json.dump(prefs.dict(), f, indent=2)
+        print(f"✅ SAVED successfully! File exists: {prefs_path.exists()}")
         logger.info(f"Saved email prefs for user {user_id}")
     except Exception as e:
+        print(f"❌ FAILED to save: {e}")
         logger.error(f"Error saving prefs for {user_id}: {e}")
         raise
 
@@ -149,3 +160,43 @@ async def test_email_report(
         }
     except Exception as e:
         raise HTTPException(500, f"Failed to send test email: {str(e)}")
+
+
+@router.post("/email-prefs/send-daily-report")
+async def send_daily_report_now(
+    x_user_id: str = Header(None, alias="X-User-ID")
+):
+    """Manually trigger a daily report - for testing scheduled reports"""
+    from scheduler.scheduled_reporter import generate_daily_report_html
+    from services.email_service import send_insight_email
+    from datetime import datetime
+    
+    user_id = x_user_id or "default_user"
+    prefs = load_user_prefs(user_id)
+    
+    if not prefs.email_address:
+        raise HTTPException(400, "No email address configured. Please set your email in preferences.")
+    
+    try:
+        # Generate the daily report
+        report_html = await generate_daily_report_html(user_id)
+        
+        if not report_html:
+            raise HTTPException(400, "No data available to generate report. Please upload some business data first.")
+        
+        # Send the report
+        await send_insight_email(
+            to_email=prefs.email_address,
+            title=f"Daily Business Summary - {datetime.now().strftime('%B %d, %Y')}",
+            body=report_html,
+            workspace_id=user_id
+        )
+        
+        return {
+            "success": True,
+            "message": f"Daily report sent to {prefs.email_address}"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Failed to send daily report: {str(e)}")
