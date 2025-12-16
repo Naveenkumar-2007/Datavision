@@ -6,8 +6,9 @@ import {
   Activity,
   Loader,
   AlertCircle,
+  Lightbulb,
 } from 'lucide-react';
-import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiService } from '@/services/api';
 import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency, convertCurrency } from '@/utils/currency';
 
@@ -26,6 +27,13 @@ interface CurrencyBreakdown {
   total_usd_formatted: string;
   primary_currency: string;
   currencies_count: number;
+}
+
+interface BusinessInsight {
+  type: 'success' | 'warning' | 'info';
+  icon: string;
+  title: string;
+  message: string;
 }
 
 interface AnalyticsData {
@@ -51,6 +59,7 @@ interface AnalyticsData {
 
 const Overview: React.FC = () => {
   const [data, setData] = useState<AnalyticsData | null>(null);
+  const [insights, setInsights] = useState<BusinessInsight[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,8 +82,15 @@ const Overview: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getAnalyticsOverview();
-      setData(response.data);
+
+      // Fetch analytics and insights in parallel
+      const [analyticsResponse, insightsResponse] = await Promise.all([
+        apiService.getAnalyticsOverview(),
+        apiService.getInsights().catch(() => ({ data: { insights: [] } }))
+      ]);
+
+      setData(analyticsResponse.data);
+      setInsights(insightsResponse.data?.insights || []);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load analytics');
     } finally {
@@ -181,7 +197,7 @@ const Overview: React.FC = () => {
       color: 'text-accent-orange',
     },
     {
-      label: hasMultipleCurrencies ? 'Avg Order Value (USD)' : 'Avg Order Value',
+      label: `Avg Order Value${displayCurrency !== 'USD' ? ` (${displayCurrency})` : ''}`,
       value: formatCurrency(displayAvgOrder, displayCurrency),
       change: '+3.2%',
       trend: 'up',
@@ -246,6 +262,55 @@ const Overview: React.FC = () => {
         ))}
       </div>
 
+      {/* AI Business Insights */}
+      {insights.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="glass-card p-6"
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500/20 to-primary-400/10 flex items-center justify-center">
+              <Lightbulb className="w-5 h-5 text-primary-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold text-white">AI Business Insights</h2>
+              <p className="text-sm text-gray-400">Automatically generated from your data</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {insights.map((insight, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 + i * 0.1 }}
+                className={`p-4 rounded-xl border ${insight.type === 'success'
+                  ? 'bg-accent-green/10 border-accent-green/30'
+                  : insight.type === 'warning'
+                    ? 'bg-accent-orange/10 border-accent-orange/30'
+                    : 'bg-primary-500/10 border-primary-500/30'
+                  }`}
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-2xl">{insight.icon}</span>
+                  <div>
+                    <h3 className={`font-semibold ${insight.type === 'success' ? 'text-accent-green'
+                      : insight.type === 'warning' ? 'text-accent-orange'
+                        : 'text-primary-400'
+                      }`}>
+                      {insight.title}
+                    </h3>
+                    <p className="text-sm text-gray-300 mt-1">{insight.message}</p>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
       {/* Multi-Currency Breakdown - Shows when multiple currencies exist */}
       {data.currencyBreakdown && data.currencyBreakdown.breakdown.length > 0 && (
         <motion.div
@@ -274,9 +339,11 @@ const Overview: React.FC = () => {
                   <span className="text-gray-400 text-sm">{item.name}</span>
                 </div>
                 <div className="text-2xl font-bold text-white">{item.formatted}</div>
-                <div className="text-sm text-gray-400 mt-1">
-                  ≈ ${item.usd_equivalent.toLocaleString()} USD
-                </div>
+                {item.currency !== userPreferredCurrency && (
+                  <div className="text-sm text-gray-400 mt-1">
+                    ≈ {formatCurrency(convertCurrency(item.usd_equivalent, 'USD', userPreferredCurrency), userPreferredCurrency)}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -308,33 +375,72 @@ const Overview: React.FC = () => {
           transition={{ delay: 0.3 }}
           className="glass-card p-6"
         >
-          <h2 className="text-xl font-semibold text-white mb-4">Revenue Trend (Real Data)</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-white">📈 Revenue Trend</h2>
+            {revenueData.length > 0 && (
+              <span className="text-sm text-gray-400 bg-surface-700/50 px-3 py-1 rounded-full">
+                {revenueData.length} data points
+              </span>
+            )}
+          </div>
           {revenueData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
-                <XAxis dataKey="date" stroke="#9CA3AF" />
-                <YAxis stroke="#9CA3AF" />
+            <ResponsiveContainer width="100%" height={320}>
+              <AreaChart data={revenueData}>
+                <defs>
+                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.4} />
+                    <stop offset="50%" stopColor="#22C55E" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="#3B82F6" stopOpacity={0} />
+                  </linearGradient>
+                  <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="#3B82F6" />
+                    <stop offset="50%" stopColor="#22C55E" />
+                    <stop offset="100%" stopColor="#3B82F6" />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" opacity={0.5} />
+                <XAxis
+                  dataKey="date"
+                  stroke="#6B7280"
+                  tick={{ fill: '#9CA3AF', fontSize: 12 }}
+                  axisLine={{ stroke: '#374151' }}
+                />
+                <YAxis
+                  stroke="#6B7280"
+                  tick={{ fill: '#9CA3AF', fontSize: 12 }}
+                  axisLine={{ stroke: '#374151' }}
+                  tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(0)}K` : value}
+                />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#10172A',
-                    border: '1px solid #1F2937',
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    border: '1px solid #3B82F6',
                     borderRadius: '12px',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
                     color: '#F9FAFB',
+                    padding: '12px 16px',
                   }}
+                  labelStyle={{ color: '#9CA3AF', fontWeight: 600, marginBottom: '4px' }}
+                  formatter={(value: number) => [formatCurrency(value, displayCurrency), 'Revenue']}
+                  cursor={{ stroke: '#3B82F6', strokeDasharray: '5 5' }}
                 />
-                <Legend />
-                <Line
+                <Area
                   type="monotone"
                   dataKey="revenue"
-                  stroke="#3B82F6"
+                  stroke="url(#lineGradient)"
                   strokeWidth={3}
-                  dot={{ fill: '#3B82F6', r: 5 }}
+                  fill="url(#revenueGradient)"
+                  dot={{ fill: '#3B82F6', r: 4, strokeWidth: 2, stroke: '#1e3a5f' }}
+                  activeDot={{ r: 8, fill: '#22C55E', stroke: '#fff', strokeWidth: 2 }}
                 />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-gray-400 text-center py-20">No time series data available</p>
+            <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+              <Activity className="w-12 h-12 mb-3 opacity-50" />
+              <p>No time series data available</p>
+              <p className="text-sm">Upload files with date information</p>
+            </div>
           )}
         </motion.div>
 
@@ -345,44 +451,82 @@ const Overview: React.FC = () => {
           transition={{ delay: 0.3 }}
           className="glass-card p-6"
         >
-          <h2 className="text-xl font-semibold text-white mb-4">Top Products (Real Data)</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-white">🏆 Top Products</h2>
+            {categoryData.length > 0 && (
+              <span className="text-sm text-gray-400 bg-surface-700/50 px-3 py-1 rounded-full">
+                {categoryData.length} products
+              </span>
+            )}
+          </div>
           {categoryData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={320}>
               <PieChart>
+                <defs>
+                  {/* Premium gradient for each slice */}
+                  <linearGradient id="pieGradient0" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#3B82F6" />
+                    <stop offset="100%" stopColor="#1D4ED8" />
+                  </linearGradient>
+                  <linearGradient id="pieGradient1" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#22C55E" />
+                    <stop offset="100%" stopColor="#15803D" />
+                  </linearGradient>
+                  <linearGradient id="pieGradient2" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#F97316" />
+                    <stop offset="100%" stopColor="#C2410C" />
+                  </linearGradient>
+                  <linearGradient id="pieGradient3" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#EAB308" />
+                    <stop offset="100%" stopColor="#A16207" />
+                  </linearGradient>
+                  <linearGradient id="pieGradient4" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#8B5CF6" />
+                    <stop offset="100%" stopColor="#6D28D9" />
+                  </linearGradient>
+                </defs>
                 <Pie
                   data={categoryData}
                   cx="50%"
                   cy="50%"
-                  labelLine={false}
+                  labelLine={{ stroke: '#374151', strokeWidth: 1 }}
                   label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={100}
-                  fill="#8884d8"
+                  innerRadius={60}
+                  outerRadius={110}
+                  paddingAngle={3}
                   dataKey="value"
+                  animationDuration={1000}
+                  animationEasing="ease-out"
                 >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  {categoryData.map((_, index) => (
+                    <Cell
+                      key={`cell-${index}`}
+                      fill={`url(#pieGradient${index % 5})`}
+                      stroke="rgba(255,255,255,0.1)"
+                      strokeWidth={2}
+                    />
                   ))}
                 </Pie>
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: document.documentElement.classList.contains('light-theme') ? '#FFFFFF' : '#1F2937',
-                    border: document.documentElement.classList.contains('light-theme') ? '1px solid #E5E7EB' : '1px solid #374151',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                    border: '1px solid #3B82F6',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+                    padding: '12px 16px',
                   }}
-                  itemStyle={{
-                    color: document.documentElement.classList.contains('light-theme') ? '#111827' : '#F9FAFB',
-                  }}
-                  labelStyle={{
-                    color: document.documentElement.classList.contains('light-theme') ? '#111827' : '#F9FAFB',
-                    fontWeight: 'bold',
-                  }}
+                  itemStyle={{ color: '#F9FAFB' }}
+                  labelStyle={{ color: '#9CA3AF', fontWeight: 600 }}
+                  formatter={(value: number) => [formatCurrency(value, displayCurrency), 'Revenue']}
                 />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-gray-400 text-center py-20">No product data available</p>
+            <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+              <ShoppingCart className="w-12 h-12 mb-3 opacity-50" />
+              <p>No product data available</p>
+              <p className="text-sm">Upload files with product information</p>
+            </div>
           )}
         </motion.div>
       </div>
@@ -402,16 +546,18 @@ const Overview: React.FC = () => {
                 <th className="pb-3">Product</th>
                 <th className="pb-3 text-right">Revenue</th>
                 <th className="pb-3 text-right">Sales</th>
+                <th className="pb-3 text-right">Source</th>
               </tr>
             </thead>
             <tbody>
-              {data.topProducts.map((product, i) => (
+              {data.topProducts.map((product: any, i) => (
                 <tr key={i} className="border-b border-dark-border/50">
                   <td className="py-4 text-white">{product.name}</td>
                   <td className="py-4 text-right text-accent-green font-semibold">
                     {formatCurrency(product.revenue, displayCurrency)}
                   </td>
                   <td className="py-4 text-right text-gray-300">{product.count}</td>
+                  <td className="py-4 text-right text-gray-700 dark:text-gray-300 text-sm font-medium">{product.source || 'Unknown'}</td>
                 </tr>
               ))}
             </tbody>
@@ -438,10 +584,11 @@ const Overview: React.FC = () => {
                   <th className="pb-3">Product</th>
                   <th className="pb-3 text-right">Revenue</th>
                   <th className="pb-3 text-right">Sales</th>
+                  <th className="pb-3 text-right">Source</th>
                 </tr>
               </thead>
               <tbody>
-                {data.bottomProducts.map((product, i) => (
+                {data.bottomProducts.map((product: any, i) => (
                   <tr key={i} className="border-b border-dark-border/50">
                     <td className="py-4 text-white flex items-center">
                       {i === 0 && <span className="text-accent-red mr-2">🔻</span>}
@@ -452,6 +599,7 @@ const Overview: React.FC = () => {
                       {formatCurrency(product.revenue, displayCurrency)}
                     </td>
                     <td className="py-4 text-right text-gray-300">{product.count}</td>
+                    <td className="py-4 text-right text-gray-700 dark:text-gray-300 text-sm font-medium">{product.source || 'Unknown'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -475,16 +623,18 @@ const Overview: React.FC = () => {
                 <th className="pb-3">Customer</th>
                 <th className="pb-3 text-right">Revenue</th>
                 <th className="pb-3 text-right">Orders</th>
+                <th className="pb-3 text-right">Source</th>
               </tr>
             </thead>
             <tbody>
-              {data.topCustomers.map((customer, i) => (
+              {data.topCustomers.map((customer: any, i) => (
                 <tr key={i} className="border-b border-dark-border/50">
                   <td className="py-4 text-white">{customer.name}</td>
                   <td className="py-4 text-right text-accent-green font-semibold">
                     {formatCurrency(customer.revenue, displayCurrency)}
                   </td>
                   <td className="py-4 text-right text-gray-300">{customer.orders}</td>
+                  <td className="py-4 text-right text-gray-700 dark:text-gray-300 text-sm font-medium">{customer.source || 'Unknown'}</td>
                 </tr>
               ))}
             </tbody>
@@ -511,10 +661,11 @@ const Overview: React.FC = () => {
                   <th className="pb-3">Customer</th>
                   <th className="pb-3 text-right">Revenue</th>
                   <th className="pb-3 text-right">Orders</th>
+                  <th className="pb-3 text-right">Source</th>
                 </tr>
               </thead>
               <tbody>
-                {data.bottomCustomers.map((customer, i) => (
+                {data.bottomCustomers.map((customer: any, i) => (
                   <tr key={i} className="border-b border-dark-border/50">
                     <td className="py-4 text-white flex items-center">
                       {i === 0 && <span className="text-accent-red mr-2">🔻</span>}
@@ -525,6 +676,7 @@ const Overview: React.FC = () => {
                       {formatCurrency(customer.revenue, displayCurrency)}
                     </td>
                     <td className="py-4 text-right text-gray-300">{customer.orders}</td>
+                    <td className="py-4 text-right text-gray-700 dark:text-gray-300 text-sm font-medium">{customer.source || 'Unknown'}</td>
                   </tr>
                 ))}
               </tbody>

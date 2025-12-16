@@ -54,6 +54,42 @@ DARK_LAYOUT = {
     }
 }
 
+# Light Theme Configuration for Plotly
+LIGHT_LAYOUT = {
+    'paper_bgcolor': '#FFFFFF',
+    'plot_bgcolor': '#F8F9FA',
+    'font': {'color': '#1F2937', 'family': 'Inter, system-ui, sans-serif'},
+    'title': {'font': {'size': 18, 'color': '#111827'}},
+    'xaxis': {
+        'gridcolor': '#E5E7EB',
+        'linecolor': '#D1D5DB',
+        'tickfont': {'color': '#4B5563'}
+    },
+    'yaxis': {
+        'gridcolor': '#E5E7EB',
+        'linecolor': '#D1D5DB',
+        'tickfont': {'color': '#4B5563'}
+    },
+    'legend': {'font': {'color': '#1F2937'}},
+    'hoverlabel': {
+        'bgcolor': '#FFFFFF',
+        'font_size': 14,
+        'font_family': 'Inter, system-ui, sans-serif',
+        'bordercolor': '#D1D5DB'
+    }
+}
+
+
+def get_theme_layout(theme: str = 'dark') -> dict:
+    """
+    Get the appropriate layout configuration based on theme
+    Args:
+        theme: 'dark' or 'light'
+    Returns:
+        Layout dictionary for Plotly
+    """
+    return LIGHT_LAYOUT if theme == 'light' else DARK_LAYOUT
+
 
 def generate_interactive_customer_chart(df, currency_symbol: str = '₹', top_n: int = 10) -> Optional[Dict]:
     """

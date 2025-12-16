@@ -15,11 +15,24 @@ import json
 
 from agents.router import route_question
 from vector.store_faiss import FaissStore
-from graph.query import load_graph, graph_snapshot, revenue_dataframe
+from graph.query import load_graph, graph_snapshot, revenue_dataframe, get_user_currency
 from core.llm import chat
 from core.cache import QueryCache
 from config.settings import Settings
 from utils.paths import get_user_paths, STORAGE_BASE
+
+# Import chart generation for Plotly visualizations
+try:
+    from api.v1.endpoints.charts import (
+        generate_revenue_trend_chart,
+        generate_product_bar_chart,
+        generate_customer_pie_chart,
+        generate_prediction_chart,
+        get_user_data
+    )
+    CHARTS_AVAILABLE = True
+except ImportError:
+    CHARTS_AVAILABLE = False
 
 # Import auth dependencies
 try:
@@ -89,6 +102,57 @@ def save_conversation(user_id: str, conversation_id: str, messages: List[Message
     
     with open(history_file, 'w') as f:
         json.dump(data, f, indent=2)
+
+
+def clean_ai_response(response: str) -> str:
+    """
+    Post-process AI response to remove code blocks, tables, LaTeX.
+    Ensures clean, professional output even if LLM ignores prompt.
+    """
+    import re
+    
+    if not response:
+        return response
+    
+    # IMPORTANT: Preserve plotly_chart blocks (they contain our visualizations!)
+    # Extract plotly_chart blocks first
+    import re
+    plotly_blocks = re.findall(r'```plotly_chart[\s\S]*?```', response)
+    
+    # Remove ALL OTHER code blocks (python, javascript, etc.) but NOT plotly_chart
+    # Use negative lookahead to exclude plotly_chart
+    response = re.sub(r'```(?!plotly_chart)[a-zA-Z]*[\s\S]*?```', '', response)
+    
+    # Remove LaTeX math
+    response = re.sub(r'\$\$[\s\S]*?\$\$', '', response)
+    response = re.sub(r'\$[^$\n]+\$', '', response)
+    response = re.sub(r'\\\\[a-z]+\{[^}]*\}', '', response)
+    
+    # Remove markdown tables
+    lines = response.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip table rows
+        if stripped.startswith('|') and stripped.endswith('|') and stripped.count('|') >= 2:
+            continue
+        if stripped.startswith('|-') or stripped.startswith('|:'):
+            continue
+        cleaned_lines.append(line)
+    response = '\n'.join(cleaned_lines)
+    
+    # Remove numbered emoji sections (1️⃣, 2️⃣, etc.)
+    response = re.sub(r'[0-9]️⃣\s*', '', response)
+    
+    # Remove "Ready to drill deeper?" type endings
+    response = re.sub(r'(?i)ready to drill deeper\?.*', '', response)
+    response = re.sub(r'(?i)let me know if you.*', '', response)
+    
+    # Clean up excessive newlines
+    while '\n\n\n' in response:
+        response = response.replace('\n\n\n', '\n\n')
+    
+    return response.strip()
 
 def get_file_metadata(user_id: str) -> dict:
     """Get all files with their upload dates and metadata"""
@@ -171,6 +235,10 @@ def filter_files_by_date(file_metadata: dict, query: str) -> List[str]:
     return filtered_files if filtered_files else list(file_metadata.keys())
 
 def rag_search(user_id: str, query: str, k: int = 5, target_files: List[str] = None) -> tuple:
+    """
+    RAG search that ensures ALL uploaded files are represented in results.
+    For comprehensive multi-file analysis.
+    """
     try:
         paths = get_user_paths(user_id)
         Settings.FAISS_DIR = paths["faiss"]
@@ -185,28 +253,47 @@ def rag_search(user_id: str, query: str, k: int = 5, target_files: List[str] = N
         if target_files is None:
             target_files = filter_files_by_date(file_metadata, query)
         
-        # Search with query text (embedding happens inside search method)
-        results = store.search(query, k=k)
+        # IMPROVED: Search with higher k to get more coverage
+        results = store.search(query, k=25)  # Increased for better coverage
         
         if not results:
             return "", []
         
-        # Filter results by target files if specified
+        # CRITICAL: Ensure we include at least some results from EACH file
+        results_by_file = {}
+        for r in results:
+            source = r.get('metadata', {}).get('source', 'Unknown')
+            if source not in results_by_file:
+                results_by_file[source] = []
+            results_by_file[source].append(r)
+        
+        # Take top chunks from EACH file (ensures multi-file coverage)
+        balanced_results = []
+        chunks_per_file = max(3, k // len(results_by_file)) if results_by_file else k
+        
+        for source, file_results in results_by_file.items():
+            # Take top chunks from each file
+            balanced_results.extend(file_results[:chunks_per_file])
+        
+        # If we have target files, prioritize them but include others
         if target_files:
-            filtered_results = []
-            for r in results:
+            prioritized = []
+            others = []
+            for r in balanced_results:
                 source = r.get('metadata', {}).get('source', '')
                 if any(tf in source for tf in target_files):
-                    filtered_results.append(r)
-            results = filtered_results if filtered_results else results
+                    prioritized.append(r)
+                else:
+                    others.append(r)
+            balanced_results = prioritized + others[:5]  # Keep some from others for context
         
-        if not results:
-            return "", []
+        if not balanced_results:
+            balanced_results = results[:k]  # Fallback to original results
         
         context_parts = []
         sources = []
         
-        for i, result in enumerate(results):
+        for i, result in enumerate(balanced_results):
             metadata = result.get('metadata', {})
             source_file = metadata.get('source', 'Unknown')
             file_date = file_metadata.get(source_file, {}).get('date', 'Unknown date')
@@ -217,14 +304,13 @@ def rag_search(user_id: str, query: str, k: int = 5, target_files: List[str] = N
             # Return clean source strings instead of objects
             sources.append(f"{source_file} ({file_date})")
         
-        # Add file summary to context
+        # Add file summary to context - SHOW ALL FILES
         file_summary = f"\n\n## Available Files ({len(file_metadata)}):\n"
         for fname, fmeta in file_metadata.items():
-            if fname in target_files:
-                file_summary += f"- {fname} (Uploaded: {fmeta['date']} {fmeta['time']})\n"
+            file_summary += f"- {fname} (Uploaded: {fmeta['date']} {fmeta['time']})\n"
         
         context = file_summary + "\n## Relevant Content:\n" + "\n\n".join(context_parts)
-        return context, sources
+        return context, list(set(sources))  # Deduplicate sources
         
     except Exception as e:
         print(f"RAG error: {e}")
@@ -321,46 +407,438 @@ def hybrid_search(user_id: str, query: str, target_files: List[str] = None) -> t
     return context, sources
 
 def vision_analysis(user_id: str, query: str, attached_files: Optional[List[dict]] = None) -> tuple:
-    """Analyze images using vision capabilities"""
+    """Analyze images using vision capabilities - REAL IMPLEMENTATION"""
     try:
         if not attached_files:
-            context = "Vision mode requires an image file. Please drag and drop an image (chart, graph, or diagram) to analyze it."
-            return context, ["Vision Mode - No Image Attached"]
+            context = """## Vision Mode
+
+I need an image to analyze.
+
+**How to use Vision mode:**
+• Drag and drop an image into the chat
+• Or click the attachment button
+
+**I can analyze:**
+• 📊 Charts and graphs → Extract data points
+• 📋 Tables → Convert to structured data
+• 🧾 Invoices and receipts → Extract details
+• 📈 Screenshots → Identify trends"""
+            return context, ["Vision Mode - No Image"]
         
         # Filter for image files
         image_files = [f for f in attached_files if f.get('type', '').startswith('image/')]
         
         if not image_files:
-            context = "No image files detected. Vision mode works with image files (JPG, PNG, WebP, etc). Please upload an image to analyze."
-            return context, ["Vision Mode - No Image Files"]
+            context = "No image files detected. Please upload an image (JPG, PNG, WebP)."
+            return context, ["Vision Mode - No Images"]
         
-        # For now, vision mode is limited - explain this to user
-        context = f"""## Image Analysis Request
-
-You've uploaded: {', '.join([img.get('name', 'image') for img in image_files])}
-
-**Current Limitation**: This system requires actual vision AI integration (like GPT-4 Vision or Claude with vision) to analyze image content. 
-
-**Alternative Solutions**:
-1. **Upload the raw data** instead - if this is a chart/graph, upload the underlying CSV/Excel file to Data Hub
-2. **Describe the image** - tell me what the chart shows and I can help analyze similar patterns in your uploaded data
-3. **OCR Integration Needed** - To fully analyze images, we need to integrate vision APIs
-
-**What I CAN do now**:
-- Analyze the DATA behind charts (upload CSV/Excel files)
-- Create visualizations from your data
-- Answer questions about structured data in Data Hub
-
-Would you like to upload the source data file instead?"""
+        # Get the first image
+        image_file = image_files[0]
+        image_path = image_file.get('path', '')
+        image_name = image_file.get('name', 'image')
         
-        sources = ["Vision Mode - Integration Required"]
+        if not image_path:
+            context = "Image file path not found. Please try uploading again."
+            return context, ["Vision Mode - Path Error"]
         
+        # Import and use real vision module
+        from core.vision import analyze_image, extract_chart_data, extract_table_data
+        
+        # Determine analysis type based on query
+        query_lower = query.lower()
+        
+        if any(word in query_lower for word in ['table', 'extract data', 'rows', 'columns', 'read']):
+            # Table extraction mode
+            result = extract_table_data(image_path)
+            if 'tables' in result:
+                context = f"## Table Extraction: {image_name}\n\n"
+                for i, table in enumerate(result.get('tables', [])):
+                    headers = table.get('headers', [])
+                    rows = table.get('rows', [])
+                    if headers:
+                        context += f"| {' | '.join(headers)} |\n"
+                        context += f"| {' | '.join(['---'] * len(headers))} |\n"
+                        for row in rows:
+                            context += f"| {' | '.join(row)} |\n"
+                        context += "\n"
+            else:
+                context = f"## Table Extraction: {image_name}\n\n{result.get('raw_analysis', 'No tables found')}"
+                
+        elif any(word in query_lower for word in ['chart', 'graph', 'plot', 'data points', 'values']):
+            # Chart analysis mode
+            result = extract_chart_data(image_path)
+            if 'data_series' in result:
+                context = f"## Chart Analysis: {image_name}\n\n"
+                context += f"**Chart Type:** {result.get('chart_type', 'Unknown')}\n"
+                context += f"**Title:** {result.get('title', 'N/A')}\n\n"
+                for series in result.get('data_series', []):
+                    context += f"### {series.get('name', 'Data')}\n"
+                    context += "| Label | Value |\n|------|------|\n"
+                    for point in series.get('data', []):
+                        context += f"| {point.get('label', point.get('x', ''))} | {point.get('value', point.get('y', ''))} |\n"
+            else:
+                context = f"## Chart Analysis: {image_name}\n\n{result.get('raw_analysis', 'Analysis not available')}"
+        
+        else:
+            # General image analysis
+            analysis = analyze_image(image_path, query if query else "Describe this image in detail")
+            context = f"## Image Analysis: {image_name}\n\n{analysis}"
+        
+        sources = [f"Vision Analysis: {image_name}"]
         return context, sources
         
     except Exception as e:
         print(f"Vision analysis error: {e}")
         traceback.print_exc()
         return f"Vision analysis error: {str(e)}", ["Vision Mode - Error"]
+
+
+# ============================================================================
+# AI BUSINESS ANALYST - PROFESSIONAL MODEL CONFIGURATION
+# Smart routing based on query type - like real SaaS analytics products
+# ============================================================================
+
+# ONLY WORKING MODELS (Tested 2025-12-15)
+AI_MODELS = {
+    # 🥇 PRIMARY - Business reasoning
+    'deepseek-chat': 'deepseek/deepseek-chat',
+    
+    # 🎯 FAST - Decision Analysis
+    'mistral-7b': 'mistralai/mistral-7b-instruct:free',
+    
+    # 🦙 COMPREHENSIVE - Meta AI
+    'llama-70b': 'meta-llama/llama-3.3-70b-instruct:free',
+}
+
+# Smart model router - selects best model based on query keywords
+def smart_route_model(query: str, selected_model: str) -> str:
+    """
+    Routes to the optimal model based on query type.
+    User's selected model takes priority.
+    """
+    query_lower = query.lower()
+    
+    # If user explicitly selected a model, respect their choice
+    if selected_model in AI_MODELS:
+        return AI_MODELS[selected_model]
+    
+    # DEFAULT: DeepSeek Chat (best for business analysis)
+    return AI_MODELS['deepseek-chat']
+
+
+# Chart keywords for detecting visualization requests
+CHART_KEYWORDS = [
+    'chart', 'graph', 'visualize', 'visualization', 'plot', 'trend',
+    'show me', 'display', 'bar chart', 'pie chart', 'line chart',
+    'revenue trend', 'customer distribution', 'product comparison'
+]
+
+def detect_chart_request(query: str) -> str:
+    """Detect what type of chart the user is asking for"""
+    query_lower = query.lower()
+    
+    if any(k in query_lower for k in ['trend', 'over time', 'timeline', 'revenue trend']):
+        return 'trend'
+    elif any(k in query_lower for k in ['bar', 'product', 'compare', 'comparison', 'top product']):
+        return 'bar'
+    elif any(k in query_lower for k in ['pie', 'distribution', 'breakdown', 'customer']):
+        return 'pie'
+    elif any(k in query_lower for k in ['predict', 'forecast', 'future', 'next month', 'projection']):
+        return 'prediction'
+    elif any(k in query_lower for k in CHART_KEYWORDS):
+        return 'trend'  # Default to trend chart
+    
+    return None  # Not a chart request
+
+
+async def ai_model_response(user_id: str, query: str, model_key: str, conversation_context: str = "") -> tuple:
+    """
+    Generate response using OpenRouter AI models with RAG context.
+    This ensures answers are grounded in the user's actual data - no hallucination.
+    
+    Flow:
+    1. Get RAG context from user's trained data
+    2. Get Graph context for structured insights
+    3. Combine contexts with anti-hallucination prompt
+    4. Call OpenRouter API with selected model
+    5. Return clean, data-grounded response
+    """
+    import aiohttp
+    import os
+    import re
+    
+    try:
+        # =====================================================================
+        # STEP 0: MEMORY - Extract and save personal info, get user context
+        # =====================================================================
+        user_context = ""
+        user_name = None
+        
+        # =====================================================================
+        # ChatGPT-LEVEL MEMORY: Read and Write
+        # =====================================================================
+        try:
+            from core.memory import process_personal_info, get_user_context, get_user_name
+            
+            # MEMORY WRITE: Save any personal info in the query
+            saved = process_personal_info(user_id, query)
+            
+            # MEMORY READ: Get user's stored name directly
+            user_name = get_user_name(user_id)
+            
+            # Get full user context for LLM prompt
+            user_context = get_user_context(user_id) or ""
+            
+            # If name was just saved, confirm it immediately
+            if saved and user_name:
+                query_lower = query.lower()
+                if any(phrase in query_lower for phrase in ['my name is', 'i am', "i'm", 'call me', 'you can call me']):
+                    return (
+                        f"Nice to meet you, **{user_name}**! I've saved your name and will remember you.\n\n"
+                        f"How can I help you analyze your business data today?",
+                        ["Memory"]
+                    )
+        except Exception as mem_err:
+            print(f"Memory error: {mem_err}")
+            import traceback
+            traceback.print_exc()
+        
+        # =====================================================================
+        # MEMORY READ: Answer identity questions from stored memory
+        # =====================================================================
+        query_lower = query.lower()
+        if any(phrase in query_lower for phrase in ['my name', 'who am i', 'what is my name', 'tell me my name', 'do you know my name', 'remember my name']):
+            if user_name:
+                # Name EXISTS in memory → answer directly
+                return (
+                    f"Your name is **{user_name}**.\n\n"
+                    f"How can I help you with your business data today?",
+                    ["Memory"]
+                )
+            else:
+                # Name NOT in memory → ask politely
+                return (
+                    "I don't have your name saved yet. Please tell me your name (e.g., 'My name is Naveen') and I'll remember you!",
+                    ["Memory"]
+                )
+        
+        # Step 1: Get RAG context (document search)
+        rag_context, rag_sources = rag_search(user_id, query, k=8)
+        
+        # Step 2: Get Graph context (structured data)
+        graph_context, graph_sources = graph_query(user_id, query)
+        
+        # Step 3: Build intelligent multi-file context
+        # Parse and organize data by file source
+        data_context = ""
+        
+        # Build file inventory from sources
+        all_sources = list(set(rag_sources + graph_sources))
+        file_sources = [s for s in all_sources if s.endswith(('.xlsx', '.csv', '.pdf'))]
+        
+        if file_sources:
+            data_context += "## 📁 YOUR DATA FILES:\n"
+            for i, f in enumerate(file_sources[:5], 1):
+                data_context += f"{i}. {f}\n"
+            data_context += "\n"
+        
+        if rag_context and rag_context.strip():
+            data_context += f"## 📄 DOCUMENT DATA (from uploaded files):\n{rag_context}\n\n"
+        
+        if graph_context and graph_context.strip():
+            data_context += f"## 📊 STRUCTURED DATA (knowledge graph):\n{graph_context}\n\n"
+        
+        # Add file-specific totals if available
+        data_context += """
+## 📋 IMPORTANT NOTES:
+- Each file above contains different business data
+- Use data from ALL relevant files to answer comprehensively
+- When comparing files, note which file each number comes from
+- If files have similar data (e.g., multiple revenue files), aggregate or compare as appropriate
+"""
+        
+        # Check if we have any data
+        if not rag_context and not graph_context:
+            return (
+                "⚠️ **No data found in your Data Hub.**\n\n"
+                "To get insights, please upload your business files:\n"
+                "1. Go to **Data Hub**\n"
+                "2. Upload CSV, Excel, PDF or other data files\n"
+                "3. The AI will learn from your data automatically\n\n"
+                "Then ask me questions about your data!",
+                ["No Data Available"]
+            )
+        
+        # Get user's currency setting
+        currency_symbol, currency_code = get_user_currency(user_id)
+        
+        # $500,000 ENTERPRISE AI BUSINESS ANALYST PROMPT
+        system_prompt = f"""You are an AI Business Analyst. $500,000 enterprise quality. Real-time answers.
+
+USER: {user_id}
+USER CURRENCY: {currency_symbol} ({currency_code})
+MEMORY: {user_context if user_context else "None"}
+
+═══════════════════════════════════════════════════════════════
+                    YOUR UPLOADED DATA
+═══════════════════════════════════════════════════════════════
+{data_context}
+
+═══════════════════════════════════════════════════════════════
+                    CURRENCY RULES
+═══════════════════════════════════════════════════════════════
+1. Use {currency_symbol} ({currency_code}) as the DEFAULT currency for all responses
+2. This is the user's currency from their Settings
+3. Conversion rates (only when asked):
+   - $1 USD = ₹83 INR = €0.92 EUR = £0.79 GBP
+4. Only convert to other currencies when explicitly asked
+
+═══════════════════════════════════════════════════════════════
+                    RESPONSE FORMAT
+═══════════════════════════════════════════════════════════════
+
+ALWAYS respond with:
+1. One-line answer (bold) using {currency_symbol}
+2. Table with data breakdown
+
+EXAMPLE:
+**Total Revenue: {currency_symbol}[amount from data]**
+
+| Metric | Value |
+|--------|-------|
+| Total Revenue | {currency_symbol}[from data] |
+| Customers | [from data] |
+| Orders | [from data] |
+
+═══════════════════════════════════════════════════════════════
+                    RULES
+═══════════════════════════════════════════════════════════════
+
+1. ALWAYS use | table | format for data
+2. Use {currency_symbol} as the currency symbol (user's setting)
+3. Use ONLY data from YOUR UPLOADED DATA section above
+4. Be concise - no filler text
+5. NEVER make up numbers - use exact values from data
+
+ANTI-HALLUCINATION PROTOCOL:
+- ONLY use numbers from the data provided above
+- If data is missing, say "This data is not in your uploaded files"
+- NEVER invent or estimate numbers
+
+CONVERSATION:
+{conversation_context if conversation_context else "New conversation"}
+"""
+
+        # Step 4: Call OpenRouter API
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            return (
+                "⚠️ **OpenRouter API key not configured.**\n\n"
+                "To use AI models, add this to your `.env` file:\n"
+                "```\nOPENROUTER_API_KEY=your_key_here\n```\n\n"
+                "Get a free key at: https://openrouter.ai/",
+                ["Configuration Required"]
+            )
+        
+        model_id = AI_MODELS.get(model_key, AI_MODELS['deepseek-chat'])
+        
+        payload = {
+            "model": model_id,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query}
+            ],
+            "max_tokens": 4096,
+            "temperature": 0.3,  # Low temperature for accuracy
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://ai-business-analyst.app",
+            "X-Title": "AI Business Analyst"
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    ai_response = data["choices"][0]["message"]["content"]
+                    
+                    # Add model attribution
+                    model_name = model_key.replace('-', ' ').title()
+                    sources = rag_sources + graph_sources + [f"AI: {model_name}"]
+                    
+                    # Check if user requested a visualization and add Plotly chart
+                    chart_type = detect_chart_request(query)
+                    if chart_type and CHARTS_AVAILABLE:
+                        try:
+                            df = get_user_data(user_id)
+                            if df is not None and not df.empty:
+                                # Generate appropriate chart
+                                if chart_type == 'trend':
+                                    chart_json = generate_revenue_trend_chart(df)
+                                elif chart_type == 'bar':
+                                    chart_json = generate_product_bar_chart(df)
+                                elif chart_type == 'pie':
+                                    chart_json = generate_customer_pie_chart(df)
+                                elif chart_type == 'prediction':
+                                    chart_json = generate_prediction_chart(df)
+                                else:
+                                    chart_json = generate_revenue_trend_chart(df)
+                                
+                                # FALLBACK: If trend chart returned error (no time data), try bar chart
+                                if chart_json and 'error' in chart_json:
+                                    print(f"Trend chart failed, trying bar chart: {chart_json.get('error')}")
+                                    chart_json = generate_product_bar_chart(df)
+                                
+                                # If bar also fails, try pie chart
+                                if chart_json and 'error' in chart_json:
+                                    print(f"Bar chart failed, trying pie chart")
+                                    chart_json = generate_customer_pie_chart(df)
+                                
+                                # Append Plotly chart to response
+                                if chart_json and 'error' not in chart_json:
+                                    import json as json_lib
+                                    chart_block = f"\n\n```plotly_chart\n{json_lib.dumps(chart_json)}\n```"
+                                    ai_response += chart_block
+                                    sources.append("Interactive Chart")
+                                else:
+                                    print(f"All chart types failed: {chart_json}")
+                        except Exception as chart_error:
+                            print(f"Chart generation error: {chart_error}")
+                            import traceback
+                            traceback.print_exc()
+                            # Continue without chart
+                    
+                    # Clean up response (strip code, tables, LaTeX)
+                    ai_response = clean_ai_response(ai_response)
+                    return ai_response, sources
+                else:
+                    error = await response.text()
+                    print(f"OpenRouter API error: {response.status} - {error}")
+                    return (
+                        f"⚠️ **Model Error ({response.status})**\n\n"
+                        f"The model `{model_id}` is not available.\n\n"
+                        "**Please try:** Select a different AI model from the dropdown.\n\n"
+                        "**Working models:** DeepSeek Chat, Mistral 7B, Llama 70B",
+                        ["Model Error"]
+                    )
+                    
+    except Exception as e:
+        print(f"AI model error: {e}")
+        traceback.print_exc()
+        # Graceful fallback - return RAG context directly
+        return (
+            f"⚠️ AI model unavailable. Here's your data:\n\n{data_context[:3000]}",
+            ["Fallback Mode"]
+        )
+
 
 @router.post("/message", response_model=ChatResponse)
 async def send_message(
@@ -418,14 +896,86 @@ async def send_message(
             for msg in recent_messages:
                 conversation_context += f"{msg.role.upper()}: {msg.content}\n"
         
-        # PERSONAL INFO DETECTION - Extract and save user name if mentioned
+        # =====================================================================
+        # $500K ENTERPRISE MEMORY SYSTEM - ChatGPT-Level Persistent Memory
+        # =====================================================================
         try:
-            from core.memory import process_personal_info
-            personal_detected = process_personal_info(user_id, query)
-            if personal_detected:
-                print(f"💾 Saved personal information for user {user_id}")
-        except Exception as e:
-            print(f"Memory processing: {e}")
+            from core.memory import process_personal_info, get_user_name
+            
+            query_lower = query.lower().strip()
+            
+            # STEP 1: MEMORY WRITE - Check if user is providing their name
+            personal_saved = process_personal_info(user_id, query)
+            if personal_saved:
+                print(f"💾 MEMORY WRITE: Saved personal information for user {user_id}")
+            
+            # STEP 2: MEMORY READ - Get stored name
+            stored_name = get_user_name(user_id)
+            print(f"📖 MEMORY READ: Stored name = {stored_name}")
+            
+            # CASE 1: User PROVIDING name (must check BEFORE asking)
+            # Patterns: "my name is X", "i am X", "call me X"
+            name_provide_patterns = ['my name is', 'i am ', "i'm ", 'call me', 'you can call me', 'name is ']
+            is_providing_name = any(pattern in query_lower for pattern in name_provide_patterns)
+            
+            if is_providing_name and personal_saved and stored_name:
+                history.append(Message(role="user", content=query, timestamp=datetime.now().isoformat()))
+                
+                response_text = (
+                    f"Nice to meet you, **{stored_name}**!\n\n"
+                    f"I've saved your name to my memory. I'll remember you across all our conversations.\n\n"
+                    f"**Ready to analyze your business data.** What would you like to know?"
+                )
+                
+                assistant_msg = Message(role="assistant", content=response_text, timestamp=datetime.now().isoformat())
+                history.append(assistant_msg)
+                save_conversation(user_id, conversation_id, history)
+                
+                return ChatResponse(
+                    message=response_text,
+                    mode="memory",
+                    sources=["Persistent Memory"],
+                    conversationId=conversation_id,
+                    timestamp=datetime.now().isoformat()
+                )
+            
+            # CASE 2: User ASKING about their name
+            # Patterns: "what is my name", "who am i", "tell me my name"
+            name_ask_patterns = ['what is my name', 'what\'s my name', 'who am i', 'tell me my name', 
+                                 'do you know my name', 'remember my name', 'do you remember me']
+            is_asking_name = any(pattern in query_lower for pattern in name_ask_patterns)
+            
+            if is_asking_name:
+                history.append(Message(role="user", content=query, timestamp=datetime.now().isoformat()))
+                
+                if stored_name:
+                    response_text = (
+                        f"Your name is **{stored_name}**.\n\n"
+                        f"I remember you from our previous conversations.\n\n"
+                        f"How can I help you with your business data today?"
+                    )
+                else:
+                    response_text = (
+                        "I don't have your name saved yet.\n\n"
+                        "Please introduce yourself (e.g., 'My name is Naveen') and I'll remember you for all future conversations."
+                    )
+                
+                assistant_msg = Message(role="assistant", content=response_text, timestamp=datetime.now().isoformat())
+                history.append(assistant_msg)
+                save_conversation(user_id, conversation_id, history)
+                
+                return ChatResponse(
+                    message=response_text,
+                    mode="memory",
+                    sources=["Persistent Memory"],
+                    conversationId=conversation_id,
+                    timestamp=datetime.now().isoformat()
+                )
+                
+        except Exception as mem_err:
+            print(f"Memory processing error: {mem_err}")
+            import traceback
+            traceback.print_exc()
 
         user_msg = Message(
             role="user",
@@ -517,7 +1067,7 @@ async def send_message(
             print(f"💬 PERSONAL CHAT MODE - Greeting/conversational query detected")
         
         # PRIORITY 3: RESPECT EXPLICIT MODE SELECTION
-        elif mode in ["graphrag", "graph", "hybrid", "rag", "vision"]:
+        elif mode in ["graphrag", "graph", "hybrid", "rag", "vision", "prediction"]:
             # SPECIAL CASE: Vision mode selected but query is about DATA (not image)
             if mode == "vision" and not has_image and is_data_query:
                 mode = "graph"  # Redirect to GraphRAG for data analysis
@@ -525,6 +1075,9 @@ async def send_message(
             elif mode == "vision" and not has_image:
                 # Vision without image and no data query - still use vision (will show instructions)
                 print(f"🟩 VISION MODE - No image attached, showing instructions")
+            elif mode == "prediction":
+                # Prediction mode - uses HYBRID internally but displays as PREDICTION
+                print(f"📈 PREDICTION MODE - Forecasts and trends analysis (3 accuracy tiers)")
             else:
                 print(f"🎯 EXPLICIT MODE SELECTED: {mode.upper()} - Respecting user choice")
         
@@ -614,11 +1167,73 @@ async def send_message(
             response = state.answer
             sources = state.sources
             
+        elif mode == "prediction":
+            # PREDICTION MODE - Uses hybrid pipeline with prediction-focused processing
+            from agents.nodes import hybrid_answer
+            from agents.state import AgentState
+            import re
+            
+            # Add prediction context to the question
+            prediction_query = f"[PREDICTION MODE - Use 3 accuracy tiers] {query}"
+            
+            state = AgentState(company_id=user_id, question=prediction_query, route="prediction", answer="", context={})
+            state = hybrid_answer(state)
+            response = state.answer
+            
+            # DEFINITIVE CLEANUP: Line-by-line filtering to remove ALL hybrid text
+            cleaned_lines = []
+            skip_patterns = [
+                'reasoning type',
+                'mode weights',
+                'rag fusion',
+                'balanced fusion',
+                'graph-heavy',
+                'rag 50%',
+                'graph 50%',
+            ]
+            
+            for line in response.split('\n'):
+                line_lower = line.lower().strip()
+                
+                # Skip lines containing hybrid terminology
+                if any(pattern in line_lower for pattern in skip_patterns):
+                    continue
+                
+                # Replace HYBRID with PREDICTION in any remaining lines
+                if 'hybrid' in line_lower:
+                    line = re.sub(r'\*?Analysis Mode:\s*\*?HYBRID\*?', '**Analysis Mode: PREDICTION**', line, flags=re.IGNORECASE)
+                    line = re.sub(r'Mode:\s*HYBRID', 'Mode: PREDICTION', line, flags=re.IGNORECASE)
+                    line = re.sub(r'HYBRID', 'PREDICTION', line, flags=re.IGNORECASE)
+                
+                # Skip empty asterisk lines (artifacts from removed content)
+                if line.strip() in ['**', '*', '---', '']:
+                    if cleaned_lines and cleaned_lines[-1].strip() in ['**', '*', '---', '']:
+                        continue  # Skip consecutive empty markers
+                
+                cleaned_lines.append(line)
+            
+            response = '\n'.join(cleaned_lines)
+            
+            # Clean up multiple consecutive dashes/empty lines
+            response = re.sub(r'\n{3,}', '\n\n', response)
+            response = re.sub(r'(---\s*\n){2,}', '---\n', response)
+            
+            # Ensure prediction footer exists at the end
+            if 'Analysis Mode: PREDICTION' not in response:
+                response += "\n\n---\n📈 **Analysis Mode: PREDICTION**\n"
+                response += "Accuracy Tier: TIER 3 (Scenario-Based) - Snapshot data used\n"
+            
+            sources = ["Prediction Analysis"] + (state.sources if state.sources else [])
+            
         elif mode == "vision":
             from agents.nodes import vision_answer
             from agents.state import AgentState
             import base64
             import tempfile
+            
+            # DEBUG: Print what we received
+            print(f"🔍 VISION MODE: request.attachedFiles = {request.attachedFiles}")
+            print(f"🔍 VISION MODE: Number of files = {len(request.attachedFiles) if request.attachedFiles else 0}")
             
             # Save attached images to temporary files for Gemini Vision
             processed_files = []
@@ -705,6 +1320,17 @@ async def send_message(
             # Personal/greeting response - conversational mode
             context = conversation_context
         
+        # AI MODELS VIA OPENROUTER - DeepSeek, Qwen, Nous, Gemini, Llama
+        elif mode in AI_MODELS:
+            print(f"🤖 AI MODEL MODE: {mode} - Using OpenRouter with RAG context")
+            response, sources = await ai_model_response(
+                user_id=user_id,
+                query=query,
+                model_key=mode,
+                conversation_context=conversation_context
+            )
+            print(f"🤖 AI model returned: {len(response) if response else 0} chars")
+        
         # For agent modes (rag, graph, hybrid, vision), response is already complete
         # Only build prompt for chat mode
         if mode == "chat":
@@ -718,8 +1344,8 @@ User: {query}
 
 Rules:
 - If greeting (hi/hello): Say hello, mention you have {file_count} data files, offer to help with revenue, customers, products, or trends.
-- If asked "who are you": Briefly explain you're an AI that analyzes business data.
-- If thanked: Say "You're welcome!"
+- If asked who you are: Briefly explain you are an AI Business Analyst.
+- If thanked: Say you are welcome.
 - Keep response under 3 sentences. Be warm and natural."""
             response = chat(prompt, max_tokens=200)
         

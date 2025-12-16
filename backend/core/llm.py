@@ -100,9 +100,39 @@ def chat(
         return response.choices[0].message.content
         
     except Exception as e:
+        error_str = str(e).lower()
         logger.error(f"LLM Chat Error: {str(e)}")
-        # Return error message as chat response to prevent 500 Server Error
-        return f"I encountered an issue connecting to the AI model: {str(e)}"
+        
+        # Sanitize error message - NEVER expose API details to users
+        if 'rate_limit' in error_str or 'rate limit' in error_str or 'too large' in error_str:
+            return (
+                "**SERVICE LIMIT REACHED**\n\n"
+                "The request was too large for the current model. "
+                "Please try:\n"
+                "- Asking a more specific question\n"
+                "- Selecting a different AI model\n"
+                "- Uploading smaller data files"
+            )
+        elif 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str:
+            return (
+                "**CONFIGURATION ERROR**\n\n"
+                "There's an issue with the AI model configuration. "
+                "Please contact the administrator."
+            )
+        elif 'timeout' in error_str or 'connection' in error_str:
+            return (
+                "**CONNECTION ERROR**\n\n"
+                "Unable to reach the AI service. Please try again in a moment."
+            )
+        else:
+            # Generic error - don't expose details
+            return (
+                "**PROCESSING ERROR**\n\n"
+                "Unable to process your request. Please try:\n"
+                "- Rephrasing your question\n"
+                "- Selecting a different AI model\n"
+                "- Trying again in a moment"
+            )
 
 
 def embed_text(text: str) -> List[float]:

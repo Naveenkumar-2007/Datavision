@@ -6,8 +6,10 @@ With cache invalidation for data consistency
 SECURED: Uses JWT authentication for user isolation
 """
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Header, Depends
-from typing import List, Optional
+from fastapi import APIRouter, File, UploadFile, HTTPException, Query, Header, Depends
+from fastapi.responses import JSONResponse, FileResponse
+from typing import List, Optional, Dict
+from pathlib import Path
 import shutil
 import traceback
 from datetime import datetime
@@ -333,9 +335,28 @@ async def delete_file(
             Settings.FAISS_DIR = paths["faiss"]
             Settings.GRAPH_DIR = paths["graph"]
             
-            # Temporarily disabled - IngestionPipeline module doesn't exist
-            # Pipeline retraining will be enabled when module is available
-            print(f"⚠️ Pipeline retraining disabled - ingestion module not available")
+            # Create file info for pipeline
+            file_infos = []
+            for f in remaining_files:
+                file_infos.append({
+                    "id": f.name,
+                    "name": f.name,
+                    "size": f.stat().st_size,
+                    "type": f.suffix[1:] if f.suffix else "unknown",
+                })
+            
+            # FRESH process remaining files with IngestionPipeline
+            try:
+                pipeline = IngestionPipeline()
+                result = pipeline.process(
+                    file_infos,
+                    user_id=user_id,
+                    base_path=STORAGE_BASE
+                )
+                print(f"✅ Retraining complete: {result}")
+            except Exception as e:
+                print(f"⚠️ Retraining error: {e}")
+                traceback.print_exc()
                     
             # Re-detect currency after file deletion
             detected_currency = detect_and_save_user_currency(user_id, paths["files"], STORAGE_BASE)
@@ -412,11 +433,30 @@ async def rebuild_indexes(user_id: str):
         Settings.FAISS_DIR = paths["faiss"]
         Settings.GRAPH_DIR = paths["graph"]
         
-        # Temporarily disabled - IngestionPipeline module doesn't exist
-        # Pipeline rebuild will be enabled when module is available
-        print(f"⚠️ Pipeline rebuild disabled - ingestion module not available")
+        # Create file info for pipeline
+        file_infos = []
+        for f in files:
+            file_infos.append({
+                "id": f.name,
+                "name": f.name,
+                "size": f.stat().st_size,
+                "type": f.suffix[1:] if f.suffix else "unknown",
+            })
         
-        result = {"chunks": 0, "tables": 0}
+        # FRESH process ALL files with IngestionPipeline
+        print(f"🔄 Processing {len(file_infos)} files with IngestionPipeline...")
+        try:
+            pipeline = IngestionPipeline()
+            result = pipeline.process(
+                file_infos,
+                user_id=user_id,
+                base_path=STORAGE_BASE
+            )
+            print(f"✅ Pipeline processing complete: {result}")
+        except Exception as e:
+            print(f"⚠️ Pipeline error: {e}")
+            traceback.print_exc()
+            result = {"chunks": 0, "tables": 0}
         
         # Re-detect currency after rebuild
         detected_currency = detect_and_save_user_currency(user_id, paths["files"], STORAGE_BASE)
@@ -539,6 +579,95 @@ async def download_file(user_id: str, file_id: str):
             filename=file_id,
             media_type='application/octet-stream'
         )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# GOOGLE SHEETS IMPORT ENDPOINT
+# ============================================================================
+
+@router.post("/{user_id}/import-google-sheet")
+async def import_google_sheet(
+    user_id: str,
+    sheet_url: str = Query(..., description="Google Sheets URL or ID"),
+    sheet_name: Optional[str] = Query(None, description="Optional sheet/tab name")
+):
+    """
+    Import data from a public Google Sheet
+    The sheet must be accessible via link (Anyone with the link can view)
+    """
+    try:
+        from integrations.google_sheets import import_google_sheet as gs_import, extract_sheet_id
+        from ingestion.pipeline import ingest
+        import tempfile
+        import os
+        
+        # Validate sheet ID
+        sheet_id = extract_sheet_id(sheet_url)
+        if not sheet_id:
+            raise HTTPException(status_code=400, detail="Invalid Google Sheets URL")
+        
+        # Import sheet to DataFrame
+        df = await gs_import(sheet_url, sheet_name)
+        
+        if df.empty:
+            raise HTTPException(status_code=400, detail="Sheet is empty or could not be read")
+        
+        # Save as temporary CSV
+        paths = get_user_paths(user_id)
+        temp_filename = f"google_sheet_{sheet_id[:8]}.csv"
+        temp_path = paths["uploads"] / temp_filename
+        
+        df.to_csv(temp_path, index=False)
+        
+        # Run ingestion pipeline
+        result = ingest(user_id)
+        
+        # Invalidate cache
+        invalidate_user_cache(user_id)
+        
+        return {
+            "success": True,
+            "message": "Google Sheet imported successfully",
+            "filename": temp_filename,
+            "rows": len(df),
+            "columns": list(df.columns),
+            "sampleData": df.head(3).to_dict(orient='records')
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to import: {str(e)}")
+
+
+@router.get("/{user_id}/preview-google-sheet")
+async def preview_google_sheet(
+    user_id: str,
+    sheet_url: str = Query(..., description="Google Sheets URL or ID")
+):
+    """
+    Preview a Google Sheet before importing
+    Returns column names, row count, and sample data
+    """
+    try:
+        from integrations.google_sheets import get_sheet_info
+        
+        info = await get_sheet_info(sheet_url)
+        
+        if not info.get("success"):
+            raise HTTPException(
+                status_code=400, 
+                detail=info.get("error", "Failed to read sheet")
+            )
+        
+        return info
         
     except HTTPException:
         raise

@@ -95,7 +95,7 @@ def revenue_dataframe(company_id: str) -> pd.DataFrame:
     """
     Extract revenue/invoice data from graph as DataFrame.
     Works with or without date information.
-    Includes currency per invoice for multi-currency support.
+    Includes currency and source_file per invoice for enterprise tracking.
     """
     G = load_graph(company_id)
     if not G:
@@ -110,6 +110,7 @@ def revenue_dataframe(company_id: str) -> pd.DataFrame:
             date = None
             amount = 0.0
             currency = data.get("currency", "USD")  # Get currency from invoice node
+            source_file = data.get("source_file", "Unknown")  # Get source file from invoice node
 
             # Find connected nodes
             for neighbor in G.neighbors(node):
@@ -132,9 +133,10 @@ def revenue_dataframe(company_id: str) -> pd.DataFrame:
                     "invoice": invoice_id,
                     "customer": customer if customer else "Unknown Customer",
                     "product": product if product else "General Item",
-                    "date": date if date else "Unknown Date",  # Default to "Unknown Date" if no date
+                    "date": date if date else "Unknown Date",
                     "amount": float(amount) if amount else 0.0,
-                    "currency": currency  # Include currency for multi-currency support
+                    "currency": currency,
+                    "source_file": source_file  # Track which file this record came from
                 })
 
     return pd.DataFrame(rows)

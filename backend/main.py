@@ -26,7 +26,7 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(backend_root))
 
 # Import routers
-from api.v1.endpoints import files, chat, analytics, reports, graph, auth, admin, notifications, email_prefs
+from api.v1.endpoints import files, chat, analytics, reports, graph, auth, admin, notifications, email_prefs, charts
 
 app = FastAPI(
     title="AI Business Analyst API - Enterprise Edition",
@@ -111,6 +111,7 @@ app.include_router(graph.router, prefix="/api/v1/graph", tags=["Graph"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
 app.include_router(email_prefs.router, prefix="/api/v1/settings", tags=["Settings"])
+app.include_router(charts.router, prefix="/api/v1/charts", tags=["Charts"])
 
 # ===== AUTOMATIC EMAIL SCHEDULER =====
 import asyncio

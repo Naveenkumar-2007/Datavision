@@ -146,6 +146,30 @@ export const apiService = {
     return api.get(`/api/v1/analytics/products/${userId}`);
   },
 
+  // Enterprise Smart Analytics
+  getInsights: async () => {
+    const userId = getUserId();
+    return api.get(`/api/v1/analytics/insights/${userId}`);
+  },
+
+  getSmartOverview: async () => {
+    const userId = getUserId();
+    return api.get(`/api/v1/analytics/smart-overview/${userId}`);
+  },
+
+  getDataProfile: async () => {
+    const userId = getUserId();
+    return api.get(`/api/v1/analytics/data-profile/${userId}`);
+  },
+
+  // $500K Enterprise Dashboard Stats
+  getDashboardStats: async () => {
+    const userId = getUserId();
+    return api.get('/api/v1/analytics/dashboard-stats', {
+      params: { user_id: userId },
+    });
+  },
+
   // Report operations
   generateReport: async (reportType: string, dateRange?: { start: string; end: string }) => {
     const userId = getUserId();
@@ -165,6 +189,53 @@ export const apiService = {
     return api.get(`/api/v1/reports/${reportId}/export/pdf`, {
       responseType: 'blob',
     });
+  },
+
+  // Real-time Exchange Rates
+  getExchangeRates: async (baseCurrency: string = 'USD') => {
+    return api.get('/api/v1/analytics/exchange-rates', {
+      params: { base: baseCurrency },
+    });
+  },
+
+  convertCurrency: async (amount: number, fromCurrency: string, toCurrency: string) => {
+    return api.get('/api/v1/analytics/convert-currency', {
+      params: { amount, from_currency: fromCurrency, to_currency: toCurrency },
+    });
+  },
+
+  // Google Sheets Import
+  importGoogleSheet: async (sheetUrl: string, sheetName?: string) => {
+    const userId = getUserId();
+    return api.post(`/api/v1/files/${userId}/import-google-sheet`, null, {
+      params: { sheet_url: sheetUrl, sheet_name: sheetName },
+    });
+  },
+
+  previewGoogleSheet: async (sheetUrl: string) => {
+    const userId = getUserId();
+    return api.get(`/api/v1/files/${userId}/preview-google-sheet`, {
+      params: { sheet_url: sheetUrl },
+    });
+  },
+
+  // AI Providers
+  getAIProviders: async () => {
+    return api.get('/api/v1/analytics/ai-providers');
+  },
+
+  // Charts - Plotly Generation
+  generateChart: async (chartType: string, dataSource: string = 'revenue') => {
+    const userId = getUserId();
+    return api.post('/api/v1/charts/generate', {
+      user_id: userId,
+      chart_type: chartType,
+      data_source: dataSource,
+    });
+  },
+
+  getChartTypes: async () => {
+    return api.get('/api/v1/charts/available-types');
   },
 };
 

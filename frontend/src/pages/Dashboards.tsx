@@ -1,139 +1,212 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   TrendingUp,
+  TrendingDown,
   Users,
-  ShoppingBag,
-  Download,
-  Loader,
-  AlertCircle,
+  DollarSign,
+  ShoppingCart,
+  RefreshCw,
+  ChevronRight,
+  Calendar,
+  BarChart3,
+  Activity,
+  Package,
 } from 'lucide-react';
-import { formatCurrency, getCurrencySymbol, detectCurrency } from '@/utils/currency';
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, AreaChart, Area, CartesianGrid,
+  ComposedChart, Line
 } from 'recharts';
 import { apiService } from '@/services/api';
+import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency, formatCompactCurrency, Currency } from '@/utils/currency';
 
-// Premium Animated Number Counter Component
-const AnimatedNumber: React.FC<{ value: number; prefix?: string; suffix?: string; decimals?: number }> = ({
-  value, prefix = '', suffix = '', decimals = 0
-}) => {
-  const [displayValue, setDisplayValue] = useState(0);
-  const frameRef = useRef<number>();
-
-  useEffect(() => {
-    let startTime: number;
-    const duration = 1200; // 1.2 seconds
-    const startValue = displayValue;
-
-    const animate = (timestamp: number) => {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / duration, 1);
-
-      // Easing function (ease-out cubic)
-      const easeOut = 1 - Math.pow(1 - progress, 3);
-      const currentValue = startValue + (value - startValue) * easeOut;
-
-      setDisplayValue(currentValue);
-
-      if (progress < 1) {
-        frameRef.current = requestAnimationFrame(animate);
-      }
-    };
-
-    frameRef.current = requestAnimationFrame(animate);
-
-    return () => {
-      if (frameRef.current) cancelAnimationFrame(frameRef.current);
-    };
-  }, [value]);
-
-  const formatted = decimals > 0
-    ? displayValue.toFixed(decimals)
-    : Math.round(displayValue).toLocaleString();
-
-  return <span className="count-up">{prefix}{formatted}{suffix}</span>;
+// Website Theme Colors (from tailwind.config.js)
+const THEME = {
+  primary: '#F97316',      // Orange
+  primaryLight: '#FB923C',
+  primaryDark: '#EA580C',
+  green: '#22C55E',
+  red: '#EF4444',
+  amber: '#F59E0B',
+  yellow: '#FBBF24',
+  // Card backgrounds for dark mode
+  cardBg: '#1E293B',
+  surfaceBg: '#0F172A',
 };
 
-interface AnalyticsData {
-  metrics: {
-    totalRevenue: number;
-    totalInvoices: number;
-    uniqueCustomers: number;
-    averageOrderValue: number;
-    currency?: string;
-  };
-  timeSeries: Array<{ date: string; revenue: number; invoices: number }>;
-  topProducts: Array<{ name: string; revenue: number; count: number }>;
-  bottomProducts?: Array<{ name: string; revenue: number; count: number }>;
-  allProducts?: Array<{ name: string; revenue: number; count: number }>;
-  topCustomers: Array<{ name: string; revenue: number; orders: number }>;
-  bottomCustomers?: Array<{ name: string; revenue: number; orders: number }>;
-  allCustomers?: Array<{ name: string; revenue: number; orders: number }>;
+// Vibrant chart colors that are visible in dark mode
+const CHART_COLORS = [
+  '#F97316',  // Orange (primary)
+  '#22C55E',  // Green
+  '#3B82F6',  // Blue
+  '#F59E0B',  // Amber
+  '#EF4444',  // Red
+  '#8B5CF6',  // Purple
+  '#06B6D4',  // Cyan
+  '#EC4899',  // Pink
+];
+
+// KPI Card Component - Uses glass-card for theme support
+// ENTERPRISE: Added tooltip definitions for audit-readiness
+const KPICard: React.FC<{
+  title: string;
+  value: string;
+  change?: number;
+  icon: React.ReactNode;
+  color: string;
+  tooltip?: string;  // Enterprise: Definition for this metric
+}> = ({ title, value, change, icon, color, tooltip }) => (
+  <motion.div
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    whileHover={{ y: -4, boxShadow: `0 20px 40px ${color}30` }}
+    className="glass-card p-5 hover:border-primary-500/30 transition-all relative group"
+  >
+    <div className="flex items-start justify-between">
+      <div className="flex-1">
+        <div className="flex items-center gap-1">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">{title}</p>
+          {tooltip && (
+            <div className="relative">
+              <span className="text-gray-500 hover:text-primary-400 cursor-help text-xs" title={tooltip}>ⓘ</span>
+              {/* Tooltip popup on hover */}
+              <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-48 p-2 bg-surface-800 border border-surface-600 rounded-lg shadow-xl text-xs text-gray-300">
+                {tooltip}
+              </div>
+            </div>
+          )}
+        </div>
+        <p className="text-2xl font-bold text-white">{value}</p>
+        {change !== undefined ? (
+          <div className={`flex items-center mt-2 text-sm ${change >= 0 ? 'text-accent-green' : 'text-accent-red'}`}>
+            {change >= 0 ? <TrendingUp className="w-4 h-4 mr-1" /> : <TrendingDown className="w-4 h-4 mr-1" />}
+            <span className="font-semibold">{Math.abs(change).toFixed(1)}%</span>
+            <span className="text-gray-500 ml-1 text-xs">vs last</span>
+          </div>
+        ) : (
+          <div className="mt-2 text-xs text-gray-500">No historical baseline</div>
+        )}
+      </div>
+      <div
+        className="p-3 rounded-xl"
+        style={{ backgroundColor: `${color}20`, border: `1px solid ${color}40` }}
+      >
+        {icon}
+      </div>
+    </div>
+  </motion.div>
+);
+
+// Data Table - Uses CSS variables for theme support
+const DataTable: React.FC<{
+  title: string;
+  icon: React.ReactNode;
+  data: any[];
+  columns: { key: string; label: string; format?: (v: any, row?: any) => any; align?: string }[];
+  currency: Currency;
+}> = ({ title, icon, data, columns, currency }) => (
+  <div className="glass-card overflow-hidden">
+    <div className="px-5 py-4 border-b border-dark-border flex items-center gap-3">
+      {icon}
+      <h3 className="text-base font-semibold text-white">{title}</h3>
+    </div>
+    <div className="overflow-x-auto">
+      <table className="w-full">
+        <thead>
+          <tr>
+            {columns.map((col) => (
+              <th
+                key={col.key}
+                className={`px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider ${col.align === 'right' ? 'text-right' : 'text-left'}`}
+              >
+                {col.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {data.slice(0, 6).map((row, i) => (
+            <motion.tr
+              key={i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.05 }}
+            >
+              {columns.map((col, j) => (
+                <td
+                  key={col.key}
+                  className={`px-5 py-4 text-sm ${col.align === 'right' ? 'text-right' : 'text-left'} ${j === 0 ? 'font-medium text-white' : 'text-gray-300'}`}
+                >
+                  {col.format ? col.format(row[col.key], row) : row[col.key]}
+                </td>
+              ))}
+            </motion.tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
+interface DashboardData {
   hasData: boolean;
-  currency?: string;
+  currency: string;
+  summary: {
+    totalRevenue: number;
+    totalOrders: number;
+    uniqueCustomers: number;
+    uniqueProducts: number;
+    avgOrderValue: number;
+  };
+  abcAnalysis: {
+    products: any[];
+    customers: any[];
+    summary: any;
+  };
+  customerSegments: any[];
+  segmentSummary: any[];
+  growthMetrics: any;
+  revenueTimeline: { month: string; revenue: number; customers: number }[];
+  topInsights: any[];
 }
 
 const Dashboards: React.FC = () => {
-  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dateRange, setDateRange] = useState('30d');
+  const [dateFilter, setDateFilter] = useState('30d');
 
-  // Auto-detect currency from data
-  const currency = data ? detectCurrency(data) : 'INR';
+  // Get user's SELECTED currency from Settings
+  const currency = getUserPreferredCurrency();
   const currencySymbol = getCurrencySymbol(currency);
-
-  // Currency Icon Component
-  const CurrencyIcon = () => (
-    <div className="w-8 h-8 flex items-center justify-center font-bold text-current">
-      {currencySymbol}
-    </div>
-  );
 
   useEffect(() => {
     loadData();
-
-    // Listen for file updates from other pages
-    const handleFilesUpdated = () => {
-      loadData();
-    };
-
+    const handleFilesUpdated = () => loadData();
     window.addEventListener('filesUpdated', handleFilesUpdated);
-
-    return () => {
-      window.removeEventListener('filesUpdated', handleFilesUpdated);
-    };
+    return () => window.removeEventListener('filesUpdated', handleFilesUpdated);
   }, []);
 
   const loadData = async () => {
     try {
       setLoading(true);
       setError(null);
-      const response = await apiService.getAnalyticsOverview();
+      const response = await apiService.getDashboardStats();
       setData(response.data);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load data');
+      setError(err.response?.data?.detail || 'Failed to load dashboard');
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <Loader className="w-12 h-12 text-orange-500 animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading real-time analytics from your files...</p>
+          <div className="w-14 h-14 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading dashboard...</p>
         </div>
       </div>
     );
@@ -142,292 +215,417 @@ const Dashboards: React.FC = () => {
   if (error || !data?.hasData) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="text-center glass-card p-8 max-w-md">
-          <AlertCircle className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-white mb-2">No Data Available</h2>
-          <p className="text-gray-400 mb-4">Upload files to see live dashboards</p>
+        <div className="text-center bg-surface-800 p-10 rounded-2xl border border-surface-700 max-w-md">
+          <BarChart3 className="w-16 h-16 text-primary-500 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-white mb-2">No Data Available</h2>
+          <p className="text-gray-400 mb-6">Upload your data to see insights</p>
           <a
             href="/data-hub"
-            className="inline-block px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-primary-500 to-accent-amber text-white rounded-xl font-medium hover:shadow-glow transition-all"
           >
-            Upload Files
+            Upload Data
+            <ChevronRight className="w-4 h-4" />
           </a>
         </div>
       </div>
     );
   }
 
-  const revenueData = data.timeSeries.map(item => ({
-    date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    revenue: item.revenue,
-    invoices: item.invoices,
+  // Prepare donut chart data for products
+  const productPieData = data.abcAnalysis.products.slice(0, 6).map((p, i) => ({
+    name: p.name.length > 20 ? p.name.substring(0, 20) + '...' : p.name,
+    value: p.revenue,
+    percentage: p.percentage,
+    fill: CHART_COLORS[i % CHART_COLORS.length],
   }));
 
-  const productData = data.topProducts.slice(0, 5).map(p => ({
-    product: p.name,
-    sales: p.count,
-    revenue: p.revenue,
+  // Prepare horizontal bar data for customers
+  const customerBarData = data.abcAnalysis.customers.slice(0, 6).map((c, i) => ({
+    name: c.name.length > 15 ? c.name.substring(0, 15) + '...' : c.name,
+    revenue: c.revenue,
+    color: CHART_COLORS[i % CHART_COLORS.length],
+  }));
+
+  // Segment pie data
+  const segmentPieData = data.segmentSummary.map((seg, i) => ({
+    name: seg.segment,
+    value: seg.count,
+    fill: CHART_COLORS[i % CHART_COLORS.length],
   }));
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
-      >
-        <div>
-          <h1 className="text-4xl font-bold text-white mb-2">Live Dashboards</h1>
-          <p className="text-gray-400">Real-time analytics from your uploaded files</p>
-        </div>
-        <div className="flex space-x-3">
+    <div className="space-y-6 p-2">
+      {/* Top Bar - Filter & Refresh */}
+      <div className="flex items-center justify-end gap-3">
+        <div className="flex items-center gap-2 glass-card px-4 py-2 rounded-xl">
+          <Calendar className="w-4 h-4 text-primary-400" />
           <select
-            value={dateRange}
-            onChange={(e) => setDateRange(e.target.value)}
-            className="px-4 py-2 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-primary-500"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="bg-transparent text-sm text-gray-300 focus:outline-none"
           >
             <option value="7d">Last 7 days</option>
             <option value="30d">Last 30 days</option>
             <option value="90d">Last 90 days</option>
-            <option value="1y">Last year</option>
+            <option value="all">All time</option>
           </select>
-          <button
-            onClick={() => window.print()}
-            className="px-4 py-2 bg-primary-500/10 border border-primary-500/20 rounded-xl text-primary-400 font-medium hover:bg-primary-500/20 transition-colors flex items-center space-x-2"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export</span>
-          </button>
         </div>
-      </motion.div>
+        <button
+          onClick={loadData}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 text-white rounded-xl text-sm font-medium transition-all hover:shadow-glow"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
 
-      {/* KPI Cards - REAL DATA WITH PREMIUM ANIMATIONS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Total Revenue */}
+      {/* KPI Cards - ENTERPRISE: Added metric definitions for audit-readiness */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <KPICard
+          title="Total Revenue"
+          value={formatCompactCurrency(data.summary.totalRevenue, currency)}
+          change={data.growthMetrics?.revenueGrowth}
+          icon={<DollarSign className="w-6 h-6 text-primary-400" />}
+          color={THEME.primary}
+          tooltip="Sum of Annual Contract Value across all active customer contracts from uploaded data."
+        />
+        <KPICard
+          title="Customers"
+          value={data.summary.uniqueCustomers.toLocaleString()}
+          change={data.growthMetrics?.customerGrowth}
+          icon={<Users className="w-6 h-6 text-accent-green" />}
+          color={THEME.green}
+          tooltip="Unique customer entities present in uploaded data."
+        />
+        <KPICard
+          title="Orders"
+          value={data.summary.totalOrders.toLocaleString()}
+          change={data.growthMetrics?.orderGrowth}
+          icon={<ShoppingCart className="w-6 h-6 text-accent-amber" />}
+          color={THEME.amber}
+          tooltip="Active contracts (1 contract per customer in this dataset)."
+        />
+        <KPICard
+          title="Avg Order"
+          value={formatCompactCurrency(data.summary.avgOrderValue, currency)}
+          change={data.growthMetrics?.avgOrderGrowth}
+          icon={<Activity className="w-6 h-6 text-blue-400" />}
+          color="#3B82F6"
+          tooltip="Total Revenue ÷ Total Orders."
+        />
+      </div>
+
+      {/* Revenue Trend + Customer Segments */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Revenue Trend - ENTERPRISE: Shows message if no time-series data */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          whileHover={{ y: -5, boxShadow: '0 20px 40px rgba(249, 115, 22, 0.15)' }}
-          className="premium-card p-6"
+          className="lg:col-span-2 glass-card p-5"
         >
           <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent-green/20 to-accent-green/10 flex items-center justify-center">
-              <CurrencyIcon />
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary-500/20">
+                <TrendingUp className="w-5 h-5 text-primary-500" />
+              </div>
+              <h3 className="text-base font-semibold text-white">Revenue Trend</h3>
             </div>
+            <span className="text-xl font-bold text-primary-400">
+              {formatCompactCurrency(data.summary.totalRevenue, currency)}
+            </span>
           </div>
-          <div className="text-3xl font-bold text-white mb-1">
-            {currencySymbol}<AnimatedNumber value={data.metrics.totalRevenue} />
-          </div>
-          <div className="text-sm text-gray-400">Total Revenue</div>
+          {/* ENTERPRISE: Check if time-series data exists */}
+          {data.revenueTimeline && data.revenueTimeline.length > 1 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={data.revenueTimeline}>
+                <defs>
+                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={THEME.primary} stopOpacity={0.4} />
+                    <stop offset="100%" stopColor={THEME.primary} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} />
+                <YAxis
+                  yAxisId="left" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                  tickFormatter={(v) => formatCompactCurrency(v, currency).replace(currencySymbol, '')}
+                />
+                <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#9CA3AF', fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #475569', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}
+                  labelStyle={{ color: '#E5E7EB', fontWeight: 600 }}
+                  itemStyle={{ color: '#FFFFFF' }}
+                  formatter={(value: number, name: string) => [
+                    name === 'revenue' ? formatCurrency(value, currency) : value,
+                    name === 'revenue' ? 'Revenue' : 'Customers'
+                  ]}
+                />
+                <Area yAxisId="left" type="monotone" dataKey="revenue" fill="url(#revenueGradient)" stroke={THEME.primary} strokeWidth={3} />
+                <Line yAxisId="right" type="monotone" dataKey="customers" stroke={THEME.green} strokeWidth={2} dot={{ fill: THEME.green, strokeWidth: 0 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+              <TrendingUp className="w-12 h-12 text-gray-600 mb-4" />
+              <p className="text-gray-400 font-medium mb-2">Time-series trend unavailable</p>
+              <p className="text-gray-500 text-sm max-w-xs">
+                Upload data with date fields (e.g., Order Date, Transaction Date) to enable revenue trends.
+              </p>
+            </div>
+          )}
         </motion.div>
 
-        {/* Active Customers */}
+        {/* Customer Segments */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          whileHover={{ y: -5, boxShadow: '0 20px 40px rgba(59, 130, 246, 0.15)' }}
-          className="premium-card p-6"
+          className="glass-card p-5"
         >
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-500/20 to-primary-400/10 flex items-center justify-center">
-              <Users className="w-6 h-6 text-primary-400" />
+          <div className="flex items-center gap-3 mb-1">
+            <div className="p-2 rounded-lg bg-accent-green/20">
+              <Users className="w-5 h-5 text-accent-green" />
             </div>
+            <h3 className="text-base font-semibold text-white">Customer Segments</h3>
           </div>
-          <div className="text-3xl font-bold text-white mb-1">
-            <AnimatedNumber value={data.metrics.uniqueCustomers} />
+          {/* ENTERPRISE: Explain how segments are derived */}
+          <p className="text-xs text-gray-500 mb-4 ml-11">Segments derived using revenue distribution rules (ABC Analysis).</p>
+          <ResponsiveContainer width="100%" height={200}>
+            <PieChart>
+              <Pie
+                data={segmentPieData}
+                cx="50%"
+                cy="50%"
+                innerRadius={45}
+                outerRadius={75}
+                paddingAngle={3}
+                dataKey="value"
+                stroke="none"
+              >
+                {segmentPieData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #475569', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}
+                labelStyle={{ color: '#E5E7EB', fontWeight: 600 }}
+                itemStyle={{ color: '#FFFFFF' }}
+                formatter={(value: number) => [`${value} customers`]}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="space-y-2 mt-2">
+            {segmentPieData.map((seg) => (
+              <div key={seg.name} className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: seg.fill }}></div>
+                  <span className="text-gray-400">{seg.name}</span>
+                </div>
+                <span className="font-medium text-white">{seg.value}</span>
+              </div>
+            ))}
           </div>
-          <div className="text-sm text-gray-400">Active Customers</div>
+        </motion.div>
+      </div>
+
+      {/* Tables */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <DataTable
+            title="Top Customers - Who's Buying?"
+            icon={<Users className="w-5 h-5 text-primary-400" />}
+            data={data.abcAnalysis.customers}
+            currency={currency}
+            columns={[
+              { key: 'name', label: 'Customer' },
+              { key: 'revenue', label: 'Revenue', align: 'right', format: (v) => formatCurrency(v, currency) },
+              { key: 'percentage', label: '%', align: 'right', format: (v) => `${v}%` },
+              {
+                key: 'grade', label: '', align: 'right', format: (v) => (
+                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${v === 'A' ? 'bg-accent-green/20 text-accent-green' :
+                    v === 'B' ? 'bg-accent-amber/20 text-accent-amber' :
+                      'bg-accent-red/20 text-accent-red'
+                    }`}>{v}</span>
+                )
+              }
+            ]}
+          />
         </motion.div>
 
-        {/* Orders */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <DataTable
+            title="Trending Products - What's Selling?"
+            icon={<Package className="w-5 h-5 text-accent-amber" />}
+            data={data.abcAnalysis.products}
+            currency={currency}
+            columns={[
+              { key: 'name', label: 'Product' },
+              { key: 'revenue', label: 'Revenue', align: 'right', format: (v) => formatCurrency(v, currency) },
+              { key: 'percentage', label: '%', align: 'right', format: (v) => `${v}%` },
+              {
+                key: 'rank', label: '#', align: 'right', format: (v) => (
+                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${v <= 3 ? 'bg-primary-500/20 text-primary-400' : 'bg-gray-700 text-gray-400'
+                    }`}>#{v}</span>
+                )
+              }
+            ]}
+          />
+        </motion.div>
+      </div>
+
+      {/* Charts Row - Product Donut + Customer Bars */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Product Distribution - Donut with Labels */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          whileHover={{ y: -5, boxShadow: '0 20px 40px rgba(249, 115, 22, 0.15)' }}
-          className="premium-card p-6"
+          className="glass-card p-5"
         >
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent-orange/20 to-accent-orange/10 flex items-center justify-center">
-              <ShoppingBag className="w-6 h-6 text-accent-orange" />
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-primary-500/20">
+              <Package className="w-5 h-5 text-primary-400" />
             </div>
+            <h3 className="text-base font-semibold text-white">Product Distribution</h3>
           </div>
-          <div className="text-3xl font-bold text-white mb-1">
-            <AnimatedNumber value={data.metrics.totalInvoices} />
+          <ResponsiveContainer width="100%" height={280}>
+            <PieChart>
+              <Pie
+                data={productPieData}
+                cx="50%"
+                cy="50%"
+                innerRadius={50}
+                outerRadius={100}
+                paddingAngle={2}
+                dataKey="value"
+                stroke="none"
+                label={({ percentage, cx, cy, midAngle, innerRadius, outerRadius }) => {
+                  const RADIAN = Math.PI / 180;
+                  const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+                  const x = cx + radius * Math.cos(-midAngle * RADIAN);
+                  const y = cy + radius * Math.sin(-midAngle * RADIAN);
+                  if (percentage < 8) return null;
+                  return (
+                    <text
+                      x={x}
+                      y={y}
+                      fill="#FFFFFF"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fontSize={11}
+                      fontWeight={600}
+                      style={{ textShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
+                    >
+                      {percentage.toFixed(0)}%
+                    </text>
+                  );
+                }}
+                labelLine={false}
+              >
+                {productPieData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #475569', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}
+                labelStyle={{ color: '#E5E7EB', fontWeight: 600 }}
+                itemStyle={{ color: '#FFFFFF' }}
+                formatter={(value: number, _name: string, props: any) => [
+                  formatCurrency(value, currency),
+                  props.payload.name
+                ]}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+          {/* Legend below chart */}
+          <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-dark-border">
+            {productPieData.slice(0, 6).map((p) => (
+              <div key={p.name} className="flex items-center gap-2 text-xs">
+                <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: p.fill }}></div>
+                <span className="text-gray-300 truncate">{p.name}</span>
+                <span className="text-gray-500 ml-auto">{p.percentage}%</span>
+              </div>
+            ))}
           </div>
-          <div className="text-sm text-gray-400">Orders</div>
         </motion.div>
 
-        {/* Avg Order Value */}
+
+        {/* Customer Revenue - Horizontal Bars */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          whileHover={{ y: -5, boxShadow: '0 20px 40px rgba(249, 115, 22, 0.15)' }}
-          className="premium-card p-6"
+          className="glass-card p-5"
         >
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent-orange/20 to-accent-orange/10 flex items-center justify-center">
-              <TrendingUp className="w-6 h-6 text-accent-orange" />
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-accent-green/20">
+              <Users className="w-5 h-5 text-accent-green" />
             </div>
+            <h3 className="text-base font-semibold text-white">Top Customer Revenue</h3>
           </div>
-          <div className="text-3xl font-bold text-white mb-1">
-            {currencySymbol}<AnimatedNumber value={data.metrics.averageOrderValue} decimals={2} />
-          </div>
-          <div className="text-sm text-gray-400">Avg Order Value</div>
-        </motion.div>
-      </div>
-
-      {/* Charts Grid - REAL DATA */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue Trend */}
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-          className="glass-card p-6"
-        >
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-white">Revenue Trend (Real Data)</h2>
-          </div>
-          {revenueData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
-                <XAxis dataKey="date" stroke="#9CA3AF" />
-                <YAxis stroke="#9CA3AF" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: document.documentElement.classList.contains('light-theme') ? '#FFFFFF' : '#10172A',
-                    border: document.documentElement.classList.contains('light-theme') ? '1px solid #E5E7EB' : '1px solid #1F2937',
-                    borderRadius: '12px',
-                    color: document.documentElement.classList.contains('light-theme') ? '#111827' : '#F9FAFB',
-                  }}
-                />
-                <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#3B82F6"
-                  strokeWidth={3}
-                  name="Revenue"
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-gray-400 text-center py-20">No time series data</p>
-          )}
-        </motion.div>
-
-        {/* Product Performance */}
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-          className="glass-card p-6"
-        >
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-white">Product Performance (Real Data)</h2>
-          </div>
-          {productData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={productData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
-                <XAxis dataKey="product" stroke="#9CA3AF" />
-                <YAxis stroke="#9CA3AF" />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: document.documentElement.classList.contains('light-theme') ? '#FFFFFF' : '#10172A',
-                    border: document.documentElement.classList.contains('light-theme') ? '1px solid #E5E7EB' : '1px solid #1F2937',
-                    borderRadius: '12px',
-                    color: document.documentElement.classList.contains('light-theme') ? '#111827' : '#F9FAFB',
-                  }}
-                />
-                <Legend />
-                <Bar dataKey="revenue" fill="#3B82F6" name="Revenue" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-gray-400 text-center py-20">No product data</p>
-          )}
-        </motion.div>
-      </div>
-
-      {/* Top Customers Table - REAL DATA */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-        className="glass-card p-6"
-      >
-        <h2 className="text-xl font-semibold text-white mb-4">Top Customers (Real Data)</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-gray-400 border-b border-dark-border">
-                <th className="pb-3">Customer</th>
-                <th className="pb-3 text-right">Revenue</th>
-                <th className="pb-3 text-right">Orders</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topCustomers.slice(0, 10).map((customer, i) => (
-                <tr key={i} className="border-b border-dark-border/50">
-                  <td className="py-4 text-white">{customer.name}</td>
-                  <td className="py-4 text-right text-accent-green font-semibold">
-                    {formatCurrency(customer.revenue, currency)}
-                  </td>
-                  <td className="py-4 text-right text-gray-300">{customer.orders}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-
-      {/* Lowest-Spending Customers Table - REAL DATA */}
-      {data.bottomCustomers && data.bottomCustomers.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="glass-card p-6"
-        >
-          <h2 className="text-xl font-semibold text-white mb-4">
-            <span className="text-accent-orange">Lowest-Spending</span> Customers (Real Data)
-          </h2>
-          <p className="text-gray-400 text-sm mb-4">Customers with the lowest revenue - growth opportunities</p>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-gray-400 border-b border-dark-border">
-                  <th className="pb-3">Customer</th>
-                  <th className="pb-3 text-right">Revenue</th>
-                  <th className="pb-3 text-right">Orders</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.bottomCustomers.map((customer, i) => (
-                  <tr key={i} className="border-b border-dark-border/50">
-                    <td className="py-4 text-white flex items-center">
-                      {i === 0 && <span className="text-accent-red mr-2">🔻</span>}
-                      {customer.name}
-                      {i === 0 && <span className="ml-2 text-xs bg-accent-red/20 text-accent-red px-2 py-0.5 rounded">LOWEST</span>}
-                    </td>
-                    <td className="py-4 text-right text-accent-orange font-semibold">
-                      {formatCurrency(customer.revenue, currency)}
-                    </td>
-                    <td className="py-4 text-right text-gray-300">{customer.orders}</td>
-                  </tr>
+          <ResponsiveContainer width="100%" height={280}>
+            <BarChart data={customerBarData} layout="vertical">
+              <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" horizontal={false} />
+              <XAxis
+                type="number"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#6B7280', fontSize: 10 }}
+                tickFormatter={(v) => formatCompactCurrency(v, currency).replace(currencySymbol, '')}
+              />
+              <YAxis
+                type="category"
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: '#374151', fontSize: 11 }}
+                width={90}
+              />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1E293B', border: '1px solid #475569', borderRadius: '12px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}
+                labelStyle={{ color: '#E5E7EB', fontWeight: 600 }}
+                itemStyle={{ color: '#FFFFFF' }}
+                formatter={(value: number) => [formatCurrency(value, currency), 'Revenue']}
+              />
+              <Bar dataKey="revenue" radius={[0, 8, 8, 0]}>
+                {customerBarData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </motion.div>
-      )}
+      </div>
+
+      {/* ENTERPRISE: Data Coverage Badge - Increases trust and audit readiness */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.3 }}
+        className="mt-6 p-4 glass-card border border-surface-700 rounded-xl"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-gray-400">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1">
+              <span className="font-medium text-gray-300">Data Coverage:</span>
+            </span>
+            <span>{data.summary.uniqueCustomers.toLocaleString()} customers</span>
+            <span className="text-gray-600">•</span>
+            <span>{data.summary.uniqueProducts.toLocaleString()} products</span>
+            <span className="text-gray-600">•</span>
+            <span>Snapshot dataset</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500">Source: Uploaded files</span>
+            <span className="px-2 py-0.5 bg-primary-500/20 text-primary-400 rounded text-xs font-medium">
+              Enterprise
+            </span>
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">
+          Derived from statistical analysis of uploaded data. No external data used.
+        </p>
+      </motion.div>
     </div>
   );
 };

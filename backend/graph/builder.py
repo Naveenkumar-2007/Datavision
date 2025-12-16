@@ -42,27 +42,33 @@ def detect_currency_from_value(value: str) -> str:
 
 class GraphBuilder:
     @staticmethod
-    def build(company_id: str, tables: list, default_currency: str = 'USD'):
+    def build(company_id: str, tables: list, default_currency: str = 'USD', source_files: list = None):
         """
-        Build knowledge graph from tabular data with multi-currency support.
+        Build knowledge graph from tabular data with multi-currency and source tracking.
         
         Args:
             company_id: Company identifier
             tables: List of pandas DataFrames
             default_currency: Default currency if none detected
+            source_files: List of source file names (one per table)
         """
         G = nx.Graph()
         currencies_detected = {}  # Track currency counts
+        sources_tracked = {}  # Track records per source file
 
-        for df in tables:
+        for table_idx, df in enumerate(tables):
+            # Get source file name for this table
+            source_file = source_files[table_idx] if source_files and table_idx < len(source_files) else f"file_{table_idx}"
+            sources_tracked[source_file] = sources_tracked.get(source_file, 0)
+            
             schema = detect_schema(df.columns)
-            print(f"📊 Detected schema: {schema}")
+            print(f"📊 Detected schema for {source_file}: {schema}")
             print(f"📊 DataFrame columns: {list(df.columns)}")
             print(f"📊 DataFrame shape: {df.shape}")
 
             for idx, row in df.iterrows():
-                # Create invoice node
-                inv_id = f"invoice:{row[schema['invoice']]}" if "invoice" in schema else f"invoice:row_{idx}"
+                # Create invoice node with source file tracking
+                inv_id = f"invoice:{row[schema['invoice']]}_{source_file}" if "invoice" in schema else f"invoice:row_{idx}_{source_file}"
                 
                 # Get amount and detect currency from the value
                 amount_raw = row.get(schema.get("amount"), 0.0)
@@ -82,9 +88,10 @@ class GraphBuilder:
                 
                 # Track currency frequency
                 currencies_detected[currency] = currencies_detected.get(currency, 0) + 1
+                sources_tracked[source_file] = sources_tracked.get(source_file, 0) + 1
                 
-                # Store both amount and currency in the invoice node
-                G.add_node(inv_id, type="invoice", label=inv_id, amount=amount, currency=currency)
+                # Store amount, currency AND source_file in the invoice node
+                G.add_node(inv_id, type="invoice", label=inv_id, amount=amount, currency=currency, source_file=source_file)
 
                 # Connect to customer (Fallback if missing)
                 if "customer" in schema:

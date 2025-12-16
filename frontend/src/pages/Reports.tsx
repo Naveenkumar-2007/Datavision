@@ -9,9 +9,28 @@ import {
   Loader,
   AlertCircle,
   CheckCircle,
+  FileDown,
+  BarChart3,
+  PieChart as PieChartIcon,
 } from 'lucide-react';
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  Legend,
+} from 'recharts';
 import { apiService } from '@/services/api';
-import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency, convertCurrency } from '@/utils/currency';
+import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency, convertCurrency, formatCompactCurrency } from '@/utils/currency';
+import { exportToPDF } from '@/utils/pdfExport';
 
 interface ReportSection {
   title: string;
@@ -30,9 +49,14 @@ interface GeneratedReport {
 const Reports: React.FC = () => {
   const [report, setReport] = useState<GeneratedReport | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [exportingPDF, setExportingPDF] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>('revenue');
   const [analytics, setAnalytics] = useState<any>(null);
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+
+  // Chart colors for enterprise-grade visualization
+  const CHART_COLORS = ['#F97316', '#22C55E', '#3B82F6', '#EAB308', '#8B5CF6', '#EC4899'];
 
   // Use user's preferred currency from Settings
   const userPreferredCurrency = getUserPreferredCurrency();
@@ -64,8 +88,12 @@ const Reports: React.FC = () => {
 
   const loadAnalytics = async () => {
     try {
-      const response = await apiService.getAnalyticsOverview();
-      setAnalytics(response.data);
+      const [analyticsResponse, statsResponse] = await Promise.all([
+        apiService.getAnalyticsOverview(),
+        apiService.getDashboardStats()
+      ]);
+      setAnalytics(analyticsResponse.data);
+      setDashboardStats(statsResponse.data);
     } catch (err) {
       console.error('Failed to load analytics:', err);
     }
@@ -108,6 +136,22 @@ ${section.content}
     document.body.appendChild(link);
     link.click();
     link.remove();
+  };
+
+  const handleExportPDF = async () => {
+    if (!report) return;
+    setExportingPDF(true);
+    try {
+      await exportToPDF('report-content', {
+        filename: `${report.reportType}_report`,
+        orientation: 'portrait',
+        margin: 15,
+      });
+    } catch (err) {
+      console.error('PDF export failed:', err);
+    } finally {
+      setExportingPDF(false);
+    }
   };
 
   const reportTypes = [
@@ -305,32 +349,199 @@ ${section.content}
                 Source: {report.dataSource}
               </div>
             </div>
-            <button
-              onClick={handleDownload}
-              className="px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-xl text-orange-400 font-medium hover:bg-orange-500/20 transition-colors flex items-center space-x-2"
-            >
-              <Download className="w-4 h-4" />
-              <span>Download</span>
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleExportPDF}
+                disabled={exportingPDF}
+                className="px-4 py-2 bg-accent-green/10 border border-accent-green/20 rounded-xl text-accent-green font-medium hover:bg-accent-green/20 transition-colors flex items-center space-x-2 disabled:opacity-50"
+              >
+                {exportingPDF ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileDown className="w-4 h-4" />
+                )}
+                <span>{exportingPDF ? 'Exporting...' : 'Export PDF'}</span>
+              </button>
+              <button
+                onClick={handleDownload}
+                className="px-4 py-2 bg-orange-500/10 border border-orange-500/20 rounded-xl text-orange-400 font-medium hover:bg-orange-500/20 transition-colors flex items-center space-x-2"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download TXT</span>
+              </button>
+            </div>
           </div>
 
-          {report.error ? (
-            <div className="p-4 bg-accent-red/10 border border-accent-red/20 rounded-xl">
-              <div className="text-accent-red font-semibold">{report.error}</div>
-              <div className="text-gray-400 text-sm mt-2">Please upload files to generate reports with real data.</div>
+          {/* PDF Export Wrapper - Dark Mode Compatible */}
+          <div id="report-content" className="glass-card p-6 rounded-xl">
+            {/* Report Header for PDF */}
+            <div className="mb-6 pb-4 border-b-2 border-orange-500">
+              <h1 className="text-2xl font-bold text-white">{report.title}</h1>
+              <p className="text-sm text-gray-400 mt-1">
+                Generated: {new Date(report.generatedAt).toLocaleString()} | Source: {report.dataSource}
+              </p>
             </div>
-          ) : (
-            <div className="space-y-6">
-              {report.sections.map((section, i) => (
-                <div key={i} className="border-l-2 border-orange-500 pl-4">
-                  <h3 className="text-lg font-semibold text-white mb-2">{section.title}</h3>
-                  <pre className="text-gray-300 whitespace-pre-wrap font-mono text-sm">
-                    {section.content}
-                  </pre>
-                </div>
-              ))}
-            </div>
-          )}
+
+            {report.error ? (
+              <div className="p-4 bg-accent-red/10 border border-accent-red/20 rounded-xl">
+                <div className="text-accent-red font-semibold">{report.error}</div>
+                <div className="text-gray-400 text-sm mt-2">Please upload files to generate reports with real data.</div>
+              </div>
+            ) : (
+              <div className="space-y-8">
+                {/* Text Sections */}
+                {report.sections.map((section, i) => (
+                  <div key={i} className="border-l-4 border-orange-500 pl-4">
+                    <h3 className="text-lg font-semibold text-white mb-2">{section.title}</h3>
+                    <pre className="text-gray-300 whitespace-pre-wrap font-mono text-sm leading-relaxed">
+                      {section.content}
+                    </pre>
+                  </div>
+                ))}
+
+                {/* Enterprise Charts Section */}
+                {dashboardStats?.hasData && (
+                  <div className="mt-8 pt-8 border-t border-orange-500/30">
+                    <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                      <BarChart3 className="w-6 h-6 text-orange-400" />
+                      Visual Analytics
+                    </h3>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* Revenue Trend Chart */}
+                      {dashboardStats.revenueTimeline?.length > 0 && (
+                        <div className="glass-card p-6">
+                          <h4 className="text-lg font-semibold text-white mb-4">Revenue Trend</h4>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <AreaChart data={dashboardStats.revenueTimeline}>
+                              <defs>
+                                <linearGradient id="reportRevenueGradient" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#F97316" stopOpacity={0.4} />
+                                  <stop offset="95%" stopColor="#F97316" stopOpacity={0} />
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                              <XAxis
+                                dataKey="month"
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                              />
+                              <YAxis
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                                tickFormatter={(v) => formatCompactCurrency(v, currency)}
+                              />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: '#1E293B',
+                                  border: '1px solid #475569',
+                                  borderRadius: '12px',
+                                }}
+                                formatter={(value: number) => [formatCurrency(value, currency), 'Revenue']}
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="revenue"
+                                stroke="#F97316"
+                                strokeWidth={3}
+                                fill="url(#reportRevenueGradient)"
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+
+                      {/* Customer Segments Pie Chart - Uses segmentSummary for proper categories */}
+                      {dashboardStats.segmentSummary?.length > 0 && (
+                        <div className="glass-card p-6">
+                          <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                            <PieChartIcon className="w-5 h-5 text-green-400" />
+                            Customer Segments
+                          </h4>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <PieChart>
+                              <Pie
+                                data={dashboardStats.segmentSummary}
+                                dataKey="revenue"
+                                nameKey="segment"
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={50}
+                                outerRadius={80}
+                                paddingAngle={3}
+                              >
+                                {dashboardStats.segmentSummary.map((_: any, index: number) => (
+                                  <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: '#1E293B',
+                                  border: '1px solid #475569',
+                                  borderRadius: '12px',
+                                }}
+                                formatter={(value: number, name: string) => [
+                                  `${formatCurrency(value, currency)} (${dashboardStats.segmentSummary.find((s: any) => s.segment === name)?.count || 0} customers)`,
+                                  name
+                                ]}
+                              />
+                              <Legend
+                                verticalAlign="bottom"
+                                height={36}
+                                formatter={(value) => <span className="text-gray-300 text-sm">{value}</span>}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+
+                      {/* Top Products Bar Chart */}
+                      {dashboardStats.abcAnalysis?.products?.length > 0 && (
+                        <div className="glass-card p-6 lg:col-span-2">
+                          <h4 className="text-lg font-semibold text-white mb-4">Top Products by Revenue</h4>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={dashboardStats.abcAnalysis.products.slice(0, 8)} layout="vertical">
+                              <CartesianGrid strokeDasharray="3 3" stroke="#374151" horizontal={false} />
+                              <XAxis
+                                type="number"
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                                tickFormatter={(v) => formatCompactCurrency(v, currency)}
+                              />
+                              <YAxis
+                                type="category"
+                                dataKey="name"
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                                width={120}
+                              />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: '#1E293B',
+                                  border: '1px solid #475569',
+                                  borderRadius: '12px',
+                                }}
+                                formatter={(value: number) => [formatCurrency(value, currency), 'Revenue']}
+                              />
+                              <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
+                                {dashboardStats.abcAnalysis.products.slice(0, 8).map((_: any, index: number) => (
+                                  <Cell key={`bar-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                                ))}
+                              </Bar>
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </motion.div>
       )}
 

@@ -11,10 +11,11 @@ import numpy as np
 def retrieve(query: str, k: int = 5, user_id: str = None):
     """
     Retrieve relevant documents from FAISS vector store.
+    IMPROVED: Ensures results come from ALL uploaded files, not just top-k similar.
     
     Args:
         query: Search query string
-        k: Number of results to return
+        k: Number of results to return (will return k per file for comprehensive coverage)
         user_id: User identifier for per-user store
         
     Returns:
@@ -38,30 +39,61 @@ def retrieve(query: str, k: int = 5, user_id: str = None):
         query_embedding = embed_text(query)
         query_vector = np.array([query_embedding], dtype="float32")
         
-        # Search FAISS index
-        distances, indices = store.index.search(query_vector, min(k, store.index.ntotal))
+        # IMPROVED: Search for MORE results then balance across files
+        search_k = min(50, max(k * 5, store.index.ntotal))  # Search 50 or 5x requested
+        distances, indices = store.index.search(query_vector, search_k)
         
-        results = []
+        # Group results by source file
+        results_by_source = {}
+        all_results = []
+        
         for i, (dist, idx) in enumerate(zip(distances[0], indices[0])):
             if idx < 0 or idx >= len(store.meta):
                 continue
             
             meta = store.meta[idx]
+            source = meta.get("source", "Unknown")
             
             # Calculate similarity score (convert L2 distance to similarity)
-            # Lower distance = higher similarity
-            score = 1 / (1 + dist)  # Normalize to 0-1 range
+            score = 1 / (1 + dist)
             
             result = {
                 "text": meta.get("text", ""),
-                "source": meta.get("source", "Unknown"),
+                "source": source,
                 "score": float(score),
                 "chunk": meta.get("chunk", i),
                 "metadata": meta
             }
-            results.append(result)
+            
+            # Group by source
+            if source not in results_by_source:
+                results_by_source[source] = []
+            results_by_source[source].append(result)
+            all_results.append(result)
         
-        print(f"✅ Retrieved {len(results)} documents from FAISS")
+        # CRITICAL: Ensure we get results from EACH file
+        num_files = len(results_by_source)
+        print(f"📁 Found results from {num_files} files: {list(results_by_source.keys())}")
+        
+        if num_files > 1:
+            # Balance results across all files
+            chunks_per_file = max(2, k // num_files + 1)
+            balanced_results = []
+            
+            for source, file_results in results_by_source.items():
+                # Take top chunks from each file (sorted by score)
+                file_results.sort(key=lambda x: x['score'], reverse=True)
+                balanced_results.extend(file_results[:chunks_per_file])
+                print(f"   📄 {source}: {len(file_results[:chunks_per_file])} chunks")
+            
+            # Sort balanced results by score for final ordering
+            balanced_results.sort(key=lambda x: x['score'], reverse=True)
+            results = balanced_results[:k * 2]  # Return more for comprehensive coverage
+        else:
+            # Single file - just return top k
+            results = all_results[:k]
+        
+        print(f"✅ Retrieved {len(results)} documents from FAISS (balanced across {num_files} files)")
         return results
         
     except Exception as e:

@@ -53,6 +53,7 @@ class IngestionPipeline:
         # Process each file from disk
         texts = []
         tables = []
+        table_sources = []  # Track source filename for each table
         metadata = []
         processed_files = []
         
@@ -82,6 +83,7 @@ class IngestionPipeline:
                     
                 elif result["type"] == "table":
                     tables.append(result["df"])
+                    table_sources.append(filename)  # Track source file for this table
                     df = result["df"]
                     
                     # Create summary chunks for RAG
@@ -133,9 +135,22 @@ class IngestionPipeline:
         
         # Build knowledge graph from tables
         if tables:
-            print(f"🔗 Building knowledge graph from {len(tables)} tables...")
-            GraphBuilder.build(user_id, tables)
-            print(f"✅ Knowledge graph built")
+            print(f"🔗 Building knowledge graph from {len(tables)} tables from files: {table_sources}")
+            
+            # Detect user's primary currency from their files
+            try:
+                from utils.currency import load_currency_metadata, detect_and_save_user_currency
+                from utils.paths import STORAGE_BASE
+                user_currency = load_currency_metadata(user_id, STORAGE_BASE)
+                if not user_currency:
+                    user_currency = detect_and_save_user_currency(user_id, paths["files"], STORAGE_BASE)
+                print(f"💰 Using detected currency for graph: {user_currency}")
+            except Exception as e:
+                print(f"⚠️ Currency detection error: {e}")
+                user_currency = 'USD'
+            
+            GraphBuilder.build(user_id, tables, default_currency=user_currency, source_files=table_sources)
+            print(f"✅ Knowledge graph built with source tracking and currency: {user_currency}")
         else:
             print(f"ℹ️ No tables found for graph building")
         

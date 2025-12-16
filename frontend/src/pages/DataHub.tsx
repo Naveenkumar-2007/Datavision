@@ -15,6 +15,9 @@ import {
   CheckCircle,
   XCircle,
   Loader,
+  Table,
+  Link2,
+  ExternalLink,
 } from 'lucide-react';
 import apiService from '@/services/api';
 
@@ -31,6 +34,11 @@ const DataHub: React.FC = () => {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Google Sheets Import State
+  const [sheetUrl, setSheetUrl] = useState('');
+  const [importingSheet, setImportingSheet] = useState(false);
+  const [sheetPreview, setSheetPreview] = useState<any>(null);
 
   const loadFiles = async () => {
     try {
@@ -167,6 +175,48 @@ const DataHub: React.FC = () => {
     }
   };
 
+  // Google Sheets Import Handlers
+  const handlePreviewSheet = async () => {
+    if (!sheetUrl.trim()) {
+      alert('Please enter a Google Sheets URL');
+      return;
+    }
+    setImportingSheet(true);
+    try {
+      const response = await apiService.previewGoogleSheet(sheetUrl);
+      setSheetPreview(response.data);
+    } catch (error: any) {
+      console.error('Preview failed:', error);
+      alert(`Failed to preview sheet: ${error.response?.data?.detail || error.message}`);
+      setSheetPreview(null);
+    } finally {
+      setImportingSheet(false);
+    }
+  };
+
+  const handleImportSheet = async () => {
+    if (!sheetUrl.trim()) {
+      alert('Please enter a Google Sheets URL');
+      return;
+    }
+    setImportingSheet(true);
+    try {
+      const response = await apiService.importGoogleSheet(sheetUrl);
+      if (response.data.success) {
+        alert(`✅ Google Sheet imported successfully!\n\nFile: ${response.data.filename}\nRows: ${response.data.rows}\nColumns: ${response.data.columns.join(', ')}`);
+        setSheetUrl('');
+        setSheetPreview(null);
+        await loadFiles();
+        window.dispatchEvent(new CustomEvent('filesUpdated'));
+      }
+    } catch (error: any) {
+      console.error('Import failed:', error);
+      alert(`❌ Import failed: ${error.response?.data?.detail || error.message}`);
+    } finally {
+      setImportingSheet(false);
+    }
+  };
+
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -282,6 +332,75 @@ const DataHub: React.FC = () => {
             )}
           </div>
         </div>
+      </motion.div>
+
+      {/* Google Sheets Import Section */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+        className="glass-card p-6"
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <Table className="w-6 h-6 text-green-500" />
+          <h2 className="text-xl font-semibold text-white">Import from Google Sheets</h2>
+        </div>
+
+        <div className="flex gap-3 mb-4">
+          <div className="flex-1 relative">
+            <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Paste Google Sheets URL (must be public or 'Anyone with link')"
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 placeholder-gray-500 focus:outline-none focus:border-green-500 transition-colors"
+            />
+          </div>
+          <button
+            onClick={handlePreviewSheet}
+            disabled={importingSheet || !sheetUrl.trim()}
+            className="px-4 py-3 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-400 font-medium hover:bg-blue-500/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {importingSheet ? <Loader className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+            Preview
+          </button>
+          <button
+            onClick={handleImportSheet}
+            disabled={importingSheet || !sheetUrl.trim()}
+            className="px-6 py-3 bg-green-500 hover:bg-green-600 rounded-xl text-white font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+          >
+            {importingSheet ? <Loader className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Import
+          </button>
+        </div>
+
+        {/* Sheet Preview */}
+        {sheetPreview && sheetPreview.success && (
+          <div className="bg-dark-card rounded-xl p-4 border border-dark-border">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-white font-medium">Preview</span>
+              <span className="text-sm text-gray-400">{sheetPreview.rowCount} rows × {sheetPreview.columnCount} columns</span>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {sheetPreview.columns?.slice(0, 8).map((col: string, i: number) => (
+                <span key={i} className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium">
+                  {col}
+                </span>
+              ))}
+              {sheetPreview.columns?.length > 8 && (
+                <span className="px-2 py-1 bg-gray-500/20 text-gray-400 rounded text-xs">
+                  +{sheetPreview.columns.length - 8} more
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500">Click "Import" to add this data to your Data Hub</p>
+          </div>
+        )}
+
+        <p className="text-xs text-gray-500 mt-3">
+          💡 Sheet must be accessible: File → Share → "Anyone with the link can view"
+        </p>
       </motion.div>
 
       {/* Search and Filters */}

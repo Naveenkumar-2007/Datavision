@@ -22,7 +22,7 @@ interface Conversation {
   id: string;
   title: string;
   messages: ChatMessage[];
-  mode: 'rag' | 'graphrag' | 'hybrid' | 'vision';
+  mode: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,7 +37,7 @@ interface UserState {
   currentConversationId: string | null;
 
   // Actions
-  createConversation: (mode?: 'rag' | 'graphrag' | 'hybrid' | 'vision') => string;
+  createConversation: (mode?: string) => string;
   deleteConversation: (id: string) => void;
   selectConversation: (id: string) => void;
   addMessageToConversation: (conversationId: string, message: ChatMessage) => void;
@@ -61,7 +61,7 @@ const createWelcomeMessage = (): ChatMessage => ({
   timestamp: new Date().toISOString(),
 });
 
-const createNewConversation = (mode: 'rag' | 'graphrag' | 'hybrid' | 'vision' = 'rag'): Conversation => {
+const createNewConversation = (mode: string = 'rag'): Conversation => {
   const now = new Date();
   return {
     id: `conv_${Date.now()}`,

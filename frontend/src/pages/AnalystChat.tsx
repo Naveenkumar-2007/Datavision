@@ -30,6 +30,9 @@ import {
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
 
+// Lazy load PlotlyChart for performance
+const PlotlyChart = React.lazy(() => import('@/components/PlotlyChart'));
+
 // Helper function to format inline text (bold, italic, code)
 const formatInlineText = (text: string): string => {
   return text
@@ -136,6 +139,21 @@ const ForecastChartBlock: React.FC<{ payload: Record<string, unknown> }> = ({ pa
   );
 };
 
+// PlotlyChartBlock for rendering interactive Plotly charts
+const PlotlyChartBlock: React.FC<{ data: any[]; layout: any }> = ({ data, layout }) => {
+  return (
+    <React.Suspense fallback={
+      <div className="animate-pulse bg-dark-surface rounded-xl h-64 flex items-center justify-center">
+        <span className="text-gray-500">Loading interactive chart...</span>
+      </div>
+    }>
+      <div className="my-4 p-4 bg-dark-surface/50 rounded-xl border border-dark-border">
+        <PlotlyChart data={data} layout={layout} />
+      </div>
+    </React.Suspense>
+  );
+};
+
 // Component to format markdown-like responses
 const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
   const formatContent = (text: string) => {
@@ -210,6 +228,34 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
               return (
                 <div key={idx} className="my-3 p-4 bg-red-900/20 border border-red-500/50 rounded-xl">
                   <p className="text-red-400 text-sm">⚠️ Chart rendering failed. The data is available but couldn't be visualized.</p>
+                </div>
+              );
+            }
+          }
+        }
+
+        // Check if it's a Plotly chart
+        const isPlotlyChart = /^```\s*plotly_chart/i.test(para);
+        if (isPlotlyChart) {
+          const match = para.match(/^```\s*plotly_chart\s*([\s\S]*?)```\s*$/);
+          if (match) {
+            const chartJson = match[1].trim();
+            if (!chartJson) return null;
+
+            try {
+              const plotlyData = JSON.parse(chartJson);
+              if (plotlyData && plotlyData.data && plotlyData.layout) {
+                return (
+                  <div key={idx} className="my-4 animate-fade-in">
+                    <PlotlyChartBlock data={plotlyData.data} layout={plotlyData.layout} />
+                  </div>
+                );
+              }
+            } catch (e) {
+              console.error('Plotly chart parse error:', e);
+              return (
+                <div key={idx} className="my-3 p-4 bg-red-900/20 border border-red-500/50 rounded-xl">
+                  <p className="text-red-400 text-sm">⚠️ Interactive chart rendering failed.</p>
                 </div>
               );
             }
@@ -429,7 +475,7 @@ const AnalystChat: React.FC = () => {
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [mode, setMode] = useState<'rag' | 'graphrag' | 'hybrid' | 'vision'>('rag');
+  const [mode, setMode] = useState<string>('rag');
   const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
@@ -462,12 +508,19 @@ const AnalystChat: React.FC = () => {
     { id: 'vision_ocr', name: 'Vision OCR', icon: '👁️', description: 'Image analysis' },
   ];
 
-  // Mode definitions (like Claude's Opus/Sonnet/Haiku)
+  // Mode definitions - RAG modes + AI Models via OpenRouter
   const modes = [
-    { id: 'rag', label: 'RAG', icon: FileText, description: 'Document-based retrieval', badge: null },
-    { id: 'graphrag', label: 'GraphRAG', icon: Network, description: 'Knowledge graph analysis', badge: null },
-    { id: 'hybrid', label: 'Hybrid', icon: Layers, description: 'Best of both worlds', badge: null },
-    { id: 'vision', label: 'Vision', icon: Eye, description: 'Image and chart analysis', badge: 'New' },
+    // RAG Modes
+    { id: 'rag', label: 'RAG', icon: FileText, description: 'Document-based retrieval', badge: null, isAI: false },
+    { id: 'graphrag', label: 'GraphRAG', icon: Network, description: 'Knowledge graph analysis', badge: null, isAI: false },
+    { id: 'hybrid', label: 'Hybrid', icon: Layers, description: 'Best of both worlds', badge: null, isAI: false },
+    { id: 'vision', label: 'Vision', icon: Eye, description: 'Image and chart analysis', badge: 'New', isAI: false },
+    { id: 'prediction', label: 'Prediction', icon: TrendingUp, description: 'Forecasts and trends', badge: 'New', isAI: false },
+
+    // AI Models - TESTED & VERIFIED WORKING (3 models)
+    { id: 'deepseek-chat', label: 'DeepSeek Chat', icon: Sparkles, description: 'PRIMARY • Revenue, KPIs', badge: 'Best', isAI: true, logo: 'https://avatars.githubusercontent.com/u/145310065' },
+    { id: 'mistral-7b', label: 'Mistral 7B', icon: Sparkles, description: 'Fast • Decision Analysis', badge: null, isAI: true, logo: 'https://avatars.githubusercontent.com/u/132372032' },
+    { id: 'llama-70b', label: 'Llama 70B', icon: Sparkles, description: 'Meta AI • Comprehensive', badge: null, isAI: true, logo: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Meta-Logo.png' },
   ];
 
   const currentConversation = getCurrentConversation();
@@ -485,6 +538,17 @@ const AnalystChat: React.FC = () => {
   useEffect(() => {
     if (currentConversation) {
       setMode(currentConversation.mode);
+
+      // Restore images from stored imageData in messages
+      const restoredImages: Record<string, string> = {};
+      currentConversation.messages.forEach((msg: any) => {
+        if (msg.imageData) {
+          restoredImages[msg.id] = msg.imageData;
+        }
+      });
+      if (Object.keys(restoredImages).length > 0) {
+        setMessageImages(prev => ({ ...prev, ...restoredImages }));
+      }
     }
   }, [currentConversation?.id]);
 
@@ -604,16 +668,27 @@ const AnalystChat: React.FC = () => {
       convId = createConversation(mode);
     }
 
-    const userMessage = {
+    const userMessage: any = {
       id: Date.now().toString(),
       role: 'user' as const,
       content: input.trim(),
       timestamp: new Date().toISOString(),
+      imageData: null as string | null, // Will be set if image attached
     };
 
+    // If image selected, read as base64 BEFORE adding to conversation
     if (selectedImage) {
-      const imageUrl = URL.createObjectURL(selectedImage);
-      setMessageImages(prev => ({ ...prev, [userMessage.id]: imageUrl }));
+      const base64Content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(selectedImage);
+      });
+
+      // Store base64 in message for persistence
+      userMessage.imageData = base64Content;
+      // Also set in messageImages state for immediate display
+      setMessageImages(prev => ({ ...prev, [userMessage.id]: base64Content }));
     }
 
     addMessageToConversation(convId, userMessage);
@@ -628,19 +703,13 @@ const AnalystChat: React.FC = () => {
     try {
       let visionAttachments: any[] = [];
 
-      if (selectedImage) {
-        const base64Content = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(selectedImage);
-        });
-
+      // Use the already-stored imageData from userMessage
+      if (userMessage.imageData) {
         visionAttachments.push({
-          name: selectedImage.name,
-          type: selectedImage.type,
-          size: selectedImage.size,
-          content: base64Content
+          name: 'uploaded_image',
+          type: 'image/png',
+          size: 0,
+          content: userMessage.imageData
         });
       }
 
@@ -1260,11 +1329,15 @@ const AnalystChat: React.FC = () => {
                   {modeDropdownOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setModeDropdownOpen(false)} />
-                      <div className="fixed bottom-20 left-4 right-4 sm:absolute sm:bottom-full sm:left-auto sm:right-0 sm:mb-2 w-auto sm:w-64 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden z-50">
-                        {modes.map((m) => (
+                      <div className="fixed bottom-20 left-4 right-4 sm:absolute sm:bottom-full sm:left-auto sm:right-0 sm:mb-2 w-auto sm:w-72 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden z-50 max-h-[70vh] overflow-y-auto">
+                        {/* RAG Modes */}
+                        <div className="p-2 border-b border-dark-border">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-2">RAG Modes</span>
+                        </div>
+                        {modes.filter(m => !m.isAI).map((m) => (
                           <button
                             key={m.id}
-                            onClick={() => { setMode(m.id as any); setModeDropdownOpen(false); }}
+                            onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
                             className={`flex items-center gap-3 w-full p-3 hover:bg-dark-hover transition-colors ${mode === m.id ? 'bg-dark-hover' : ''}`}
                           >
                             <div className="flex-1 text-left">
@@ -1281,15 +1354,41 @@ const AnalystChat: React.FC = () => {
                             {mode === m.id && <Check className="w-4 h-4 text-orange-400" />}
                           </button>
                         ))}
-                        <div className="border-t border-dark-border">
-                          <button
-                            onClick={() => { navigate('/settings'); setModeDropdownOpen(false); }}
-                            className="flex items-center gap-2 w-full p-3 text-sm text-gray-400 hover:text-gray-200 hover:bg-dark-hover transition-colors"
-                          >
-                            More models
-                            <ChevronDown className="w-4 h-4 -rotate-90 ml-auto" />
-                          </button>
+
+                        {/* AI Models Divider */}
+                        <div className="p-2 border-t border-b border-dark-border bg-dark-surface/50">
+                          <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider px-2">🤖 AI Models</span>
                         </div>
+                        {modes.filter(m => m.isAI).map((m: any) => (
+                          <button
+                            key={m.id}
+                            onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
+                            className={`flex items-center gap-3 w-full p-3 hover:bg-dark-hover transition-colors ${mode === m.id ? 'bg-dark-hover' : ''}`}
+                          >
+                            {/* Company Logo */}
+                            {m.logo && (
+                              <img
+                                src={m.logo}
+                                alt={m.label}
+                                className="w-6 h-6 rounded object-contain bg-white/10 p-0.5"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            )}
+                            <div className="flex-1 text-left">
+                              <div className="flex items-center gap-2">
+                                <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
+                                {m.badge && (
+                                  <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${m.badge === 'New' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
+                                    }`}>
+                                    {m.badge}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-500">{m.description}</p>
+                            </div>
+                            {mode === m.id && <Check className="w-4 h-4 text-green-400" />}
+                          </button>
+                        ))}
                       </div>
                     </>
                   )}
@@ -1318,9 +1417,9 @@ const AnalystChat: React.FC = () => {
               AI Business Analyst can make mistakes. Please double-check responses.
             </p>
           </div>
-        </div>
-      </div>
-    </div>
+        </div >
+      </div >
+    </div >
   );
 };
 

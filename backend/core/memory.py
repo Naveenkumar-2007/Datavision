@@ -1,11 +1,40 @@
 """
-Core memory module - REAL implementation with persistent user memory
-Stores user context, conversation history, and learned preferences
+ChatGPT-Level Persistent Memory System
+======================================
+
+THREE-LAYER MEMORY ARCHITECTURE:
+1. USER PROFILE MEMORY (PERSISTENT)
+   - Stores user-provided identity and preferences
+   - Scoped strictly to user_id
+   - Persists across sessions and chats
+
+2. SESSION MEMORY (TEMPORARY)
+   - Stores short-term conversational context
+   - Cleared when session ends
+
+3. WORKSPACE MEMORY (OPTIONAL)
+   - Stores dataset-level context (schemas, defaults)
+
+MEMORY WRITE RULES:
+- Write on explicit user input only ("My name is X", "Call me X")
+- Mark source as "explicit_user_input"
+- Scope to user_id only
+- NEVER guess or infer identity
+
+MEMORY READ RULES:
+- Always check USER PROFILE MEMORY before answering identity questions
+- If exists → answer directly
+- If not → ask politely
+
+PRIVACY:
+- Memory isolated per authenticated user
+- No data sharing across users
+- Never expose storage details
 """
 
 import json
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
 
 # Import paths utility
@@ -59,8 +88,35 @@ def get_user_context(user_id: str) -> str:
         return "\n".join(parts) if parts else ""
         
     except Exception as e:
-        print(f"⚠️ Error loading user context: {e}")
+        print(f"Error loading user context: {e}")
         return ""
+
+
+def get_user_name(user_id: str) -> Optional[str]:
+    """
+    MEMORY READ: Get user's name from persistent storage.
+    
+    This is the PRIMARY function for answering "What is my name?" questions.
+    Returns None if name is not stored (triggers polite request).
+    """
+    if not user_id:
+        return None
+    
+    try:
+        paths = get_user_paths(user_id)
+        memory_path = paths["memory"] / "user_context.json"
+        
+        if not memory_path.exists():
+            return None
+        
+        with open(memory_path, 'r') as f:
+            context = json.load(f)
+        
+        return context.get("name")
+        
+    except Exception as e:
+        print(f"Error reading user name: {e}")
+        return None
 
 
 def save_user_context(user_id: str, context: Dict[str, Any]) -> bool:
@@ -107,16 +163,19 @@ def process_personal_info(user_id: str, query: str) -> bool:
     import re
     context_updates = {}
     
-    # Extract name
+    # Extract name - EXPANDED PATTERNS (case-insensitive, auto-capitalize)
     name_patterns = [
-        r"my name is ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
-        r"i'?m ([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)",
-        r"call me ([A-Z][a-z]+)",
+        r"(?:my name is|i am|i'm|this is|call me|hey i'm|hi i'm|hello i'm)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)",
+        r"^([a-zA-Z]+)\s+here\b",  # "naveen here"
+        r"^i'm?\s+([a-zA-Z]+)\b",  # "I'm naveen" at start
+        r"^([a-zA-Z]+)$",  # Just a name by itself like "naveen"
     ]
     for pattern in name_patterns:
-        match = re.search(pattern, query, re.IGNORECASE)
+        match = re.search(pattern, query.strip(), re.IGNORECASE)
         if match:
-            context_updates["name"] = match.group(1).strip()
+            # Auto-capitalize the name
+            context_updates["name"] = match.group(1).strip().title()
+            print(f"💾 Extracted name: {context_updates['name']}")
             break
     
     # Extract company

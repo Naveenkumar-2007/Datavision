@@ -145,9 +145,35 @@ def _clean_response_formatting(answer: str) -> str:
     # Ensure consistent table header separators
     answer = re.sub(r'\|[-:]+\|', lambda m: '|' + '-' * (len(m.group(0)) - 2) + '|', answer)
     
-    # Remove Python code blocks that shouldn't be in responses
-    answer = re.sub(r'```python[\s\S]*?```', '', answer)
-    answer = re.sub(r'```matplotlib[\s\S]*?```', '', answer)
+    # AGGRESSIVE CLEANUP - Remove code blocks EXCEPT plotly_chart (our visualizations!)
+    # Use negative lookahead to preserve plotly_chart blocks
+    answer = re.sub(r'```(?!plotly_chart)[a-zA-Z]*[\s\S]*?```', '', answer)
+    
+    # Remove LaTeX math blocks
+    answer = re.sub(r'\$\$[\s\S]*?\$\$', '', answer)  # Display math
+    answer = re.sub(r'\$[^$\n]+\$', '', answer)  # Inline math
+    answer = re.sub(r'\\\\[a-z]+\{[^}]*\}', '', answer)  # LaTeX commands
+    
+    # Remove markdown tables completely
+    # Match lines that start with | and have multiple |
+    lines = answer.split('\n')
+    cleaned_lines = []
+    in_table = False
+    for line in lines:
+        stripped = line.strip()
+        # Detect table rows
+        if stripped.startswith('|') and stripped.endswith('|') and stripped.count('|') >= 2:
+            in_table = True
+            continue  # Skip table lines
+        elif in_table and (stripped.startswith('|') or stripped.startswith('|-')):
+            continue  # Still in table
+        else:
+            in_table = False
+            cleaned_lines.append(line)
+    answer = '\n'.join(cleaned_lines)
+    
+    # Remove numbered emoji sections (1️⃣, 2️⃣, etc.)
+    answer = re.sub(r'[0-9]️⃣\s*', '', answer)
     
     # Clean up emoji spacing
     answer = re.sub(r'([📊📈💰🎯💡👥📦✅⚠️🔗])\s{2,}', r'\1 ', answer)
@@ -168,6 +194,183 @@ def _clean_response_formatting(answer: str) -> str:
     answer = re.sub(r'\n\|[^|\n]*$', '', answer)
     
     return answer
+
+
+# ============================================================================
+# MEMORY & ANTI-HALLUCINATION HELPERS
+# ============================================================================
+
+def _get_chat_history(user_id: str, limit: int = 5) -> str:
+    """
+    Get recent chat history for context continuity.
+    Returns formatted string of last N messages.
+    """
+    if not user_id:
+        return ""
+    
+    try:
+        from pathlib import Path
+        from utils.paths import get_user_paths
+        import json
+        
+        paths = get_user_paths(user_id)
+        memory_path = paths.get("memory", Path(f"storage/users/{user_id}/memory"))
+        history_file = memory_path / "chat_history.json"
+        
+        if not history_file.exists():
+            return ""
+        
+        with open(history_file, 'r') as f:
+            history = json.load(f)
+        
+        # Get last N exchanges
+        recent = history[-limit:] if len(history) > limit else history
+        
+        formatted = []
+        for msg in recent:
+            role = msg.get('role', 'user')
+            content = msg.get('content', '')[:200]  # Truncate for context
+            formatted.append(f"{role.upper()}: {content}")
+        
+        return "\n".join(formatted)
+    except Exception as e:
+        print(f"Chat history error: {e}")
+        return ""
+
+
+def _save_chat_message(user_id: str, role: str, content: str) -> bool:
+    """Save a chat message to history for future context."""
+    if not user_id:
+        return False
+    
+    try:
+        from pathlib import Path
+        from utils.paths import get_user_paths
+        import json
+        
+        paths = get_user_paths(user_id)
+        memory_path = paths.get("memory", Path(f"storage/users/{user_id}/memory"))
+        memory_path.mkdir(parents=True, exist_ok=True)
+        history_file = memory_path / "chat_history.json"
+        
+        history = []
+        if history_file.exists():
+            with open(history_file, 'r') as f:
+                history = json.load(f)
+        
+        # Add new message
+        history.append({
+            'role': role,
+            'content': content[:500]  # Limit size
+        })
+        
+        # Keep only last 20 messages
+        history = history[-20:]
+        
+        with open(history_file, 'w') as f:
+            json.dump(history, f, indent=2)
+        
+        return True
+    except Exception as e:
+        print(f"Save chat error: {e}")
+        return False
+
+
+def _is_data_related_query(question: str) -> bool:
+    """
+    Check if a question relates to business/uploaded data topics.
+    Returns False for general knowledge questions like "What is Python?"
+    """
+    q_lower = question.lower().strip()
+    
+    # Business data keywords - questions about THEIR data
+    data_keywords = [
+        'revenue', 'sales', 'customer', 'product', 'order', 'amount', 
+        'total', 'top', 'bottom', 'highest', 'lowest', 'average', 'sum',
+        'trend', 'growth', 'profit', 'margin', 'cost', 'price',
+        'transaction', 'invoice', 'contract', 'deal', 'opportunity',
+        'my data', 'my file', 'uploaded', 'analyze', 'analysis',
+        'who', 'which', 'how much', 'how many', 'show me', 'list',
+        'compare', 'breakdown', 'segment', 'category', 'region',
+        'chart', 'graph', 'visual', 'forecast', 'predict', 'projection',
+        'best', 'worst', 'performing', 'underperforming', 
+        'month', 'quarter', 'year', 'date', 'period', 'time',
+        'name', 'tell me my', 'what is my', 'remember', 'recall'
+    ]
+    
+    # Check if it's about their data
+    if any(kw in q_lower for kw in data_keywords):
+        return True
+    
+    # General knowledge patterns to BLOCK
+    general_patterns = [
+        'what is', 'what are', 'who is', 'who are', 'explain', 'define',
+        'how does', 'how do', 'why is', 'why are', 'tell me about',
+        'write code', 'write a', 'create a script', 'generate code',
+        'programming', 'python', 'java', 'javascript', 'html', 'css',
+        'history of', 'meaning of', 'wikipedia', 'google'
+    ]
+    
+    # If it matches general pattern AND doesn't have data keywords, block it
+    if any(pattern in q_lower for pattern in general_patterns):
+        # Double-check it's not asking about their data
+        if not any(kw in q_lower for kw in ['my', 'our', 'the', 'this', 'uploaded', 'file', 'data', 'revenue', 'customer', 'product']):
+            return False
+    
+    # Short greetings are OK
+    if len(q_lower) < 15:
+        return True  # "hi", "hello", "thanks" etc.
+    
+    return True  # Default: allow and let the AI figure it out
+
+
+def _extract_and_save_personal_info(question: str, user_id: str) -> Optional[str]:
+    """
+    Extract personal info from question and save to memory.
+    Returns the extracted name if found, None otherwise.
+    """
+    if not user_id or not question:
+        return None
+    
+    try:
+        from core.memory import process_personal_info, get_user_context
+        
+        # Try to extract and save personal info
+        was_saved = process_personal_info(user_id, question)
+        
+        if was_saved:
+            # Return the saved context
+            context = get_user_context(user_id)
+            return context
+        
+        return None
+    except Exception as e:
+        print(f"Personal info extraction error: {e}")
+        return None
+
+
+def _get_data_topics_summary(user_id: str) -> str:
+    """Get a summary of topics available in user's data for context."""
+    try:
+        from graph.query import load_graph, get_graph_stats
+        
+        graph = load_graph(user_id)
+        if not graph or graph.number_of_nodes() == 0:
+            return ""
+        
+        stats = get_graph_stats(user_id)
+        if not stats:
+            return ""
+        
+        topics = []
+        if stats.get('total_nodes', 0) > 0:
+            topics.append(f"{stats.get('total_nodes')} entities")
+        if stats.get('total_edges', 0) > 0:
+            topics.append(f"{stats.get('total_edges')} relationships")
+        
+        return f"Available data: {', '.join(topics)}" if topics else ""
+    except:
+        return ""
 
 
 def _wants_visualization(question: str) -> bool:
@@ -515,11 +718,67 @@ def rag_answer(state: AgentState) -> AgentState:
     question = state.question
     user_id = state.company_id
     
+    # =========================================================================
+    # STEP 1: MEMORY - Save user message and extract personal info
+    # =========================================================================
+    _save_chat_message(user_id, "user", question)
+    
+    # Extract and save personal info (name, company, role)
+    personal_context = _extract_and_save_personal_info(question, user_id)
+    if personal_context:
+        # User introduced themselves - give a warm response
+        import re
+        name_match = re.search(r"Name:\s*([^\n]+)", personal_context)
+        if name_match:
+            user_name = name_match.group(1).strip()
+            warm_response = f"""Nice to meet you, **{user_name}**! 👋
+
+I'm your AI Business Analyst. I can help you analyze the data you've uploaded.
+
+**Ask me about:**
+• 📊 Revenue and sales trends
+• 👥 Top customers and products
+• 📈 Forecasts and predictions
+
+What would you like to explore today?"""
+            state.answer = warm_response
+            state.route = "rag"
+            state.sources = []
+            _save_chat_message(user_id, "assistant", warm_response)
+            return state
+    
+    # =========================================================================
+    # STEP 2: ANTI-HALLUCINATION - Block non-data questions
+    # =========================================================================
+    if not _is_data_related_query(question):
+        # This is a general knowledge question - REFUSE to answer
+        refusal_response = f"""🚫 **I can only answer questions about YOUR business data.**
+
+I noticed you're asking a general knowledge question. As your Business Analyst AI, I'm designed to analyze YOUR uploaded files, not provide general information.
+
+**Try asking:**
+• "What is my total revenue?"
+• "Who are my top 5 customers?"
+• "Show me sales trends"
+• "Which products perform best?"
+
+*Need to upload data? Go to **Data Hub** first.*"""
+        state.answer = refusal_response
+        state.route = "rag"
+        state.sources = []
+        _save_chat_message(user_id, "assistant", refusal_response)
+        return state
+    
+    # =========================================================================
+    # STEP 3: MEMORY - Get chat history for context
+    # =========================================================================
+    chat_history = _get_chat_history(user_id, limit=5)
+    
     # Classify query for better retrieval
     query_analysis = classify_query(question)
     
-    # Retrieve with hybrid search
-    docs = retrieve(question, k=6, user_id=user_id)
+    # Retrieve with hybrid search - INCREASED k for multi-file coverage
+    docs = retrieve(question, k=12, user_id=user_id)
     
     if not docs or len(docs) == 0:
         state.answer = """I don't have any data to analyze yet.
@@ -534,23 +793,35 @@ Once uploaded, I can help you analyze sales trends, customer insights, and more.
         state.sources = []
         return state
     
-    # Build context with metadata
+    # Build context with metadata - INCREASED to include ALL files
     context_parts = []
     sources = []
     similarity_scores = []
+    sources_with_data = {}  # Track data by source file
     
-    for i, doc in enumerate(docs[:5]):
-        doc_text = doc.get('text', str(doc))[:1000]
+    for i, doc in enumerate(docs[:15]):  # Process up to 15 for multi-file coverage
+        doc_text = doc.get('text', str(doc))[:1500]
         source = doc.get('source', doc.get('metadata', {}).get('source', ''))
         score = doc.get('score', 0.5)
         
-        if source and source not in sources:
-            sources.append(source)
+        if source:
+            if source not in sources:
+                sources.append(source)
+            if source not in sources_with_data:
+                sources_with_data[source] = []
+            sources_with_data[source].append(doc_text[:500])
         
         similarity_scores.append(score)
         context_parts.append(f"[Source {i+1}: {source}]\n{doc_text}")
     
-    context = "\n\n---\n\n".join(context_parts)
+    # Build organized context showing data from EACH file
+    organized_context = f"## 📁 Data from {len(sources)} Files:\n\n"
+    for src in sources:
+        organized_context += f"### From: {src}\n"
+        for data_snippet in sources_with_data.get(src, [])[:3]:
+            organized_context += f"{data_snippet}\n\n"
+    
+    context = organized_context + "\n---\n\n## All Retrieved Data:\n" + "\n\n---\n\n".join(context_parts[:10])
     
     # Calculate confidence
     scorer = get_confidence_scorer()
@@ -565,71 +836,50 @@ Once uploaded, I can help you analyze sales trends, customer insights, and more.
     # Get currency for formatting
     currency_symbol, currency_code = get_user_currency(user_id)
     
-    system_prompt = f"""You are the AI Business Analyst - a $500,000 premium enterprise analytics product that delivers McKinsey/Deloitte-quality insights.
+    system_prompt = f"""You are an AI Business Analyst. $500,000 enterprise quality. Real-time answers.
 
-🔒 ABSOLUTE RULES - NEVER VIOLATE:
-1. ONLY use data from the "Retrieved Context" below - NEVER invent data
-2. If the data doesn't contain the answer, say "I don't have that information in your uploaded data"  
-3. NEVER guess, estimate, or hallucinate numbers - use ONLY exact values from the data
-4. ONLY discuss business metrics - never personal info or off-topic questions
+DATA FILES: {', '.join(sources) if sources else 'None'}
+USER CURRENCY: {currency_symbol} ({currency_code})
 
-📊 RESPONSE QUALITY REQUIREMENTS ($500K STANDARD):
+═══════════════════════════════════════════════════════════════
+                    CURRENCY RULES
+═══════════════════════════════════════════════════════════════
+1. Use {currency_symbol} as the DEFAULT currency (from user's Settings)
+2. Conversion rates (only when explicitly asked):
+   - $1 USD = ₹83 INR = €0.92 EUR = £0.79 GBP
+3. Only convert to other currencies when user asks
 
-**STRUCTURE (Always follow this format):**
+═══════════════════════════════════════════════════════════════
+                    RESPONSE FORMAT
+═══════════════════════════════════════════════════════════════
 
-### 🎯 Executive Summary
-[One impactful sentence with the KEY finding and exact numbers from the data]
+ALWAYS respond with:
+1. One-line answer (bold) using {currency_symbol}
+2. Table with data breakdown
 
----
-
-### 📊 Key Metrics
-[Tables with TOP items - customers, products, etc.]
-
-| Rank | Customer | Revenue | Orders | % Share |
-|------|----------|---------|--------|---------|
-| 1 | [Exact name from data] | {currency_symbol}[exact amount] | [count] | [%] |
-
-**Overall Snapshot**
+EXAMPLE:
+**Total Revenue: {currency_symbol}[amount from data]**
 
 | Metric | Value |
 |--------|-------|
-| Total Revenue | {currency_symbol}[exact sum] |
-| Average Order Value | {currency_symbol}[exact avg] |
-| Unique Customers | [exact count] |
-| Unique Products | [exact count] |
+| Total Revenue | {currency_symbol}[from data] |
+| Customers | [from data] |
+| Orders | [from data] |
 
----
+═══════════════════════════════════════════════════════════════
+                    RULES
+═══════════════════════════════════════════════════════════════
 
-### 📈 Analysis
-[Key insights about patterns, concentrations, and trends - based ONLY on the data]
+1. ALWAYS use | table | format for data
+2. Use {currency_symbol} as the currency symbol
+3. Use ONLY data from the Retrieved Context below
+4. Be concise - no filler text
+5. NEVER make up numbers
 
----
-
-### 💡 Strategic Recommendations
-[3 specific, actionable recommendations based on the analysis]
-
-**TABLE RULES:**
-• Always use proper markdown: | Column | Column |
-• Include header separator: |---|---|
-• Show exact amounts with {currency_symbol} symbol
-• Include % of total for context
-• Round to 2 decimal places
-• NEVER leave tables empty or incomplete
-
-**FORMATTING:**
-• Use emojis strategically: 📊 📈 💰 👥 📦 ⭐ ⚠️
-• Bold key names and numbers
-• Use bullet points for lists
-• Keep paragraphs short (2-3 sentences max)
-
-**CURRENCY**: {currency_symbol}
-
-❌ NEVER DO:
-- Don't invent customer names or amounts not in the data
-- Don't generate fake statistics or percentages
-- Don't provide analysis for data you don't have
-- Don't say "based on typical business patterns" - only use actual data
-- Don't hallucinate trends not visible in the data"""
+ANTI-HALLUCINATION:
+- ONLY use numbers from Retrieved Context
+- If missing, say "This data is not in your uploaded files"
+- NEVER invent or estimate numbers"""
 
     # Get personalized user context
     user_context = _get_user_context(user_id)
@@ -663,11 +913,17 @@ Once uploaded, I can help you analyze sales trends, customer insights, and more.
 Please explain the chart data above. List the TOP 10 customers by revenue with their exact amounts.
 Do NOT generate a new trend chart - explain the BAR CHART data for customers.]"""
 
+    # Build chat history section
+    chat_history_section = ""
+    if chat_history:
+        chat_history_section = f"\n\n**Recent Conversation:**\n{chat_history}"
+
     prompt = f"""Question: {enhanced_question}
 
 Query Type: {query_analysis.query_type.value}
 Aggregation: {query_analysis.aggregation_type or 'N/A'}
 {user_context_section}
+{chat_history_section}
 
 Retrieved Context:
 {context}
@@ -675,7 +931,9 @@ Retrieved Context:
 
 IMPORTANT: If CHART DATA is provided above, your explanation MUST reference those EXACT numbers and names. A chart will be generated showing this data - your explanation should match it precisely.
 
-Provide a clear, data-driven answer. If the user introduced themselves, acknowledge their name warmly."""
+If the user previously introduced themselves (check Recent Conversation), remember their name and use it warmly.
+
+Provide a clear, data-driven answer."""
 
     answer = chat(prompt, system=system_prompt, max_tokens=1500)
     
@@ -735,6 +993,9 @@ Provide a clear, data-driven answer. If the user introduced themselves, acknowle
     state.sources = sources
     state.context["confidence"] = confidence.overall_score
     state.context["query_type"] = query_analysis.query_type.value
+    
+    # Save assistant response to chat history for memory
+    _save_chat_message(user_id, "assistant", answer[:300])
     
     return state
 
@@ -823,7 +1084,7 @@ def graph_answer(state: AgentState) -> AgentState:
             num_prod = df['product'].nunique() if 'product' in df.columns else 0
             
             data_summary = f"""
-## Business Metrics
+## 📊 Business Metrics
 | Metric | Value |
 |--------|-------|
 | Total Revenue | {currency_symbol}{total_rev:,.2f} |
@@ -837,34 +1098,31 @@ def graph_answer(state: AgentState) -> AgentState:
                 all_customers = df.groupby('customer')[amount_col].sum().sort_values(ascending=False)
                 customer_orders = df.groupby('customer').size()
                 
-                data_summary += f"\n## Customer Analysis\n"
-                data_summary += f"| Customer | Revenue ({currency_symbol}) | Orders | Avg Order |\n"
-                data_summary += f"|----------|---------|--------|----------|\n"
+                data_summary += f"\n## 👥 Customer Analysis\n"
+                data_summary += f"| Rank | Customer | Revenue | Orders | Avg Order |\n"
+                data_summary += f"|------|----------|---------|--------|----------|\n"
                 
-                for cust, amt in all_customers.items():
+                for i, (cust, amt) in enumerate(all_customers.items(), 1):
                     orders = customer_orders.get(cust, 0)
                     avg_order = amt / orders if orders > 0 else 0
-                    data_summary += f"| {cust} | {amt:,.2f} | {orders} | {avg_order:,.2f} |\n"
+                    data_summary += f"| {i} | {cust} | {currency_symbol}{amt:,.2f} | {orders} | {currency_symbol}{avg_order:,.2f} |\n"
                 
                 # Highlight top and bottom
                 top_customer = all_customers.index[0]
                 bottom_customer = all_customers.index[-1]
-                data_summary += f"\n**Top Customer:** {top_customer} ({currency_symbol}{all_customers.iloc[0]:,.2f})\n"
-                data_summary += f"**Lowest Customer:** {bottom_customer} ({currency_symbol}{all_customers.iloc[-1]:,.2f})\n"
+                data_summary += f"\n⭐ **Top:** {top_customer} ({currency_symbol}{all_customers.iloc[0]:,.2f})\n"
             
             # Add product analysis
             if 'product' in df.columns:
                 all_products = df.groupby('product')[amount_col].sum().sort_values(ascending=False)
                 product_counts = df.groupby('product').size()
                 
-                data_summary += f"\n## Product Analysis\n"
-                data_summary += f"| Product | Revenue ({currency_symbol}) | Units Sold | Avg Price |\n"
-                data_summary += f"|---------|---------|------------|----------|\n"
+                data_summary += f"\n## 📦 Product Analysis\n"
                 
-                for prod, amt in all_products.items():
+                for i, (prod, amt) in enumerate(all_products.items(), 1):
                     count = product_counts.get(prod, 0)
                     avg_price = amt / count if count > 0 else 0
-                    data_summary += f"| {prod} | {amt:,.2f} | {count} | {avg_price:,.2f} |\n"
+                    data_summary += f"{i}. **{prod}**: {currency_symbol}{amt:,.2f} ({count} units, avg {currency_symbol}{avg_price:,.2f})\n"
         
         # Add traversal insights if available
         graph_insights = ""
@@ -875,68 +1133,69 @@ def graph_answer(state: AgentState) -> AgentState:
             graph_insights += f"\n*Traversed {len(traversal_result.visited_nodes)} entities*\n"
         
         # Build LLM prompt
-        system_prompt = f"""You are the AI Business Analyst with Knowledge Graph Intelligence - a $500,000 enterprise product.
+        system_prompt = f"""You are an AI Business Analyst. $500,000 enterprise quality responses only.
 
-🔒 ABSOLUTE RULES - NEVER VIOLATE:
-1. ONLY use data from the data tables provided below - NEVER invent data
-2. If information isn't in the data, say "I don't have that information in your data"
-3. NEVER guess or hallucinate numbers - use ONLY exact values from the data
-4. Reference ONLY customer/product names that appear in the data
+GRAPH MODE: Knowledge Graph Intelligence
+CURRENCY: {currency_symbol}
 
-🧠 UNIQUE GRAPH CAPABILITY:
-• You see connections between customers, products, and transactions
-• You can trace revenue paths and identify relationship patterns  
-• Use the graph data to provide relationship-based insights
+═══════════════════════════════════════════════════════════════
+                    STRICT TABLE FORMAT RULE
+═══════════════════════════════════════════════════════════════
 
-📊 RESPONSE STRUCTURE ($500K STANDARD):
+WRONG FORMAT (never do this):
+• Revenue: $433M
+• Customers: 650
+1. Customer_33 - $29,752
 
-### 🎯 Executive Summary
-[One sentence with KEY finding from the data - use exact names and amounts]
-
----
-
-### 📊 Key Metrics
-[TWO tables side by side from the data provided]
-
-**Customer Rankings:**
-| Rank | Customer | Revenue | Orders | % Share |
-|------|----------|---------|--------|---------|
-| 1 | [exact name from data] | {currency_symbol}[amount] | [count] | [%] |
-
-**Product Rankings:**
-| Rank | Product | Revenue | Sales | % Share |
-|------|---------|---------|-------|---------|
-| 1 | [exact name] | {currency_symbol}[amount] | [count] | [%] |
-
-**Overall Snapshot**
-
+CORRECT FORMAT (always do this):
 | Metric | Value |
 |--------|-------|
-| Total Revenue | {currency_symbol}[sum] |
-| Average Order Value | {currency_symbol}[avg] |
-| Unique Customers | [count] |
-| Unique Products | [count] |
+| Revenue | $433M |
+| Customers | 650 |
+
+| Rank | Customer | Revenue | Orders |
+|------|----------|---------|--------|
+| 1 | Customer_33 | $29,752 | 9 |
+| 2 | Customer_25 | $28,500 | 8 |
+| 3 | Customer_39 | $27,200 | 7 |
+
+═══════════════════════════════════════════════════════════════
+                    RESPONSE EXAMPLES
+═══════════════════════════════════════════════════════════════
+
+QUERY: "Total revenue?"
+RESPONSE:
+**Total Revenue: {currency_symbol}433,394,115**
+
+| Source | Revenue |
+|--------|---------|
+| Enterprise (USD) | $433,387,500 |
+| New Customers (INR) | ₹548,765 → $6,615 |
+| **TOTAL** | **$433,394,115** |
 
 ---
 
-### 📈 Analysis
-[Bullet points about patterns and insights - based ONLY on the data]
+QUERY: "Top customers?"
+RESPONSE:
+| Rank | Customer | Revenue | Orders | Status |
+|------|----------|---------|--------|--------|
+| 1 | Glovo Ltd | $1,150,000 | 12 | ⭐ Top |
+| 2 | Just Eat Ltd | $980,000 | 9 | ⭐ Top |
+| 3 | Delivery Hero | $875,000 | 8 | 📈 High |
 
-### 💡 Strategic Recommendations  
-[3 specific actions based on the analysis]
+═══════════════════════════════════════════════════════════════
+                    RULES
+═══════════════════════════════════════════════════════════════
 
-**FORMATTING RULES:**
-• Use {currency_symbol} for all currency amounts
-• Include % share for every metric
-• Use 📈 for trends up, 📉 for down, ➡️ for stable
-• Bold key names and numbers
+1. ALWAYS use | table | format for data
+2. NEVER use bullet points or numbered lists for data
+3. Convert currencies automatically (₹83 = $1)
+4. Be concise - no filler or verbose explanations
+5. Simple question = simple answer + table
+6. Every table needs header row and 3+ data rows
 
-❌ NEVER DO:
-- Don't invent customer/product names
-- Don't make up revenue amounts
-- Don't generate fake percentages
-- Don't say "typically" or "usually" - only use actual data
-- Don't provide insights not supported by the data"""
+ANTI-HALLUCINATION:
+Only use data from graph context. If missing, say so."""
 
         # Get personalized user context
         user_context = _get_user_context(user_id)
@@ -1031,8 +1290,15 @@ Provide a comprehensive, data-driven answer with insights. Reference specific cu
         
     except Exception as e:
         import traceback
-        traceback.print_exc()
-        state.answer = f"I encountered an issue analyzing the graph: {str(e)}\n\nPlease ensure you have uploaded data in Data Hub."
+        traceback.print_exc()  # Log to server console only
+        # Don't expose internal error details to user
+        state.answer = (
+            "**ANALYSIS ERROR**\n\n"
+            "Unable to complete the graph analysis. Please try:\n"
+            "- Uploading your data files in Data Hub\n"
+            "- Asking a more specific question\n"
+            "- Using RAG mode instead"
+        )
         state.route = "graph"
     
     return state
@@ -1057,6 +1323,14 @@ def hybrid_answer(state: AgentState) -> AgentState:
     start_time = time.time()
     question = state.question
     user_id = state.company_id
+    
+    # Detect if this is prediction mode (from chat.py prefix)
+    is_prediction_mode = "[PREDICTION MODE" in question
+    if is_prediction_mode:
+        # Remove the prefix for cleaner processing
+        question = question.replace("[PREDICTION MODE - Use 3 accuracy tiers] ", "").strip()
+        state.question = question
+        print(f"📈 PREDICTION MODE detected - Will use prediction formatting")
     
     # =========================================================================
     # CACHE CHECK - Fast path for cached queries
@@ -1145,66 +1419,50 @@ def hybrid_answer(state: AgentState) -> AgentState:
     
     currency_symbol, _ = get_user_currency(user_id)
     
-    system_prompt = f"""You are the AI Business Analyst with HYBRID Intelligence - a $500,000 enterprise product.
+    system_prompt = f"""You are an AI Business Analyst. $500,000 enterprise quality. Real-time answers.
 
-🔒 ABSOLUTE RULES - NEVER VIOLATE:
-1. ONLY use data from the Document Context and Graph Insights below - NEVER invent data
-2. If information isn't available, say "I don't have that information in your data"
-3. NEVER guess or hallucinate numbers - use ONLY exact values
-4. Cross-reference both sources for the most accurate answer
+HYBRID MODE: RAG {weight_rag:.0%} + Graph {weight_graph:.0%}
+USER CURRENCY: {currency_symbol}
 
-🔄 HYBRID POWER (Fusion Mode: RAG {weight_rag:.0%} + Graph {weight_graph:.0%}):
-• Document Analysis: Exact facts and figures from uploaded files
-• Graph Intelligence: Customer-product relationships and patterns
-• Combined Analysis: Insights neither source alone could provide
+═══════════════════════════════════════════════════════════════
+                    CURRENCY RULES
+═══════════════════════════════════════════════════════════════
+1. Use {currency_symbol} as the DEFAULT currency (from user's Settings)
+2. Conversion rates (only when explicitly asked):
+   - $1 USD = ₹83 INR = €0.92 EUR = £0.79 GBP
+3. Only convert to other currencies when user asks
 
-📊 RESPONSE STRUCTURE ($500K STANDARD):
+═══════════════════════════════════════════════════════════════
+                    RESPONSE FORMAT
+═══════════════════════════════════════════════════════════════
 
-### 🎯 Executive Summary
-[One powerful sentence combining insights from BOTH document and graph data]
+ALWAYS respond with:
+1. One-line answer (bold) using {currency_symbol}
+2. Table with data breakdown
 
----
+EXAMPLE:
+**Total Revenue: {currency_symbol}[amount from data]**
 
-### 📊 Unified Data Analysis
+| Metric | Value |
+|--------|-------|
+| Total Revenue | {currency_symbol}[from data] |
+| Customers | [from data] |
+| Orders | [from data] |
 
-**Revenue Overview:**
-| Metric | Value | Source |
-|--------|-------|--------|
-| Total Revenue | {currency_symbol}[exact amount] | Documents |
-| Avg Order Value | {currency_symbol}[exact amount] | Graph |
-| Customer Count | [count] | Graph |
+═══════════════════════════════════════════════════════════════
+                    RULES
+═══════════════════════════════════════════════════════════════
 
-**Top Performers:**
-| Rank | Entity | Revenue | % Share |
-|------|--------|---------|---------|
-| 1 | [name from data] | {currency_symbol}[amount] | [%] |
+1. ALWAYS use | table | format for data
+2. Use {currency_symbol} as the currency symbol
+3. Use ONLY data from the context provided
+4. Be concise - no filler text
+5. NEVER make up numbers
 
----
-
-### 🔗 Relationship Insights
-[What the graph reveals about customer-product relationships - ONLY from data]
-
----
-
-### 📈 Trend Analysis
-[Patterns identified from both document and graph analysis]
-
----
-
-### 💡 Strategic Recommendations
-[3 specific, actionable recommendations based on the combined analysis]
-
-**FORMATTING:**
-• Currency: {currency_symbol}
-• Use emojis: 📊 📈 💰 👥 📦 🔗 ⭐ ⚠️ 🎯
-• Bold key names and numbers
-• Tables for all multi-item data
-
-❌ NEVER DO:
-- Don't invent data not in the sources
-- Don't hallucinate customer/product names
-- Don't generate Python code
-- Don't provide insights not supported by data"""
+ANTI-HALLUCINATION:
+- ONLY use numbers from context
+- If missing, say "This data is not in your uploaded files"
+- NEVER invent or estimate numbers"""
 
     # Get personalized user context  
     user_context = _get_user_context(user_id)
@@ -1439,8 +1697,48 @@ Provide a comprehensive answer using the most relevant information from both sou
         except Exception as store_err:
             print(f"Cache store error: {store_err}")
     
+    # Handle prediction mode formatting
+    if is_prediction_mode:
+        import re
+        
+        # Replace ALL HYBRID variations (plain, bold, italic, with emoji)
+        hybrid_patterns = [
+            (r'Analysis Mode:\s*\*?HYBRID\*?', 'Analysis Mode: PREDICTION'),
+            (r'\*Analysis Mode:\s*HYBRID\*', '**Analysis Mode: PREDICTION**'),
+            (r'Mode:\s*HYBRID', 'Mode: PREDICTION'),
+            (r'HYBRID\s*MODE', 'PREDICTION MODE'),
+            (r'Reasoning Type:\s*(?:RAG Fusion|Balanced Fusion|Graph-Heavy)', 'Reasoning Type: Prediction Analysis'),
+            (r'Mode Weights:\s*RAG', 'Prediction Weights: RAG'),
+        ]
+        
+        for pattern, replacement in hybrid_patterns:
+            answer = re.sub(pattern, replacement, answer, flags=re.IGNORECASE)
+        
+        # Remove the entire reasoning/mode weights section (it's hybrid terminology)
+        # Pattern: ---\nReasoning Type: ...\nMode Weights: ...\n---
+        answer = re.sub(
+            r'---\s*\n\s*Reasoning Type:[^\n]*\n\s*Mode Weights:[^\n]*\n\s*---',
+            '',
+            answer,
+            flags=re.IGNORECASE
+        )
+        
+        # Also remove standalone reasoning type lines
+        answer = re.sub(r'Reasoning Type:\s*Balanced Fusion[^\n]*\n?', '', answer)
+        answer = re.sub(r'Mode Weights:\s*RAG[^\n]*\n?', '', answer)
+        
+        # Clean up multiple dashes
+        answer = re.sub(r'(---\s*\n\s*){2,}', '---\n', answer)
+        
+        # Add clean prediction footer if not present
+        if 'PREDICTION' not in answer.upper():
+            answer += "\n\n---\n📈 **Analysis Mode: PREDICTION**\n"
+            answer += "Accuracy Tier: TIER 3 (Scenario-Based) - Snapshot data used\n"
+        elif 'Tier' not in answer:
+            answer += "\nAccuracy Tier: TIER 3 (Scenario-Based) - Snapshot data used\n"
+    
     state.answer = answer
-    state.route = "hybrid"
+    state.route = "prediction" if is_prediction_mode else "hybrid"
     state.sources = sources
     state.context["fusion_weights"] = {"rag": weight_rag, "graph": weight_graph}
     state.context["primary_mode"] = primary_mode
@@ -1546,24 +1844,25 @@ Once extracted, I can query the data using RAG or Graph analysis."""
             if chart_result.get("success") and chart_result.get("chart_data"):
                 chart_data = chart_result["chart_data"]
                 
-                answer = f"## Chart Analysis: {image_name}\n\n"
+                answer = f"## 📊 Chart Analysis: {image_name}\n\n"
                 
                 if isinstance(chart_data, dict):
                     if chart_data.get("chart_type"):
-                        answer += f"**Chart Type:** {chart_data['chart_type']}\n"
+                        answer += f"**Type:** {chart_data['chart_type']}\n"
                     if chart_data.get("title"):
                         answer += f"**Title:** {chart_data['title']}\n"
-                    if chart_data.get("x_axis_label"):
-                        answer += f"**X-Axis:** {chart_data['x_axis_label']}\n"
-                    if chart_data.get("y_axis_label"):
-                        answer += f"**Y-Axis:** {chart_data['y_axis_label']}\n"
                     
                     if chart_data.get("data_series"):
-                        answer += "\n### Data Points\n"
+                        answer += "\n### 📈 Extracted Data\n"
                         for series in chart_data["data_series"]:
-                            answer += f"\n**{series.get('name', 'Series')}:**\n"
+                            series_name = series.get('name', 'Series')
+                            answer += f"\n**{series_name}:**\n"
+                            answer += "| X Value | Y Value |\n"
+                            answer += "|---------|--------|\n"
                             for point in series.get("data", []):
-                                answer += f"• {point.get('x', 'N/A')}: {point.get('y', 'N/A')}\n"
+                                x_val = point.get('x', 'N/A')
+                                y_val = point.get('y', 'N/A')
+                                answer += f"| {x_val} | {y_val} |\n"
                 else:
                     answer += chart_result.get("raw_analysis", "Unable to parse chart data")
             else:
