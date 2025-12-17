@@ -36,7 +36,7 @@ export const FunnelChart: React.FC<FunnelChartProps> = ({
     showPercentage = true,
 }) => {
     const maxValue = Math.max(...data.map(d => d.value));
-    const totalSteps = data.length;
+
 
     return (
         <div style={{ height }} className="flex flex-col justify-center gap-2 px-4">

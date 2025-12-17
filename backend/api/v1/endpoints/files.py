@@ -152,27 +152,233 @@ async def upload_files(
             # Map pipeline results back to file info
             for file_info in uploaded_files:
                 file_info["status"] = "completed"
-                # Check if trained successfully
                 file_info["trained"] = True
                 file_info["currency"] = detected_currency
                 
         except Exception as e:
             print(f"Processing error: {e}")
-            traceback.print_exc()
+            import traceback as tb
+            tb.print_exc()
             for file_info in uploaded_files:
                 file_info["status"] = "failed"
                 file_info["error"] = str(e)
+        
+        # ============================================
+        # 🧠 AI SCHEMA INTELLIGENCE - Auto-analyze upload
+        # ============================================
+        print("=" * 60)
+        print("🧠 STARTING AI SCHEMA INTELLIGENCE ANALYSIS...")
+        print("=" * 60)
+        schema_result = None
+        try:
+            print("📦 Importing schema_intelligence module...")
+            from core.schema_intelligence import UniversalSchemaAnalyzer, SchemaStorage
+            print("✅ Import successful!")
+            
+            # Read the first uploaded CSV/Excel for schema analysis
+            print(f"📁 Looking for files in: {paths['files']}")
+            print(f"📁 Files uploaded: {[f.filename for f in files]}")
+            
+            for file in files:
+                file_path = paths["files"] / file.filename
+                print(f"🔍 Checking file: {file_path}")
+                print(f"🔍 File suffix: {file_path.suffix.lower()}")
+                print(f"🔍 File exists: {file_path.exists()}")
+                
+                if file_path.suffix.lower() in ['.csv', '.xlsx', '.xls']:
+                    import pandas as pd
+                    print(f"📊 Reading file: {file_path}")
+                    
+                    if file_path.suffix.lower() == '.csv':
+                        df = pd.read_csv(file_path)
+                    else:
+                        df = pd.read_excel(file_path)
+                    
+                    print(f"📊 DataFrame loaded: {len(df)} rows, {len(df.columns)} columns")
+                    print(f"📊 Columns: {list(df.columns)}")
+                    
+                    print(f"🧠 AI Schema Analysis starting for: {file.filename}")
+                    analyzer = UniversalSchemaAnalyzer()
+                    schema = analyzer.analyze_dataframe(df, file.filename)
+                    
+                    # Store schema in user's base directory
+                    schema_dir = paths["base"] / "schemas"
+                    schema_dir.mkdir(parents=True, exist_ok=True)
+                    print(f"💾 Saving schema to: {schema_dir}")
+                    storage = SchemaStorage(schema_dir)
+                    storage.save_schema(file_path.stem, schema)
+                    
+                    schema_result = {
+                        "domain": schema.domain,
+                        "domain_confidence": schema.domain_confidence,
+                        "key_metrics": schema.key_metrics,
+                        "dimensions": schema.dimensions,
+                        "suggested_analyses": len(schema.suggested_analyses)
+                    }
+                    print(f"✅ Schema detected: {schema.domain} (confidence: {schema.domain_confidence:.0%})")
+                    print(f"📊 Key metrics: {schema.key_metrics}")
+                    print(f"📁 Dimensions: {schema.dimensions}")
+                    print("=" * 60)
+                    break
+                else:
+                    print(f"⏭️ Skipping non-data file: {file.filename}")
+        except Exception as e:
+            print(f"❌ Schema analysis ERROR: {e}")
+            import traceback
+            traceback.print_exc()
         
         return {
             "success": True,
             "files": uploaded_files,
             "message": f"{len(uploaded_files)} file(s) processed with REAL data",
-            "detectedCurrency": detected_currency
+            "detectedCurrency": detected_currency,
+            "schemaIntelligence": schema_result
         }
         
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/schema/{user_id}")
+async def get_schema_intelligence(
+    user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    🧠 AI Schema Intelligence Endpoint
+    Returns the AI-detected schema for user's uploaded data.
+    Includes domain detection, key metrics, dimensions, and suggested analyses.
+    """
+    try:
+        # SECURITY: Validate user
+        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        if authenticated_user != user_id:
+            user_id = authenticated_user
+        
+        paths = get_user_paths(user_id)
+        
+        # Try to load stored schema
+        from core.schema_intelligence import SchemaStorage, SchemaIntelligence
+        
+        schema_dir = paths["base"] / "schemas"
+        if not schema_dir.exists():
+            return {
+                "hasSchema": False,
+                "message": "No schema found. Upload data files first."
+            }
+        
+        # Get latest schema file
+        schema_files = list(schema_dir.glob("*_schema.json"))
+        if not schema_files:
+            return {
+                "hasSchema": False,
+                "message": "No schema found. Upload data files first."
+            }
+        
+        # Load latest schema
+        latest_file = max(schema_files, key=lambda x: x.stat().st_mtime)
+        storage = SchemaStorage(schema_dir)
+        file_id = latest_file.stem.replace("_schema", "")
+        schema = storage.load_schema(file_id)
+        
+        if schema:
+            return {
+                "hasSchema": True,
+                "schema": schema.to_dict(),
+                "summary": {
+                    "domain": schema.domain,
+                    "domainConfidence": f"{schema.domain_confidence:.0%}",
+                    "keyMetrics": schema.key_metrics,
+                    "dimensions": schema.dimensions,
+                    "timeColumn": schema.time_column,
+                    "suggestedAnalysesCount": len(schema.suggested_analyses),
+                    "dataQuality": {
+                        "completeness": f"{schema.data_quality.completeness:.0%}",
+                        "rows": schema.data_quality.row_count,
+                        "columns": schema.data_quality.column_count
+                    }
+                }
+            }
+        else:
+            return {
+                "hasSchema": False,
+                "message": "Schema file exists but could not be loaded."
+            }
+            
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/schema/{user_id}/refresh")
+async def refresh_schema_intelligence(
+    user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    Re-analyze uploaded files and refresh schema intelligence.
+    Use this when data files change.
+    """
+    try:
+        # SECURITY: Validate user
+        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        if authenticated_user != user_id:
+            user_id = authenticated_user
+        
+        paths = get_user_paths(user_id)
+        
+        # Find CSV/Excel files
+        data_files = []
+        if paths["files"].exists():
+            for f in paths["files"].iterdir():
+                if f.suffix.lower() in ['.csv', '.xlsx', '.xls']:
+                    data_files.append(f)
+        
+        if not data_files:
+            raise HTTPException(status_code=400, detail="No CSV/Excel files found. Upload data first.")
+        
+        # Analyze the first/latest file
+        import pandas as pd
+        from core.schema_intelligence import UniversalSchemaAnalyzer, SchemaStorage
+        
+        file_path = max(data_files, key=lambda x: x.stat().st_mtime)
+        
+        if file_path.suffix.lower() == '.csv':
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+        
+        print(f"🧠 Refreshing schema analysis for: {file_path.name}")
+        analyzer = UniversalSchemaAnalyzer()
+        schema = analyzer.analyze_dataframe(df, file_path.name)
+        
+        # Store schema
+        schema_dir = paths["base"] / "schemas"
+        schema_dir.mkdir(parents=True, exist_ok=True)
+        storage = SchemaStorage(schema_dir)
+        storage.save_schema(file_path.stem, schema)
+        
+        return {
+            "success": True,
+            "message": f"Schema refreshed for {file_path.name}",
+            "schema": {
+                "domain": schema.domain,
+                "domainConfidence": f"{schema.domain_confidence:.0%}",
+                "keyMetrics": schema.key_metrics,
+                "dimensions": schema.dimensions,
+                "suggestedAnalyses": len(schema.suggested_analyses)
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/list/{user_id}")
 async def list_files(

@@ -500,6 +500,28 @@ def get_exchange_rate(from_currency: str, to_currency: str = 'USD') -> float:
     return from_rate / to_rate
 
 
+def convert_currency(amount: float, from_currency: str, to_currency: str) -> float:
+    """
+    Convert amount between any two supported currencies.
+    
+    Args:
+        amount: Amount to convert
+        from_currency: Source currency code
+        to_currency: Target currency code
+        
+    Returns:
+        Converted amount
+    """
+    if from_currency == to_currency:
+        return amount
+        
+    # Convert to USD first (base currency)
+    usd_amount = convert_to_usd(amount, from_currency)
+    
+    # Then convert from USD to target
+    return convert_from_usd(usd_amount, to_currency)
+
+
 def calculate_currency_breakdown(amounts_by_currency: Dict[str, float]) -> Dict[str, Any]:
     """
     Calculate multi-currency breakdown with USD equivalent.

@@ -8,7 +8,7 @@ import {
   AlertCircle,
   Lightbulb,
 } from 'lucide-react';
-import { AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, PieChart, Pie, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiService } from '@/services/api';
 import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency, convertCurrency } from '@/utils/currency';
 
@@ -36,7 +36,22 @@ interface BusinessInsight {
   message: string;
 }
 
+interface DomainLabels {
+  primaryMetric: string;
+  secondaryMetric: string;
+  countMetric: string;
+  avgMetric: string;
+  trendTitle: string;
+  primaryList: string;
+  secondaryList: string;
+  primaryIcon: string;
+  color: string;
+}
+
 interface AnalyticsData {
+  domain?: string;
+  domainConfidence?: number;
+  domainLabels?: DomainLabels;
   metrics: {
     totalRevenue: number;
     totalInvoices: number;
@@ -51,6 +66,8 @@ interface AnalyticsData {
   topCustomers: Array<{ name: string; revenue: number; orders: number }>;
   bottomCustomers?: Array<{ name: string; revenue: number; orders: number }>;
   allCustomers?: Array<{ name: string; revenue: number; orders: number }>;
+  categoryBreakdown?: Array<{ category: string; revenue: number; count: number }>;
+  categoryColumn?: string | null;
   hasData: boolean;
   message?: string;
   currency?: string;
@@ -164,6 +181,17 @@ const Overview: React.FC = () => {
     : rawUsdRevenue;
   const displayAvgOrder = displayRevenue / (data.metrics.totalInvoices || 1);
 
+  // Smart labels from API - based on actual uploaded data columns
+  const labels = data.domainLabels || {
+    primaryMetric: 'Total Value',
+    secondaryMetric: 'Categories',
+    countMetric: 'Total Records',
+    avgMetric: 'Avg Value',
+    trendTitle: 'Value Trend',
+    primaryList: 'Top Items',
+    secondaryList: 'Top Categories'
+  };
+
   // Currency Icon for KPIs - uses display currency
   const DisplayCurrencyIcon = () => (
     <div className="w-5 h-5 flex items-center justify-center font-bold text-current">
@@ -173,7 +201,7 @@ const Overview: React.FC = () => {
 
   const kpis = [
     {
-      label: 'Total Revenue',
+      label: labels.primaryMetric,
       value: formatCurrency(displayRevenue, displayCurrency),
       change: '+12.5%',
       trend: 'up',
@@ -181,7 +209,7 @@ const Overview: React.FC = () => {
       color: 'text-accent-green',
     },
     {
-      label: 'Active Customers',
+      label: labels.secondaryMetric,
       value: data.metrics.uniqueCustomers.toLocaleString('en-IN'),
       change: '+8.2%',
       trend: 'up',
@@ -189,7 +217,7 @@ const Overview: React.FC = () => {
       color: 'text-primary-400',
     },
     {
-      label: 'Total Orders',
+      label: labels.countMetric,
       value: data.metrics.totalInvoices.toLocaleString('en-IN'),
       change: '+5.7%',
       trend: 'up',
@@ -197,7 +225,7 @@ const Overview: React.FC = () => {
       color: 'text-accent-orange',
     },
     {
-      label: `Avg Order Value${displayCurrency !== 'USD' ? ` (${displayCurrency})` : ''}`,
+      label: labels.avgMetric,
       value: formatCurrency(displayAvgOrder, displayCurrency),
       change: '+3.2%',
       trend: 'up',
@@ -376,7 +404,7 @@ const Overview: React.FC = () => {
           className="glass-card p-6"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-white">📈 Revenue Trend</h2>
+            <h2 className="text-xl font-semibold text-white">📈 {labels.trendTitle}</h2>
             {revenueData.length > 0 && (
               <span className="text-sm text-gray-400 bg-surface-700/50 px-3 py-1 rounded-full">
                 {revenueData.length} data points
@@ -435,6 +463,79 @@ const Overview: React.FC = () => {
                 />
               </AreaChart>
             </ResponsiveContainer>
+          ) : data.categoryBreakdown && data.categoryBreakdown.length > 0 ? (
+            /* 🎨 PREMIUM: Category Breakdown - Enterprise Visualization */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-300">
+                    Revenue by {data.categoryColumn || 'Category'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">Alternative analysis (no time data)</p>
+                </div>
+                <div className="text-lg font-bold text-primary-400">
+                  {data.categoryBreakdown.length} {data.categoryBreakdown.length === 1 ? 'Category' : 'Categories'}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={data.categoryBreakdown} margin={{ top: 20, right: 10, left: 10, bottom: 40 }}>
+                  <defs>
+                    {/* Premium Gradient Definitions */}
+                    {['#F97316', '#22C55E', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#EC4899'].map((color, idx) => (
+                      <linearGradient key={`gradient-${idx}`} id={`barGradient${idx}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={color} stopOpacity={0.95} />
+                        <stop offset="100%" stopColor={color} stopOpacity={0.6} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                  <XAxis
+                    dataKey="category"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={70}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                    tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v}
+                  />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
+                    contentStyle={{
+                      backgroundColor: '#1E293B',
+                      border: '1px solid #475569',
+                      borderRadius: '16px',
+                      boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+                      padding: '12px 16px'
+                    }}
+                    labelStyle={{ color: '#E5E7EB', fontWeight: 700, marginBottom: '8px' }}
+                    itemStyle={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}
+                    formatter={(value: number, _name: string, props: any) => [
+                      formatCurrency(value, displayCurrency),
+                      `Revenue (${props.payload.count} items)`
+                    ]}
+                  />
+                  <Bar dataKey="revenue" radius={[8, 8, 0, 0]} maxBarSize={60}>
+                    {data.categoryBreakdown.map((_entry: any, index: number) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={`url(#barGradient${index % 8})`}
+                        stroke={['#F97316', '#22C55E', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#EC4899'][index % 8]}
+                        strokeWidth={2}
+                        style={{
+                          filter: `drop-shadow(0 8px 16px ${['#F97316', '#22C55E', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#EC4899'][index % 8]}40)`,
+                        }}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-16 text-gray-500">
               <Activity className="w-12 h-12 mb-3 opacity-50" />
@@ -452,7 +553,7 @@ const Overview: React.FC = () => {
           className="glass-card p-6"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-white">🏆 Top Products</h2>
+            <h2 className="text-xl font-semibold text-white">🏆 {labels.primaryList}</h2>
             {categoryData.length > 0 && (
               <span className="text-sm text-gray-400 bg-surface-700/50 px-3 py-1 rounded-full">
                 {categoryData.length} products
@@ -538,7 +639,7 @@ const Overview: React.FC = () => {
         transition={{ delay: 0.5 }}
         className="glass-card p-6"
       >
-        <h2 className="text-xl font-semibold text-white mb-4">Top Products (Real Data)</h2>
+        <h2 className="text-xl font-semibold text-white mb-4">{labels.primaryList} (Real Data)</h2>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -615,7 +716,7 @@ const Overview: React.FC = () => {
         transition={{ delay: 0.6 }}
         className="glass-card p-6"
       >
-        <h2 className="text-xl font-semibold text-white mb-4">Top Customers (Real Data)</h2>
+        <h2 className="text-xl font-semibold text-white mb-4">{labels.secondaryList} (Real Data)</h2>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>

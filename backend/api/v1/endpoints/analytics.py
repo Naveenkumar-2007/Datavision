@@ -345,6 +345,40 @@ async def get_analytics_overview(user_id: str):
                 customer['rank'] = i + 1
                 customer['percentage'] = round((customer['revenue'] / total_revenue * 100) if total_revenue > 0 else 0, 1)
             
+            
+            # Detect date column
+            date_col = None
+            for col in df.columns:
+                if 'date' in col.lower() or 'time' in col.lower():
+                    date_col = col
+                    break
+            
+            # Category Breakdown (when no date columns exist)
+            category_breakdown = []
+            category_column = None
+            
+            if not date_col and amount_col:
+                # Find groupable columns
+                groupable_cols = []
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if any(x in col_lower for x in ['industry', 'country', 'region', 'category', 'type', 'segment', 'status', 'tier']):
+                        if df[col].nunique() > 1 and df[col].nunique() <= 20:
+                            groupable_cols.append(col)
+                
+                if groupable_cols:
+                    category_column = groupable_cols[0]
+                    for cat in df[category_column].unique():
+                        cat_data = df[df[category_column] == cat]
+                        cat_revenue = cat_data[amount_col].sum()
+                        category_breakdown.append({
+                            "category": str(cat),
+                            "revenue": round(float(cat_revenue), 2),
+                            "count": len(cat_data)
+                        })
+                    category_breakdown.sort(key=lambda x: x['revenue'], reverse=True)
+                    category_breakdown = category_breakdown[:10]
+            
             return {
                 "metrics": {
                     "totalRevenue": round(total_revenue, 2),
@@ -366,6 +400,8 @@ async def get_analytics_overview(user_id: str):
                 "sourceFiles": source_files_breakdown,  # NEW: Track source files
                 "lastUpdated": datetime.now().isoformat(),
                 "currency": primary_currency,
+                "categoryBreakdown": category_breakdown,
+                "categoryColumn": category_column,
                 # Multi-currency breakdown
                 "currencyBreakdown": currency_breakdown,
                 "graphStats": {
@@ -1255,6 +1291,38 @@ async def get_dashboard_stats(user_id: str = Query("demo_user")):
         if meta_currency:
             currency = meta_currency
         
+        # Category Breakdown (when no date columns exist)
+        category_breakdown = []
+        category_column = None
+        
+        date_col = None
+        for col in df.columns:
+            if 'date' in col.lower() or 'time' in col.lower():
+                date_col = col
+                break
+        
+        if not date_col and amount_col:
+            # Find groupable columns
+            groupable_cols = []
+            for col in df.columns:
+                col_lower = col.lower()
+                if any(x in col_lower for x in ['industry', 'country', 'region', 'category', 'type', 'segment', 'status', 'tier']):
+                    if df[col].nunique() > 1 and df[col].nunique() <= 20:
+                        groupable_cols.append(col)
+            
+            if groupable_cols:
+                category_column = groupable_cols[0]
+                for cat in df[category_column].unique():
+                    cat_data = df[df[category_column] == cat]
+                    cat_revenue = cat_data[amount_col].sum()
+                    category_breakdown.append({
+                        "category": str(cat),
+                        "revenue": round(float(cat_revenue), 2),
+                        "count": len(cat_data)
+                    })
+                category_breakdown.sort(key=lambda x: x['revenue'], reverse=True)
+                category_breakdown = category_breakdown[:10]
+        
         return {
             "hasData": True,
             "currency": currency,
@@ -1279,6 +1347,8 @@ async def get_dashboard_stats(user_id: str = Query("demo_user")):
             "segmentSummary": segment_summary,
             "growthMetrics": growth_metrics,
             "revenueTimeline": revenue_timeline[-12:],  # Last 12 months
+            "categoryBreakdown": category_breakdown,
+            "categoryColumn": category_column,
             "topInsights": top_insights[:5]  # Top 5 insights
         }
         

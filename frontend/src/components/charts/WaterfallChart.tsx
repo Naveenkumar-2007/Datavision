@@ -33,7 +33,7 @@ interface WaterfallChartProps {
 const processWaterfallData = (data: WaterfallDataPoint[]) => {
     let runningTotal = 0;
 
-    return data.map((item, index) => {
+    return data.map((item, _index) => {
         const start = item.isTotal ? 0 : runningTotal;
         const end = item.isTotal ? item.value : runningTotal + item.value;
 
@@ -89,7 +89,7 @@ export const WaterfallChart: React.FC<WaterfallChartProps> = ({
                         boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
                     }}
                     labelStyle={{ color: '#E5E7EB', fontWeight: 600 }}
-                    formatter={(value: number, name: string, props: any) => [
+                    formatter={(_value: number, _name: string, props: any) => [
                         formatCompactCurrency(props.payload.displayValue, currency),
                         props.payload.isTotal ? 'Total' : (props.payload.isPositive ? 'Increase' : 'Decrease')
                     ]}

@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, AreaChart, Area, CartesianGrid,
+  PieChart, Pie, Area, CartesianGrid,
   ComposedChart, Line
 } from 'recharts';
 import { apiService } from '@/services/api';
@@ -105,7 +105,7 @@ const DataTable: React.FC<{
   data: any[];
   columns: { key: string; label: string; format?: (v: any, row?: any) => any; align?: string }[];
   currency: Currency;
-}> = ({ title, icon, data, columns, currency }) => (
+}> = ({ title, icon, data, columns, currency: _currency }) => (
   <div className="glass-card overflow-hidden">
     <div className="px-5 py-4 border-b border-dark-border flex items-center gap-3">
       {icon}
@@ -168,6 +168,8 @@ interface DashboardData {
   segmentSummary: any[];
   growthMetrics: any;
   revenueTimeline: { month: string; revenue: number; customers: number }[];
+  categoryBreakdown?: { category: string; revenue: number; count: number }[];
+  categoryColumn?: string | null;
   topInsights: any[];
 }
 
@@ -365,6 +367,79 @@ const Dashboards: React.FC = () => {
                 <Line yAxisId="right" type="monotone" dataKey="customers" stroke={THEME.green} strokeWidth={2} dot={{ fill: THEME.green, strokeWidth: 0 }} />
               </ComposedChart>
             </ResponsiveContainer>
+          ) : data.categoryBreakdown && data.categoryBreakdown.length > 0 ? (
+            /* 🎨 PREMIUM: Category Breakdown - Enterprise Visualization */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-300">
+                    Revenue by {data.categoryColumn || 'Category'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">Alternative analysis (no time data)</p>
+                </div>
+                <div className="text-xl font-bold text-primary-400">
+                  {data.categoryBreakdown.length} {data.categoryBreakdown.length === 1 ? 'Category' : 'Categories'}
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={data.categoryBreakdown} margin={{ top: 20, right: 10, left: 10, bottom: 40 }}>
+                  <defs>
+                    {/* Premium Gradient Definitions */}
+                    {CHART_COLORS.map((color, idx) => (
+                      <linearGradient key={`gradient-${idx}`} id={`barGradient${idx}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={color} stopOpacity={0.95} />
+                        <stop offset="100%" stopColor={color} stopOpacity={0.6} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
+                  <XAxis
+                    dataKey="category"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={70}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#9CA3AF', fontSize: 11 }}
+                    tickFormatter={(v) => formatCompactCurrency(v, currency).replace(currencySymbol, '')}
+                  />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
+                    contentStyle={{
+                      backgroundColor: '#1E293B',
+                      border: '1px solid #475569',
+                      borderRadius: '16px',
+                      boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+                      padding: '12px 16px'
+                    }}
+                    labelStyle={{ color: '#E5E7EB', fontWeight: 700, marginBottom: '8px' }}
+                    itemStyle={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}
+                    formatter={(value: number, _name: string, props: any) => [
+                      formatCurrency(value, currency),
+                      `Revenue (${props.payload.count} items)`
+                    ]}
+                  />
+                  <Bar dataKey="revenue" radius={[8, 8, 0, 0]} maxBarSize={60}>
+                    {data.categoryBreakdown.map((_entry: any, index: number) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={`url(#barGradient${index % CHART_COLORS.length})`}
+                        stroke={CHART_COLORS[index % CHART_COLORS.length]}
+                        strokeWidth={2}
+                        style={{
+                          filter: `drop-shadow(0 8px 16px ${CHART_COLORS[index % CHART_COLORS.length]}40)`,
+                        }}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-64 text-center">
               <TrendingUp className="w-12 h-12 text-gray-600 mb-4" />
