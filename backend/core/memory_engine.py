@@ -80,6 +80,8 @@ class ShortTermMemory:
     - Last 20 messages per session
     - In-memory with TTL
     - Conversation continuity
+    - AUTHORITATIVE METRIC TRACKING (new)
+    - CONCLUSION & REASONING STORAGE (new)
     """
     
     MAX_MESSAGES = 20
@@ -89,6 +91,49 @@ class ShortTermMemory:
         # session_id -> list of messages
         self._sessions: Dict[str, List[Dict]] = {}
         self._session_times: Dict[str, datetime] = {}
+        
+        # =====================================================================
+        # AUTHORITATIVE METRIC TRACKING - Per session source of truth
+        # =====================================================================
+        self._primary_metrics: Dict[str, Dict] = {}
+        # Structure: {session_id: {"metric": "total_revenue", "value": 548765.39, "currency": "INR"}}
+        
+        # =====================================================================
+        # CONCLUSION & REASONING STORAGE - For self-explanation
+        # =====================================================================
+        self._conclusions: Dict[str, Dict] = {}
+        # Structure: {session_id: {"conclusion": "good", "reasons": [...], "metric": "revenue"}}
+        
+        # =====================================================================
+        # CURRENCY PREFERENCE - Remember user's preferred output currency
+        # =====================================================================
+        self._currency_preferences: Dict[str, str] = {}
+        # Structure: {session_id: "USD"}
+        
+        # =====================================================================
+        # AUTHORITATIVE AGGREGATES - Computed data that CANNOT be contradicted
+        # =====================================================================
+        self._aggregates: Dict[str, Dict] = {}
+        # Structure: {session_id: {
+        #   "monthly_revenue": {"Jan": 82883, "Feb": 72705, ...},
+        #   "best_month": "June",
+        #   "best_month_value": 101779,
+        #   "worst_month": "April",
+        #   "trend_direction": "recovering",
+        #   "top_customers": [...]
+        # }}
+        
+        # =====================================================================
+        # LAST CHART CONTEXT - For chart-explanation binding
+        # =====================================================================
+        self._last_chart: Dict[str, Dict] = {}
+        # Structure: {session_id: {
+        #   "type": "monthly_revenue",
+        #   "title": "Monthly Revenue Trend",
+        #   "data_summary": "Revenue from Jan to Jul, peak in June",
+        #   "peak": {"label": "June", "value": 101779},
+        #   "low": {"label": "April", "value": 57973}
+        # }}
     
     def add_message(self, session_id: str, role: str, content: str, metadata: Optional[Dict] = None):
         """Add a message to session memory"""
@@ -146,6 +191,454 @@ class ShortTermMemory:
         if session_id in self._sessions:
             del self._sessions[session_id]
             del self._session_times[session_id]
+    
+    def get_last_entity(self, session_id: str) -> Optional[str]:
+        """Get the last mentioned entity (customer, product, metric)"""
+        messages = self.get_messages(session_id, limit=5)
+        
+        # Entity patterns to look for
+        import re
+        entity_patterns = [
+            r'(?:customer|client)\s+([A-Za-z0-9_\-]+)',
+            r'([A-Za-z0-9_\-]+)(?:\'s|s\')?\s+(?:revenue|sales|orders)',
+            r'top\s+(?:customer|product):\s*([A-Za-z0-9_\-]+)',
+        ]
+        
+        for msg in reversed(messages):
+            content = msg.get('content', '')
+            for pattern in entity_patterns:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    return match.group(1)
+        
+        return None
+    
+    def get_last_metric(self, session_id: str) -> Optional[str]:
+        """Get the last mentioned metric (revenue, orders, etc.)"""
+        messages = self.get_messages(session_id, limit=5)
+        
+        metrics = ['revenue', 'sales', 'orders', 'customers', 'products', 
+                   'growth', 'profit', 'margin', 'aov', 'arpu', 'churn']
+        
+        for msg in reversed(messages):
+            content = msg.get('content', '').lower()
+            for metric in metrics:
+                if metric in content:
+                    return metric
+        
+        return None
+    
+    def get_last_time_reference(self, session_id: str) -> Optional[str]:
+        """Get the last mentioned time period"""
+        messages = self.get_messages(session_id, limit=5)
+        
+        import re
+        time_patterns = [
+            r'(january|february|march|april|may|june|july|august|september|october|november|december)\s*\d*',
+            r'(q[1-4])\s*\d*',
+            r'(last|this|next)\s+(week|month|quarter|year)',
+            r'\d{4}-\d{2}',
+            r'(fy\s*\d+)',
+        ]
+        
+        for msg in reversed(messages):
+            content = msg.get('content', '').lower()
+            for pattern in time_patterns:
+                match = re.search(pattern, content, re.IGNORECASE)
+                if match:
+                    return match.group(0)
+        
+        return None
+    
+    # =========================================================================
+    # AUTHORITATIVE METRIC TRACKING - Source of truth for follow-ups
+    # =========================================================================
+    
+    def set_primary_metric(self, session_id: str, metric: str, value: Any, 
+                           currency: str = "INR", formatted: str = None):
+        """
+        Set the authoritative primary metric for this session.
+        All follow-up references to 'it', 'that', 'this' will resolve to this.
+        """
+        self._primary_metrics[session_id] = {
+            "metric": metric,
+            "value": value,
+            "currency": currency,
+            "formatted": formatted or str(value),
+            "timestamp": datetime.now().isoformat()
+        }
+        print(f"[MEMORY] Primary metric set: {metric} = {formatted or value}")
+    
+    def get_primary_metric(self, session_id: str) -> Optional[Dict]:
+        """
+        Get the authoritative primary metric for this session.
+        Returns: {"metric": "total_revenue", "value": 548765.39, "currency": "INR", "formatted": "₹548,765.39"}
+        """
+        return self._primary_metrics.get(session_id)
+    
+    # =========================================================================
+    # CONCLUSION & REASONING STORAGE - For self-explanation
+    # =========================================================================
+    
+    def set_conclusion(self, session_id: str, conclusion: str, reasons: List[str], 
+                       metric: str = None):
+        """
+        Store an evaluative conclusion with reasons for self-explanation.
+        Called after "Is this good or bad?" type answers.
+        """
+        self._conclusions[session_id] = {
+            "conclusion": conclusion,  # e.g., "good", "healthy", "concerning"
+            "reasons": reasons,        # e.g., ["Revenue is above average", "Growth is steady"]
+            "metric": metric,
+            "timestamp": datetime.now().isoformat()
+        }
+        print(f"[MEMORY] Conclusion stored: {conclusion} with {len(reasons)} reasons")
+    
+    def get_conclusion(self, session_id: str) -> Optional[Dict]:
+        """
+        Get the last stored conclusion for self-explanation.
+        Returns: {"conclusion": "good", "reasons": [...], "metric": "revenue"}
+        """
+        return self._conclusions.get(session_id)
+    
+    # =========================================================================
+    # LAST ANSWER RETRIEVAL - For follow-up context
+    # =========================================================================
+    
+    def get_last_answer(self, session_id: str) -> Optional[str]:
+        """Get the most recent assistant response for follow-up reference."""
+        messages = self.get_messages(session_id, limit=10)
+        for msg in reversed(messages):
+            if msg.get("role") == "assistant":
+                return msg.get("content", "")
+        return None
+    
+    # =========================================================================
+    # CURRENCY PREFERENCE - Remember user's preferred output currency
+    # =========================================================================
+    
+    def set_currency_preference(self, session_id: str, currency: str):
+        """Store user's preferred output currency (USD, EUR, GBP, INR)."""
+        self._currency_preferences[session_id] = currency.upper()
+        print(f"[MEMORY] Currency preference set: {currency.upper()}")
+    
+    def get_currency_preference(self, session_id: str) -> Optional[str]:
+        """Get user's preferred output currency."""
+        return self._currency_preferences.get(session_id)
+    
+    # =========================================================================
+    # AUTHORITATIVE AGGREGATES - Unified truth across all modes
+    # =========================================================================
+    
+    def set_aggregate(self, session_id: str, key: str, value: Any):
+        """
+        Store an authoritative aggregate that CANNOT be contradicted.
+        
+        Examples:
+            set_aggregate(session_id, "monthly_revenue", {"Jan": 82883, ...})
+            set_aggregate(session_id, "best_month", "June")
+            set_aggregate(session_id, "best_month_value", 101779)
+        """
+        if session_id not in self._aggregates:
+            self._aggregates[session_id] = {}
+        self._aggregates[session_id][key] = value
+        print(f"[MEMORY] Aggregate stored: {key}")
+    
+    def get_aggregate(self, session_id: str, key: str) -> Any:
+        """Get a stored aggregate value."""
+        return self._aggregates.get(session_id, {}).get(key)
+    
+    def get_all_aggregates(self, session_id: str) -> Dict:
+        """Get all stored aggregates for a session."""
+        return self._aggregates.get(session_id, {})
+    
+    def get_aggregates_context(self, session_id: str) -> str:
+        """
+        Get formatted aggregates for LLM context.
+        This is the AUTHORITATIVE DATA that cannot be contradicted.
+        """
+        aggregates = self.get_all_aggregates(session_id)
+        if not aggregates:
+            return ""
+        
+        context = "\nAUTHORITATIVE DATA (already computed - DO NOT contradict):\n"
+        
+        if "monthly_revenue" in aggregates:
+            context += f"Monthly Revenue: {aggregates['monthly_revenue']}\n"
+        if "best_month" in aggregates:
+            context += f"Best Month: {aggregates['best_month']} = {aggregates.get('best_month_value', 'N/A')}\n"
+        if "worst_month" in aggregates:
+            context += f"Worst Month: {aggregates['worst_month']} = {aggregates.get('worst_month_value', 'N/A')}\n"
+        if "trend_direction" in aggregates:
+            context += f"Trend: {aggregates['trend_direction']}\n"
+        if "top_customers" in aggregates:
+            context += f"Top Customers: {aggregates['top_customers'][:3]}\n"
+        
+        return context
+    
+    # =========================================================================
+    # CHART CONTEXT - For chart-explanation binding
+    # =========================================================================
+    
+    def set_last_chart(self, session_id: str, chart_info: Dict):
+        """
+        Store the last rendered chart for explanation binding.
+        
+        chart_info should contain:
+            type: "monthly_revenue", "customer_breakdown", etc.
+            title: Chart title
+            data_summary: Brief description
+            peak: {label, value}
+            low: {label, value}
+        """
+        self._last_chart[session_id] = chart_info
+        print(f"[MEMORY] Chart context stored: {chart_info.get('type', 'unknown')}")
+    
+    def get_last_chart(self, session_id: str) -> Optional[Dict]:
+        """Get the last chart context for explanation."""
+        return self._last_chart.get(session_id)
+    
+    def get_chart_explanation_context(self, session_id: str) -> str:
+        """
+        Get formatted chart context for "explain this chart" queries.
+        """
+        chart = self.get_last_chart(session_id)
+        if not chart:
+            return ""
+        
+        context = f"""
+LAST CHART SHOWN (explain THIS chart, not other data):
+- Type: {chart.get('type', 'unknown')}
+- Title: {chart.get('title', 'Chart')}
+- Summary: {chart.get('data_summary', 'N/A')}
+"""
+        if chart.get('peak'):
+            context += f"- Peak: {chart['peak'].get('label')} = {chart['peak'].get('value')}\n"
+        if chart.get('low'):
+            context += f"- Low: {chart['low'].get('label')} = {chart['low'].get('value')}\n"
+        
+        context += "\nEXPLAIN THE CHART ABOVE ONLY. Do not reference unrelated metrics.\n"
+        return context
+    
+    # =========================================================================
+    # $5M ENHANCEMENT: QUERY RESULT MEMORY - For ChatGPT-style follow-ups
+    # =========================================================================
+    # When user asks "top 5 customers", we store the results so they can
+    # follow up with "compare top vs bottom" or "tell me about Customer_1"
+    
+    _query_results: Dict[str, Dict] = {}
+    
+    def set_last_query_result(self, session_id: str, query_type: str, 
+                               data: List[Dict], summary: str = ""):
+        """
+        Store the result of a data query for follow-up reference.
+        
+        This is CRITICAL for queries like "compare top vs lowest" where
+        we need to remember what was just shown.
+        
+        Args:
+            session_id: Session identifier
+            query_type: Type of result ('customers', 'products', 'months', etc.)
+            data: List of data items, each with 'name' and 'value' keys
+            summary: Optional summary description
+            
+        Example:
+            set_last_query_result(session_id, 'products', [
+                {'name': 'Product A', 'value': 95827.71, 'rank': 1},
+                {'name': 'Product B', 'value': 87968.61, 'rank': 2},
+                ...
+            ])
+        """
+        if session_id not in self._query_results:
+            self._query_results[session_id] = {}
+        
+        self._query_results[session_id] = {
+            'type': query_type,
+            'data': data,
+            'summary': summary,
+            'timestamp': datetime.now().isoformat(),
+            # Precompute common references
+            'top_item': data[0] if data else None,
+            'bottom_item': data[-1] if data else None,
+            'count': len(data)
+        }
+        print(f"[MEMORY] Query result stored: {query_type} with {len(data)} items")
+    
+    def get_last_query_result(self, session_id: str) -> Optional[Dict]:
+        """
+        Get the last query result for follow-up queries.
+        
+        Returns dict with:
+            type: 'customers', 'products', etc.
+            data: List of items
+            top_item: First/best item
+            bottom_item: Last/worst item
+            count: Number of items
+        """
+        return self._query_results.get(session_id)
+    
+    def get_item_by_reference(self, session_id: str, reference: str) -> Optional[Dict]:
+        """
+        Get an item by contextual reference like 'top', 'best', 'lowest', 'worst'.
+        
+        Args:
+            session_id: Session identifier
+            reference: 'top', 'best', 'first', 'highest' -> returns top_item
+                      'bottom', 'worst', 'last', 'lowest' -> returns bottom_item
+                      
+        Returns:
+            Item dict with 'name', 'value', 'rank' or None
+        """
+        result = self.get_last_query_result(session_id)
+        if not result:
+            return None
+        
+        reference_lower = reference.lower()
+        
+        # Top references
+        if any(ref in reference_lower for ref in ['top', 'best', 'first', 'highest', 'leading']):
+            return result.get('top_item')
+        
+        # Bottom references
+        if any(ref in reference_lower for ref in ['bottom', 'worst', 'last', 'lowest', 'trailing']):
+            return result.get('bottom_item')
+        
+        # Try to find by name
+        data = result.get('data', [])
+        for item in data:
+            if item.get('name', '').lower() in reference_lower:
+                return item
+        
+        return None
+    
+    def get_comparison_context(self, session_id: str) -> str:
+        """
+        Get formatted context for comparison follow-ups.
+        
+        Called when user asks "compare top vs bottom" style questions.
+        """
+        result = self.get_last_query_result(session_id)
+        if not result:
+            return ""
+        
+        top = result.get('top_item')
+        bottom = result.get('bottom_item')
+        
+        if not top or not bottom:
+            return ""
+        
+        context = f"""
+PREVIOUS QUERY RESULTS ({result.get('type', 'items')}):
+- TOP: {top.get('name')} = {top.get('value'):,.2f}
+- BOTTOM: {bottom.get('name')} = {bottom.get('value'):,.2f}
+- Total items shown: {result.get('count')}
+
+When user refers to 'top', 'best', 'highest' → use {top.get('name')}
+When user refers to 'bottom', 'worst', 'lowest' → use {bottom.get('name')}
+"""
+        return context
+
+
+# =============================================================================
+# GLOBAL SINGLETON INSTANCE - Use this for shared state across modules
+# =============================================================================
+# This MUST be used by both chat.py and nodes.py to share chart context,
+# aggregates, and conversation state.
+_shared_memory_instance = None
+
+def get_shared_memory() -> ShortTermMemory:
+    """
+    Get the shared memory singleton instance.
+    
+    Usage:
+        from core.memory_engine import get_shared_memory
+        memory = get_shared_memory()
+        memory.set_last_chart(...)
+    """
+    global _shared_memory_instance
+    if _shared_memory_instance is None:
+        _shared_memory_instance = ShortTermMemory()
+        print("[MEMORY] Created shared memory singleton instance")
+    return _shared_memory_instance
+
+# Also export a direct reference for backward compatibility
+shared_memory = get_shared_memory()
+
+
+class ReferenceResolver:
+    """
+    Resolves pronouns and contextual references in follow-up queries.
+    Enables natural conversation like "compare that to last month".
+    """
+    
+    # Reference patterns to detect
+    ENTITY_REFS = ['that', 'this', 'it', 'them', 'those', 'these']
+    TIME_REFS = ['last month', 'previous', 'before', 'prior', 'earlier']
+    CONTEXT_REFS = ['same', 'above', 'mentioned', 'earlier']
+    
+    def __init__(self, short_term: ShortTermMemory):
+        self.short_term = short_term
+    
+    def resolve(self, query: str, session_id: str) -> Tuple[str, Dict[str, Any]]:
+        """
+        Resolve references in the query.
+        
+        Returns:
+            (resolved_query, metadata)
+            
+        Example:
+            Input: "Compare that to last month"
+            Output: ("Compare Customer_1 revenue to November 2024", 
+                     {"resolved": {"that": "Customer_1 revenue"}})
+        """
+        import re
+        query_lower = query.lower()
+        resolved = {}
+        resolved_query = query
+        
+        # Check for entity references
+        for ref in self.ENTITY_REFS:
+            pattern = rf'\b{ref}\b'
+            if re.search(pattern, query_lower):
+                entity = self.short_term.get_last_entity(session_id)
+                metric = self.short_term.get_last_metric(session_id)
+                
+                if entity or metric:
+                    replacement = []
+                    if entity:
+                        replacement.append(entity)
+                    if metric:
+                        replacement.append(metric)
+                    replacement_str = ' '.join(replacement)
+                    
+                    # Replace the reference
+                    resolved_query = re.sub(pattern, replacement_str, resolved_query, flags=re.IGNORECASE)
+                    resolved[ref] = replacement_str
+        
+        # Check for time references  
+        if 'last month' in query_lower or 'previous' in query_lower:
+            time_ref = self.short_term.get_last_time_reference(session_id)
+            if time_ref:
+                resolved['time_context'] = time_ref
+        
+        metadata = {
+            'resolved': resolved,
+            'had_references': len(resolved) > 0,
+            'original_query': query
+        }
+        
+        return resolved_query, metadata
+    
+    def needs_resolution(self, query: str) -> bool:
+        """Check if query contains references that need resolution"""
+        query_lower = query.lower()
+        
+        all_refs = self.ENTITY_REFS + self.TIME_REFS + self.CONTEXT_REFS
+        for ref in all_refs:
+            if ref in query_lower:
+                return True
+        
+        return False
 
 
 class MidTermMemory:

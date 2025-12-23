@@ -61,6 +61,9 @@ class AgentState:
     processing_time_ms: float = 0.0
     token_count: int = 0
     
+    # Role Intelligence
+    user_role: str = "analyst"  # executive, manager, analyst, operator
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert state to dictionary"""
         return {

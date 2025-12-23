@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   User,
@@ -18,7 +19,25 @@ import { useUserStore } from '@/store/userStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 
+interface ThemeContext {
+  isDark: boolean;
+  bgColor: string;
+  cardBg: string;
+  textPrimary: string;
+  textMuted: string;
+  borderColor: string;
+}
+
 const Settings: React.FC = () => {
+  const theme = useOutletContext<ThemeContext>() || {
+    isDark: true,
+    bgColor: '#0a0a0b',
+    cardBg: '#141414',
+    textPrimary: '#F8FAFC',
+    textMuted: '#9CA3AF',
+    borderColor: '#262626',
+  };
+
   const { user: authUser } = useAuth();
   const setStoreUser = useUserStore((state) => state.setUser);
 
@@ -413,7 +432,11 @@ const Settings: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-4 mb-2"
       >
-        <img src="/logo.png" alt="Logo" className="w-12 h-12 rounded-xl shadow-lg shadow-orange-500/20" />
+        <img
+          src="/logo.png"
+          alt="DataVision Logo"
+          className="w-12 h-12 object-contain rounded-xl shadow-lg"
+        />
         <div>
           <h1 className="text-4xl font-bold text-white">Settings</h1>
           <p className="text-gray-400">Manage your account and preferences</p>
@@ -428,13 +451,13 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <User className="w-6 h-6 text-orange-400" />
+          <User className="w-6 h-6 text-teal-400" />
           <h2 className="text-2xl font-semibold text-white">Profile</h2>
         </div>
 
         <div className="space-y-6">
           <div className="flex items-center space-x-6">
-            <div className="relative w-24 h-24 rounded-2xl overflow-hidden bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center group">
+            <div className="relative w-24 h-24 rounded-2xl overflow-hidden bg-gradient-to-br from-teal-500 to-amber-600 flex items-center justify-center group">
               {profile.avatar ? (
                 <img src={profile.avatar} alt="Profile" className="w-full h-full object-cover" />
               ) : (
@@ -451,7 +474,7 @@ const Settings: React.FC = () => {
               />
               <button
                 onClick={handleChangeAvatar}
-                className="px-4 py-2 bg-orange-600 rounded-xl text-white font-medium hover:bg-orange-700 transition-colors shadow-md"
+                className="px-4 py-2 bg-teal-600 rounded-xl text-white font-medium hover:bg-orange-700 transition-colors shadow-md"
               >
                 Change Avatar
               </button>
@@ -466,7 +489,7 @@ const Settings: React.FC = () => {
                 type="text"
                 value={profile.name}
                 onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
               />
             </div>
             <div>
@@ -486,7 +509,7 @@ const Settings: React.FC = () => {
                 placeholder="Your Company"
                 value={profile.company}
                 onChange={(e) => setProfile({ ...profile, company: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
               />
             </div>
             <div>
@@ -496,8 +519,103 @@ const Settings: React.FC = () => {
                 placeholder="Your Role"
                 value={profile.role}
                 onChange={(e) => setProfile({ ...profile, role: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
               />
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Company Intelligence */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+        className="glass-card p-8"
+      >
+        <div className="flex items-center space-x-4 mb-6">
+          <svg className="w-6 h-6 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
+          <div>
+            <h2 className="text-2xl font-semibold text-white">Company Intelligence</h2>
+            <p className="text-sm text-gray-400">AI will adapt terminology and benchmarks to your company</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Company Name */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Company Name</label>
+              <input
+                type="text"
+                placeholder="Your Company Inc"
+                value={profile.company}
+                onChange={(e) => setProfile({ ...profile, company: e.target.value })}
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">AI will reference this in responses</p>
+            </div>
+
+            {/* Industry */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Industry</label>
+              <select
+                value={preferences.industry || 'other'}
+                onChange={(e) => setPreferences({ ...preferences, industry: e.target.value })}
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
+              >
+                <option value="saas">SaaS / Software</option>
+                <option value="ecommerce">E-commerce / Retail</option>
+                <option value="fintech">Fintech / Banking</option>
+                <option value="healthcare">Healthcare</option>
+                <option value="manufacturing">Manufacturing</option>
+                <option value="consulting">Consulting / Services</option>
+                <option value="education">Education</option>
+                <option value="other">Other</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">For industry-specific benchmarks</p>
+            </div>
+
+            {/* Fiscal Year End */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Fiscal Year End Month</label>
+              <select
+                value={preferences.fiscalYearEnd || 12}
+                onChange={(e) => setPreferences({ ...preferences, fiscalYearEnd: parseInt(e.target.value) })}
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
+              >
+                <option value={1}>January</option>
+                <option value={2}>February</option>
+                <option value={3}>March</option>
+                <option value={4}>April</option>
+                <option value={5}>May</option>
+                <option value={6}>June</option>
+                <option value={7}>July</option>
+                <option value={8}>August</option>
+                <option value={9}>September</option>
+                <option value={10}>October</option>
+                <option value={11}>November</option>
+                <option value={12}>December</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">For accurate Q1-Q4 calculations</p>
+            </div>
+
+            {/* User Role */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Your Role</label>
+              <select
+                value={preferences.userRole || 'analyst'}
+                onChange={(e) => setPreferences({ ...preferences, userRole: e.target.value })}
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
+              >
+                <option value="executive">Executive (CEO/CFO/VP) - Quick summaries</option>
+                <option value="manager">Manager - Actionable insights</option>
+                <option value="analyst">Analyst - Detailed data tables</option>
+                <option value="operator">Operator - Quick facts</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">AI adapts response format to your role</p>
             </div>
           </div>
         </div>
@@ -511,7 +629,7 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <Shield className="w-6 h-6 text-orange-400" />
+          <Shield className="w-6 h-6 text-teal-400" />
           <h2 className="text-2xl font-semibold text-white">Preferences</h2>
         </div>
 
@@ -524,14 +642,14 @@ const Settings: React.FC = () => {
               <select
                 value={preferences.theme}
                 onChange={(e) => setPreferences({ ...preferences, theme: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500 appearance-none cursor-pointer"
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
               >
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
               </select>
               <button
                 onClick={handleResetTheme}
-                className="text-orange-400 text-sm mt-2 hover:underline"
+                className="text-teal-400 text-sm mt-2 hover:underline"
               >
                 Reset to Dark Mode
               </button>
@@ -543,7 +661,7 @@ const Settings: React.FC = () => {
               <select
                 value={preferences.language || 'en'}
                 onChange={(e) => setPreferences({ ...preferences, language: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500 appearance-none cursor-pointer"
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
               >
                 <option value="en">English (Only)</option>
               </select>
@@ -556,7 +674,7 @@ const Settings: React.FC = () => {
             <select
               value={preferences.currency}
               onChange={(e) => setPreferences({ ...preferences, currency: e.target.value })}
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500 appearance-none cursor-pointer"
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
             >
               <option value="INR">₹ Indian Rupee (INR)</option>
               <option value="USD">$ US Dollar (USD)</option>
@@ -582,7 +700,7 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <Mail className="w-6 h-6 text-orange-400" />
+          <Mail className="w-6 h-6 text-teal-400" />
           <h2 className="text-2xl font-semibold text-white">Email Reports</h2>
         </div>
 
@@ -595,7 +713,7 @@ const Settings: React.FC = () => {
               placeholder="your@email.com"
               value={emailPrefs.email_address || ''}
               onChange={(e) => setEmailPrefs({ ...emailPrefs, email_address: e.target.value })}
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
             />
             <p className="text-xs text-gray-500 mt-1">Leave blank to use your account email</p>
           </div>
@@ -604,7 +722,7 @@ const Settings: React.FC = () => {
           <div className="p-4 bg-dark-card rounded-xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <Clock className="w-5 h-5 text-orange-400" />
+                <Clock className="w-5 h-5 text-teal-400" />
                 <div>
                   <div className="text-white font-medium">Daily Reports</div>
                   <div className="text-sm text-gray-400">Receive daily business summary</div>
@@ -617,7 +735,7 @@ const Settings: React.FC = () => {
                   onChange={(e) => setEmailPrefs({ ...emailPrefs, daily_report_enabled: e.target.checked })}
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-teal-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
               </label>
             </div>
 
@@ -628,7 +746,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.daily_report_hour}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, daily_report_hour: parseInt(e.target.value) })}
-                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
                   >
                     {Array.from({ length: 24 }, (_, i) => (
                       <option key={i} value={i}>{i.toString().padStart(2, '0')}</option>
@@ -641,7 +759,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.daily_report_minute}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, daily_report_minute: parseInt(e.target.value) })}
-                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
                   >
                     {[0, 15, 30, 45].map((m) => (
                       <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
@@ -656,7 +774,7 @@ const Settings: React.FC = () => {
           <div className="p-4 bg-dark-card rounded-xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <Calendar className="w-5 h-5 text-orange-400" />
+                <Calendar className="w-5 h-5 text-teal-400" />
                 <div>
                   <div className="text-white font-medium">Weekly Reports</div>
                   <div className="text-sm text-gray-400">Comprehensive weekly analysis with graphs</div>
@@ -669,7 +787,7 @@ const Settings: React.FC = () => {
                   onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_enabled: e.target.checked })}
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-orange-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-teal-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
               </label>
             </div>
 
@@ -680,7 +798,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.weekly_report_day}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_day: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
                   >
                     {dayOptions.map((day) => (
                       <option key={day.value} value={day.value}>{day.label}</option>
@@ -692,7 +810,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.weekly_report_hour}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_hour: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
                   >
                     {Array.from({ length: 24 }, (_, i) => (
                       <option key={i} value={i}>{i.toString().padStart(2, '0')}</option>
@@ -704,7 +822,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.weekly_report_minute}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_minute: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-orange-500"
+                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
                   >
                     {[0, 15, 30, 45].map((m) => (
                       <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
@@ -720,7 +838,7 @@ const Settings: React.FC = () => {
             <button
               onClick={saveEmailPrefs}
               disabled={emailPrefsLoading}
-              className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-600 rounded-xl text-white font-medium hover:shadow-glow transition-all disabled:opacity-50 flex items-center space-x-2"
+              className="px-6 py-3 bg-gradient-to-r from-teal-500 to-amber-600 rounded-xl text-white font-medium hover:shadow-glow transition-all disabled:opacity-50 flex items-center space-x-2"
             >
               <Save className="w-4 h-4" />
               <span>{emailPrefsLoading ? 'Saving...' : 'Save Email Preferences'}</span>
@@ -753,7 +871,7 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <Database className="w-6 h-6 text-orange-400" />
+          <Database className="w-6 h-6 text-teal-400" />
           <h2 className="text-2xl font-semibold text-white">Data Management</h2>
         </div>
 
@@ -769,7 +887,7 @@ const Settings: React.FC = () => {
                 <div className="text-sm text-gray-400">Download your complete data archive</div>
               </div>
             </div>
-            <span className="text-orange-400 text-sm font-medium">Export</span>
+            <span className="text-teal-400 text-sm font-medium">Export</span>
           </button>
 
           <button
@@ -777,13 +895,13 @@ const Settings: React.FC = () => {
             className="w-full p-4 bg-dark-card border border-dark-border rounded-xl text-left hover:bg-dark-hover transition-colors flex items-center justify-between"
           >
             <div className="flex items-center space-x-3">
-              <RefreshCw className="w-5 h-5 text-orange-400" />
+              <RefreshCw className="w-5 h-5 text-teal-400" />
               <div>
                 <div className="text-white font-medium">Rebuild Indexes</div>
                 <div className="text-sm text-gray-400">Refresh FAISS and GraphRAG indexes</div>
               </div>
             </div>
-            <span className="text-orange-400 text-sm font-medium">Rebuild</span>
+            <span className="text-teal-400 text-sm font-medium">Rebuild</span>
           </button>
 
           <button
@@ -810,7 +928,7 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <Key className="w-6 h-6 text-orange-400" />
+          <Key className="w-6 h-6 text-teal-400" />
           <h2 className="text-2xl font-semibold text-white">Security</h2>
         </div>
 
@@ -821,7 +939,7 @@ const Settings: React.FC = () => {
               id="current-password"
               type="password"
               placeholder="Enter current password (optional)"
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
             />
             <p className="text-xs text-gray-500 mt-1">For OAuth users, leave this blank</p>
           </div>
@@ -831,7 +949,7 @@ const Settings: React.FC = () => {
               id="new-password"
               type="password"
               placeholder="Enter new password (min 6 characters)"
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
             />
           </div>
           <div>
@@ -840,12 +958,12 @@ const Settings: React.FC = () => {
               id="confirm-password"
               type="password"
               placeholder="Confirm new password"
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-orange-500"
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
             />
           </div>
           <button
             onClick={handleChangePassword}
-            className="px-6 py-3 bg-orange-600 rounded-xl text-white font-medium hover:bg-orange-700 transition-colors shadow-md"
+            className="px-6 py-3 bg-teal-600 rounded-xl text-white font-medium hover:bg-orange-700 transition-colors shadow-md"
           >
             Change Password
           </button>
@@ -867,7 +985,7 @@ const Settings: React.FC = () => {
         </button>
         <button
           onClick={handleSave}
-          className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-600 rounded-xl text-white font-semibold hover:shadow-glow transition-all flex items-center space-x-2"
+          className="px-8 py-3 bg-gradient-to-r from-teal-500 to-amber-600 rounded-xl text-white font-semibold hover:shadow-glow transition-all flex items-center space-x-2"
         >
           <Save className="w-5 h-5" />
           <span>Save Changes</span>

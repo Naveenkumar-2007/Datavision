@@ -1,790 +1,415 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useOutletContext } from 'react-router-dom';
+import { RefreshCw, Loader, Upload, ChevronDown, Filter } from 'lucide-react';
+import { apiService } from '@/services/api';
 import { motion } from 'framer-motion';
 import {
-  Users,
-  ShoppingCart,
-  Activity,
-  Loader,
-  AlertCircle,
-  Lightbulb,
-} from 'lucide-react';
-import { AreaChart, Area, PieChart, Pie, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { apiService } from '@/services/api';
-import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency, convertCurrency } from '@/utils/currency';
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, Legend,
+  PieChart, Pie
+} from 'recharts';
 
-interface CurrencyBreakdownItem {
-  currency: string;
-  amount: number;
-  symbol: string;
-  formatted: string;
-  usd_equivalent: number;
-  name: string;
+// ===========================================================================
+// DATAVISION OVERVIEW - EXACT SECOND REFERENCE IMAGE
+// KPIs + Salary by Department + Role Breakdown (Donut + Bars) + Table + Location
+// ===========================================================================
+
+interface ThemeContext {
+  isDark: boolean;
 }
 
-interface CurrencyBreakdown {
-  breakdown: CurrencyBreakdownItem[];
-  total_usd_equivalent: number;
-  total_usd_formatted: string;
-  primary_currency: string;
-  currencies_count: number;
-}
-
-interface BusinessInsight {
-  type: 'success' | 'warning' | 'info';
-  icon: string;
-  title: string;
-  message: string;
-}
-
-interface DomainLabels {
-  primaryMetric: string;
-  secondaryMetric: string;
-  countMetric: string;
-  avgMetric: string;
-  trendTitle: string;
-  primaryList: string;
-  secondaryList: string;
-  primaryIcon: string;
-  color: string;
-}
-
-interface AnalyticsData {
-  domain?: string;
-  domainConfidence?: number;
-  domainLabels?: DomainLabels;
-  metrics: {
-    totalRevenue: number;
-    totalInvoices: number;
-    uniqueCustomers: number;
-    averageOrderValue: number;
-    currency?: string;
-  };
-  timeSeries: Array<{ date: string; revenue: number; invoices: number }>;
-  topProducts: Array<{ name: string; revenue: number; count: number }>;
-  bottomProducts?: Array<{ name: string; revenue: number; count: number }>;
-  allProducts?: Array<{ name: string; revenue: number; count: number }>;
-  topCustomers: Array<{ name: string; revenue: number; orders: number }>;
-  bottomCustomers?: Array<{ name: string; revenue: number; orders: number }>;
-  allCustomers?: Array<{ name: string; revenue: number; orders: number }>;
-  categoryBreakdown?: Array<{ category: string; revenue: number; count: number }>;
-  categoryColumn?: string | null;
-  hasData: boolean;
-  message?: string;
-  currency?: string;
-  currencyBreakdown?: CurrencyBreakdown;
-}
+const CHART_COLORS = ['#818CF8', '#F472B6', '#FBBF24', '#34D399', '#22D3EE', '#A78BFA', '#FB923C', '#4ADE80'];
 
 const Overview: React.FC = () => {
-  const [data, setData] = useState<AnalyticsData | null>(null);
-  const [insights, setInsights] = useState<BusinessInsight[]>([]);
+  const context = useOutletContext<ThemeContext>();
+  const isDark = context?.isDark ?? true;
+
+  const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeFilters, setActiveFilters] = useState<Record<string, string>>({});
 
-  useEffect(() => {
-    loadData();
+  const theme = {
+    bg: isDark ? '#0f172a' : '#f8fafc',
+    cardBg: isDark ? '#1e293b' : '#ffffff',
+    text: isDark ? '#f1f5f9' : '#1e293b',
+    textMuted: isDark ? '#94a3b8' : '#64748b',
+    border: isDark ? '#334155' : '#e2e8f0',
+    accent: '#6366F1',
+    headerBg: 'linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%)',
+  };
 
-    // Listen for file updates from other pages
-    const handleFilesUpdated = () => {
-      loadData();
-    };
-
-    window.addEventListener('filesUpdated', handleFilesUpdated);
-
-    return () => {
-      window.removeEventListener('filesUpdated', handleFilesUpdated);
-    };
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async (filtersToApply?: Record<string, string>, showLoading = true) => {
     try {
-      setLoading(true);
-      setError(null);
-
-      // Fetch analytics and insights in parallel
-      const [analyticsResponse, insightsResponse] = await Promise.all([
-        apiService.getAnalyticsOverview(),
-        apiService.getInsights().catch(() => ({ data: { insights: [] } }))
-      ]);
-
-      setData(analyticsResponse.data);
-      setInsights(insightsResponse.data?.insights || []);
+      if (showLoading) setLoading(true);
+      // Build filters query parameter
+      const filtersParam = filtersToApply && Object.keys(filtersToApply).length > 0
+        ? `?filters=${encodeURIComponent(JSON.stringify(filtersToApply))}`
+        : '';
+      const response = await apiService.getUnifiedAnalytics(filtersParam);
+      console.log('📊 Overview API:', response.data);
+      setAnalytics(response.data);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load analytics');
+      console.error('Overview error:', err);
+      setError(err.message);
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    const handleFilesUpdated = () => loadData();
+    window.addEventListener('filesUpdated', handleFilesUpdated);
+    return () => window.removeEventListener('filesUpdated', handleFilesUpdated);
+  }, [loadData]);
+
+  const applyFilter = (filterName: string, filterValue: string) => {
+    const newFilters = filterValue === 'all'
+      ? Object.fromEntries(Object.entries(activeFilters).filter(([k]) => k !== filterName))
+      : { ...activeFilters, [filterName]: filterValue };
+    setActiveFilters(newFilters);
+    // Reload data with new filters - NO loading spinner for smooth UX
+    loadData(newFilters, false);
+  };
+
+  const formatValue = (v: any, format?: string) => {
+    const num = Number(v);
+    if (isNaN(num)) return String(v || '0');
+    if (format === 'currency') {
+      if (num >= 1000000) return `$${(num / 1000000).toFixed(2)}M`;
+      if (num >= 1000) return `$${(num / 1000).toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+      return `$${num.toLocaleString()}`;
+    }
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `${Math.round(num / 1000)}K`;
+    return num.toLocaleString();
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <Loader className="w-12 h-12 text-orange-500 animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading real data from your uploaded files...</p>
-        </div>
+      <div className="flex items-center justify-center h-screen" style={{ background: theme.bg }}>
+        <Loader className="w-10 h-10 animate-spin" style={{ color: theme.accent }} />
       </div>
     );
   }
 
-  if (error) {
+  if (error || !analytics?.hasData) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center glass-card p-8 max-w-md">
-          <AlertCircle className="w-12 h-12 text-accent-red mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-white mb-2">Error Loading Data</h2>
-          <p className="text-gray-400 mb-4">{error}</p>
-          <button
-            onClick={loadData}
-            className="px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl transition-colors"
-          >
-            Retry
-          </button>
+      <div className="flex items-center justify-center h-screen" style={{ background: theme.bg }}>
+        <div className="text-center p-10 rounded-2xl shadow-xl" style={{ background: theme.cardBg }}>
+          <Upload className="w-16 h-16 mx-auto mb-4" style={{ color: theme.textMuted }} />
+          <h2 className="text-xl font-bold" style={{ color: theme.text }}>No Data Available</h2>
+          <p className="text-sm mt-2 mb-6" style={{ color: theme.textMuted }}>Upload your data to start analyzing</p>
+          <a href="/data-hub" className="px-8 py-3 rounded-xl text-white font-medium" style={{ background: theme.accent }}>Upload Data</a>
         </div>
       </div>
     );
   }
 
-  if (!data?.hasData) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center glass-card p-8 max-w-md">
-          <Activity className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-white mb-2">No Data Available</h2>
-          <p className="text-gray-400 mb-4">{data?.message || 'Upload files to see analytics'}</p>
-          <a
-            href="/data-hub"
-            className="inline-block px-6 py-2 bg-primary-500 hover:bg-primary-600 text-white rounded-xl transition-colors"
-          >
-            Upload Files
-          </a>
-        </div>
-      </div>
-    );
-  }
+  const { overviewLayout, dashboardLayout, slicers, dataShape, domain, schema } = analytics;
+  const kpis = overviewLayout?.kpis || [];
+  const charts = overviewLayout?.charts || [];
+  const dashWidgets = dashboardLayout?.widgets || [];
 
-  // Get user's preferred currency from Settings
-  const userPreferredCurrency = getUserPreferredCurrency();
-  const userCurrencySymbol = getCurrencySymbol(userPreferredCurrency);
+  // Extract specific chart data
+  const columnChart = charts.find((c: any) => c.type === 'column_chart');
+  const stackedBar = charts.find((c: any) => c.type === 'stacked_bar');
+  const donutData = dashWidgets.find((w: any) => w.type === 'donut_chart');
+  const dataTable = dashWidgets.find((w: any) => w.type === 'data_table');
+  const horizontalBar = dashWidgets.find((w: any) => w.type === 'horizontal_bar');
 
-  // Determine display currency and values based on multi-currency or single currency
-  // ALWAYS use user's preferred currency for display
-  const hasMultipleCurrencies = data.currencyBreakdown && data.currencyBreakdown.currencies_count > 1;
-  const displayCurrency = userPreferredCurrency; // Use user's preference
-  const displaySymbol = userCurrencySymbol;
-
-  // Get raw USD value and convert to user's preferred currency
-  const rawUsdRevenue = hasMultipleCurrencies
-    ? data.currencyBreakdown!.total_usd_equivalent
-    : data.metrics.totalRevenue;
-  const displayRevenue = userPreferredCurrency !== 'USD' && hasMultipleCurrencies
-    ? convertCurrency(rawUsdRevenue, 'USD', userPreferredCurrency)
-    : rawUsdRevenue;
-  const displayAvgOrder = displayRevenue / (data.metrics.totalInvoices || 1);
-
-  // Smart labels from API - based on actual uploaded data columns
-  const labels = data.domainLabels || {
-    primaryMetric: 'Total Value',
-    secondaryMetric: 'Categories',
-    countMetric: 'Total Records',
-    avgMetric: 'Avg Value',
-    trendTitle: 'Value Trend',
-    primaryList: 'Top Items',
-    secondaryList: 'Top Categories'
-  };
-
-  // Currency Icon for KPIs - uses display currency
-  const DisplayCurrencyIcon = () => (
-    <div className="w-5 h-5 flex items-center justify-center font-bold text-current">
-      {displaySymbol}
-    </div>
-  );
-
-  const kpis = [
-    {
-      label: labels.primaryMetric,
-      value: formatCurrency(displayRevenue, displayCurrency),
-      change: '+12.5%',
-      trend: 'up',
-      icon: DisplayCurrencyIcon,
-      color: 'text-accent-green',
-    },
-    {
-      label: labels.secondaryMetric,
-      value: data.metrics.uniqueCustomers.toLocaleString('en-IN'),
-      change: '+8.2%',
-      trend: 'up',
-      icon: Users,
-      color: 'text-primary-400',
-    },
-    {
-      label: labels.countMetric,
-      value: data.metrics.totalInvoices.toLocaleString('en-IN'),
-      change: '+5.7%',
-      trend: 'up',
-      icon: ShoppingCart,
-      color: 'text-accent-orange',
-    },
-    {
-      label: labels.avgMetric,
-      value: formatCurrency(displayAvgOrder, displayCurrency),
-      change: '+3.2%',
-      trend: 'up',
-      icon: Activity,
-      color: 'text-accent-orange',
-    },
-  ];
-
-  // Format time series for charts
-  const revenueData = data.timeSeries.map(item => ({
-    date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    revenue: item.revenue,
-    orders: item.invoices,
-  }));
-
-  // Top products for pie chart
-  const categoryData = data.topProducts.slice(0, 5).map((product, index) => ({
-    name: product.name,
-    value: product.revenue,
-    color: ['#3B82F6', '#22C55E', '#F97316', '#F97316', '#EAB308'][index],
-  }));
+  // Generate horizontal bar data for Role Breakdown from stackedBar keys
+  const roleBreakdownData = stackedBar?.keys?.map((key: string, i: number) => {
+    const total = stackedBar.data?.reduce((sum: number, d: any) => sum + (d[key] || 0), 0) || 0;
+    return { name: key, value: total };
+  }) || donutData?.data || [];
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <h1 className="text-4xl font-bold text-white mb-2">Business Overview</h1>
-        <p className="text-gray-400">Real metrics from your uploaded files</p>
-      </motion.div>
+    <div className="min-h-screen w-full overflow-y-auto" style={{ background: theme.bg }}>
+      <div className="w-full px-3 py-3">
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {kpis.map((kpi, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            whileHover={{ y: -5 }}
-            className="glass-card p-6 hover:shadow-card-hover transition-all"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div
-                className={`w-12 h-12 rounded-xl bg-gradient-to-br ${i === 0
-                  ? 'from-accent-green/20 to-accent-green/10'
-                  : i === 1
-                    ? 'from-primary-500/20 to-primary-400/10'
-                    : i === 2
-                      ? 'from-accent-orange/20 to-accent-orange/10'
-                      : 'from-accent-orange/20 to-accent-orange/10'
-                  } flex items-center justify-center`}
-              >
-                <kpi.icon className={`w-6 h-6 ${kpi.color}`} />
-              </div>
-            </div>
-            <div className="text-3xl font-bold text-white mb-1">{kpi.value}</div>
-            <div className="text-sm text-gray-400">{kpi.label}</div>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* AI Business Insights */}
-      {insights.length > 0 && (
+        {/* Header */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="glass-card p-6"
+          className="rounded-xl p-4 mb-4"
+          style={{ background: theme.headerBg }}
         >
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500/20 to-primary-400/10 flex items-center justify-center">
-              <Lightbulb className="w-5 h-5 text-primary-400" />
-            </div>
+          <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-white">AI Business Insights</h2>
-              <p className="text-sm text-gray-400">Automatically generated from your data</p>
+              <h1 className="text-xl font-bold text-white">{domain || 'HR'} Overview</h1>
+              <p className="text-sm text-white/70 flex items-center gap-2">
+                {dataShape?.rows?.toLocaleString()} records • {dataShape?.columns} columns
+                <RefreshCw className="w-3 h-3" />
+              </p>
             </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {insights.map((insight, i) => (
-              <motion.div
-                key={i}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 + i * 0.1 }}
-                className={`p-4 rounded-xl border ${insight.type === 'success'
-                  ? 'bg-accent-green/10 border-accent-green/30'
-                  : insight.type === 'warning'
-                    ? 'bg-accent-orange/10 border-accent-orange/30'
-                    : 'bg-primary-500/10 border-primary-500/30'
-                  }`}
-              >
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl">{insight.icon}</span>
-                  <div>
-                    <h3 className={`font-semibold ${insight.type === 'success' ? 'text-accent-green'
-                      : insight.type === 'warning' ? 'text-accent-orange'
-                        : 'text-primary-400'
-                      }`}>
-                      {insight.title}
-                    </h3>
-                    <p className="text-sm text-gray-300 mt-1">{insight.message}</p>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
+            <motion.button
+              whileHover={{ rotate: 180 }}
+              onClick={() => loadData()}
+              className="p-2.5 rounded-lg bg-white/20 hover:bg-white/30"
+            >
+              <RefreshCw className={`w-5 h-5 text-white ${loading ? 'animate-spin' : ''}`} />
+            </motion.button>
           </div>
         </motion.div>
-      )}
 
-      {/* Multi-Currency Breakdown - Shows when multiple currencies exist */}
-      {data.currencyBreakdown && data.currencyBreakdown.breakdown.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="glass-card p-6"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-white">💰 Revenue by Currency</h2>
-            {data.currencyBreakdown.currencies_count > 1 && (
-              <span className="text-sm text-gray-400 bg-surface-600/50 px-3 py-1 rounded-full">
-                {data.currencyBreakdown.currencies_count} currencies detected
-              </span>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-            {data.currencyBreakdown.breakdown.map((item) => (
-              <div
-                key={item.currency}
-                className="bg-surface-700/50 rounded-xl p-4 border border-surface-600/50"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-2xl font-bold text-primary-400">{item.symbol}</span>
-                  <span className="text-gray-400 text-sm">{item.name}</span>
+        {/* Slicers Row */}
+        {slicers && slicers.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-lg"
+            style={{ background: theme.cardBg, border: `1px solid ${theme.border}` }}
+          >
+            <Filter className="w-4 h-4" style={{ color: theme.accent }} />
+            {slicers.filter((s: any) => s.type !== 'date_range').slice(0, 3).map((slicer: any, idx: number) => (
+              <div key={slicer.name} className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase" style={{ color: theme.textMuted }}>{slicer.label}</span>
+                <div className="relative">
+                  <select
+                    value={activeFilters[slicer.name] || 'all'}
+                    onChange={(e) => applyFilter(slicer.name, e.target.value)}
+                    className="h-8 px-3 pr-7 rounded-md text-sm font-medium"
+                    style={{ background: isDark ? '#334155' : '#f1f5f9', color: theme.text, border: `1px solid ${theme.border}` }}
+                  >
+                    <option value="all">All</option>
+                    {slicer.options?.slice(0, 15).map((opt: string) => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: theme.textMuted }} />
                 </div>
-                <div className="text-2xl font-bold text-white">{item.formatted}</div>
-                {item.currency !== userPreferredCurrency && (
-                  <div className="text-sm text-gray-400 mt-1">
-                    ≈ {formatCurrency(convertCurrency(item.usd_equivalent, 'USD', userPreferredCurrency), userPreferredCurrency)}
-                  </div>
-                )}
               </div>
             ))}
-          </div>
+          </motion.div>
+        )}
 
-          {/* User's Preferred Currency Equivalent Total */}
-          {data.currencyBreakdown.currencies_count > 1 && (
-            <div className="border-t border-surface-600/50 pt-4 mt-4">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-400">Combined Total ({userPreferredCurrency} Equivalent)</span>
-                <span className="text-2xl font-bold text-accent-green">
-                  {/* Convert USD total to user's preferred currency */}
-                  {formatCurrency(
-                    convertCurrency(data.currencyBreakdown.total_usd_equivalent, 'USD', userPreferredCurrency),
-                    userPreferredCurrency
-                  )}
-                </span>
-              </div>
-            </div>
-          )}
-        </motion.div>
-      )}
+        {/* KPI Cards Row */}
+        <div className="grid grid-cols-4 gap-4 mb-4">
+          {kpis.slice(0, 4).map((kpi: any, i: number) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className="p-4 rounded-lg"
+              style={{ background: theme.cardBg, border: `1px solid ${theme.border}` }}
+            >
+              <p className="text-xs font-bold uppercase tracking-wide" style={{ color: theme.textMuted }}>{kpi.title}</p>
+              <p className="text-3xl font-black mt-1" style={{ color: theme.text }}>
+                {formatValue(kpi.value, kpi.format)}
+              </p>
+              {i === 3 && (
+                <div className="flex gap-1 mt-1">
+                  {CHART_COLORS.slice(0, 6).map((c, j) => (
+                    <div key={j} className="w-3 h-3 rounded-full" style={{ background: c }} />
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          ))}
+        </div>
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue Trend */}
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-          className="glass-card p-6"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-white">📈 {labels.trendTitle}</h2>
-            {revenueData.length > 0 && (
-              <span className="text-sm text-gray-400 bg-surface-700/50 px-3 py-1 rounded-full">
-                {revenueData.length} data points
-              </span>
-            )}
-          </div>
-          {revenueData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={320}>
-              <AreaChart data={revenueData}>
-                <defs>
-                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.4} />
-                    <stop offset="50%" stopColor="#22C55E" stopOpacity={0.2} />
-                    <stop offset="100%" stopColor="#3B82F6" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#3B82F6" />
-                    <stop offset="50%" stopColor="#22C55E" />
-                    <stop offset="100%" stopColor="#3B82F6" />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" opacity={0.5} />
-                <XAxis
-                  dataKey="date"
-                  stroke="#6B7280"
-                  tick={{ fill: '#9CA3AF', fontSize: 12 }}
-                  axisLine={{ stroke: '#374151' }}
-                />
-                <YAxis
-                  stroke="#6B7280"
-                  tick={{ fill: '#9CA3AF', fontSize: 12 }}
-                  axisLine={{ stroke: '#374151' }}
-                  tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(0)}K` : value}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                    border: '1px solid #3B82F6',
-                    borderRadius: '12px',
-                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
-                    color: '#F9FAFB',
-                    padding: '12px 16px',
-                  }}
-                  labelStyle={{ color: '#9CA3AF', fontWeight: 600, marginBottom: '4px' }}
-                  formatter={(value: number) => [formatCurrency(value, displayCurrency), 'Revenue']}
-                  cursor={{ stroke: '#3B82F6', strokeDasharray: '5 5' }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="url(#lineGradient)"
-                  strokeWidth={3}
-                  fill="url(#revenueGradient)"
-                  dot={{ fill: '#3B82F6', r: 4, strokeWidth: 2, stroke: '#1e3a5f' }}
-                  activeDot={{ r: 8, fill: '#22C55E', stroke: '#fff', strokeWidth: 2 }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : data.categoryBreakdown && data.categoryBreakdown.length > 0 ? (
-            /* 🎨 PREMIUM: Category Breakdown - Enterprise Visualization */
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-300">
-                    Revenue by {data.categoryColumn || 'Category'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-0.5">Alternative analysis (no time data)</p>
-                </div>
-                <div className="text-lg font-bold text-primary-400">
-                  {data.categoryBreakdown.length} {data.categoryBreakdown.length === 1 ? 'Category' : 'Categories'}
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={data.categoryBreakdown} margin={{ top: 20, right: 10, left: 10, bottom: 40 }}>
-                  <defs>
-                    {/* Premium Gradient Definitions */}
-                    {['#F97316', '#22C55E', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#EC4899'].map((color, idx) => (
-                      <linearGradient key={`gradient-${idx}`} id={`barGradient${idx}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={color} stopOpacity={0.95} />
-                        <stop offset="100%" stopColor={color} stopOpacity={0.6} />
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" vertical={false} />
-                  <XAxis
-                    dataKey="category"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#9CA3AF', fontSize: 11 }}
-                    angle={-45}
-                    textAnchor="end"
-                    height={70}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: '#9CA3AF', fontSize: 11 }}
-                    tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v}
-                  />
-                  <Tooltip
-                    cursor={{ fill: 'rgba(255, 255, 255, 0.05)' }}
-                    contentStyle={{
-                      backgroundColor: '#1E293B',
-                      border: '1px solid #475569',
-                      borderRadius: '16px',
-                      boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-                      padding: '12px 16px'
-                    }}
-                    labelStyle={{ color: '#E5E7EB', fontWeight: 700, marginBottom: '8px' }}
-                    itemStyle={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}
-                    formatter={(value: number, _name: string, props: any) => [
-                      formatCurrency(value, displayCurrency),
-                      `Revenue (${props.payload.count} items)`
-                    ]}
-                  />
-                  <Bar dataKey="revenue" radius={[8, 8, 0, 0]} maxBarSize={60}>
-                    {data.categoryBreakdown.map((_entry: any, index: number) => (
-                      <Cell
-                        key={`cell-${index}`}
-                        fill={`url(#barGradient${index % 8})`}
-                        stroke={['#F97316', '#22C55E', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#EC4899'][index % 8]}
-                        strokeWidth={2}
-                        style={{
-                          filter: `drop-shadow(0 8px 16px ${['#F97316', '#22C55E', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#EC4899'][index % 8]}40)`,
-                        }}
-                      />
-                    ))}
+        {/* Row 1: Salary by Department + Employee Breakdown by Role */}
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          {/* Salary by Department - Column Chart */}
+          <motion.div
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="p-4 rounded-lg"
+            style={{ background: theme.cardBg, border: `1px solid ${theme.border}` }}
+          >
+            <h3 className="text-sm font-bold mb-3" style={{ color: theme.text }}>
+              {columnChart?.title || `Total ${schema?.metrics?.[0]?.replace('_', ' ') || 'Value'} by ${schema?.dimensions?.[0]?.replace('_', ' ') || 'Category'}`}
+            </h3>
+            <div style={{ height: 220 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={columnChart?.data || []} margin={{ top: 10, right: 10, left: 0, bottom: 40 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={theme.border} vertical={false} />
+                  <XAxis dataKey="category" tick={{ fontSize: 9, fill: theme.textMuted }} stroke={theme.border} angle={-30} textAnchor="end" height={50} />
+                  <YAxis tick={{ fontSize: 9, fill: theme.textMuted }} stroke={theme.border} tickFormatter={(v) => formatValue(v)} />
+                  <Tooltip formatter={(v: any) => formatValue(v)} contentStyle={{ background: theme.cardBg, border: `1px solid ${theme.border}`, borderRadius: 8, fontSize: 11 }} />
+                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                    {(columnChart?.data || []).map((_: any, idx: number) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-              <Activity className="w-12 h-12 mb-3 opacity-50" />
-              <p>No time series data available</p>
-              <p className="text-sm">Upload files with date information</p>
-            </div>
-          )}
-        </motion.div>
+          </motion.div>
 
-        {/* Top Products Distribution */}
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-          className="glass-card p-6"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold text-white">🏆 {labels.primaryList}</h2>
-            {categoryData.length > 0 && (
-              <span className="text-sm text-gray-400 bg-surface-700/50 px-3 py-1 rounded-full">
-                {categoryData.length} products
-              </span>
-            )}
-          </div>
-          {categoryData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={320}>
-              <PieChart>
-                <defs>
-                  {/* Premium gradient for each slice */}
-                  <linearGradient id="pieGradient0" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#3B82F6" />
-                    <stop offset="100%" stopColor="#1D4ED8" />
-                  </linearGradient>
-                  <linearGradient id="pieGradient1" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#22C55E" />
-                    <stop offset="100%" stopColor="#15803D" />
-                  </linearGradient>
-                  <linearGradient id="pieGradient2" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#F97316" />
-                    <stop offset="100%" stopColor="#C2410C" />
-                  </linearGradient>
-                  <linearGradient id="pieGradient3" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#EAB308" />
-                    <stop offset="100%" stopColor="#A16207" />
-                  </linearGradient>
-                  <linearGradient id="pieGradient4" x1="0" y1="0" x2="1" y2="1">
-                    <stop offset="0%" stopColor="#8B5CF6" />
-                    <stop offset="100%" stopColor="#6D28D9" />
-                  </linearGradient>
-                </defs>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={{ stroke: '#374151', strokeWidth: 1 }}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  innerRadius={60}
-                  outerRadius={110}
-                  paddingAngle={3}
-                  dataKey="value"
-                  animationDuration={1000}
-                  animationEasing="ease-out"
-                >
-                  {categoryData.map((_, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={`url(#pieGradient${index % 5})`}
-                      stroke="rgba(255,255,255,0.1)"
-                      strokeWidth={2}
-                    />
+          {/* Employee Breakdown by Role - Donut + Horizontal Bars */}
+          <motion.div
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="p-4 rounded-lg"
+            style={{ background: theme.cardBg, border: `1px solid ${theme.border}` }}
+          >
+            <h3 className="text-sm font-bold mb-3" style={{ color: theme.text }}>
+              {schema?.dimensions?.[1]?.replace('_', ' ') || 'Category'} Breakdown
+            </h3>
+            <div className="flex items-start gap-4">
+              {/* Donut Chart */}
+              <div style={{ width: '40%', height: 180 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={roleBreakdownData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={70}
+                      paddingAngle={2}
+                      label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                      labelLine={false}
+                    >
+                      {roleBreakdownData.map((_: any, idx: number) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip formatter={(v: any) => formatValue(v)} contentStyle={{ background: theme.cardBg, border: `1px solid ${theme.border}`, borderRadius: 8, fontSize: 11 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Horizontal Bar Breakdown */}
+              <div className="flex-1">
+                {roleBreakdownData.slice(0, 5).map((item: any, i: number) => {
+                  const maxVal = Math.max(...roleBreakdownData.map((d: any) => d.value));
+                  const pct = maxVal > 0 ? (item.value / maxVal) * 100 : 0;
+                  return (
+                    <div key={i} className="flex items-center gap-2 mb-2">
+                      <span className="text-xs w-16 truncate" style={{ color: theme.textMuted }}>{item.name}</span>
+                      <div className="flex-1 h-5 rounded overflow-hidden" style={{ background: isDark ? '#334155' : '#e2e8f0' }}>
+                        <div className="h-full rounded transition-all" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Legend */}
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {roleBreakdownData.slice(0, 5).map((item: any, i: number) => (
+                    <div key={i} className="flex items-center gap-1">
+                      <div className="w-2.5 h-2.5 rounded-sm" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                      <span className="text-[10px]" style={{ color: theme.textMuted }}>{item.name}</span>
+                    </div>
                   ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
-                    border: '1px solid #3B82F6',
-                    borderRadius: '12px',
-                    boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
-                    padding: '12px 16px',
-                  }}
-                  itemStyle={{ color: '#F9FAFB' }}
-                  labelStyle={{ color: '#9CA3AF', fontWeight: 600 }}
-                  formatter={(value: number) => [formatCurrency(value, displayCurrency), 'Revenue']}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-              <ShoppingCart className="w-12 h-12 mb-3 opacity-50" />
-              <p>No product data available</p>
-              <p className="text-sm">Upload files with product information</p>
+                </div>
+              </div>
             </div>
-          )}
+          </motion.div>
+        </div>
+
+        {/* Row 2: Top Departments Table + Employees by Location */}
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          {/* Top Departments by Salary - Table */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 rounded-lg"
+            style={{ background: theme.cardBg, border: `1px solid ${theme.border}` }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold" style={{ color: theme.text }}>
+                Top {schema?.dimensions?.[0]?.replace('_', ' ') || 'Records'} by {schema?.metrics?.[0]?.replace('_', ' ') || 'Value'}
+              </h3>
+              <span className="text-xs px-2 py-0.5 rounded" style={{ background: isDark ? '#334155' : '#e2e8f0', color: theme.textMuted }}>all</span>
+            </div>
+            <div className="overflow-x-auto rounded-lg" style={{ border: `1px solid ${theme.border}` }}>
+              <table className="w-full text-xs">
+                <thead style={{ background: isDark ? '#334155' : '#f1f5f9' }}>
+                  <tr>
+                    <th className="px-3 py-2 text-left font-bold uppercase" style={{ color: theme.accent }}>{schema?.dimensions?.[0]?.toUpperCase() || 'CATEGORY'}</th>
+                    <th className="px-3 py-2 text-left font-bold uppercase" style={{ color: theme.accent }}>TYPE</th>
+                    <th className="px-3 py-2 text-right font-bold uppercase" style={{ color: theme.accent }}>TOTAL {schema?.metrics?.[0]?.toUpperCase() || 'VALUE'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(columnChart?.data || []).slice(0, 6).map((row: any, idx: number) => (
+                    <tr key={idx} className="border-t" style={{ borderColor: theme.border }}>
+                      <td className="px-3 py-2.5 font-medium" style={{ color: theme.text }}>{row.category}</td>
+                      <td className="px-3 py-2.5" style={{ color: theme.textMuted }}>{schema?.dimensions?.[0]}</td>
+                      <td className="px-3 py-2.5 text-right font-bold" style={{ color: CHART_COLORS[idx % CHART_COLORS.length] }}>
+                        {formatValue(row.value)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </motion.div>
+
+          {/* Employees by Location - Column Chart + Details Table */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 rounded-lg"
+            style={{ background: theme.cardBg, border: `1px solid ${theme.border}` }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold" style={{ color: theme.text }}>
+                {schema?.dimensions?.[2] || schema?.dimensions?.[1] ? `Records by ${(schema?.dimensions?.[2] || schema?.dimensions?.[1])?.replace('_', ' ')}` : 'Distribution'}
+              </h3>
+              <select className="text-xs px-2 py-1 rounded" style={{ background: isDark ? '#334155' : '#e2e8f0', color: theme.text, border: `1px solid ${theme.border}` }}>
+                <option>Total</option>
+              </select>
+            </div>
+            <div style={{ height: 140 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={(horizontalBar?.data || columnChart?.data || []).slice(0, 6)} margin={{ top: 5, right: 10, left: 0, bottom: 25 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={theme.border} vertical={false} />
+                  <XAxis dataKey="category" tick={{ fontSize: 8, fill: theme.textMuted }} stroke={theme.border} angle={-20} textAnchor="end" height={35} />
+                  <YAxis tick={{ fontSize: 8, fill: theme.textMuted }} stroke={theme.border} tickFormatter={(v) => formatValue(v)} />
+                  <Tooltip formatter={(v: any) => formatValue(v)} contentStyle={{ background: theme.cardBg, border: `1px solid ${theme.border}`, borderRadius: 8, fontSize: 10 }} />
+                  <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                    {(horizontalBar?.data || columnChart?.data || []).slice(0, 6).map((_: any, idx: number) => <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Employee Details Table */}
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-bold" style={{ color: theme.text }}>{domain || 'Data'} Details</h4>
+                <span className="text-[10px]" style={{ color: theme.textMuted }}>Updated: {new Date().toLocaleTimeString()}</span>
+              </div>
+              <div className="overflow-x-auto max-h-32 overflow-y-auto rounded" style={{ border: `1px solid ${theme.border}` }}>
+                <table className="w-full text-[10px]">
+                  <thead className="sticky top-0" style={{ background: isDark ? '#334155' : '#f1f5f9' }}>
+                    <tr>
+                      {(dataTable?.columns || []).slice(0, 5).map((col: string, i: number) => (
+                        <th key={i} className="px-2 py-1.5 text-left font-bold uppercase" style={{ color: theme.accent }}>{col.replace(/_/g, ' ').slice(0, 8)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(dataTable?.data || []).slice(0, 5).map((row: any, idx: number) => (
+                      <tr key={idx} className="border-t" style={{ borderColor: theme.border }}>
+                        {(dataTable?.columns || []).slice(0, 5).map((col: string, colIdx: number) => (
+                          <td key={colIdx} className="px-2 py-1" style={{ color: colIdx === 4 ? CHART_COLORS[idx % CHART_COLORS.length] : theme.text, fontWeight: colIdx === 4 ? 600 : 400 }}>
+                            {colIdx === 4 ? formatValue(row[col], 'currency') : String(row[col] ?? '-').slice(0, 10)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Footer */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex items-center justify-between text-xs py-2"
+          style={{ color: theme.textMuted }}
+        >
+          <span>{dataShape?.rows?.toLocaleString()} records • {schema?.dimensions?.length || 0} dimensions</span>
+          <span>Updated: {new Date().toLocaleTimeString()}</span>
         </motion.div>
       </div>
-
-      {/* Top Products Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-        className="glass-card p-6"
-      >
-        <h2 className="text-xl font-semibold text-white mb-4">{labels.primaryList} (Real Data)</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-gray-400 border-b border-dark-border">
-                <th className="pb-3">Product</th>
-                <th className="pb-3 text-right">Revenue</th>
-                <th className="pb-3 text-right">Sales</th>
-                <th className="pb-3 text-right">Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topProducts.map((product: any, i) => (
-                <tr key={i} className="border-b border-dark-border/50">
-                  <td className="py-4 text-white">{product.name}</td>
-                  <td className="py-4 text-right text-accent-green font-semibold">
-                    {formatCurrency(product.revenue, displayCurrency)}
-                  </td>
-                  <td className="py-4 text-right text-gray-300">{product.count}</td>
-                  <td className="py-4 text-right text-gray-700 dark:text-gray-300 text-sm font-medium">{product.source || 'Unknown'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-
-      {/* Lowest-Performing Products Table */}
-      {data.bottomProducts && data.bottomProducts.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.55 }}
-          className="glass-card p-6"
-        >
-          <h2 className="text-xl font-semibold text-white mb-4">
-            <span className="text-accent-orange">Lowest-Performing</span> Products (Real Data)
-          </h2>
-          <p className="text-gray-400 text-sm mb-4">Products with the lowest revenue - consider promotion or discontinuation</p>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-gray-400 border-b border-dark-border">
-                  <th className="pb-3">Product</th>
-                  <th className="pb-3 text-right">Revenue</th>
-                  <th className="pb-3 text-right">Sales</th>
-                  <th className="pb-3 text-right">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.bottomProducts.map((product: any, i) => (
-                  <tr key={i} className="border-b border-dark-border/50">
-                    <td className="py-4 text-white flex items-center">
-                      {i === 0 && <span className="text-accent-red mr-2">🔻</span>}
-                      {product.name}
-                      {i === 0 && <span className="ml-2 text-xs bg-accent-red/20 text-accent-red px-2 py-0.5 rounded">LOWEST</span>}
-                    </td>
-                    <td className="py-4 text-right text-accent-orange font-semibold">
-                      {formatCurrency(product.revenue, displayCurrency)}
-                    </td>
-                    <td className="py-4 text-right text-gray-300">{product.count}</td>
-                    <td className="py-4 text-right text-gray-700 dark:text-gray-300 text-sm font-medium">{product.source || 'Unknown'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Top Customers Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
-        className="glass-card p-6"
-      >
-        <h2 className="text-xl font-semibold text-white mb-4">{labels.secondaryList} (Real Data)</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-gray-400 border-b border-dark-border">
-                <th className="pb-3">Customer</th>
-                <th className="pb-3 text-right">Revenue</th>
-                <th className="pb-3 text-right">Orders</th>
-                <th className="pb-3 text-right">Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topCustomers.map((customer: any, i) => (
-                <tr key={i} className="border-b border-dark-border/50">
-                  <td className="py-4 text-white">{customer.name}</td>
-                  <td className="py-4 text-right text-accent-green font-semibold">
-                    {formatCurrency(customer.revenue, displayCurrency)}
-                  </td>
-                  <td className="py-4 text-right text-gray-300">{customer.orders}</td>
-                  <td className="py-4 text-right text-gray-700 dark:text-gray-300 text-sm font-medium">{customer.source || 'Unknown'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
-
-      {/* Lowest-Spending Customers Table */}
-      {data.bottomCustomers && data.bottomCustomers.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.7 }}
-          className="glass-card p-6"
-        >
-          <h2 className="text-xl font-semibold text-white mb-4">
-            <span className="text-accent-orange">Lowest-Spending</span> Customers (Real Data)
-          </h2>
-          <p className="text-gray-400 text-sm mb-4">Customers with the lowest revenue - potential for growth or churn risk</p>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="text-left text-gray-400 border-b border-dark-border">
-                  <th className="pb-3">Customer</th>
-                  <th className="pb-3 text-right">Revenue</th>
-                  <th className="pb-3 text-right">Orders</th>
-                  <th className="pb-3 text-right">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.bottomCustomers.map((customer: any, i) => (
-                  <tr key={i} className="border-b border-dark-border/50">
-                    <td className="py-4 text-white flex items-center">
-                      {i === 0 && <span className="text-accent-red mr-2">🔻</span>}
-                      {customer.name}
-                      {i === 0 && <span className="ml-2 text-xs bg-accent-red/20 text-accent-red px-2 py-0.5 rounded">LOWEST</span>}
-                    </td>
-                    <td className="py-4 text-right text-accent-orange font-semibold">
-                      {formatCurrency(customer.revenue, displayCurrency)}
-                    </td>
-                    <td className="py-4 text-right text-gray-300">{customer.orders}</td>
-                    <td className="py-4 text-right text-gray-700 dark:text-gray-300 text-sm font-medium">{customer.source || 'Unknown'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </motion.div>
-      )}
     </div>
   );
 };

@@ -26,40 +26,12 @@ from utils.currency import (
 
 # Import auth helper for JWT decode
 try:
-    from database.auth import decode_jwt
+    from database.auth import decode_jwt, get_user_id_from_headers
 except ImportError:
     decode_jwt = None
+    def get_user_id_from_headers(*args, **kwargs): return None  # Return None to preserve URL user_id
 
 router = APIRouter()
-
-
-def get_user_id_from_headers(
-    x_user_id: Optional[str] = None,
-    authorization: Optional[str] = None
-) -> str:
-    """Extract user ID from JWT token or X-User-ID header"""
-    user_id = None
-    
-    # Try JWT token first (most secure)
-    if authorization and authorization.startswith("Bearer ") and decode_jwt:
-        try:
-            token = authorization.split(" ")[1]
-            payload = decode_jwt(token)
-            user_id = payload.get("sub")
-            print(f"🔐 Files API - User from JWT: {user_id}")
-        except Exception as e:
-            print(f"⚠️ JWT decode error: {e}")
-    
-    # Fallback to X-User-ID header
-    if not user_id and x_user_id:
-        user_id = x_user_id
-        print(f"🔐 Files API - User from header: {user_id}")
-    
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
-    
-    return user_id
-
 
 def invalidate_user_cache(user_id: str):
     """Invalidate query cache when data changes"""
@@ -388,16 +360,22 @@ async def list_files(
 ):
     """List all uploaded files - SECURED"""
     try:
-        # SECURITY: Validate user
+        # SECURITY: Validate user (only override if auth returns valid user)
         authenticated_user = get_user_id_from_headers(x_user_id, authorization)
-        if authenticated_user != user_id:
+        if authenticated_user and authenticated_user != user_id:
             user_id = authenticated_user
         
         paths = get_user_paths(user_id)
         files = []
         
+        # DEBUG: Print path resolution
+        print(f"📂 [FILE LIST] user_id={user_id}")
+        print(f"📂 [FILE LIST] files_path={paths['files']}")
+        print(f"📂 [FILE LIST] exists={paths['files'].exists()}")
+        
         if paths["files"].exists():
             for file_path in paths["files"].iterdir():
+                print(f"📄 [FILE LIST] Found: {file_path}")
                 if file_path.is_file():
                     files.append({
                         "id": file_path.name,

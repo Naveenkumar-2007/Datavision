@@ -56,16 +56,23 @@ def route_question(
     Args:
         question: User's business question
         has_image: Whether query includes image/file
-        mode: Force specific mode ("auto", "rag", "graph", "hybrid", "vision")
+        mode: Force specific mode ("auto", "rag", "graph", "hybrid", "vision", or AI model)
         
     Returns:
-        Route name: "rag", "graph", "hybrid", or "vision"
+        Route name: "rag", "graph", "hybrid", "vision", or AI model id
     """
     
-    # Manual mode override
-    if mode != "auto" and mode in ["rag", "graph", "hybrid", "vision"]:
-        print(f"🎯 Manual mode selected: {mode.upper()}")
+    # AI Model modes - pass through directly
+    AI_MODEL_MODES = ["deepseek-chat", "mistral-7b", "llama-70b"]
+    if mode in AI_MODEL_MODES:
+        print(f"🤖 AI Model mode selected: {mode}")
         return mode
+    
+    # Manual mode override for RAG modes
+    if mode != "auto" and mode in ["rag", "graph", "hybrid", "vision", "graphrag", "prediction"]:
+        actual_mode = mode if mode != "graphrag" else "graph"
+        print(f"🎯 Manual mode selected: {actual_mode.upper()}")
+        return actual_mode
     
     # Vision mode priority
     if has_image:

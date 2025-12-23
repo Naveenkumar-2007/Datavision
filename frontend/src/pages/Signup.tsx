@@ -1,11 +1,13 @@
 /**
- * Signup Page
- * New user registration with email/password
+ * Signup Page - Styled to match Landing page
+ * Uses new logo and teal/blue theme
+ * Supports both light and dark mode
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { motion } from 'framer-motion';
 
 export default function Signup() {
     const { signUp, signInWithGoogle, signInWithGithub } = useAuth();
@@ -20,6 +22,22 @@ export default function Signup() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
+    const [isDark, setIsDark] = useState(true);
+
+    useEffect(() => {
+        const saved = localStorage.getItem('theme');
+        setIsDark(saved !== 'light');
+        if (saved === 'light') {
+            document.documentElement.classList.add('light-theme');
+        }
+    }, []);
+
+    // Theme colors matching Landing page
+    const bgColor = isDark ? '#0F172A' : '#F8FAFC';
+    const cardBg = isDark ? '#1E293B' : '#FFFFFF';
+    const textPrimary = isDark ? '#F8FAFC' : '#0F172A';
+    const textMuted = isDark ? '#94A3B8' : '#64748B';
+    const borderColor = isDark ? '#334155' : '#E2E8F0';
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({
@@ -33,14 +51,12 @@ export default function Signup() {
         setLoading(true);
         setError('');
 
-        // Validate passwords match
         if (formData.password !== formData.confirmPassword) {
             setError('Passwords do not match');
             setLoading(false);
             return;
         }
 
-        // Validate password strength
         if (formData.password.length < 8) {
             setError('Password must be at least 8 characters');
             setLoading(false);
@@ -68,12 +84,9 @@ export default function Signup() {
     const handleGoogleSignup = async () => {
         setLoading(true);
         setError('');
-
         try {
             const { error } = await signInWithGoogle();
-            if (error) {
-                setError(error.message || 'Google signup failed');
-            }
+            if (error) setError(error.message || 'Google signup failed');
         } catch (err: any) {
             setError(err.message || 'An error occurred');
         } finally {
@@ -84,12 +97,9 @@ export default function Signup() {
     const handleGithubSignup = async () => {
         setLoading(true);
         setError('');
-
         try {
             const { error } = await signInWithGithub();
-            if (error) {
-                setError(error.message || 'GitHub signup failed');
-            }
+            if (error) setError(error.message || 'GitHub signup failed');
         } catch (err: any) {
             setError(err.message || 'An error occurred');
         } finally {
@@ -99,60 +109,86 @@ export default function Signup() {
 
     if (success) {
         return (
-            <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-                <div className="max-w-md w-full rounded-2xl p-8 text-center bg-white border border-gray-200 shadow-xl dark:bg-gray-800/50 dark:backdrop-blur-xl dark:border-gray-700/50">
-                    <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <div className="min-h-screen flex items-center justify-center p-4 transition-colors duration-300" style={{ backgroundColor: bgColor }}>
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="max-w-md w-full rounded-2xl p-8 text-center border shadow-xl"
+                    style={{ backgroundColor: cardBg, borderColor }}
+                >
+                    <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-green-500/30">
                         <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
                     </div>
-                    <h2 className="text-2xl font-bold mb-3 text-gray-900 dark:text-white">Account Created!</h2>
-                    <p className="mb-6 text-gray-600 dark:text-gray-400">
+                    <h2 className="text-2xl font-bold mb-3" style={{ color: textPrimary }}>Account Created!</h2>
+                    <p className="mb-6" style={{ color: textMuted }}>
                         Please check your email to verify your account.
                         After verification, you can sign in.
                     </p>
                     <Link
                         to="/login"
-                        className="inline-block px-6 py-3 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition-colors"
+                        className="inline-block px-8 py-3 font-semibold rounded-lg transition-all hover:opacity-90"
+                        style={{
+                            background: 'linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)',
+                            color: '#FFFFFF'
+                        }}
                     >
                         Go to Login
                     </Link>
-                </div>
+                </motion.div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-            <div className="max-w-md w-full">
+        <div className="min-h-screen flex items-center justify-center p-4 transition-colors duration-300" style={{ backgroundColor: bgColor }}>
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-md w-full"
+            >
                 {/* Logo/Brand */}
                 <div className="text-center mb-8">
-                    <Link to="/" className="inline-flex items-center gap-2">
-                        <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center">
-                            <span className="text-white font-bold text-xl">AI</span>
-                        </div>
-                        <span className="text-2xl font-bold text-gray-900 dark:text-white">Business Analyst</span>
+                    <Link to="/" className="inline-flex items-center gap-3">
+                        <img
+                            src="/logo.png"
+                            alt="DataVision Logo"
+                            className="w-12 h-12 object-contain"
+                        />
+                        <span className="text-2xl font-bold" style={{ color: textPrimary }}>
+                            DataVision
+                        </span>
                     </Link>
                 </div>
 
                 {/* Signup Card */}
-                <div className="rounded-2xl p-8 shadow-2xl bg-white border border-gray-200 dark:bg-gray-800/50 dark:backdrop-blur-xl dark:border-gray-700/50">
-                    <h2 className="text-2xl font-bold text-center mb-2 text-gray-900 dark:text-white">Create an account</h2>
-                    <p className="text-center mb-8 text-gray-600 dark:text-gray-400">Start your AI-powered business journey</p>
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.1 }}
+                    className="rounded-2xl p-8 shadow-xl border"
+                    style={{ backgroundColor: cardBg, borderColor }}
+                >
+                    <h2 className="text-2xl font-bold text-center mb-2" style={{ color: textPrimary }}>
+                        Create an account
+                    </h2>
+                    <p className="text-center mb-8" style={{ color: textMuted }}>
+                        Start your journey with DataVision
+                    </p>
 
                     {/* Error Message */}
                     {error && (
-                        <div className="mb-6 p-4 rounded-lg bg-red-50 border border-red-200 dark:bg-red-500/10 dark:border-red-500/50">
-                            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                        <div className="mb-6 p-4 rounded-lg" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                            <p className="text-sm text-red-400">{error}</p>
                         </div>
                     )}
 
                     {/* Signup Form */}
                     <form onSubmit={handleSubmit}>
                         <div className="space-y-4">
-                            {/* Full Name */}
                             <div>
-                                <label htmlFor="fullName" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                                <label htmlFor="fullName" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
                                     Full Name
                                 </label>
                                 <input
@@ -161,30 +197,18 @@ export default function Signup() {
                                     type="text"
                                     value={formData.fullName}
                                     onChange={handleChange}
-                                    className="w-full px-4 py-3 rounded-lg transition-all bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400 dark:bg-gray-700/50 dark:border-gray-600 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
+                                    style={{
+                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
+                                        border: `1px solid ${borderColor}`,
+                                        color: textPrimary,
+                                    }}
                                     placeholder="John Doe"
                                 />
                             </div>
 
-                            {/* Company Name */}
                             <div>
-                                <label htmlFor="companyName" className="block text-sm font-medium text-gray-300 mb-2">
-                                    Company Name <span className="text-gray-500">(optional)</span>
-                                </label>
-                                <input
-                                    id="companyName"
-                                    name="companyName"
-                                    type="text"
-                                    value={formData.companyName}
-                                    onChange={handleChange}
-                                    className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
-                                    placeholder="Acme Inc."
-                                />
-                            </div>
-
-                            {/* Email */}
-                            <div>
-                                <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
+                                <label htmlFor="email" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
                                     Email
                                 </label>
                                 <input
@@ -194,14 +218,18 @@ export default function Signup() {
                                     value={formData.email}
                                     onChange={handleChange}
                                     required
-                                    className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
+                                    style={{
+                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
+                                        border: `1px solid ${borderColor}`,
+                                        color: textPrimary,
+                                    }}
                                     placeholder="you@example.com"
                                 />
                             </div>
 
-                            {/* Password */}
                             <div>
-                                <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
+                                <label htmlFor="password" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
                                     Password
                                 </label>
                                 <input
@@ -211,15 +239,18 @@ export default function Signup() {
                                     value={formData.password}
                                     onChange={handleChange}
                                     required
-                                    className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
+                                    style={{
+                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
+                                        border: `1px solid ${borderColor}`,
+                                        color: textPrimary,
+                                    }}
                                     placeholder="••••••••"
                                 />
-                                <p className="mt-1 text-xs text-gray-500">Minimum 8 characters</p>
                             </div>
 
-                            {/* Confirm Password */}
                             <div>
-                                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300 mb-2">
+                                <label htmlFor="confirmPassword" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
                                     Confirm Password
                                 </label>
                                 <input
@@ -229,7 +260,12 @@ export default function Signup() {
                                     value={formData.confirmPassword}
                                     onChange={handleChange}
                                     required
-                                    className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
+                                    style={{
+                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
+                                        border: `1px solid ${borderColor}`,
+                                        color: textPrimary,
+                                    }}
                                     placeholder="••••••••"
                                 />
                             </div>
@@ -237,19 +273,13 @@ export default function Signup() {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold rounded-lg hover:from-orange-600 hover:to-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full py-3 font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+                                style={{
+                                    background: 'linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)',
+                                    color: '#FFFFFF',
+                                }}
                             >
-                                {loading ? (
-                                    <span className="flex items-center justify-center gap-2">
-                                        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                        </svg>
-                                        Creating account...
-                                    </span>
-                                ) : (
-                                    'Create Account'
-                                )}
+                                {loading ? 'Creating account...' : 'Create Account'}
                             </button>
                         </div>
                     </form>
@@ -257,22 +287,24 @@ export default function Signup() {
                     {/* Divider */}
                     <div className="relative my-6">
                         <div className="absolute inset-0 flex items-center">
-                            <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
+                            <div className="w-full" style={{ borderTop: `1px solid ${borderColor}` }}></div>
                         </div>
                         <div className="relative flex justify-center text-sm">
-                            <span className="px-4 bg-white dark:bg-gray-800/50 text-gray-500 dark:text-gray-400">Or continue with</span>
+                            <span className="px-4" style={{ backgroundColor: cardBg, color: textMuted }}>Or continue with</span>
                         </div>
                     </div>
 
-                    {/* OAuth Buttons */}
                     <div className="grid grid-cols-2 gap-4">
                         <button
                             onClick={handleGoogleSignup}
                             disabled={loading}
                             type="button"
-                            className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50
-                                bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 shadow-sm hover:shadow-md
-                                dark:bg-white dark:text-gray-800 dark:hover:bg-gray-100"
+                            className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50 hover:opacity-90 shadow-sm"
+                            style={{
+                                backgroundColor: '#FFFFFF',
+                                color: '#374151',
+                                border: '1px solid #E5E7EB',
+                            }}
                         >
                             <svg className="w-5 h-5" viewBox="0 0 24 24">
                                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -286,9 +318,11 @@ export default function Signup() {
                             onClick={handleGithubSignup}
                             disabled={loading}
                             type="button"
-                            className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50
-                                bg-gray-900 border border-gray-800 text-white hover:bg-black shadow-sm hover:shadow-md
-                                dark:bg-black dark:border-gray-800 dark:text-white dark:hover:bg-gray-900"
+                            className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50 hover:opacity-90"
+                            style={{
+                                backgroundColor: '#1F2937',
+                                color: '#FFFFFF',
+                            }}
                         >
                             <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                                 <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
@@ -297,32 +331,30 @@ export default function Signup() {
                         </button>
                     </div>
 
-                    {/* Terms */}
-                    <p className="mt-6 text-xs text-center text-gray-500">
+                    <p className="mt-8 text-xs text-center" style={{ color: textMuted }}>
                         By creating an account, you agree to our{' '}
-                        <a href="#" className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Terms of Service</a>
+                        <a href="#" style={{ color: '#14B8A6' }} className="hover:underline">Terms of Service</a>
                         {' '}and{' '}
-                        <a href="#" className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300">Privacy Policy</a>
+                        <a href="#" style={{ color: '#14B8A6' }} className="hover:underline">Privacy Policy</a>
                     </p>
 
-                    {/* Login Link */}
-                    <div className="mt-6 text-center">
-                        <p className="text-gray-600 dark:text-gray-400">
+                    <div className="mt-6 text-center pt-6 border-t" style={{ borderColor }}>
+                        <p style={{ color: textMuted }}>
                             Already have an account?{' '}
-                            <Link to="/login" className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 font-medium transition-colors">
+                            <Link to="/login" className="font-medium transition-colors hover:opacity-80" style={{ color: '#14B8A6' }}>
                                 Sign in
                             </Link>
                         </p>
                     </div>
-                </div>
+                </motion.div>
 
                 {/* Back to Home */}
                 <div className="mt-6 text-center">
-                    <Link to="/" className="text-gray-500 hover:text-gray-400 text-sm transition-colors">
+                    <Link to="/" className="text-sm transition-colors hover:opacity-80" style={{ color: textMuted }}>
                         ← Back to home
                     </Link>
                 </div>
-            </div>
+            </motion.div>
         </div>
     );
 }

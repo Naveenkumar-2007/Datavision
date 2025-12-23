@@ -1,4 +1,10 @@
-import React, { useState, useCallback } from 'react';
+/**
+ * Data Hub - File Upload and Management
+ * Supports dark/light theme matching Landing page design
+ */
+
+import React, { useState, useCallback, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -21,6 +27,15 @@ import {
 } from 'lucide-react';
 import apiService from '@/services/api';
 
+interface ThemeContext {
+  isDark: boolean;
+  bgColor: string;
+  cardBg: string;
+  textPrimary: string;
+  textMuted: string;
+  borderColor: string;
+}
+
 interface FileItem {
   id: string;
   name: string;
@@ -31,11 +46,18 @@ interface FileItem {
 }
 
 const DataHub: React.FC = () => {
+  const theme = useOutletContext<ThemeContext>() || {
+    isDark: true,
+    bgColor: '#0F172A',
+    cardBg: '#1E293B',
+    textPrimary: '#F8FAFC',
+    textMuted: '#94A3B8',
+    borderColor: '#334155',
+  };
+
   const [files, setFiles] = useState<FileItem[]>([]);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Google Sheets Import State
   const [sheetUrl, setSheetUrl] = useState('');
   const [importingSheet, setImportingSheet] = useState(false);
   const [sheetPreview, setSheetPreview] = useState<any>(null);
@@ -49,8 +71,7 @@ const DataHub: React.FC = () => {
     }
   };
 
-  // Load files on mount
-  React.useEffect(() => {
+  useEffect(() => {
     loadFiles();
   }, []);
 
@@ -60,9 +81,7 @@ const DataHub: React.FC = () => {
       const response = await apiService.uploadFiles(acceptedFiles);
       if (response.data.success) {
         alert(`✅ ${response.data.files.length} file(s) uploaded and trained successfully!`);
-        // Refresh file list
         await loadFiles();
-        // Notify other pages to refresh
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
@@ -76,46 +95,33 @@ const DataHub: React.FC = () => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      // Documents
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
       'text/plain': ['.txt'],
-      'text/markdown': ['.md'],
-      'text/html': ['.html', '.htm'],
-      // Spreadsheets
       'application/vnd.ms-excel': ['.xls'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
       'text/csv': ['.csv'],
-      'text/tab-separated-values': ['.tsv'],
-      // Presentations
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
-      // Data formats
       'application/json': ['.json'],
-      // Images
-      'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.bmp'],
+      'image/*': ['.png', '.jpg', '.jpeg', '.gif'],
     },
   });
 
   const handleDelete = async (fileId: string) => {
     if (!confirm(`Are you sure you want to delete ${fileId}?`)) return;
-
     try {
       const response = await apiService.deleteFile(fileId);
       if (response.data.success) {
         setFiles(files.filter(f => f.id !== fileId));
         alert('✅ File deleted and indexes retrained!');
-        // Notify other pages to refresh
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
-      console.error('Delete failed:', error);
       alert(`Failed to delete file: ${error.response?.data?.detail || error.message}`);
     }
   };
 
   const handleDeleteAll = async () => {
-    if (!confirm('⚠️ WARNING: This will delete ALL your files and indexes. Are you absolutely sure?')) return;
-
+    if (!confirm('⚠️ WARNING: This will delete ALL your files. Are you sure?')) return;
     try {
       const response = await apiService.deleteAllFiles();
       if (response.data.success) {
@@ -123,26 +129,21 @@ const DataHub: React.FC = () => {
         alert('All files deleted successfully!');
       }
     } catch (error: any) {
-      console.error('Delete all failed:', error);
       alert(`Failed to delete files: ${error.response?.data?.detail || error.message}`);
     }
   };
 
   const handleRebuild = async () => {
-    if (!confirm('🎯 RETRAIN: This will rebuild AI training from all files in Data Hub. Continue?')) return;
-
+    if (!confirm('🎯 RETRAIN: Rebuild AI training from all files?')) return;
     setUploading(true);
     try {
       const response = await apiService.rebuildIndex();
       if (response.data.success) {
-        const filesList = response.data.files?.join(', ') || 'all files';
-        alert(`✅ Retrain Complete!\n\n${response.data.message}\n\nFiles trained: ${response.data.files_processed}\n${filesList}`);
-        await loadFiles(); // Refresh list
-        // Notify other pages to refresh
+        alert(`✅ Retrain Complete!\n\n${response.data.message}`);
+        await loadFiles();
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
-      console.error('Retrain failed:', error);
       alert(`❌ Retrain failed: ${error.response?.data?.detail || error.message}`);
     } finally {
       setUploading(false);
@@ -152,14 +153,8 @@ const DataHub: React.FC = () => {
   const handleDownload = async (fileId: string) => {
     try {
       const userId = localStorage.getItem('userId') || 'user_001';
-      const response = await fetch(`http://localhost:8000/api/v1/files/${userId}/${fileId}/download`, {
-        method: 'GET'
-      });
-
-      if (!response.ok) {
-        throw new Error('Download failed');
-      }
-
+      const response = await fetch(`http://localhost:8000/api/v1/files/${userId}/${fileId}/download`);
+      if (!response.ok) throw new Error('Download failed');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -168,50 +163,38 @@ const DataHub: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObjectURL(url);
     } catch (error: any) {
-      console.error('Download failed:', error);
-      alert(`Failed to download file: ${error.message}`);
+      alert(`Failed to download: ${error.message}`);
     }
   };
 
-  // Google Sheets Import Handlers
   const handlePreviewSheet = async () => {
-    if (!sheetUrl.trim()) {
-      alert('Please enter a Google Sheets URL');
-      return;
-    }
+    if (!sheetUrl.trim()) return alert('Please enter a Google Sheets URL');
     setImportingSheet(true);
     try {
       const response = await apiService.previewGoogleSheet(sheetUrl);
       setSheetPreview(response.data);
     } catch (error: any) {
-      console.error('Preview failed:', error);
-      alert(`Failed to preview sheet: ${error.response?.data?.detail || error.message}`);
-      setSheetPreview(null);
+      alert(`Preview failed: ${error.response?.data?.detail || error.message}`);
     } finally {
       setImportingSheet(false);
     }
   };
 
   const handleImportSheet = async () => {
-    if (!sheetUrl.trim()) {
-      alert('Please enter a Google Sheets URL');
-      return;
-    }
+    if (!sheetUrl.trim()) return alert('Please enter a Google Sheets URL');
     setImportingSheet(true);
     try {
       const response = await apiService.importGoogleSheet(sheetUrl);
       if (response.data.success) {
-        alert(`✅ Google Sheet imported successfully!\n\nFile: ${response.data.filename}\nRows: ${response.data.rows}\nColumns: ${response.data.columns.join(', ')}`);
+        alert(`✅ Google Sheet imported!`);
         setSheetUrl('');
         setSheetPreview(null);
         await loadFiles();
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
-      console.error('Import failed:', error);
-      alert(`❌ Import failed: ${error.response?.data?.detail || error.message}`);
+      alert(`Import failed: ${error.response?.data?.detail || error.message}`);
     } finally {
       setImportingSheet(false);
     }
@@ -224,54 +207,44 @@ const DataHub: React.FC = () => {
   };
 
   const getFileIcon = (type: string) => {
-    // Excel/Spreadsheet files - bright green
     if (type.includes('excel') || type.includes('spreadsheet') || type.includes('xlsx') || type.includes('csv')) {
       return <Database className="w-5 h-5 text-emerald-400" />;
     }
-    // PDF files - bright red
-    if (type.includes('pdf')) {
-      return <FileText className="w-5 h-5 text-red-400" />;
-    }
-    // Image files - bright orange
-    if (type.includes('image') || type.includes('png') || type.includes('jpg')) {
-      return <Image className="w-5 h-5 text-orange-400" />;
-    }
-    // Word/Document files - bright blue
-    if (type.includes('word') || type.includes('docx') || type.includes('doc')) {
-      return <FileText className="w-5 h-5 text-blue-400" />;
-    }
-    // Default - gray
-    return <File className="w-5 h-5 text-gray-300" />;
+    if (type.includes('pdf')) return <FileText className="w-5 h-5 text-red-400" />;
+    if (type.includes('image')) return <Image className="w-5 h-5 text-orange-400" />;
+    if (type.includes('word')) return <FileText className="w-5 h-5 text-blue-400" />;
+    return <File className="w-5 h-5" style={{ color: theme.textMuted }} />;
   };
 
   const filteredFiles = files.filter(file =>
     file.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const inputStyle = {
+    backgroundColor: theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+    borderColor: theme.borderColor,
+    color: theme.textPrimary,
+  };
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
-      >
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
         <div>
-          <h1 className="text-4xl font-bold text-white mb-2">Data Hub</h1>
-          <p className="text-gray-400">Upload and manage your business data</p>
+          <h1 className="text-2xl font-bold" style={{ color: theme.textPrimary }}>Data Hub</h1>
+          <p className="text-sm" style={{ color: theme.textMuted }}>Upload and manage your business data</p>
         </div>
-        <div className="flex space-x-3">
+        <div className="flex gap-3">
           <button
             onClick={handleRebuild}
-            className="px-4 py-2 bg-accent-green/10 border border-accent-green/20 rounded-xl text-accent-green font-medium hover:bg-accent-green/20 transition-colors flex items-center space-x-2"
-            title="Retrain AI from all uploaded files"
+            className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400 font-medium hover:bg-emerald-500/20 transition-colors flex items-center gap-2"
           >
             <RefreshCw className="w-4 h-4" />
             <span>🎯 Retrain</span>
           </button>
           <button
             onClick={handleDeleteAll}
-            className="px-4 py-2 bg-accent-red/10 border border-accent-red/20 rounded-xl text-accent-red font-medium hover:bg-accent-red/20 transition-colors flex items-center space-x-2"
+            className="px-4 py-2 bg-red-500/10 border border-red-500/20 rounded-full text-red-400 font-medium hover:bg-red-500/20 transition-colors flex items-center gap-2"
           >
             <Trash2 className="w-4 h-4" />
             <span>Delete All</span>
@@ -280,36 +253,31 @@ const DataHub: React.FC = () => {
       </motion.div>
 
       {/* Upload Area */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-      >
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <div
           {...getRootProps()}
-          className={`glass-card p-12 border-2 border-dashed transition-all cursor-pointer ${isDragActive
-            ? 'border-primary-500 bg-primary-500/5'
-            : 'border-dark-border hover:border-primary-500/50 hover:bg-dark-hover'
+          className={`p-12 border-2 border-dashed rounded-2xl transition-all cursor-pointer ${isDragActive ? 'border-blue-500 bg-blue-500/5' : 'hover:border-blue-500/50'
             }`}
+          style={{ backgroundColor: theme.cardBg, borderColor: isDragActive ? '#3B82F6' : theme.borderColor }}
         >
           <input {...getInputProps()} />
           <div className="text-center">
             {uploading ? (
               <>
-                <Loader className="w-16 h-16 text-orange-400 mx-auto mb-4 animate-spin" />
-                <p className="text-xl font-semibold text-white mb-2">Uploading files...</p>
+                <Loader className="w-16 h-16 text-blue-500 mx-auto mb-4 animate-spin" />
+                <p className="text-xl font-semibold mb-2" style={{ color: theme.textPrimary }}>Uploading files...</p>
               </>
             ) : (
               <>
-                <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-xl font-semibold text-white mb-2">
+                <Upload className="w-16 h-16 mx-auto mb-4" style={{ color: theme.textMuted }} />
+                <p className="text-xl font-semibold mb-2" style={{ color: theme.textPrimary }}>
                   {isDragActive ? 'Drop files here' : 'Drag & drop files here'}
                 </p>
-                <p className="text-gray-400 mb-4">
+                <p className="mb-4" style={{ color: theme.textMuted }}>
                   or click to browse • Files auto-train immediately after upload
                 </p>
                 <div className="mb-4">
-                  <p className="text-sm text-primary-400 font-semibold mb-3">Supported Formats:</p>
+                  <p className="text-sm text-blue-500 font-semibold mb-3">Supported Formats:</p>
                   <div className="flex flex-wrap justify-center gap-2">
                     {[
                       { name: 'PDF', color: 'bg-red-500' },
@@ -318,15 +286,14 @@ const DataHub: React.FC = () => {
                       { name: 'Word', color: 'bg-blue-500' },
                       { name: 'Images', color: 'bg-orange-500' },
                     ].map((format) => (
-                      <span
-                        key={format.name}
-                        className={`px-3 py-1.5 ${format.color} rounded-lg text-sm text-white font-semibold shadow-md`}
-                      >
+                      <span key={format.name} className={`px-3 py-1.5 ${format.color} rounded-lg text-sm text-white font-semibold`}>
                         {format.name}
                       </span>
                     ))}
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-3">✅ Auto-trained • 🧠 Persistent memory • 🔍 RAG + Graph + Hybrid modes</p>
+                  <p className="text-xs mt-3" style={{ color: theme.textMuted }}>
+                    ✅ Auto-trained • 🧠 Persistent memory • 🔍 RAG + Graph + Hybrid modes
+                  </p>
                 </div>
               </>
             )}
@@ -334,27 +301,28 @@ const DataHub: React.FC = () => {
         </div>
       </motion.div>
 
-      {/* Google Sheets Import Section */}
+      {/* Google Sheets Import */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15 }}
-        className="glass-card p-6"
+        className="p-6 rounded-2xl border"
+        style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
       >
         <div className="flex items-center gap-3 mb-4">
           <Table className="w-6 h-6 text-green-500" />
-          <h2 className="text-xl font-semibold text-white">Import from Google Sheets</h2>
+          <h2 className="text-lg font-semibold" style={{ color: theme.textPrimary }}>Import from Google Sheets</h2>
         </div>
-
         <div className="flex gap-3 mb-4">
           <div className="flex-1 relative">
-            <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: theme.textMuted }} />
             <input
               type="text"
               placeholder="Paste Google Sheets URL (must be public or 'Anyone with link')"
               value={sheetUrl}
               onChange={(e) => setSheetUrl(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 placeholder-gray-500 focus:outline-none focus:border-green-500 transition-colors"
+              className="w-full pl-10 pr-4 py-3 rounded-xl border focus:outline-none focus:border-green-500 transition-colors"
+              style={inputStyle}
             />
           </div>
           <button
@@ -374,53 +342,39 @@ const DataHub: React.FC = () => {
             Import
           </button>
         </div>
-
-        {/* Sheet Preview */}
-        {sheetPreview && sheetPreview.success && (
-          <div className="bg-dark-card rounded-xl p-4 border border-dark-border">
+        {sheetPreview?.success && (
+          <div className="p-4 rounded-xl border" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderColor: theme.borderColor }}>
             <div className="flex items-center justify-between mb-3">
-              <span className="text-white font-medium">Preview</span>
-              <span className="text-sm text-gray-400">{sheetPreview.rowCount} rows × {sheetPreview.columnCount} columns</span>
+              <span style={{ color: theme.textPrimary }} className="font-medium">Preview</span>
+              <span className="text-sm" style={{ color: theme.textMuted }}>{sheetPreview.rowCount} rows × {sheetPreview.columnCount} columns</span>
             </div>
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div className="flex flex-wrap gap-2">
               {sheetPreview.columns?.slice(0, 8).map((col: string, i: number) => (
-                <span key={i} className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium">
-                  {col}
-                </span>
+                <span key={i} className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium">{col}</span>
               ))}
-              {sheetPreview.columns?.length > 8 && (
-                <span className="px-2 py-1 bg-gray-500/20 text-gray-400 rounded text-xs">
-                  +{sheetPreview.columns.length - 8} more
-                </span>
-              )}
             </div>
-            <p className="text-xs text-gray-500">Click "Import" to add this data to your Data Hub</p>
           </div>
         )}
-
-        <p className="text-xs text-gray-500 mt-3">
-          💡 Sheet must be accessible: File → Share → "Anyone with the link can view"
-        </p>
+        <p className="text-xs mt-3" style={{ color: theme.textMuted }}>💡 Sheet must be accessible: File → Share → "Anyone with the link can view"</p>
       </motion.div>
 
-      {/* Search and Filters */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="flex items-center space-x-4"
-      >
+      {/* Search */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="flex items-center gap-4">
         <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: theme.textMuted }} />
           <input
             type="text"
             placeholder="Search files..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary-500 transition-colors"
+            className="w-full pl-10 pr-4 py-3 rounded-xl border focus:outline-none focus:border-blue-500 transition-colors"
+            style={inputStyle}
           />
         </div>
-        <button className="px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-400 hover:text-gray-200 hover:bg-dark-hover transition-colors flex items-center space-x-2">
+        <button
+          className="px-4 py-3 rounded-xl border transition-colors flex items-center gap-2"
+          style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor, color: theme.textMuted }}
+        >
           <Filter className="w-5 h-5" />
           <span>Filters</span>
         </button>
@@ -431,43 +385,42 @@ const DataHub: React.FC = () => {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className="glass-card overflow-hidden"
+        className="rounded-2xl border overflow-hidden"
+        style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
       >
-        <div className="p-6 border-b border-dark-border">
-          <h2 className="text-xl font-semibold text-white">
+        <div className="p-6 border-b" style={{ borderColor: theme.borderColor }}>
+          <h2 className="text-lg font-semibold" style={{ color: theme.textPrimary }}>
             Uploaded Files ({filteredFiles.length})
           </h2>
         </div>
-        <div className="divide-y divide-dark-border">
+        <div className="divide-y" style={{ borderColor: theme.borderColor }}>
           {filteredFiles.map((file, i) => (
             <motion.div
               key={file.id}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4 + i * 0.05 }}
-              className="data-hub-item p-6 hover:bg-dark-hover active:bg-dark-hover focus:bg-dark-hover transition-colors flex items-center justify-between group cursor-pointer"
+              className="p-6 flex items-center justify-between transition-colors hover:bg-white/5"
             >
-              <div className="flex items-center space-x-4 flex-1">
-                <div className="w-12 h-12 bg-dark-card rounded-xl flex items-center justify-center">
+              <div className="flex items-center gap-4 flex-1">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
                   {getFileIcon(file.type)}
                 </div>
                 <div className="flex-1">
-                  <h3 className="text-white font-medium mb-1">{file.name}</h3>
-                  <div className="flex items-center space-x-4 text-sm text-gray-400">
+                  <h3 className="font-medium mb-1" style={{ color: theme.textPrimary }}>{file.name}</h3>
+                  <div className="flex items-center gap-4 text-sm" style={{ color: theme.textMuted }}>
                     <span>{formatFileSize(file.size)}</span>
                     <span>•</span>
                     <span>{new Date(file.uploadedAt).toLocaleDateString()}</span>
                   </div>
                 </div>
               </div>
-
-              <div className="flex items-center space-x-4">
-                {/* Status */}
-                <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
                   {file.status === 'completed' && (
                     <>
-                      <CheckCircle className="w-5 h-5 text-accent-green" />
-                      <span className="text-sm text-accent-green font-medium">Indexed</span>
+                      <CheckCircle className="w-5 h-5 text-emerald-400" />
+                      <span className="text-sm text-emerald-400 font-medium">Indexed</span>
                     </>
                   )}
                   {file.status === 'processing' && (
@@ -478,32 +431,28 @@ const DataHub: React.FC = () => {
                   )}
                   {file.status === 'failed' && (
                     <>
-                      <XCircle className="w-5 h-5 text-accent-red" />
-                      <span className="text-sm text-accent-red font-medium">Failed</span>
+                      <XCircle className="w-5 h-5 text-red-400" />
+                      <span className="text-sm text-red-400 font-medium">Failed</span>
                     </>
                   )}
                 </div>
-
-                {/* Actions */}
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => handleDownload(file.id)}
-                    className="p-2 hover:bg-dark-card rounded-lg transition-colors"
-                    title="Download file"
-                  >
-                    <Download className="w-5 h-5 text-gray-400 hover:text-gray-200" />
+                <div className="flex gap-2">
+                  <button onClick={() => handleDownload(file.id)} className="p-2 rounded-lg hover:bg-white/10 transition-colors" title="Download">
+                    <Download className="w-5 h-5" style={{ color: theme.textMuted }} />
                   </button>
-                  <button
-                    onClick={() => handleDelete(file.id)}
-                    className="p-2 hover:bg-accent-red/10 rounded-lg transition-colors"
-                    title="Delete file"
-                  >
-                    <Trash2 className="w-5 h-5 text-gray-400 hover:text-accent-red" />
+                  <button onClick={() => handleDelete(file.id)} className="p-2 rounded-lg hover:bg-red-500/10 transition-colors" title="Delete">
+                    <Trash2 className="w-5 h-5" style={{ color: theme.textMuted }} />
                   </button>
                 </div>
               </div>
             </motion.div>
           ))}
+          {filteredFiles.length === 0 && (
+            <div className="p-12 text-center" style={{ color: theme.textMuted }}>
+              <Upload className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p>No files uploaded yet</p>
+            </div>
+          )}
         </div>
       </motion.div>
     </div>

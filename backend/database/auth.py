@@ -36,6 +36,38 @@ def decode_jwt(token: str) -> dict:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 
+def get_user_id_from_headers(
+    x_user_id: Optional[str] = None,
+    authorization: Optional[str] = None
+) -> str:
+    """
+    Extract user ID from JWT token or X-User-ID header.
+    Works for both authenticated and legacy/demo sessions.
+    """
+    user_id = None
+    
+    # Try JWT token first (most secure)
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            token = authorization.split(" ")[1]
+            payload = decode_jwt(token)
+            user_id = payload.get("sub")
+            print(f"🔐 Auth - User from JWT: {user_id}")
+        except Exception as e:
+            print(f"⚠️ JWT decode error: {e}")
+    
+    # Fallback to X-User-ID header
+    if not user_id and x_user_id:
+        user_id = x_user_id
+        print(f"🔐 Auth - User from header: {user_id}")
+    
+    if not user_id:
+        # Default to demo_user if nothing else found
+        return "demo_user"
+    
+    return user_id
+
+
 async def get_current_user(
     authorization: Optional[str] = Header(None, alias="Authorization")
 ) -> AuthUser:

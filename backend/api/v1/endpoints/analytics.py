@@ -5,7 +5,7 @@ Enterprise-grade multi-currency support with breakdown
 Smart column detection for any data format
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from typing import Optional
 from pathlib import Path
 import traceback
@@ -13,6 +13,7 @@ from datetime import datetime
 import pandas as pd
 import json
 
+from database.auth import get_user_id_from_headers
 from graph.query import revenue_dataframe, get_graph_stats, load_graph
 from config.settings import Settings
 from utils.paths import get_user_paths, STORAGE_BASE
@@ -439,8 +440,310 @@ async def get_analytics_overview(user_id: str):
                 "uniqueCustomers": 0,
                 "averageOrderValue": 0
             },
-            "hasData": False
         }
+
+
+# ============================================================================
+# SCHEMA-DRIVEN SMART OVERVIEW - Works with ANY data type
+# ============================================================================
+@router.get("/smart-overview/{user_id}")
+async def get_smart_overview(user_id: str):
+    """
+    🚀 POWER BI STYLE - Schema-Driven Analytics
+    
+    Automatically detects column types and builds visualizations for ANY data:
+    - Sales data → Revenue, Products, Customers
+    - HR data → Salary, Departments, Employees
+    - Healthcare → Costs, Treatments, Patients
+    - Education → Scores, Subjects, Students
+    """
+    try:
+        # Load user's data directly from files (not graph which may have old schema)
+        from api.v1.endpoints.schema_api import _load_user_data
+        
+        df = _load_user_data(user_id)
+        
+        if df is None or df.empty:
+            return {
+                "hasData": False,
+                "message": "No data uploaded. Upload files to see analytics.",
+                "domain": None,
+                "metrics": [],
+                "dimensions": [],
+                "kpis": [],
+                "timeSeries": [],
+                "topItems": [],
+                "categoryBreakdown": []
+            }
+        
+        # ===== STEP 1: AUTO-DETECT COLUMN TYPES =====
+        # Find numeric columns (potential metrics)
+        numeric_cols = []
+        for col in df.columns:
+            if col.startswith('_'):  # Skip internal columns
+                continue
+            try:
+                # Try to convert to numeric
+                cleaned = df[col].astype(str).str.replace(r'[$€£₹,\s]', '', regex=True)
+                numeric_values = pd.to_numeric(cleaned, errors='coerce')
+                non_null_count = numeric_values.notna().sum()
+                
+                # If >50% of values are numeric, it's a metric
+                if non_null_count > len(df) * 0.5:
+                    total = float(numeric_values.sum())
+                    avg = float(numeric_values.mean())
+                    numeric_cols.append({
+                        "name": col,
+                        "total": total,
+                        "average": avg,
+                        "min": float(numeric_values.min()),
+                        "max": float(numeric_values.max()),
+                        "non_null": int(non_null_count)
+                    })
+            except:
+                pass
+        
+        # Sort by total value to get primary metric first
+        numeric_cols.sort(key=lambda x: abs(x['total']), reverse=True)
+        
+        # Find date columns (potential time series)
+        date_cols = []
+        for col in df.columns:
+            if col.startswith('_'):
+                continue
+            try:
+                parsed = pd.to_datetime(df[col], errors='coerce')
+                valid_dates = parsed.notna().sum()
+                if valid_dates > len(df) * 0.5:
+                    date_cols.append({
+                        "name": col,
+                        "min_date": parsed.min().isoformat() if parsed.notna().any() else None,
+                        "max_date": parsed.max().isoformat() if parsed.notna().any() else None
+                    })
+            except:
+                pass
+        
+        # Find categorical columns (potential dimensions/groupings)
+        category_cols = []
+        for col in df.columns:
+            if col.startswith('_'):
+                continue
+            # Skip if already identified as numeric or date
+            if any(n['name'] == col for n in numeric_cols) or any(d['name'] == col for d in date_cols):
+                continue
+            
+            unique_count = df[col].nunique()
+            # Good for grouping: 2-50 unique values
+            if 2 <= unique_count <= 50:
+                category_cols.append({
+                    "name": col,
+                    "unique_count": int(unique_count),
+                    "sample_values": df[col].dropna().head(5).astype(str).tolist()
+                })
+        
+        # Sort by uniqueness (fewer unique = better for grouping)
+        category_cols.sort(key=lambda x: x['unique_count'])
+        
+        # ===== STEP 2: DETECT DOMAIN =====
+        # Analyze column names to guess domain
+        all_cols_lower = ' '.join(df.columns.str.lower())
+        domain = "General"
+        if any(x in all_cols_lower for x in ['salary', 'employee', 'department', 'hire', 'hr', 'team']):
+            domain = "HR / Workforce"
+        elif any(x in all_cols_lower for x in ['revenue', 'sales', 'customer', 'product', 'order', 'invoice']):
+            domain = "Sales / Business"
+        elif any(x in all_cols_lower for x in ['patient', 'diagnosis', 'treatment', 'medical', 'health']):
+            domain = "Healthcare"
+        elif any(x in all_cols_lower for x in ['student', 'grade', 'score', 'course', 'exam']):
+            domain = "Education"
+        elif any(x in all_cols_lower for x in ['stock', 'inventory', 'warehouse', 'sku']):
+            domain = "Inventory"
+        
+        # ===== STEP 3: BUILD KPIs from detected metrics =====
+        kpis = []
+        primary_metric = numeric_cols[0] if numeric_cols else None
+        
+        if primary_metric:
+            # Detect currency from column name or values
+            currency = "₹"  # Default
+            if 'usd' in primary_metric['name'].lower() or '$' in str(df[primary_metric['name']].iloc[0] if len(df) > 0 else ''):
+                currency = "$"
+            elif 'eur' in primary_metric['name'].lower():
+                currency = "€"
+            
+            kpis.append({
+                "label": f"Total {primary_metric['name'].replace('_', ' ').title()}",
+                "value": primary_metric['total'],
+                "formatted": f"{currency}{primary_metric['total']:,.2f}",
+                "type": "primary"
+            })
+            kpis.append({
+                "label": f"Avg {primary_metric['name'].replace('_', ' ').title()}",
+                "value": primary_metric['average'],
+                "formatted": f"{currency}{primary_metric['average']:,.2f}",
+                "type": "secondary"
+            })
+        
+        # Add record count
+        kpis.append({
+            "label": "Total Records",
+            "value": len(df),
+            "formatted": f"{len(df):,}",
+            "type": "count"
+        })
+        
+        # Add unique count for first category column
+        if category_cols:
+            first_cat = category_cols[0]
+            kpis.append({
+                "label": f"Unique {first_cat['name'].replace('_', ' ').title()}",
+                "value": first_cat['unique_count'],
+                "formatted": f"{first_cat['unique_count']:,}",
+                "type": "dimension"
+            })
+        
+        # ===== STEP 4: BUILD TIME SERIES if date column exists =====
+        time_series = []
+        if date_cols and numeric_cols:
+            date_col = date_cols[0]['name']
+            metric_col = numeric_cols[0]['name']
+            
+            try:
+                df_temp = df.copy()
+                df_temp['_parsed_date'] = pd.to_datetime(df_temp[date_col], errors='coerce')
+                df_temp['_metric_value'] = pd.to_numeric(
+                    df_temp[metric_col].astype(str).str.replace(r'[$€£₹,\s]', '', regex=True),
+                    errors='coerce'
+                ).fillna(0)
+                
+                df_dated = df_temp[df_temp['_parsed_date'].notna()]
+                
+                if not df_dated.empty:
+                    daily = df_dated.groupby(df_dated['_parsed_date'].dt.date)['_metric_value'].sum()
+                    for date, value in daily.items():
+                        time_series.append({
+                            "date": date.isoformat(),
+                            "value": float(value)
+                        })
+                    time_series.sort(key=lambda x: x['date'])
+            except Exception as e:
+                print(f"Time series error: {e}")
+        
+        # ===== STEP 5: BUILD TOP ITEMS (category breakdown) =====
+        top_items = []
+        category_breakdown = []
+        
+        if category_cols and numeric_cols:
+            cat_col = category_cols[0]['name']
+            metric_col = numeric_cols[0]['name']
+            
+            try:
+                df_temp = df.copy()
+                df_temp['_metric_value'] = pd.to_numeric(
+                    df_temp[metric_col].astype(str).str.replace(r'[$€£₹,\s]', '', regex=True),
+                    errors='coerce'
+                ).fillna(0)
+                
+                grouped = df_temp.groupby(cat_col).agg({
+                    '_metric_value': 'sum'
+                }).reset_index()
+                grouped.columns = [cat_col, 'value']
+                grouped = grouped.sort_values('value', ascending=False).head(10)
+                
+                total_value = grouped['value'].sum()
+                
+                for _, row in grouped.iterrows():
+                    percentage = (row['value'] / total_value * 100) if total_value > 0 else 0
+                    item = {
+                        "name": str(row[cat_col]),
+                        "value": float(row['value']),
+                        "percentage": round(percentage, 1)
+                    }
+                    top_items.append(item)
+                    category_breakdown.append({
+                        "category": str(row[cat_col]),
+                        "value": float(row['value']),
+                        "count": int(df_temp[df_temp[cat_col] == row[cat_col]].shape[0])
+                    })
+            except Exception as e:
+                print(f"Category breakdown error: {e}")
+        
+        # ===== STEP 6: GENERATE AI INSIGHTS =====
+        insights = []
+        
+        if primary_metric:
+            insights.append({
+                "type": "summary",
+                "icon": "📊",
+                "title": "Data Overview",
+                "description": f"Analyzing {len(df)} records across {len(df.columns)} columns"
+            })
+        
+        if time_series and len(time_series) > 1:
+            first_val = time_series[0]['value']
+            last_val = time_series[-1]['value']
+            change = ((last_val - first_val) / first_val * 100) if first_val > 0 else 0
+            trend = "📈 Increasing" if change > 0 else "📉 Decreasing" if change < 0 else "➡️ Stable"
+            insights.append({
+                "type": "trend",
+                "icon": "📈" if change > 0 else "📉",
+                "title": f"{trend.split()[1]} Trend",
+                "description": f"{abs(change):.1f}% change over the period"
+            })
+        
+        if top_items:
+            top_item = top_items[0]
+            insights.append({
+                "type": "top_performer",
+                "icon": "🏆",
+                "title": f"Top {category_cols[0]['name'].replace('_', ' ').title()}",
+                "description": f"{top_item['name']} leads with {top_item['percentage']:.1f}% of total"
+            })
+        
+        # ===== RETURN RESPONSE =====
+        return {
+            "hasData": True,
+            "domain": domain,
+            "detectedAt": datetime.now().isoformat(),
+            "dataShape": {
+                "rows": len(df),
+                "columns": len(df.columns)
+            },
+            "kpis": kpis,
+            "metrics": [
+                {"name": m['name'], "total": m['total'], "average": m['average']}
+                for m in numeric_cols[:5]
+            ],
+            "dimensions": [
+                {"name": d['name'], "uniqueCount": d['unique_count']}
+                for d in category_cols[:5]
+            ],
+            "timeColumn": date_cols[0]['name'] if date_cols else None,
+            "primaryMetric": primary_metric['name'] if primary_metric else None,
+            "primaryDimension": category_cols[0]['name'] if category_cols else None,
+            "timeSeries": time_series,
+            "topItems": top_items,
+            "categoryBreakdown": category_breakdown,
+            "categoryColumn": category_cols[0]['name'] if category_cols else None,
+            "insights": insights,
+            # For backward compatibility with existing Overview.tsx
+            "metrics_legacy": {
+                "totalRevenue": primary_metric['total'] if primary_metric else 0,
+                "totalInvoices": len(df),
+                "uniqueCustomers": category_cols[0]['unique_count'] if category_cols else 0,
+                "averageOrderValue": primary_metric['average'] if primary_metric else 0
+            }
+        }
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {
+            "hasData": False,
+            "error": str(e),
+            "message": f"Error analyzing data: {str(e)}"
+        }
+
 
 @router.get("/revenue/{user_id}")
 async def get_revenue_details(
@@ -884,12 +1187,360 @@ async def get_ai_insights(user_id: str):
 
 
 # ============================================================================
+# DATAVISION UNIFIED ANALYTICS ENDPOINT
+# Schema-driven, zero hardcoded logic, REAL-TIME filtering
+# ============================================================================
+
+@router.get("/unified/{user_id}")
+async def get_unified_analytics(
+    user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    # FILTER PARAMETERS - support multiple filters as JSON
+    filter_column: Optional[str] = None,
+    filter_value: Optional[str] = None,
+    filters: Optional[str] = None  # JSON object: {"column1":"value1", "column2":"value2"}
+):
+    """
+    DATAVISION Schema-Driven Unified Analytics with REAL-TIME FILTERING
+    
+    Returns TWO DISTINCT layouts with NO DUPLICATION:
+    - overviewLayout: Summary KPIs + Primary trend chart + Distribution donut
+    - dashboardLayout: DIFFERENT charts - comparison bars, scatter, ranking, data table
+    
+    Query params for filtering:
+    - filter_column: Column name to filter by (single filter)
+    - filter_value: Value to filter for (single filter)
+    - filters: JSON object for multiple filters {"col1":"val1","col2":"val2"}
+    """
+    print(f"🚨 [ANALYTICS ENTRY] ENDPOINT CALLED for user: {user_id}", flush=True)
+    try:
+        import sys
+        import json
+        # Resolve user
+        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        print(f"🔍 [ANALYTICS] user_id from URL: {user_id}", flush=True)
+        print(f"🔍 [ANALYTICS] authenticated_user from headers: {authenticated_user}", flush=True)
+        if authenticated_user and authenticated_user != user_id:
+            user_id = authenticated_user
+        print(f"🔍 [ANALYTICS] Final user_id: {user_id}", flush=True)
+
+        # Load data
+        from api.v1.endpoints.schema_api import _load_user_data
+        print(f"🔍 [ANALYTICS] Calling _load_user_data({user_id})", flush=True)
+        df = _load_user_data(user_id)
+        print(f"🔍 [ANALYTICS] _load_user_data returned: {type(df)}, empty={df is None or (df is not None and df.empty)}", flush=True)
+        sys.stdout.flush()
+        
+        if df is None or df.empty:
+            print(f"⚠️ [ANALYTICS] No data found for user {user_id}", flush=True)
+            return {
+                "hasData": False,
+                "message": "No data available. Upload files to begin.",
+                "overviewLayout": {"kpis": [], "charts": []},
+                "dashboardLayout": {"widgets": []},
+                "slicers": []
+            }
+
+        # APPLY REAL-TIME FILTERS
+        # Support multiple filters from JSON parameter
+        if filters:
+            try:
+                filter_dict = json.loads(filters)
+                for col, val in filter_dict.items():
+                    if col in df.columns and val and val.lower() != 'all':
+                        df = df[df[col].astype(str) == val]
+                        print(f"🔍 Filtered by {col}={val}, rows: {len(df)}", flush=True)
+            except json.JSONDecodeError:
+                print(f"⚠️ Invalid filters JSON: {filters}", flush=True)
+        # Also support single filter for backwards compatibility
+        elif filter_column and filter_value and filter_column in df.columns:
+            if filter_value.lower() != 'all':
+                df = df[df[filter_column].astype(str) == filter_value]
+                print(f"🔍 Filtered by {filter_column}={filter_value}, rows: {len(df)}", flush=True)
+
+        # Schema Analysis
+        from core.schema_intelligence import UniversalSchemaAnalyzer
+        analyzer = UniversalSchemaAnalyzer()
+        schema_intel = analyzer.analyze_dataframe(df, "combined_data")
+        
+        display_cols = [c for c in df.columns if not c.startswith('_')]
+        df_clean = df[display_cols]
+        row_count = len(df_clean)
+        col_count = len(df_clean.columns)
+
+        # Helper for numeric extraction
+        def to_numeric_col(series):
+            return pd.to_numeric(
+                series.astype(str).str.replace(r'[\$,€£¥₹\s]', '', regex=True),
+                errors='coerce'
+            ).fillna(0)
+
+        # =====================================================
+        # POWER BI OVERVIEW = EXECUTIVE SUMMARY (WHAT happened)
+        # KPIs: SALARY, EMPLOYEES, AVG SALARY, UNIQUE DIMENSIONS
+        # =====================================================
+        overview_kpis = []
+        overview_charts = []
+        
+        # KPI 1: Total of primary metric (e.g., Total Salary)
+        if schema_intel.key_metrics:
+            metric = schema_intel.key_metrics[0]
+            try:
+                numeric_vals = to_numeric_col(df_clean[metric])
+                total = float(numeric_vals.sum())
+                is_currency = any(x in metric.lower() for x in ['salary', 'revenue', 'sales', 'amount', 'price', 'cost', 'profit'])
+                overview_kpis.append({
+                    "type": "kpi_card",
+                    "title": metric.replace('_', ' ').upper(),
+                    "value": total,
+                    "format": "currency" if is_currency else "number"
+                })
+            except:
+                pass
+        
+        # KPI 2: Record count (e.g., EMPLOYEES)
+        first_dim_name = schema_intel.dimensions[0] if schema_intel.dimensions else "Records"
+        overview_kpis.append({
+            "type": "kpi_card",
+            "title": first_dim_name.replace('_', ' ').upper() + "S",
+            "value": row_count,
+            "format": "number"
+        })
+        
+        # KPI 3: Average of primary metric (e.g., AVG SALARY)
+        if schema_intel.key_metrics:
+            metric = schema_intel.key_metrics[0]
+            try:
+                numeric_vals = to_numeric_col(df_clean[metric])
+                avg = float(numeric_vals.mean())
+                is_currency = any(x in metric.lower() for x in ['salary', 'revenue', 'sales', 'amount', 'price', 'cost', 'profit'])
+                overview_kpis.append({
+                    "type": "kpi_card",
+                    "title": f"AVG {metric.replace('_', ' ').upper()}",
+                    "value": avg,
+                    "format": "currency" if is_currency else "number"
+                })
+            except:
+                pass
+        
+        # KPI 4: Unique count of first dimension (e.g., DEPARTMENTS: 6)
+        if schema_intel.dimensions:
+            dim = schema_intel.dimensions[0]
+            distinct_count = df_clean[dim].nunique()
+            overview_kpis.append({
+                "type": "kpi_card",
+                "title": f"{dim.replace('_', ' ').upper()}S",
+                "value": distinct_count,
+                "format": "number"
+            })
+        
+        # Limit to 4 KPIs max
+        overview_kpis = overview_kpis[:4]
+        
+        # OVERVIEW CHART 1: Clustered Column Chart (Dimension vs Total Metric)
+        if schema_intel.dimensions and schema_intel.key_metrics:
+            try:
+                dim = schema_intel.dimensions[0]
+                metric = schema_intel.key_metrics[0]
+                column_data = df_clean.groupby(dim)[metric].apply(
+                    lambda x: to_numeric_col(x).sum()
+                ).sort_values(ascending=False).head(8).reset_index()
+                column_data.columns = ['category', 'value']
+                # Smart title - avoid "Total Total Marks"
+                metric_title = metric.replace('_', ' ').title()
+                if metric_title.lower().startswith('total'):
+                    chart_title = f"{metric_title} by {dim.replace('_', ' ').title()}"
+                else:
+                    chart_title = f"{metric_title} by {dim.replace('_', ' ').title()}"
+                overview_charts.append({
+                    "type": "column_chart",
+                    "title": chart_title,
+                    "data": [{"category": str(r['category']), "value": float(r['value'])} for _, r in column_data.iterrows()],
+                    "size": "large"
+                })
+            except Exception as e:
+                print(f"Column chart error: {e}")
+        
+        # OVERVIEW CHART 2: Stacked Bar (Dimension x SecondDimension - workforce composition)
+        if len(schema_intel.dimensions) >= 2 and schema_intel.key_metrics:
+            try:
+                dim1 = schema_intel.dimensions[0]  # e.g., Department
+                dim2 = schema_intel.dimensions[1]  # e.g., Role
+                # Group by dim1, count by dim2
+                stacked_data = df_clean.groupby([dim1, dim2]).size().unstack(fill_value=0)
+                # Convert to chart format
+                chart_data = []
+                for category in stacked_data.index[:6]:
+                    row_data = {"category": str(category)}
+                    for sub_cat in stacked_data.columns[:5]:
+                        row_data[str(sub_cat)] = int(stacked_data.loc[category, sub_cat])
+                    chart_data.append(row_data)
+                overview_charts.append({
+                    "type": "stacked_bar",
+                    "title": f"{dim1.replace('_', ' ').title()} by {dim2.replace('_', ' ').title()}",
+                    "data": chart_data,
+                    "keys": [str(k) for k in stacked_data.columns[:5]],
+                    "size": "large"
+                })
+            except Exception as e:
+                print(f"Stacked bar error: {e}")
+        
+        # =====================================================
+        # POWER BI DASHBOARD = DETAILED ANALYSIS (WHY it happened)
+        # Scroll allowed, trends, donuts, rankings, tables
+        # =====================================================
+        dashboard_widgets = []
+        
+        # Dashboard KPIs with sparklines (different presentation)
+        for kpi in overview_kpis:
+            dashboard_widgets.append({
+                **kpi,
+                "showSparkline": True
+            })
+        
+        # DASHBOARD CHART 1: Line Trend (Time-based analysis - ONLY in Dashboard)
+        if schema_intel.time_column and schema_intel.key_metrics:
+            try:
+                time_col = schema_intel.time_column
+                metric = schema_intel.key_metrics[0]
+                df_clean[time_col] = pd.to_datetime(df_clean[time_col], errors='coerce')
+                trend = df_clean.groupby(df_clean[time_col].dt.date)[metric].apply(
+                    lambda x: to_numeric_col(x).mean()
+                ).reset_index()
+                trend.columns = ['x', 'y']
+                dashboard_widgets.append({
+                    "type": "line_chart",
+                    "title": f"Avg {metric.replace('_', ' ').title()} Over Time",
+                    "data": [{"x": str(r['x']), "y": float(r['y'])} for _, r in trend.head(30).iterrows()],
+                    "size": "large"
+                })
+            except Exception as e:
+                print(f"Line trend error: {e}")
+        
+        # DASHBOARD CHART 2: Donut Chart (Distribution - ONLY in Dashboard)
+        if schema_intel.dimensions:
+            try:
+                dim = schema_intel.dimensions[0]
+                donut_data = df_clean[dim].value_counts().head(6).reset_index()
+                donut_data.columns = ['name', 'value']
+                dashboard_widgets.append({
+                    "type": "donut_chart",
+                    "title": f"{dim.replace('_', ' ').title()} Distribution",
+                    "data": [{"name": str(r['name']), "value": int(r['value'])} for _, r in donut_data.iterrows()],
+                    "size": "medium"
+                })
+            except Exception as e:
+                print(f"Donut error: {e}")
+        
+        # DASHBOARD CHART 3: Horizontal Ranking Bar (Power BI favorite)
+        if schema_intel.dimensions and schema_intel.key_metrics:
+            try:
+                dim = schema_intel.dimensions[0]
+                metric = schema_intel.key_metrics[0]
+                ranking = df_clean.groupby(dim)[metric].apply(
+                    lambda x: to_numeric_col(x).mean()
+                ).sort_values(ascending=True).tail(8).reset_index()
+                ranking.columns = ['category', 'value']
+                dashboard_widgets.append({
+                    "type": "horizontal_bar",
+                    "title": f"Avg {metric.replace('_', ' ').title()} by {dim.replace('_', ' ').title()}",
+                    "data": [{"category": str(r['category']), "value": float(r['value'])} for _, r in ranking.iterrows()],
+                    "size": "medium"
+                })
+            except Exception as e:
+                print(f"Ranking bar error: {e}")
+        
+        # DASHBOARD CHART 4: Segment Column (Secondary dimension breakdown)
+        if len(schema_intel.dimensions) >= 2:
+            try:
+                dim = schema_intel.dimensions[1]  # Second dimension (e.g., Location)
+                segment = df_clean[dim].value_counts().head(6).reset_index()
+                segment.columns = ['category', 'value']
+                dashboard_widgets.append({
+                    "type": "column_chart",
+                    "title": f"Records by {dim.replace('_', ' ').title()}",
+                    "data": [{"category": str(r['category']), "value": int(r['value'])} for _, r in segment.iterrows()],
+                    "size": "medium"
+                })
+            except Exception as e:
+                print(f"Segment column error: {e}")
+        
+        # DASHBOARD: Detail Table (Classic Power BI)
+        dashboard_widgets.append({
+            "type": "data_table",
+            "title": f"{schema_intel.domain} Details",
+            "columns": display_cols[:8],
+            "data": df_clean.head(50).to_dict('records'),
+            "size": "full"
+        })
+
+        # =====================================================
+        # SLICERS for Cross-Filtering
+        # =====================================================
+        slicers = []
+        for dim in schema_intel.dimensions[:4]:
+            if dim in df_clean.columns:
+                unique_vals = df_clean[dim].dropna().unique()
+                if 2 <= len(unique_vals) <= 30:
+                    slicers.append({
+                        "name": dim,
+                        "label": dim.replace('_', ' ').title(),
+                        "type": "dropdown",
+                        "options": sorted([str(v) for v in unique_vals])
+                    })
+        
+        if schema_intel.time_column:
+            slicers.insert(0, {
+                "name": schema_intel.time_column,
+                "label": schema_intel.time_column.replace('_', ' ').title(),
+                "type": "date_range",
+                "options": []
+            })
+
+        return {
+            "hasData": True,
+            "domain": schema_intel.domain,
+            "dataShape": {"rows": row_count, "columns": col_count},
+            "overviewLayout": {
+                "kpis": overview_kpis,
+                "charts": overview_charts,
+                "maxVisuals": 6
+            },
+            "dashboardLayout": {
+                "widgets": dashboard_widgets,
+                "allowScroll": True
+            },
+            "slicers": slicers,
+            "schema": {
+                "columns": [c.to_dict() for c in schema_intel.columns],
+                "metrics": schema_intel.key_metrics,
+                "dimensions": schema_intel.dimensions,
+                "timeColumn": schema_intel.time_column
+            },
+            "appliedFilter": {
+                "column": filter_column,
+                "value": filter_value
+            } if filter_column else None
+        }
+    except Exception as e:
+        traceback.print_exc()
+        return {"success": False, "message": str(e)}
+
+
+
+# ============================================================================
 # $500K REAL PROBLEM-SOLVING DASHBOARD ENDPOINT
 # Solves actual business problems with actionable insights
 # ============================================================================
 
+
 @router.get("/dashboard-stats")
-async def get_dashboard_stats(user_id: str = Query("demo_user")):
+async def get_dashboard_stats(
+    user_id: str = Query("demo_user"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
     """
     Enterprise Dashboard - Solves REAL Business Problems
     - ABC Analysis (Pareto 80/20)
@@ -899,6 +1550,11 @@ async def get_dashboard_stats(user_id: str = Query("demo_user")):
     - Revenue Timeline
     """
     try:
+        # Resolve authenticated user_id
+        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        if authenticated_user and authenticated_user != user_id:
+            user_id = authenticated_user
+            
         paths = get_user_paths(user_id)
         df = revenue_dataframe(user_id)
         

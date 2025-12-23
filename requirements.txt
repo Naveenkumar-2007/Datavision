@@ -41,3 +41,6 @@ py-vapid>=1.9.0
 resend==0.7.0
 pydantic>=2.5.3
 pydantic-settings>=2.1.0
+
+reportlab
+python-pptx

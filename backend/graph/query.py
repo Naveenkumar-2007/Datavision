@@ -23,6 +23,44 @@ def get_user_currency(user_id: str) -> tuple:
     return '₹', 'INR'  # Default to INR
 
 
+def detect_amount_column(df) -> str:
+    """
+    Detect the numeric amount/value column dynamically.
+    Works with ANY domain: Sales (amount), HR (salary), Healthcare (cost), etc.
+    """
+    if df is None or df.empty:
+        return None
+    
+    # Priority order: most specific to least specific
+    amount_keywords = [
+        'salary', 'wage', 'pay', 'compensation', 'income', 'earnings',  # HR
+        'amount', 'total_amount', 'total', 'revenue', 'sales',  # Sales
+        'price', 'cost', 'value', 'sum', 'gross', 'net',  # Finance
+        'score', 'marks', 'grade', 'percentage',  # Education
+        'fee', 'charge', 'bill_amount'  # Healthcare
+    ]
+    
+    columns_lower = {col.lower(): col for col in df.columns}
+    
+    # Try exact match first
+    for keyword in amount_keywords:
+        if keyword in columns_lower:
+            return columns_lower[keyword]
+    
+    # Try partial match
+    for keyword in amount_keywords:
+        for col_lower, col_orig in columns_lower.items():
+            if keyword in col_lower:
+                return col_orig
+    
+    # Fallback: find first numeric column
+    numeric_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
+    if len(numeric_cols) > 0:
+        return numeric_cols[0]
+    
+    return None
+
+
 def load_graph(company_id: str):
     """Load company's knowledge graph from user-specific directory"""
     import pickle
@@ -91,55 +129,185 @@ def graph_snapshot(company_id: str, max_nodes: int = None) -> str:
     return snapshot
 
 
+    return pd.DataFrame(rows)
+
+def _load_from_files(company_id: str) -> pd.DataFrame:
+    """Fallback: Load revenue data directly from uploaded files if graph is empty"""
+    try:
+        from config.settings import Settings
+        
+        # STORAGE_BASE already includes /users/, so use: STORAGE_BASE / user_id / "files"
+        user_files_dir = STORAGE_BASE / company_id / "files"
+        
+        # IMPORTANT: Only load from this user's files - NO FALLBACK TO OTHER USERS!
+        # This ensures users only see their own data, not demo/dummy data
+        if not user_files_dir.exists():
+            print(f"⚠️ No files directory for user {company_id}: {user_files_dir}")
+            return pd.DataFrame()
+        
+        target_dirs = [user_files_dir]
+            
+        all_dfs = []
+        for upload_dir in target_dirs:
+            for file_path in upload_dir.glob("*.*"):
+                if file_path.suffix.lower() not in ['.csv', '.xlsx', '.xls']:
+                    continue
+                
+                try:
+                    if file_path.suffix.lower() == '.csv':
+                        df = pd.read_csv(file_path)
+                    else:
+                        df = pd.read_excel(file_path)
+                    
+                    if df.empty:
+                        continue
+                    
+                    # =========================================================
+                    # $5M FIX: USE LLM-BASED SCHEMA DETECTION (NO HARDCODING!)
+                    # =========================================================
+                    # This is the key change that makes the system work like ChatGPT
+                    # It understands ANY file schema, not just hardcoded column names
+                    
+                    try:
+                        from core.llm_schema_detector import understand_schema_with_llm
+                        
+                        # LLM analyzes the actual data and understands what each column means
+                        schema = understand_schema_with_llm(df, file_path.name)
+                        
+                        print(f"[LLM SCHEMA] File: {file_path.name}")
+                        print(f"[LLM SCHEMA] Detected: entity={schema.entity_column}, "
+                              f"amount={schema.amount_column}, product={schema.product_column}, "
+                              f"date={schema.date_column}, currency={schema.currency_detected}")
+                        
+                        # Use LLM-detected columns (works for ANY file!)
+                        amount_col = schema.amount_column
+                        date_col = schema.date_column
+                        cust_col = schema.entity_column
+                        prod_col = schema.product_column
+                        detected_currency = schema.currency_detected or "USD"
+                        
+                    except ImportError as ie:
+                        print(f"[LLM SCHEMA] LLM detector not available: {ie}")
+                        # Fallback to old pattern-based detection
+                        try:
+                            from core.schema_detector import detect_schema
+                            schema = detect_schema(df, file_path.name)
+                            amount_col = schema.best_amount_col
+                            date_col = schema.best_date_col
+                            entity_cols = schema.best_entity_cols
+                            cust_col = entity_cols[0] if entity_cols else None
+                            prod_col = entity_cols[1] if len(entity_cols) > 1 else None
+                            detected_currency = "USD"
+                        except ImportError:
+                            # Ultimate fallback
+                            df.columns = [str(c).lower().strip() for c in df.columns]
+                            date_col = next((c for c in df.columns if 'date' in c), None)
+                            amount_col = next((c for c in df.columns if any(x in c for x in ['amount', 'total', 'value', 'price'])), None)
+                            cust_col = next((c for c in df.columns if any(x in c for x in ['customer', 'client', 'company', 'name'])), None)
+                            prod_col = next((c for c in df.columns if any(x in c for x in ['product', 'item'])), None)
+                            detected_currency = "USD"
+                    
+                    # Normalize column names for processing
+                    df.columns = [str(c).lower().strip() for c in df.columns]
+                    amount_col = amount_col.lower().strip() if amount_col else None
+                    date_col = date_col.lower().strip() if date_col else None
+                    cust_col = cust_col.lower().strip() if cust_col else None
+                    prod_col = prod_col.lower().strip() if prod_col else None
+                    
+                    if amount_col and amount_col in df.columns:
+                        clean_df = pd.DataFrame()
+                        
+                        # Clean currency symbols (₹, $, €, £) and commas
+                        if df[amount_col].dtype == 'object':
+                            clean_df['amount'] = df[amount_col].astype(str).str.replace(r'[$€£₹,\s]', '', regex=True)
+                            clean_df['amount'] = pd.to_numeric(clean_df['amount'], errors='coerce').fillna(0)
+                        else:
+                            clean_df['amount'] = pd.to_numeric(df[amount_col], errors='coerce').fillna(0)
+                        
+                        # Parse dates
+                        if date_col and date_col in df.columns:
+                            clean_df['date'] = pd.to_datetime(df[date_col], errors='coerce')
+                        else:
+                            clean_df['date'] = pd.NaT
+                            
+                        clean_df['customer'] = df[cust_col] if cust_col and cust_col in df.columns else "Unknown"
+                        clean_df['product'] = df[prod_col] if prod_col and prod_col in df.columns else "Unknown"
+                        clean_df['invoice'] = f"file_{file_path.stem}"
+                        clean_df['currency'] = detected_currency
+                        clean_df['source_file'] = file_path.name
+                        
+                        # Store original column mapping for debugging
+                        clean_df['_original_entity_col'] = cust_col or "N/A"
+                        clean_df['_original_amount_col'] = amount_col or "N/A"
+                        
+                        all_dfs.append(clean_df)
+                        print(f"[LLM SCHEMA] Successfully loaded {len(clean_df)} rows from {file_path.name}")
+                        
+                except Exception as e:
+                    print(f"Error loading file {file_path}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
+                
+        if all_dfs:
+            return pd.concat(all_dfs, ignore_index=True)
+            
+    except Exception as e:
+        print(f"File fallback error: {e}")
+        
+    return pd.DataFrame()
+
 def revenue_dataframe(company_id: str) -> pd.DataFrame:
     """
     Extract revenue/invoice data from graph as DataFrame.
-    Works with or without date information.
-    Includes currency and source_file per invoice for enterprise tracking.
+    Falls back to direct file loading if graph is empty.
     """
     G = load_graph(company_id)
-    if not G:
-        return pd.DataFrame()
-
+    
+    # Try getting from Graph first
     rows = []
-    for node, data in G.nodes(data=True):
-        if data.get("type") == "invoice" or data.get("kind") == "invoice":
-            invoice_id = node
-            customer = None
-            product = None
-            date = None
-            amount = 0.0
-            currency = data.get("currency", "USD")  # Get currency from invoice node
-            source_file = data.get("source_file", "Unknown")  # Get source file from invoice node
-
-            # Find connected nodes
-            for neighbor in G.neighbors(node):
-                neighbor_data = G.nodes[neighbor]
-                ntype = neighbor_data.get("type") or neighbor_data.get("kind")
+    if G:
+        for node, data in G.nodes(data=True):
+            if data.get("type") == "invoice" or data.get("kind") == "invoice":
+                invoice_id = node
+                customer = None
+                product = None
+                date = None
+                amount = 0.0
+                currency = data.get("currency", "USD")
+                source_file = data.get("source_file", "Unknown")
+    
+                for neighbor in G.neighbors(node):
+                    neighbor_data = G.nodes[neighbor]
+                    ntype = neighbor_data.get("type") or neighbor_data.get("kind")
+                    
+                    if ntype == "customer" or neighbor.startswith("customer:"):
+                        customer = neighbor_data.get("label", neighbor.replace("customer:", ""))
+                    elif ntype == "product" or neighbor.startswith("product:"):
+                        product = neighbor_data.get("label", neighbor.replace("product:", ""))
+                    elif ntype == "date" or neighbor.startswith("date:"):
+                        date = neighbor_data.get("label", neighbor.replace("date:", ""))
                 
-                if ntype == "customer" or neighbor.startswith("customer:"):
-                    customer = neighbor_data.get("label", neighbor.replace("customer:", ""))
-                elif ntype == "product" or neighbor.startswith("product:"):
-                    product = neighbor_data.get("label", neighbor.replace("product:", ""))
-                elif ntype == "date" or neighbor.startswith("date:"):
-                    date = neighbor_data.get("label", neighbor.replace("date:", ""))
-            
-            # Get amount from invoice node itself
-            amount = data.get("amount", 0.0)
-            
-            # Allow partial data - don't strictly require both customer and product
-            if amount > 0 or customer or product:
-                rows.append({
-                    "invoice": invoice_id,
-                    "customer": customer if customer else "Unknown Customer",
-                    "product": product if product else "General Item",
-                    "date": date if date else "Unknown Date",
-                    "amount": float(amount) if amount else 0.0,
-                    "currency": currency,
-                    "source_file": source_file  # Track which file this record came from
-                })
-
-    return pd.DataFrame(rows)
+                amount = data.get("amount", 0.0)
+                
+                if amount > 0 or customer or product:
+                    rows.append({
+                        "invoice": invoice_id,
+                        "customer": customer if customer else "Unknown Customer",
+                        "product": product if product else "General Item",
+                        "date": date if date else "Unknown Date",
+                        "amount": float(amount) if amount else 0.0,
+                        "currency": currency,
+                        "source_file": source_file
+                    })
+    
+    # Check if we got data from Graph
+    if rows:
+        return pd.DataFrame(rows)
+        
+    # FALLBACK: Try loading from files directly
+    print(f"⚠️ Graph empty or no invoices. Attempting file fallback for {company_id}...")
+    return _load_from_files(company_id)
 
 
 def query_graph(company_id: str, question: str) -> str:
@@ -180,7 +348,9 @@ Upload files to unlock GraphRAG insights!"""
     currency_symbol, currency_code = get_user_currency(company_id)
     
     if df is not None and not df.empty:
-        amount_col = 'amount' if 'amount' in df.columns else 'total_amount'
+        amount_col = detect_amount_column(df)
+        if not amount_col:
+            amount_col = 'amount'  # Fallback
         
         try:
             # Calculate key metrics
@@ -405,7 +575,9 @@ def get_graph_analysis(company_id: str, question: str) -> str:
     if df is None or df.empty:
         return None
     
-    amount_col = 'amount' if 'amount' in df.columns else 'total_amount'
+    amount_col = detect_amount_column(df)
+    if not amount_col:
+        amount_col = 'amount'  # Fallback
     question_lower = question.lower()
     
     # Get user's currency
@@ -569,7 +741,9 @@ def get_graph_summary(company_id: str) -> str:
     ]
     
     if df is not None and not df.empty:
-        amount_col = 'amount' if 'amount' in df.columns else 'total_amount'
+        amount_col = detect_amount_column(df)
+        if not amount_col:
+            amount_col = 'amount'  # Fallback
         total = df[amount_col].sum()
         summary_parts.append(f"\n**Data Coverage:**")
         summary_parts.append(f"• **Total Revenue:** {currency_symbol}{total:,.2f}")

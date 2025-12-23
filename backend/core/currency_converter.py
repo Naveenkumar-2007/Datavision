@@ -85,7 +85,7 @@ RATES_TO_USD: Dict[str, float] = {
     "CAD": 0.74,    # 1 CAD = 0.74 USD
     "AUD": 0.65,    # 1 AUD = 0.65 USD
     
-    "INR": 0.012,   # 1 INR = 0.012 USD (approx 84 INR = 1 USD)
+    "INR": 0.01136,  # 1 INR = 0.01136 USD (₹88 = $1 - Dec 2024)
     "CNY": 0.14,    # 1 CNY = 0.14 USD
     "HKD": 0.13,    # 1 HKD = 0.13 USD
     "SGD": 0.74,    # 1 SGD = 0.74 USD

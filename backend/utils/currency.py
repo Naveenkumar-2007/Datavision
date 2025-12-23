@@ -448,7 +448,7 @@ EXCHANGE_RATES_TO_USD = {
     'USD': 1.0,
     'EUR': 1.05,      # 1 EUR = 1.05 USD
     'GBP': 1.27,      # 1 GBP = 1.27 USD
-    'INR': 0.012,     # 1 INR = 0.012 USD (1 USD = ~83 INR)
+    'INR': 0.01136,   # 1 INR = 0.01136 USD (₹88 = $1 - Dec 2024)
     'JPY': 0.0067,    # 1 JPY = 0.0067 USD (1 USD = ~149 JPY)
     'AUD': 0.65,      # 1 AUD = 0.65 USD
     'CAD': 0.74,      # 1 CAD = 0.74 USD

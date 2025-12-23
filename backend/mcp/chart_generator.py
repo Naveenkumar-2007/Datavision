@@ -538,7 +538,7 @@ def generate_forecast_chart(prediction_result: Dict) -> Dict[str, Any]:
     return generator.forecast_chart(
         historical=prediction_result.get('historical_points', []),
         forecast=prediction_result.get('forecast_points', []),
-        title=f"Revenue Forecast ({len(prediction_result.get('forecast_points', []))} Periods)"
+        title=prediction_result.get('title') or f"Revenue Forecast ({len(prediction_result.get('forecast_points', []))} Periods)"
     )
 
 

@@ -108,6 +108,80 @@ export const apiService = {
     });
   },
 
+  // Streaming chat - word-by-word like ChatGPT
+  streamMessage: async (
+    message: string,
+    model: string = 'deepseek',
+    onChunk: (chunk: string) => void,
+    onDone: () => void,
+    onError: (error: string) => void
+  ) => {
+    const userId = getUserId();
+    const baseUrl = import.meta.env.VITE_API_URL || '';
+
+    try {
+      const response = await fetch(`${baseUrl}/api/v1/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': userId,
+        },
+        body: JSON.stringify({
+          message,
+          model,
+          userId,
+        }),
+      });
+
+      if (!response.ok) {
+        onError(`HTTP error: ${response.status}`);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        onError('No response body');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value, { stream: true });
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            if (data === '[DONE]') {
+              onDone();
+              return;
+            }
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.content) {
+                onChunk(parsed.content);
+              }
+              if (parsed.error) {
+                onError(parsed.error);
+                return;
+              }
+            } catch {
+              // Ignore parse errors for incomplete chunks
+            }
+          }
+        }
+      }
+
+      onDone();
+    } catch (error: any) {
+      onError(error.message || 'Stream error');
+    }
+  },
+
   getChatHistory: async () => {
     const userId = getUserId();
     return api.get(`/api/v1/chat/history/${userId}`);
@@ -127,6 +201,18 @@ export const apiService = {
   getAnalyticsOverview: async () => {
     const userId = getUserId();
     return api.get(`/api/v1/analytics/overview/${userId}`);
+  },
+
+  // Schema-driven smart overview (Power BI style - works with ANY data)
+  getSmartOverview: async () => {
+    const userId = getUserId();
+    return api.get(`/api/v1/analytics/smart-overview/${userId}`);
+  },
+
+  // Power BI-style unified analytics - single source of truth
+  getUnifiedAnalytics: async (filterParams: string = '') => {
+    const userId = getUserId();
+    return api.get(`/api/v1/analytics/unified/${userId}${filterParams}`);
   },
 
   getRevenueDetails: async (period: string = 'all') => {
@@ -150,11 +236,6 @@ export const apiService = {
   getInsights: async () => {
     const userId = getUserId();
     return api.get(`/api/v1/analytics/insights/${userId}`);
-  },
-
-  getSmartOverview: async () => {
-    const userId = getUserId();
-    return api.get(`/api/v1/analytics/smart-overview/${userId}`);
   },
 
   getDataProfile: async () => {
@@ -236,6 +317,53 @@ export const apiService = {
 
   getChartTypes: async () => {
     return api.get('/api/v1/charts/available-types');
+  },
+
+  // ===== SCHEMA-DRIVEN ANALYTICS API =====
+  // Single source of truth for frontend schema consumption
+
+  // Get full schema intelligence (domain, metrics, dimensions, time_column, etc.)
+  getSchema: async (refresh: boolean = false) => {
+    const userId = getUserId();
+    return api.get(`/api/v1/schema/${userId}`, {
+      params: { refresh },
+    });
+  },
+
+  // Get only metric columns (optimized for dropdowns)
+  getSchemaMetrics: async () => {
+    const userId = getUserId();
+    return api.get(`/api/v1/schema/${userId}/metrics`);
+  },
+
+  // Get only dimension columns (optimized for dropdowns)
+  getSchemaDimensions: async () => {
+    const userId = getUserId();
+    return api.get(`/api/v1/schema/${userId}/dimensions`);
+  },
+
+  // Get chart-ready data based on selected columns
+  getChartData: async (params: {
+    chartType: 'line' | 'bar' | 'pie' | 'histogram' | 'scatter';
+    xColumn: string;
+    yColumn?: string;
+    groupBy?: string;
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+  }) => {
+    const userId = getUserId();
+    return api.get(`/api/v1/schema/${userId}/chart-data`, {
+      params: {
+        chart_type: params.chartType,
+        x_column: params.xColumn,
+        y_column: params.yColumn,
+        group_by: params.groupBy,
+        start_date: params.startDate,
+        end_date: params.endDate,
+        limit: params.limit || 20,
+      },
+    });
   },
 };
 

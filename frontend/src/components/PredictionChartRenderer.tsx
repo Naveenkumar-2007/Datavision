@@ -31,6 +31,8 @@ export interface ForecastChartPayload {
     risks?: string[];
     colors?: string[];
     best_scenario?: string;
+    counts?: number[];
+    probabilities?: number[];
     options?: Record<string, unknown>;
 }
 
@@ -97,8 +99,8 @@ export const PredictionChartRenderer: React.FC<PredictionChartRendererProps> = (
         if (chart_type === 'churn_distribution') {
             const churnData = x.map((segment, idx) => ({
                 segment,
-                risk: parsedPayload.values?.[idx] ?? 0,
-                customers: Math.round(Math.random() * 1000 + 100), // Placeholder
+                risk: (parsedPayload.probabilities?.[idx] ?? 0) * 100,
+                customers: parsedPayload.counts?.[idx] ?? 0,
             }));
             return { type: 'churn', data: churnData };
         }
@@ -122,7 +124,7 @@ export const PredictionChartRenderer: React.FC<PredictionChartRendererProps> = (
 
     if (!parsedPayload || !chartData) {
         return (
-            <div className="text-gray-400 text-sm p-4 border border-gray-700 rounded-xl bg-gray-900/50">
+            <div className="text-gray-500 dark:text-gray-400 text-sm p-4 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900/50">
                 Unable to render chart
             </div>
         );

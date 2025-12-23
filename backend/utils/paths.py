@@ -13,11 +13,11 @@ from config.settings import Settings
 if os.path.exists("/app"):
     STORAGE_BASE = Path("/app/storage/users")
 else:
-    # Use Settings.STORAGE for consistency (anchored to __file__)
-    STORAGE_BASE = Settings.STORAGE / "users"
+    # Use Settings BASE_DIR directly for correct path resolution
+    STORAGE_BASE = Settings.BASE_DIR / "storage" / "users"
     STORAGE_BASE.mkdir(parents=True, exist_ok=True)
 
-print(f"📂 Storage Base Path: {STORAGE_BASE}")
+print(f"📂 Storage Base Path: {STORAGE_BASE.resolve()}")
 
 
 def get_user_paths(user_id: str) -> dict:

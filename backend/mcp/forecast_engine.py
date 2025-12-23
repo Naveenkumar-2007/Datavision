@@ -47,7 +47,7 @@ class ForecastEngine:
     """
     
     def __init__(self):
-        self.min_data_points = 3
+        self.min_data_points = 2
         self.default_confidence = 0.95
         
     def forecast(
@@ -71,9 +71,11 @@ class ForecastEngine:
         Returns:
             ForecastResult with predictions and analysis
         """
-        if not data or len(data) < self.min_data_points:
-            return self._empty_result("Insufficient data for forecasting")
-            
+        if len(data) < self.min_data_points:
+            # Attempt to proceed if we have at least 1 point (for basic plotting)
+            if len(data) == 0:
+                return self._empty_result("Insufficient data for forecasting")
+        
         # Extract values
         values = []
         dates = []
@@ -85,14 +87,18 @@ class ForecastEngine:
             except (ValueError, TypeError):
                 continue
                 
-        if len(values) < self.min_data_points:
-            return self._empty_result("Not enough valid data points")
+        if len(values) == 0:
+            return self._empty_result("No valid numeric values found")
             
         # Calculate trend
         trend, slope = self._calculate_trend(values)
         
         # Generate forecast using linear regression
-        forecast_values = self._linear_forecast(values, periods)
+        # If too few points, assume flat or simple average
+        if len(values) < 2:
+            forecast_values = [values[0]] * periods
+        else:
+            forecast_values = self._linear_forecast(values, periods)
         
         # Calculate confidence intervals
         lower, upper = self._calculate_confidence_intervals(

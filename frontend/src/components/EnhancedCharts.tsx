@@ -41,7 +41,7 @@ const CHART_PALETTES = {
     // Revenue/Forecast - Blue to Orange gradient
     forecast: {
         primary: '#3b82f6',      // Blue - Historical
-        secondary: '#f97316',    // Orange - Forecast
+        secondary: 'var(--accent-primary)', // Dynamic Theme Color - Forecast
         success: '#10b981',      // Green - Growth
         danger: '#ef4444',       // Red - Decline
         confidence: 'rgba(249, 115, 22, 0.15)',
@@ -190,8 +190,8 @@ export const EnhancedForecastChart: React.FC<EnhancedForecastProps> = ({
                             </linearGradient>
                             {/* Forecast gradient */}
                             <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#f97316" stopOpacity={0.4} />
-                                <stop offset="100%" stopColor="#f97316" stopOpacity={0} />
+                                <stop offset="0%" stopColor="var(--accent-primary)" stopOpacity={0.4} />
+                                <stop offset="100%" stopColor="var(--accent-primary)" stopOpacity={0} />
                             </linearGradient>
                             {/* Growth zone */}
                             <linearGradient id="growthZone" x1="0" y1="0" x2="0" y2="1">
@@ -241,15 +241,15 @@ export const EnhancedForecastChart: React.FC<EnhancedForecastProps> = ({
                             activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2, fill: '#fff' }}
                         />
 
-                        {/* Forecast line with dashes */}
+                        {/* Forecast line with dashes - DYNAMIC COLOR */}
                         <Line
                             type="monotone"
                             dataKey="forecastLine"
-                            stroke="#f97316"
+                            stroke="var(--accent-primary)"
                             strokeWidth={3}
                             strokeDasharray="8 4"
-                            dot={{ fill: '#f97316', strokeWidth: 2, r: 5, stroke: 'var(--tw-ring-color)' }}
-                            activeDot={{ r: 7, stroke: '#f97316', strokeWidth: 2, fill: '#fff' }}
+                            dot={{ fill: 'var(--accent-primary)', strokeWidth: 2, r: 5, stroke: 'var(--tw-ring-color)' }}
+                            activeDot={{ r: 7, stroke: 'var(--accent-primary)', strokeWidth: 2, fill: '#fff' }}
                         />
 
                         <Legend
@@ -262,7 +262,7 @@ export const EnhancedForecastChart: React.FC<EnhancedForecastProps> = ({
                                         <span className="text-xs text-gray-500 dark:text-gray-400">Historical</span>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <div className="w-4 h-0.5 bg-orange-500 dash-line" style={{ borderTop: '2px dashed #f97316' }} />
+                                        <div className="w-4 h-0.5 dash-line" style={{ borderTop: '2px dashed var(--accent-primary)', borderColor: 'var(--accent-primary)' }} />
                                         <span className="text-xs text-gray-500 dark:text-gray-400">Forecast</span>
                                     </div>
                                     <div className="flex items-center gap-2">

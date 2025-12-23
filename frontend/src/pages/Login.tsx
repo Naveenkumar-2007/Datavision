@@ -1,12 +1,13 @@
 /**
- * Login Page
- * Supports email/password, magic link, and OAuth login
- * THEME: Supports both light and dark mode
+ * Login Page - Styled to match Landing page
+ * Uses new logo and teal/blue theme
+ * Supports both light and dark mode
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { motion } from 'framer-motion';
 
 export default function Login() {
     const navigate = useNavigate();
@@ -17,10 +18,25 @@ export default function Login() {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [isDark, setIsDark] = useState(true);
 
+    useEffect(() => {
+        const saved = localStorage.getItem('theme');
+        setIsDark(saved !== 'light');
+        if (saved === 'light') {
+            document.documentElement.classList.add('light-theme');
+        }
+    }, []);
 
     // Get redirect path from location state
     const from = (location.state as any)?.from?.pathname || '/overview';
+
+    // Theme colors matching Landing page
+    const bgColor = isDark ? '#0F172A' : '#F8FAFC';
+    const cardBg = isDark ? '#1E293B' : '#FFFFFF';
+    const textPrimary = isDark ? '#F8FAFC' : '#0F172A';
+    const textMuted = isDark ? '#94A3B8' : '#64748B';
+    const borderColor = isDark ? '#334155' : '#E2E8F0';
 
     const handlePasswordLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -28,12 +44,9 @@ export default function Login() {
         setError('');
 
         try {
-            console.log("🔐 Attempting login for:", email);
             const { error } = await signIn(email, password);
-            console.log("🔐 Login result error:", error);
 
             if (error) {
-                // Handle specific error for email not confirmed
                 if (error.message?.toLowerCase().includes('email not confirmed')) {
                     setError('Please confirm your email first. Check your inbox for a confirmation link.');
                 } else if (error.message?.toLowerCase().includes('invalid login credentials')) {
@@ -54,12 +67,9 @@ export default function Login() {
     const handleGoogleLogin = async () => {
         setLoading(true);
         setError('');
-
         try {
             const { error } = await signInWithGoogle();
-            if (error) {
-                setError(error.message || 'Google login failed');
-            }
+            if (error) setError(error.message || 'Google login failed');
         } catch (err: any) {
             setError(err.message || 'An error occurred');
         } finally {
@@ -70,12 +80,9 @@ export default function Login() {
     const handleGithubLogin = async () => {
         setLoading(true);
         setError('');
-
         try {
             const { error } = await signInWithGithub();
-            if (error) {
-                setError(error.message || 'GitHub login failed');
-            }
+            if (error) setError(error.message || 'GitHub login failed');
         } catch (err: any) {
             setError(err.message || 'An error occurred');
         } finally {
@@ -84,42 +91,53 @@ export default function Login() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4
-            bg-gradient-to-br from-gray-50 to-gray-100 
-            dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
-            <div className="max-w-md w-full">
-                {/* Logo/Brand */}
+        <div className="min-h-screen flex items-center justify-center p-4 transition-colors duration-300" style={{ backgroundColor: bgColor }}>
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="max-w-md w-full"
+            >
+                {/* Logo/Brand - Matching Landing page */}
                 <div className="text-center mb-8">
-                    <Link to="/" className="inline-flex items-center gap-2">
-                        <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center">
-                            <span className="text-white font-bold text-xl">AI</span>
-                        </div>
-                        <span className="text-2xl font-bold text-gray-900 dark:text-white">Business Analyst</span>
+                    <Link to="/" className="inline-flex items-center gap-3">
+                        <img
+                            src="/logo.png"
+                            alt="DataVision Logo"
+                            className="w-12 h-12 object-contain"
+                        />
+                        <span className="text-2xl font-bold" style={{ color: textPrimary }}>
+                            DataVision
+                        </span>
                     </Link>
                 </div>
 
-                {/* Login Card */}
-                <div className="rounded-2xl p-8 shadow-2xl
-                    bg-white border border-gray-200
-                    dark:bg-gray-800/50 dark:backdrop-blur-xl dark:border-gray-700/50">
-                    <h2 className="text-2xl font-bold text-center mb-2 text-gray-900 dark:text-white">Welcome back</h2>
-                    <p className="text-center mb-8 text-gray-600 dark:text-gray-400">Sign in to continue to your dashboard</p>
+                {/* Login Card - Matching Landing page style */}
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.1 }}
+                    className="rounded-2xl p-8 shadow-xl border"
+                    style={{ backgroundColor: cardBg, borderColor }}
+                >
+                    <h2 className="text-2xl font-bold text-center mb-2" style={{ color: textPrimary }}>
+                        Welcome back
+                    </h2>
+                    <p className="text-center mb-8" style={{ color: textMuted }}>
+                        Sign in to continue to your dashboard
+                    </p>
 
                     {/* Error Message */}
                     {error && (
-                        <div className="mb-6 p-4 bg-red-50 border border-red-200 dark:bg-red-500/10 dark:border-red-500/50 rounded-lg">
-                            <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>
+                        <div className="mb-6 p-4 rounded-lg" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                            <p className="text-red-400 text-sm">{error}</p>
                         </div>
                     )}
-
-                    {/* Login Method Toggle REMOVED */}
-
 
                     {/* Login Form */}
                     <form onSubmit={handlePasswordLogin}>
                         <div className="space-y-4">
                             <div>
-                                <label htmlFor="email" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                                <label htmlFor="email" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
                                     Email
                                 </label>
                                 <input
@@ -128,16 +146,18 @@ export default function Login() {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
-                                    className="w-full px-4 py-3 rounded-lg transition-all
-                                        bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400
-                                        dark:bg-gray-700/50 dark:border-gray-600 dark:text-white dark:placeholder-gray-400
-                                        focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
+                                    style={{
+                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
+                                        border: `1px solid ${borderColor}`,
+                                        color: textPrimary,
+                                    }}
                                     placeholder="you@example.com"
                                 />
                             </div>
 
                             <div>
-                                <label htmlFor="password" className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                                <label htmlFor="password" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
                                     Password
                                 </label>
                                 <input
@@ -146,18 +166,25 @@ export default function Login() {
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     required
-                                    className="w-full px-4 py-3 rounded-lg transition-all
-                                        bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400
-                                        dark:bg-gray-700/50 dark:border-gray-600 dark:text-white dark:placeholder-gray-400
-                                        focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
+                                    style={{
+                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
+                                        border: `1px solid ${borderColor}`,
+                                        color: textPrimary,
+                                    }}
                                     placeholder="••••••••"
                                 />
                             </div>
 
+                            {/* Sign In Button - Teal like Landing CTA */}
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="w-full py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold rounded-lg hover:from-orange-600 hover:to-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full py-3 font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
+                                style={{
+                                    background: 'linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)',
+                                    color: '#FFFFFF',
+                                }}
                             >
                                 {loading ? (
                                     <span className="flex items-center justify-center gap-2">
@@ -177,22 +204,25 @@ export default function Login() {
                     {/* Divider */}
                     <div className="relative my-6">
                         <div className="absolute inset-0 flex items-center">
-                            <div className="w-full border-t border-gray-200 dark:border-gray-700"></div>
+                            <div className="w-full" style={{ borderTop: `1px solid ${borderColor}` }}></div>
                         </div>
                         <div className="relative flex justify-center text-sm">
-                            <span className="px-4 bg-white dark:bg-gray-800/50 text-gray-500 dark:text-gray-400">Or continue with</span>
+                            <span className="px-4" style={{ backgroundColor: cardBg, color: textMuted }}>Or continue with</span>
                         </div>
                     </div>
 
-                    {/* OAuth Buttons - Enhanced */}
+                    {/* OAuth Buttons */}
                     <div className="grid grid-cols-2 gap-4">
                         <button
                             onClick={handleGoogleLogin}
                             disabled={loading}
                             type="button"
-                            className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50
-                                bg-white border border-gray-300 text-gray-800 hover:bg-gray-50 shadow-sm hover:shadow-md
-                                dark:bg-white dark:text-gray-800 dark:hover:bg-gray-100"
+                            className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50 hover:opacity-90"
+                            style={{
+                                backgroundColor: '#FFFFFF',
+                                color: '#374151',
+                                border: '1px solid #E5E7EB',
+                            }}
                         >
                             <svg className="w-5 h-5" viewBox="0 0 24 24">
                                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -206,9 +236,11 @@ export default function Login() {
                             onClick={handleGithubLogin}
                             disabled={loading}
                             type="button"
-                            className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50
-                                bg-gray-900 border border-gray-800 text-white hover:bg-black shadow-sm hover:shadow-md
-                                dark:bg-black dark:border-gray-800 dark:text-white dark:hover:bg-gray-900"
+                            className="flex items-center justify-center gap-2 py-3 px-4 font-medium rounded-lg transition-all disabled:opacity-50 hover:opacity-90"
+                            style={{
+                                backgroundColor: '#1F2937',
+                                color: '#FFFFFF',
+                            }}
                         >
                             <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
                                 <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
@@ -217,32 +249,31 @@ export default function Login() {
                         </button>
                     </div>
 
-                    {/* Forgot Password */}
-                    {/* Forgot Password */}
+                    {/* Forgot Password - Teal color */}
                     <div className="mt-4 text-center">
-                        <Link to="/forgot-password" className="text-sm text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 transition-colors">
+                        <Link to="/forgot-password" className="text-sm transition-colors" style={{ color: '#14B8A6' }}>
                             Forgot your password?
                         </Link>
                     </div>
 
-                    {/* Sign Up Link */}
+                    {/* Sign Up Link - Teal color */}
                     <div className="mt-6 text-center">
-                        <p className="text-gray-600 dark:text-gray-400">
+                        <p style={{ color: textMuted }}>
                             Don't have an account?{' '}
-                            <Link to="/signup" className="text-orange-500 hover:text-orange-600 dark:text-orange-400 dark:hover:text-orange-300 font-medium transition-colors">
+                            <Link to="/signup" className="font-medium transition-colors" style={{ color: '#14B8A6' }}>
                                 Sign up
                             </Link>
                         </p>
                     </div>
-                </div>
+                </motion.div>
 
                 {/* Back to Home */}
                 <div className="mt-6 text-center">
-                    <Link to="/" className="text-gray-500 hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-400 text-sm transition-colors">
+                    <Link to="/" className="text-sm transition-colors" style={{ color: textMuted }}>
                         ← Back to home
                     </Link>
                 </div>
-            </div>
+            </motion.div>
         </div>
     );
 }

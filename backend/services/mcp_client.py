@@ -7,7 +7,8 @@ import logging
 from typing import Dict, Any, List
 from core.llm import chat
 from vector.retriever import retrieve
-from graph.query import query_graph, revenue_dataframe
+from graph.query import query_graph
+from api.v1.endpoints.charts import get_user_data
 from mcp.forecast_engine import forecast_from_dataframe
 from mcp.insight_engine import generate_insights
 
@@ -26,8 +27,8 @@ class MCPClient:
         insights = []
         
         try:
-            # Get workspace data
-            df = revenue_dataframe(workspace_id)
+            # Get workspace data - use get_user_data to preserve original columns
+            df = get_user_data(workspace_id)
             
             if df is None or df.empty:
                 logger.warning(f"No data available for workspace {workspace_id}")
@@ -157,7 +158,8 @@ Generate a JSON response with:
         Returns forecast with points, upper/lower bounds, metrics
         """
         try:
-            df = revenue_dataframe(workspace_id)
+            # Use get_user_data to preserve original columns
+            df = get_user_data(workspace_id)
             
             if df is None or df.empty:
                 return {}

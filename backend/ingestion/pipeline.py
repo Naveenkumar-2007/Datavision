@@ -154,6 +154,36 @@ class IngestionPipeline:
         else:
             print(f"ℹ️ No tables found for graph building")
         
+        # AUTO-SAVE SCHEMA INTELLIGENCE
+        # This makes the schema available as single source of truth for frontend
+        if texts or tables:
+            try:
+                from core.schema_intelligence import UniversalSchemaAnalyzer, SchemaStorage
+                
+                # Load combined data for schema analysis
+                combined_df = None
+                if tables:
+                    combined_df = pd.concat(tables, ignore_index=True)
+                
+                if combined_df is not None and not combined_df.empty:
+                    print(f"🧠 Analyzing schema for {len(combined_df)} records...")
+                    analyzer = UniversalSchemaAnalyzer()
+                    schema = analyzer.analyze_dataframe(combined_df, "combined_data")
+                    
+                    # Save schema to user's storage
+                    schema_dir = paths.get("storage", Path("storage")) / user_id / "schemas"
+                    schema_dir.mkdir(parents=True, exist_ok=True)
+                    storage = SchemaStorage(schema_dir)
+                    storage.save_schema("combined_data", schema)
+                    
+                    print(f"✅ Schema intelligence saved: domain={schema.domain}, metrics={len(schema.key_metrics)}, dimensions={len(schema.dimensions)}")
+            except ImportError as e:
+                print(f"⚠️ Schema intelligence not available: {e}")
+            except Exception as e:
+                print(f"⚠️ Schema analysis error: {e}")
+                import traceback
+                traceback.print_exc()
+        
         result = {"chunks": len(texts), "tables": len(tables), "files_processed": len(processed_files)}
         print(f"✅ Processing complete: {result}")
         return result

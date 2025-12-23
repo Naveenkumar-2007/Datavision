@@ -220,7 +220,7 @@ export default function NotificationSettings() {
                     Notifications
                 </h1>
                 <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-2">
-                    Manage how you receive updates from your AI Business Analyst
+                    Manage how you receive updates from DataVision
                 </p>
             </div>
 

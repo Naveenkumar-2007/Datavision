@@ -57,7 +57,7 @@ interface UserState {
 const createWelcomeMessage = (): ChatMessage => ({
   id: '1',
   role: 'assistant',
-  content: 'Hello! I\'m your AI Business Analyst. I can help you analyze your data using RAG, GraphRAG, or Vision mode. What would you like to know?',
+  content: 'Hello! I\'m your AI Data Analyst. Upload any data file and I\'ll help you analyze it. What would you like to know?',
   timestamp: new Date().toISOString(),
 });
 

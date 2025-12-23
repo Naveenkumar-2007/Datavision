@@ -1,3 +1,8 @@
+/**
+ * DataVision Logo Component
+ * Uses the new logo.png with optional text
+ */
+
 import React from 'react';
 
 interface LogoProps {
@@ -14,30 +19,23 @@ const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '
     xl: { icon: 64, text: 'text-2xl', subtitle: 'text-base' },
   };
 
-  const { icon, text, subtitle } = sizes[size];
+  const { icon, text } = sizes[size];
 
   return (
     <div className={`flex items-center space-x-3 ${className}`}>
       {/* Logo Image */}
-      <div
-        className="relative flex-shrink-0 rounded-xl overflow-hidden shadow-lg"
+      <img
+        src="/logo.png"
+        alt="DataVision Logo"
+        className="flex-shrink-0 object-contain"
         style={{ width: icon, height: icon }}
-      >
-        <img
-          src="/logo.png"
-          alt="AI Business Analyst Logo"
-          className="w-full h-full object-cover"
-        />
-      </div>
+      />
 
       {/* Text */}
       {showText && (
         <div className="flex flex-col">
-          <span className={`font-bold bg-gradient-to-r from-orange-400 via-amber-400 to-orange-500 bg-clip-text text-transparent ${text} leading-tight`}>
-            AI Business Analyst
-          </span>
-          <span className={`text-orange-300/70 ${subtitle} uppercase tracking-wider font-medium`}>
-            Enterprise Edition
+          <span className={`font-bold text-gray-100 ${text} leading-tight`}>
+            DataVision
           </span>
         </div>
       )}

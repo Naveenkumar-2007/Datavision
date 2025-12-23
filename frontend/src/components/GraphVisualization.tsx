@@ -264,25 +264,53 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({ userId, maxNode
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Draw label with background for visibility
-      const label = node.label.substring(0, 12);
-      ctx.font = 'bold 11px Inter, sans-serif';
+      // Draw label with background for visibility - HIGH CONTRAST for light/dark modes
+      const label = node.label.length > 25 ? node.label.substring(0, 22) + '...' : node.label;
+      ctx.font = 'bold 12px Inter, sans-serif';
       const textWidth = ctx.measureText(label).width;
 
-      // Label background (semi-transparent white)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.fillRect(pos.x - textWidth / 2 - 3, pos.y - 24, textWidth + 6, 14);
+      // Label background (clean white with shadow effect)
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 2;
 
-      // Label border
+      const padding = 6;
+      const rectX = pos.x - textWidth / 2 - padding;
+      const rectY = pos.y - 30; // Move up a bit more
+      const rectW = textWidth + (padding * 2);
+      const rectH = 18;
+
+      ctx.beginPath();
+      // Round rect
+      const r = 4;
+      ctx.moveTo(rectX + r, rectY);
+      ctx.lineTo(rectX + rectW - r, rectY);
+      ctx.quadraticCurveTo(rectX + rectW, rectY, rectX + rectW, rectY + r);
+      ctx.lineTo(rectX + rectW, rectY + rectH - r);
+      ctx.quadraticCurveTo(rectX + rectW, rectY + rectH, rectX + rectW - r, rectY + rectH);
+      ctx.lineTo(rectX + r, rectY + rectH);
+      ctx.quadraticCurveTo(rectX, rectY + rectH, rectX, rectY + rectH - r);
+      ctx.lineTo(rectX, rectY + r);
+      ctx.quadraticCurveTo(rectX, rectY, rectX + r, rectY);
+      ctx.closePath();
+      ctx.fill();
+
+      // Reset shadow for text
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Label border (match node color)
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
-      ctx.strokeRect(pos.x - textWidth / 2 - 3, pos.y - 24, textWidth + 6, 14);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
 
-      // Label text (dark color for visibility)
-      ctx.fillStyle = '#1f2937';
+      // Label text (pure black for maximum contrast)
+      ctx.fillStyle = '#000000';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(label, pos.x, pos.y - 17);
+      ctx.fillText(label, pos.x, rectY + rectH / 2);
     });
 
     ctx.restore();

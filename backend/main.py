@@ -4,6 +4,69 @@ Real data processing, no fake data
 Enterprise-grade error handling
 """
 
+from dotenv import load_dotenv
+from pathlib import Path
+import os
+
+# Load .env file - try multiple locations
+backend_dir = Path(__file__).resolve().parent
+project_root = backend_dir.parent
+
+# Try project root first, then backend folder
+env_file = None
+for env_location in [project_root / ".env", backend_dir / ".env"]:
+    if env_location.exists():
+        env_file = env_location
+        load_dotenv(dotenv_path=str(env_location), override=True)
+        print(f"📁 Loaded .env from: {env_location}")
+        
+        # DEBUG: Read and show first few lines to debug parsing issues
+        try:
+            with open(env_location, 'r', encoding='utf-8-sig') as f:  # utf-8-sig strips BOM
+                lines = f.readlines()[:5]
+                for i, line in enumerate(lines):
+                    key = line.split('=')[0].strip() if '=' in line else 'N/A'
+                    print(f"   Line {i+1}: {key}=...")
+        except Exception as e:
+            print(f"   Debug read error: {e}")
+        break
+else:
+    print(f"⚠️ No .env file found! Checked: {project_root}, {backend_dir}")
+
+# Manually load API keys if dotenv failed (fallback)
+# Always run this to ensure ALL keys are loaded
+if env_file and env_file.exists():
+    try:
+        with open(env_file, 'r', encoding='utf-8-sig') as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith('GROQ_API_KEY='):
+                    key_value = line.split('=', 1)[1].strip()
+                    os.environ["GROQ_API_KEY"] = key_value
+                    print(f"🔧 Manually set GROQ_API_KEY from file")
+                if line.startswith('OPENROUTER_API_KEY='):
+                    key_value = line.split('=', 1)[1].strip()
+                    os.environ["OPENROUTER_API_KEY"] = key_value
+                    print(f"🔧 Manually set OPENROUTER_API_KEY from file")
+    except Exception as e:
+        print(f"Manual .env parse error: {e}")
+
+# Verify critical API keys are loaded
+groq_key = os.getenv("GROQ_API_KEY")
+if groq_key:
+    print(f"✅ GROQ_API_KEY loaded: {groq_key[:20]}...")
+else:
+    print("⚠️ WARNING: GROQ_API_KEY not set in environment!")
+
+openrouter_key = os.getenv("OPENROUTER_API_KEY")
+if openrouter_key:
+    print(f"✅ OPENROUTER_API_KEY loaded: {openrouter_key[:20]}...")
+else:
+    print("⚠️ WARNING: OPENROUTER_API_KEY not set - AI models won't work!")
+
+
+
+
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -25,8 +88,9 @@ backend_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(backend_root))
 
+
 # Import routers
-from api.v1.endpoints import files, chat, analytics, reports, graph, auth, admin, notifications, email_prefs, charts
+from api.v1.endpoints import files, chat, analytics, reports, graph, auth, admin, notifications, email_prefs, charts, schema_api, exports
 
 app = FastAPI(
     title="AI Business Analyst API - Enterprise Edition",
@@ -112,6 +176,8 @@ app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 app.include_router(notifications.router, prefix="/api/v1/notifications", tags=["Notifications"])
 app.include_router(email_prefs.router, prefix="/api/v1/settings", tags=["Settings"])
 app.include_router(charts.router, prefix="/api/v1/charts", tags=["Charts"])
+app.include_router(schema_api.router, prefix="/api/v1/schema", tags=["Schema"])
+app.include_router(exports.router, prefix="/api/v1", tags=["Exports"])  # Note: exports.py has its own /exports prefix
 
 # ===== AUTOMATIC EMAIL SCHEDULER =====
 import asyncio

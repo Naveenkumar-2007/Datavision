@@ -21,6 +21,41 @@ from core.cache import QueryCache
 from config.settings import Settings
 from utils.paths import get_user_paths, STORAGE_BASE
 
+# Import Tier 1 RAG enhancements
+try:
+    from core.query_decomposer import decompose_query, is_complex_query, merge_results
+    from core.mmr_search import mmr_rerank
+    from core.answer_evaluator import evaluate_answer, get_confidence_badge
+    from core.reranker import rerank, is_reranker_available
+    RAG_ENHANCEMENTS = True
+    print("✅ RAG Enhancements loaded: Query Decomposition, MMR, Evaluator, Reranker")
+except ImportError as e:
+    RAG_ENHANCEMENTS = False
+    print(f"⚠️ RAG Enhancements not available: {e}")
+
+# Import Tier 2 Advanced RAG (HyDE, Corrective, Self-Reflection)
+try:
+    from core.hyde import should_use_hyde, generate_hypothetical_document_sync
+    from core.corrective_rag import assess_retrieval_quality, reformulate_query
+    from core.self_reflection import self_reflect_on_answer, self_rag_pipeline
+    from core.model_config import get_model, get_model_api_id, get_available_models_api
+    from core.query_router import get_routing_decision, analyze_query
+    ADVANCED_RAG = True
+    print("✅ Advanced RAG loaded: HyDE, Corrective, Self-Reflection, Query Router")
+except ImportError as e:
+    ADVANCED_RAG = False
+    print(f"⚠️ Advanced RAG not available: {e}")
+
+# Import Tier 3 Agentic RAG and Multi-RAG
+try:
+    from core.agentic_rag import AgenticRAG, create_agentic_rag_prompt
+    from core.multi_rag import MultiRAG, RetrievalSource, detect_best_sources, format_multi_rag_context
+    AGENTIC_RAG = True
+    print("✅ Agentic RAG loaded: Tool-using agents, Multi-source retrieval, RRF fusion")
+except ImportError as e:
+    AGENTIC_RAG = False
+    print(f"⚠️ Agentic RAG not available: {e}")
+
 # Import chart generation for Plotly visualizations
 try:
     from api.v1.endpoints.charts import (
@@ -28,11 +63,21 @@ try:
         generate_product_bar_chart,
         generate_customer_pie_chart,
         generate_prediction_chart,
+        generate_query_aware_chart,  # NEW: Query-aware dynamic charts
         get_user_data
     )
     CHARTS_AVAILABLE = True
 except ImportError:
     CHARTS_AVAILABLE = False
+
+# Import memory engine for chart context storage - USE SHARED SINGLETON
+try:
+    from core.memory_engine import get_shared_memory
+    _chart_memory = get_shared_memory()  # Use singleton, not new instance!
+    MEMORY_AVAILABLE = True
+except ImportError:
+    _chart_memory = None
+    MEMORY_AVAILABLE = False
 
 # Import auth dependencies
 try:
@@ -43,6 +88,54 @@ except ImportError:
         return None
 
 router = APIRouter()
+
+# ============================================================================
+# VISUALIZATION HELPER - Ensures charts work in ALL modes
+# ============================================================================
+def append_chart_if_needed(response: str, query: str, user_id: str) -> str:
+    """
+    Universal helper to append a Plotly chart to the response if visualization requested.
+    Prevents duplication and ensures reliability across all 7 modes.
+    """
+    if not CHARTS_AVAILABLE:
+        return response
+        
+    viz_keywords = ['chart', 'graph', 'visualize', 'show', 'display', 'pie', 'bar', 'line', 'trend', 'top', 'breakdown', 'compare', 'distribution', 'performance', 'forecast', 'predict', 'projection', 'versus', 'vs']
+    wants_viz = any(kw in query.lower() for kw in viz_keywords)
+    has_chart = '```plotly_chart' in response
+    
+    if wants_viz and not has_chart:
+        try:
+            df = get_user_data(user_id)
+            if df is not None and not df.empty:
+                chart_json = generate_query_aware_chart(df, query)
+                if chart_json and 'error' not in chart_json:
+                    import json as json_lib
+                    import math
+                    
+                    # Clean NaN/Infinity values before serialization
+                    def clean_for_json(obj):
+                        if isinstance(obj, dict):
+                            return {k: clean_for_json(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [clean_for_json(item) for item in obj]
+                        elif isinstance(obj, float):
+                            if math.isnan(obj) or math.isinf(obj):
+                                return 0
+                            return obj
+                        return obj
+                    
+                    cleaned_chart = clean_for_json(chart_json)
+                    chart_block = f"\n\n```plotly_chart\n{json_lib.dumps(cleaned_chart, ensure_ascii=False)}\n```"
+                    response += chart_block
+                    print(f"✅ [VIZ] Generated chart for query: {query[:50]}...")
+        except Exception as chart_err:
+            import traceback
+            print(f"⚠️ [VIZ] Chart generation failed: {chart_err}")
+            traceback.print_exc()
+            
+    return response
+
 
 # Initialize query cache for API cost savings
 query_cache = QueryCache(
@@ -55,17 +148,226 @@ query_cache = QueryCache(
 query_cache.clear_all()
 print("🔄 Cache cleared on startup - fresh currency settings")
 
+# ============================================================================
+# MODE PROFILES - Speed vs Complexity Configuration
+# ============================================================================
+# Each mode has different strengths: some are FAST, some THINK DEEPLY
+
+MODE_PROFILES = {
+    # FAST MODES - Quick responses for simple queries
+    "rag": {
+        "speed": "fast",
+        "thinking_depth": "standard",
+        "description": "📚 Document Search - Fast retrieval from your files",
+        "best_for": ["quick lookups", "data queries", "simple questions"],
+        "temperature": 0.3,
+        "max_tokens": 2000,
+        "uses_graph": False
+    },
+    "chat": {
+        "speed": "instant",
+        "thinking_depth": "light",
+        "description": "💬 Conversational - Instant friendly responses",
+        "best_for": ["greetings", "small talk", "clarifications"],
+        "temperature": 0.7,
+        "max_tokens": 500,
+        "uses_graph": False
+    },
+    
+    # BALANCED MODES - Good mix of speed and depth
+    "hybrid": {
+        "speed": "balanced",
+        "thinking_depth": "moderate",
+        "description": "🔀 Hybrid Analysis - Documents + Knowledge Graph",
+        "best_for": ["complex queries", "multi-source answers", "verified data"],
+        "temperature": 0.3,
+        "max_tokens": 3000,
+        "uses_graph": True
+    },
+    "graph": {
+        "speed": "balanced",
+        "thinking_depth": "moderate",
+        "description": "🕸️ Knowledge Graph - Entity relationships",
+        "best_for": ["relationships", "connections", "entity queries"],
+        "temperature": 0.3,
+        "max_tokens": 2500,
+        "uses_graph": True
+    },
+    "graphrag": {
+        "speed": "balanced",
+        "thinking_depth": "moderate",
+        "description": "🕸️ GraphRAG - Knowledge Graph Analysis",
+        "best_for": ["entity relationships", "network analysis", "connections"],
+        "temperature": 0.3,
+        "max_tokens": 2500,
+        "uses_graph": True
+    },
+    
+    # DEEP THINKING MODES - Complex reasoning, takes more time
+    "agentic": {
+        "speed": "deep",
+        "thinking_depth": "advanced",
+        "description": "🤖 AI Agent - Multi-step reasoning with tools",
+        "best_for": ["complex analysis", "multi-step queries", "tool usage"],
+        "temperature": 0.2,
+        "max_tokens": 4000,
+        "uses_graph": True
+    },
+    "multirag": {
+        "speed": "deep",
+        "thinking_depth": "advanced",
+        "description": "🔀 Multi-RAG - Cross-file comparison with fusion",
+        "best_for": ["file comparison", "multi-source", "comprehensive analysis"],
+        "temperature": 0.2,
+        "max_tokens": 4000,
+        "uses_graph": True
+    },
+    "prediction": {
+        "speed": "deep",
+        "thinking_depth": "advanced",
+        "description": "📈 Prediction - Trend forecasting with confidence",
+        "best_for": ["forecasting", "trends", "future predictions"],
+        "temperature": 0.2,
+        "max_tokens": 3500,
+        "uses_graph": False
+    },
+    "vision": {
+        "speed": "balanced",
+        "thinking_depth": "visual",
+        "description": "👁️ Vision - Image understanding + data extraction",
+        "best_for": ["image analysis", "document scanning", "chart reading"],
+        "temperature": 0.3,
+        "max_tokens": 3000,
+        "uses_graph": False
+    }
+}
+
+# ============================================================================
+# MODEL PROFILES - AI Model Speed vs Intelligence
+# ============================================================================
+
+MODEL_PROFILES = {
+    # FAST MODELS - Quick, efficient responses
+    "deepseek-chat": {
+        "speed": "fast",
+        "intelligence": "high",
+        "description": "⚡ DeepSeek Chat - Fast & accurate",
+        "best_for": ["quick queries", "coding", "data analysis"],
+        "cost": "low"
+    },
+    "mistral-7b": {
+        "speed": "fast",
+        "intelligence": "good",
+        "description": "🚀 Mistral 7B - Lightweight & efficient",
+        "best_for": ["simple queries", "fast responses"],
+        "cost": "free"
+    },
+    
+    # BALANCED MODELS - Good mix
+    "llama-70b": {
+        "speed": "balanced",
+        "intelligence": "very_high",
+        "description": "🦙 Llama 70B - Powerful open-source",
+        "best_for": ["complex reasoning", "analysis", "explanations"],
+        "cost": "free"
+    },
+    "gemini-pro": {
+        "speed": "balanced",
+        "intelligence": "very_high",
+        "description": "🔮 Gemini Pro - Google's multimodal AI",
+        "best_for": ["vision", "complex queries", "multimodal"],
+        "cost": "low"
+    },
+    
+    # DEEP THINKING MODELS - Most intelligent, slower
+    "claude-3": {
+        "speed": "deep",
+        "intelligence": "exceptional",
+        "description": "🧠 Claude 3 - Deep reasoning champion",
+        "best_for": ["complex analysis", "nuanced responses", "research"],
+        "cost": "medium"
+    },
+    "gpt-4": {
+        "speed": "deep",
+        "intelligence": "exceptional",
+        "description": "🌟 GPT-4 - Industry standard",
+        "best_for": ["complex tasks", "creative", "reasoning"],
+        "cost": "high"
+    }
+}
+
+# ============================================================================
+# MCP PROFILES - Tool Speed & Capability
+# ============================================================================
+
+MCP_PROFILES = {
+    "data_cleaner": {
+        "speed": "fast",
+        "capability": "Data preprocessing",
+        "description": "🧹 Clean and normalize data"
+    },
+    "vectorizer": {
+        "speed": "balanced",
+        "capability": "Embedding generation",
+        "description": "🔢 Generate embeddings for RAG"
+    },
+    "graph_builder": {
+        "speed": "deep",
+        "capability": "Knowledge graph construction",
+        "description": "🕸️ Build entity relationships"
+    },
+    "sql_executor": {
+        "speed": "fast",
+        "capability": "Database queries",
+        "description": "💾 Execute SQL on your data"
+    },
+    "vision_ocr": {
+        "speed": "balanced",
+        "capability": "Image text extraction",
+        "description": "📸 Extract text from images"
+    }
+}
+
+def get_mode_config(mode: str) -> dict:
+    """Get configuration for a specific mode"""
+    return MODE_PROFILES.get(mode, MODE_PROFILES["rag"])
+
+def get_optimal_settings(query: str, mode: str) -> dict:
+    """Get optimal temperature and token settings based on query complexity"""
+    config = get_mode_config(mode)
+    
+    # Detect complex queries that need more thinking
+    complex_indicators = ['analyze', 'compare', 'explain why', 'predict', 'trend', 'relationship', 'correlation']
+    is_complex = any(ind in query.lower() for ind in complex_indicators)
+    
+    if is_complex and config["speed"] == "fast":
+        # Boost thinking for complex queries even in fast modes
+        return {
+            "temperature": max(0.2, config["temperature"] - 0.1),
+            "max_tokens": min(4000, config["max_tokens"] + 1000)
+        }
+    
+    return {
+        "temperature": config["temperature"],
+        "max_tokens": config["max_tokens"]
+    }
+
 
 class Message(BaseModel):
     role: str
     content: str
     timestamp: Optional[str] = None
+    sources: Optional[List[str]] = None
+    
+    class Config:
+        extra = "allow"  # Allow extra fields like imageData, etc.
 
 class ChatRequest(BaseModel):
     user_id: Optional[str] = None
     userId: Optional[str] = None
     message: str
     mode: str = "auto"
+    role: str = "analyst"  # User role: executive, manager, analyst, operator
     conversationId: Optional[str] = None
     compareFiles: Optional[List[str]] = None  # For file comparison
     attachedFiles: Optional[List[dict]] = None  # Newly uploaded files in chat
@@ -78,30 +380,80 @@ class ChatResponse(BaseModel):
     conversationId: str
     timestamp: str
 
+# Streaming response support
+from fastapi.responses import StreamingResponse
+
+class StreamingChatRequest(BaseModel):
+    """Request model for streaming chat endpoint"""
+    user_id: Optional[str] = None
+    userId: Optional[str] = None
+    message: str
+    mode: str = "rag"
+    model: str = "deepseek"
+    conversationId: Optional[str] = None
 
 def load_conversation(user_id: str, conversation_id: str) -> List[Message]:
-    paths = get_user_paths(user_id)
-    history_file = paths["memory"] / f"{conversation_id}.json"
-    
-    if history_file.exists():
-        with open(history_file, 'r') as f:
-            data = json.load(f)
-            return [Message(**msg) for msg in data.get("messages", [])]
-    return []
+    """Load conversation history with robust error handling"""
+    try:
+        paths = get_user_paths(user_id)
+        history_file = paths["memory"] / f"{conversation_id}.json"
+        
+        if history_file.exists():
+            with open(history_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                messages = []
+                for msg in data.get("messages", []):
+                    try:
+                        # Extract only the fields we need, ignore extras
+                        messages.append(Message(
+                            role=msg.get("role", "user"),
+                            content=str(msg.get("content", "")),
+                            timestamp=msg.get("timestamp"),
+                            sources=msg.get("sources")
+                        ))
+                    except Exception as msg_err:
+                        print(f"⚠️ Skip invalid message: {msg_err}")
+                        continue
+                return messages
+        return []
+    except Exception as e:
+        print(f"⚠️ Error loading conversation {conversation_id}: {e}")
+        return []
 
 def save_conversation(user_id: str, conversation_id: str, messages: List[Message]):
-    paths = get_user_paths(user_id)
-    history_file = paths["memory"] / f"{conversation_id}.json"
-    
-    data = {
-        "conversation_id": conversation_id,
-        "user_id": user_id,
-        "updated_at": datetime.now().isoformat(),
-        "messages": [msg.dict() for msg in messages]
-    }
-    
-    with open(history_file, 'w') as f:
-        json.dump(data, f, indent=2)
+    """Save conversation with robust error handling"""
+    try:
+        paths = get_user_paths(user_id)
+        history_file = paths["memory"] / f"{conversation_id}.json"
+        
+        # Ensure directory exists
+        history_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Convert messages to dict safely
+        message_dicts = []
+        for msg in messages:
+            try:
+                message_dicts.append({
+                    "role": msg.role,
+                    "content": str(msg.content) if msg.content else "",
+                    "timestamp": msg.timestamp,
+                    "sources": msg.sources
+                })
+            except Exception as msg_err:
+                print(f"⚠️ Skip saving invalid message: {msg_err}")
+                continue
+        
+        data = {
+            "conversation_id": conversation_id,
+            "user_id": user_id,
+            "updated_at": datetime.now().isoformat(),
+            "messages": message_dicts
+        }
+        
+        with open(history_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"⚠️ Error saving conversation {conversation_id}: {e}")
 
 
 def clean_ai_response(response: str) -> str:
@@ -289,6 +641,22 @@ def rag_search(user_id: str, query: str, k: int = 5, target_files: List[str] = N
         
         if not balanced_results:
             balanced_results = results[:k]  # Fallback to original results
+        
+        # Apply MMR to diversify results and reduce redundancy
+        if RAG_ENHANCEMENTS and len(balanced_results) > k:
+            try:
+                balanced_results = mmr_rerank(balanced_results, lambda_param=0.7, k=k)
+                print(f"📊 MMR applied: {len(balanced_results)} diverse results")
+            except Exception as mmr_err:
+                print(f"MMR error (non-critical): {mmr_err}")
+        
+        # Apply Cross-Encoder reranking for better relevance
+        if RAG_ENHANCEMENTS and is_reranker_available() and len(balanced_results) > 2:
+            try:
+                balanced_results = rerank(query, balanced_results, top_k=k, text_key='text')
+                print(f"🎯 Reranker applied: top {len(balanced_results)} by relevance")
+            except Exception as rerank_err:
+                print(f"Reranker error (non-critical): {rerank_err}")
         
         context_parts = []
         sources = []
@@ -498,15 +866,17 @@ I need an image to analyze.
 # Smart routing based on query type - like real SaaS analytics products
 # ============================================================================
 
-# ONLY WORKING MODELS (Tested 2025-12-15)
+# ONLY FREE MODELS ON OPENROUTER (No credits required)
+# ⚠️ DeepSeek requires payment - REMOVED!
 AI_MODELS = {
-    # 🥇 PRIMARY - Business reasoning
-    'deepseek-chat': 'deepseek/deepseek-chat',
+    # 🥇 PRIMARY - Maps to Llama 70B (FREE and powerful)
+    'deepseek': 'meta-llama/llama-3.3-70b-instruct:free',  # Redirect to free model
+    'deepseek-chat': 'meta-llama/llama-3.3-70b-instruct:free',  # Alias
     
-    # 🎯 FAST - Decision Analysis
+    # 🎯 FAST - Mistral 7B (FREE)
     'mistral-7b': 'mistralai/mistral-7b-instruct:free',
     
-    # 🦙 COMPREHENSIVE - Meta AI
+    # 🦙 COMPREHENSIVE - Meta Llama 70B (FREE)
     'llama-70b': 'meta-llama/llama-3.3-70b-instruct:free',
 }
 
@@ -522,8 +892,8 @@ def smart_route_model(query: str, selected_model: str) -> str:
     if selected_model in AI_MODELS:
         return AI_MODELS[selected_model]
     
-    # DEFAULT: DeepSeek Chat (best for business analysis)
-    return AI_MODELS['deepseek-chat']
+    # DEFAULT: Llama 70B (best FREE model for business analysis)
+    return AI_MODELS['llama-70b']
 
 
 # Chart keywords for detecting visualization requests
@@ -648,20 +1018,19 @@ async def ai_model_response(user_id: str, query: str, model_key: str, conversati
         if graph_context and graph_context.strip():
             data_context += f"## 📊 STRUCTURED DATA (knowledge graph):\n{graph_context}\n\n"
         
-        # Add file-specific totals if available
+        # Add file-specific notes (domain-agnostic)
         data_context += """
 ## 📋 IMPORTANT NOTES:
-- Each file above contains different business data
+- Each file above contains your uploaded data
 - Use data from ALL relevant files to answer comprehensively
 - When comparing files, note which file each number comes from
-- If files have similar data (e.g., multiple revenue files), aggregate or compare as appropriate
 """
         
         # Check if we have any data
         if not rag_context and not graph_context:
             return (
                 "⚠️ **No data found in your Data Hub.**\n\n"
-                "To get insights, please upload your business files:\n"
+                "To get insights, please upload your data files:\n"
                 "1. Go to **Data Hub**\n"
                 "2. Upload CSV, Excel, PDF or other data files\n"
                 "3. The AI will learn from your data automatically\n\n"
@@ -672,65 +1041,124 @@ async def ai_model_response(user_id: str, query: str, model_key: str, conversati
         # Get user's currency setting
         currency_symbol, currency_code = get_user_currency(user_id)
         
-        # $500,000 ENTERPRISE AI BUSINESS ANALYST PROMPT
-        system_prompt = f"""You are an AI Business Analyst. $500,000 enterprise quality. Real-time answers.
-
-USER: {user_id}
-USER CURRENCY: {currency_symbol} ({currency_code})
-MEMORY: {user_context if user_context else "None"}
+        # =====================================================================
+        # DYNAMIC DOMAIN DETECTION - Works with ANY uploaded data
+        # =====================================================================
+        detected_domain = "Data"
+        available_metrics = []
+        available_dimensions = []
+        data_summary = "Your uploaded files"
+        
+        try:
+            # Try to detect domain from user's data
+            from core.schema_intelligence import UniversalSchemaAnalyzer
+            from api.v1.endpoints.schema_api import _load_user_data
+            
+            df = _load_user_data(user_id)
+            if df is not None and not df.empty:
+                analyzer = UniversalSchemaAnalyzer()
+                schema = analyzer.analyze_dataframe(df, "data")
+                
+                detected_domain = schema.domain if schema.domain else "Data"
+                available_metrics = schema.key_metrics[:10]  # Top 10 metrics
+                available_dimensions = schema.dimensions[:10]  # Top 10 dimensions
+                
+                # Build data summary showing what's available
+                cols = list(df.columns)[:20]  # First 20 columns
+                rows = len(df)
+                
+                data_summary = f"""
+## 📊 YOUR DATA SUMMARY
+- Domain: {detected_domain}
+- Records: {rows:,} rows
+- Columns: {', '.join(cols)}
+- Metrics (numbers you can analyze): {', '.join(available_metrics) if available_metrics else 'Auto-detected from your data'}
+- Dimensions (categories for grouping): {', '.join(available_dimensions) if available_dimensions else 'Auto-detected from your data'}
+"""
+                print(f"🧠 Chat domain detected: {detected_domain}, metrics: {available_metrics}, dims: {available_dimensions}")
+        except Exception as schema_err:
+            print(f"Schema detection error (non-critical): {schema_err}")
+        
+        # =====================================================================
+        # UNIVERSAL AI ANALYST PROMPT - Works for ANY domain
+        # =====================================================================
+        system_prompt = f"""You are an AI Data Analyst. Your job is to answer questions ONLY from the user's uploaded data.
 
 ═══════════════════════════════════════════════════════════════
-                    YOUR UPLOADED DATA
+                    DATA SUMMARY
+═══════════════════════════════════════════════════════════════
+Domain: {detected_domain}
+{data_summary}
+
+═══════════════════════════════════════════════════════════════
+                    USER'S DATA (from uploaded files)
 ═══════════════════════════════════════════════════════════════
 {data_context}
 
 ═══════════════════════════════════════════════════════════════
-                    CURRENCY RULES
-═══════════════════════════════════════════════════════════════
-1. Use {currency_symbol} ({currency_code}) as the DEFAULT currency for all responses
-2. This is the user's currency from their Settings
-3. Conversion rates (only when asked):
-   - $1 USD = ₹83 INR = €0.92 EUR = £0.79 GBP
-4. Only convert to other currencies when explicitly asked
-
-═══════════════════════════════════════════════════════════════
-                    RESPONSE FORMAT
+                    QUERY UNDERSTANDING FLOW
 ═══════════════════════════════════════════════════════════════
 
-ALWAYS respond with:
-1. One-line answer (bold) using {currency_symbol}
-2. Table with data breakdown
+When user asks a question, follow these EXACT steps:
 
-EXAMPLE:
-**Total Revenue: {currency_symbol}[amount from data]**
+STEP 1: UNDERSTAND THE QUERY
+- What is the user asking for? (sum, count, average, list, comparison, etc.)
+- Which column/field are they asking about?
+- Are there any filters or conditions?
 
-| Metric | Value |
-|--------|-------|
-| Total Revenue | {currency_symbol}[from data] |
-| Customers | [from data] |
-| Orders | [from data] |
+STEP 2: FIND THE DATA
+- Look in "USER'S DATA" section above
+- Find the exact column/field mentioned
+- If column doesn't exist, say "Column [X] not found in your data"
+
+STEP 3: CALCULATE/EXTRACT
+- Perform the requested operation using ONLY values from the data above
+- If summing: add up the values shown
+- If counting: count the records
+- If comparing: extract values to compare
+
+STEP 4: RESPOND
+- Give a direct, precise answer with exact numbers from the data
+- Use a table for detailed breakdowns
+- If data not available, list what IS available
 
 ═══════════════════════════════════════════════════════════════
-                    RULES
+                    EXAMPLES
 ═══════════════════════════════════════════════════════════════
 
-1. ALWAYS use | table | format for data
-2. Use {currency_symbol} as the currency symbol (user's setting)
-3. Use ONLY data from YOUR UPLOADED DATA section above
-4. Be concise - no filler text
-5. NEVER make up numbers - use exact values from data
+User asks: "What is total salary?"
+→ Find: Salary column in data
+→ Calculate: Sum of all Salary values
+→ Respond: "**Total Salary: [sum from data]**"
 
-ANTI-HALLUCINATION PROTOCOL:
-- ONLY use numbers from the data provided above
-- If data is missing, say "This data is not in your uploaded files"
-- NEVER invent or estimate numbers
+User asks: "Show departments"  
+→ Find: Department column in data
+→ Extract: Unique department names
+→ Respond: List of departments from data
 
-CONVERSATION:
+User asks: "How many students?"
+→ Find: Student records in data
+→ Count: Number of records
+→ Respond: "**Total Students: [count from data]**"
+
+═══════════════════════════════════════════════════════════════
+                    STRICT RULES
+═══════════════════════════════════════════════════════════════
+
+1. ONLY use data from "USER'S DATA" section - nothing else
+2. If information is NOT in the data, say: "This is not in your uploaded data. Available data: [list columns]"
+3. NEVER invent, estimate, or use outside knowledge
+4. Answer the EXACT question asked - no extra information
+5. Use {currency_symbol} only for monetary values (salary, price, revenue)
+
+CONVERSATION HISTORY:
 {conversation_context if conversation_context else "New conversation"}
 """
 
         # Step 4: Call OpenRouter API
         api_key = os.getenv("OPENROUTER_API_KEY")
+        print(f"🔑 OpenRouter API key present: {bool(api_key)}, length: {len(api_key) if api_key else 0}")
+        
         if not api_key:
             return (
                 "⚠️ **OpenRouter API key not configured.**\n\n"
@@ -740,7 +1168,8 @@ CONVERSATION:
                 ["Configuration Required"]
             )
         
-        model_id = AI_MODELS.get(model_key, AI_MODELS['deepseek-chat'])
+        model_id = AI_MODELS.get(model_key, AI_MODELS.get('deepseek', 'deepseek/deepseek-chat'))
+        print(f"🤖 Using model: {model_key} -> {model_id}")
         
         payload = {
             "model": model_id,
@@ -775,31 +1204,48 @@ CONVERSATION:
                     sources = rag_sources + graph_sources + [f"AI: {model_name}"]
                     
                     # Check if user requested a visualization and add Plotly chart
-                    chart_type = detect_chart_request(query)
-                    if chart_type and CHARTS_AVAILABLE:
+                    # BUT SKIP if this is an explanation query (don't generate new chart)
+                    is_explanation_query = any(kw in query.lower() for kw in [
+                        'explain this', 'explain the chart', 'what does this chart',
+                        'describe the chart', 'what does this show', 'explain above',
+                        'interpret this', 'what is this chart', 'explain what',
+                        'chart shows', 'shows in one', 'this chart shows',
+                        'tell me about this chart', 'what does the chart',
+                        'in one line', 'in one sentence', 'one sentence',
+                        'what does it show', 'what is shown'
+                    ])
+                    
+                    chart_type = detect_chart_request(query) if not is_explanation_query else None
+                    
+                    # CRITICAL: Skip backup chart if LLM already included one in response
+                    has_llm_chart = '```plotly_chart' in ai_response or '```plotly' in ai_response
+                    
+                    if chart_type and CHARTS_AVAILABLE and not is_explanation_query and not has_llm_chart:
                         try:
                             df = get_user_data(user_id)
                             if df is not None and not df.empty:
-                                # Generate appropriate chart
-                                if chart_type == 'trend':
-                                    chart_json = generate_revenue_trend_chart(df)
-                                elif chart_type == 'bar':
-                                    chart_json = generate_product_bar_chart(df)
-                                elif chart_type == 'pie':
-                                    chart_json = generate_customer_pie_chart(df)
-                                elif chart_type == 'prediction':
-                                    chart_json = generate_prediction_chart(df)
-                                else:
-                                    chart_json = generate_revenue_trend_chart(df)
+                                # =========================================================
+                                # QUERY-AWARE CHART GENERATION (Dynamic based on query)
+                                # =========================================================
+                                # Use query-aware generator that extracts count, entity, type
+                                chart_json = generate_query_aware_chart(df, query)
                                 
-                                # FALLBACK: If trend chart returned error (no time data), try bar chart
+                                # FALLBACK: If query-aware chart failed, try simple approaches
                                 if chart_json and 'error' in chart_json:
-                                    print(f"Trend chart failed, trying bar chart: {chart_json.get('error')}")
-                                    chart_json = generate_product_bar_chart(df)
+                                    print(f"Query-aware chart failed: {chart_json.get('error')}")
+                                    # Fallback based on detected type
+                                    if chart_type == 'trend':
+                                        chart_json = generate_revenue_trend_chart(df)
+                                    elif chart_type == 'bar':
+                                        chart_json = generate_product_bar_chart(df)
+                                    elif chart_type == 'pie':
+                                        chart_json = generate_customer_pie_chart(df)
+                                    else:
+                                        chart_json = generate_revenue_trend_chart(df)
                                 
-                                # If bar also fails, try pie chart
+                                # Final fallback if still error
                                 if chart_json and 'error' in chart_json:
-                                    print(f"Bar chart failed, trying pie chart")
+                                    print(f"Fallback chart failed, trying pie chart")
                                     chart_json = generate_customer_pie_chart(df)
                                 
                                 # Append Plotly chart to response
@@ -808,6 +1254,34 @@ CONVERSATION:
                                     chart_block = f"\n\n```plotly_chart\n{json_lib.dumps(chart_json)}\n```"
                                     ai_response += chart_block
                                     sources.append("Interactive Chart")
+                                    
+                                    # =========================================================
+                                    # STORE CHART CONTEXT for follow-up explanation
+                                    # =========================================================
+                                    if MEMORY_AVAILABLE and _chart_memory:
+                                        try:
+                                            chart_title = chart_json.get('layout', {}).get('title', {})
+                                            if isinstance(chart_title, dict):
+                                                chart_title = chart_title.get('text', 'Chart')
+                                            
+                                            # Determine chart type description
+                                            chart_descriptions = {
+                                                'trend': 'Monthly Revenue Trend showing revenue over time',
+                                                'bar': 'Revenue by Customer/Product breakdown',
+                                                'pie': 'Revenue distribution by category',
+                                                'prediction': 'Revenue prediction with forecast'
+                                            }
+                                            chart_desc = chart_descriptions.get(chart_type, 'Data visualization')
+                                            
+                                            _chart_memory.set_last_chart(user_id, {
+                                                "type": chart_type,
+                                                "title": str(chart_title),
+                                                "data_summary": chart_desc,
+                                                "timestamp": datetime.now().isoformat()
+                                            })
+                                            print(f"[MEMORY] Stored chart context: {chart_type} - {chart_title}")
+                                        except Exception as mem_err:
+                                            print(f"[MEMORY] Chart context storage failed: {mem_err}")
                                 else:
                                     print(f"All chart types failed: {chart_json}")
                         except Exception as chart_error:
@@ -818,6 +1292,17 @@ CONVERSATION:
                     
                     # Clean up response (strip code, tables, LaTeX)
                     ai_response = clean_ai_response(ai_response)
+                    
+                    # Evaluate answer grounding (optional confidence check)
+                    if RAG_ENHANCEMENTS and data_context:
+                        try:
+                            eval_result = evaluate_answer(ai_response, data_context, query)
+                            if eval_result.get("warning") and eval_result.get("confidence", 100) < 50:
+                                ai_response += f"\n\n---\n{eval_result['warning']}"
+                                print(f"📊 Evaluation: {eval_result['confidence']}% confidence")
+                        except Exception as eval_err:
+                            print(f"Evaluator error (non-critical): {eval_err}")
+                    
                     return ai_response, sources
                 else:
                     error = await response.text()
@@ -833,13 +1318,157 @@ CONVERSATION:
     except Exception as e:
         print(f"AI model error: {e}")
         traceback.print_exc()
-        # Graceful fallback - return RAG context directly
         return (
             f"⚠️ AI model unavailable. Here's your data:\n\n{data_context[:3000]}",
             ["Fallback Mode"]
         )
 
 
+# ============================================================================
+# STREAMING RESPONSE - Real-time word-by-word like ChatGPT
+# ============================================================================
+
+async def stream_openrouter_response(
+    prompt: str,
+    model_id: str,
+    api_key: str,
+    max_tokens: int = 2000
+):
+    """
+    Stream response from OpenRouter API word by word.
+    Yields SSE-formatted chunks for real-time display.
+    """
+    import aiohttp
+    import json as json_module
+    
+    payload = {
+        "model": model_id,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "temperature": 0.3,
+        "stream": True
+    }
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://ai-business-analyst.com",
+        "X-Title": "AI Business Analyst"
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=60)
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    yield f"data: {{\"error\": \"{error_text[:100]}\"}}\n\n"
+                    return
+                
+                # Stream the response line by line
+                buffer = ""
+                async for chunk in response.content.iter_any():
+                    if chunk:
+                        buffer += chunk.decode('utf-8')
+                        lines = buffer.split('\n')
+                        buffer = lines[-1]  # Keep incomplete line
+                        
+                        for line in lines[:-1]:
+                            line = line.strip()
+                            if line.startswith('data: '):
+                                data = line[6:]
+                                if data == '[DONE]':
+                                    yield "data: [DONE]\n\n"
+                                    return
+                                try:
+                                    parsed = json_module.loads(data)
+                                    if 'choices' in parsed and len(parsed['choices']) > 0:
+                                        delta = parsed['choices'][0].get('delta', {})
+                                        content = delta.get('content', '')
+                                        if content:
+                                            yield f"data: {json_module.dumps({'content': content})}\n\n"
+                                except:
+                                    pass
+                                    
+    except Exception as e:
+        yield f"data: {{\"error\": \"{str(e)[:100]}\"}}\n\n"
+
+
+@router.post("/stream")
+async def stream_message(
+    request: StreamingChatRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    Stream chat response in real-time (like ChatGPT).
+    
+    Returns Server-Sent Events (SSE) with chunks of text.
+    Frontend should use EventSource or fetch with stream reader.
+    """
+    import os
+    
+    # Get user_id
+    user_id = request.userId or request.user_id or x_user_id
+    if not user_id:
+        user_id = "default_user"
+    
+    query = request.message.strip()
+    
+    # Get RAG context
+    rag_context, sources = rag_search(user_id, query, k=5)
+    
+    # Get currency
+    try:
+        currency_symbol, _ = get_user_currency(user_id)
+    except:
+        currency_symbol = "$"
+    
+    # Build prompt with context
+    prompt = f"""You are an AI Data Analyst. Answer based on the user's data.
+
+## USER'S DATA:
+{rag_context[:4000]}
+
+## RULES:
+1. Use ONLY data from USER'S DATA section
+2. Use {currency_symbol} for currency
+3. Be direct and accurate
+4. Never make up numbers
+
+## QUESTION:
+{query}
+
+## YOUR RESPONSE:"""
+
+    # Get API key and model
+    api_key = os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        async def error_stream():
+            yield "data: {\"error\": \"API key not configured\"}\n\n"
+        return StreamingResponse(error_stream(), media_type="text/event-stream")
+    
+    # Model mapping
+    models = {
+        "deepseek": "deepseek/deepseek-chat",
+        "mistral": "mistralai/mistral-7b-instruct:free",
+        "llama": "meta-llama/llama-3.3-70b-instruct:free"
+    }
+    model_id = models.get(request.model, models["deepseek"])
+    
+    return StreamingResponse(
+        stream_openrouter_response(prompt, model_id, api_key),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 @router.post("/message", response_model=ChatResponse)
 async def send_message(
     request: ChatRequest,
@@ -885,16 +1514,74 @@ async def send_message(
         conversation_id = request.conversationId or f"conv_{int(datetime.now().timestamp())}"
         compare_files = request.compareFiles
         
+        # =====================================================================
+        # USER SELECTED MODE/MODEL - Respect user's choice
+        # All modes can generate BOTH text AND charts based on query
+        # =====================================================================
+        has_image = request.attachedFiles and len(request.attachedFiles) > 0
+        
+        # Detect if user's query wants a visualization (for ANY mode/model)
+        generate_chart = False
+        chart_type = None
+        
+        if ADVANCED_RAG:
+            try:
+                routing = get_routing_decision(query, has_image=has_image)
+                
+                # Detect if we should generate a chart (works for ALL modes)
+                generate_chart = routing.get('generate_chart', False)
+                chart_type = routing.get('chart_type')
+                query_intent = routing.get('intent', 'lookup')
+                
+                print(f"🎯 User selected: mode={mode}, intent={query_intent}")
+                if generate_chart:
+                    print(f"📊 Will generate {chart_type} chart with response")
+                    
+            except Exception as e:
+                print(f"⚠️ Query analysis error: {e}")
+        
+        # Vision mode enhancement when image attached (user can still use other modes)
+        if has_image:
+            print(f"🖼️ Image attached - mode={mode} will process image")
+        
         # Load conversation history for context (user-specific)
         history = load_conversation(user_id, conversation_id)
         
+        # Get user paths for file and memory access
+        paths = get_user_paths(user_id)
+        
         # Build conversation context from history
         conversation_context = ""
+        last_assistant_response = ""
+        
         if history:
             recent_messages = history[-10:]  # Last 10 messages
             conversation_context = "\n\n## Previous Conversation:\n"
             for msg in recent_messages:
                 conversation_context += f"{msg.role.upper()}: {msg.content}\n"
+                if msg.role == "assistant":
+                    last_assistant_response = msg.content
+        
+        # =====================================================================
+        # CRITICAL: If no history but follow-up query, try to get last response
+        # =====================================================================
+        if not last_assistant_response:
+            try:
+                # Try to get from chat_history.json as fallback
+                chat_history_file = paths["memory"] / "chat_history.json"
+                if chat_history_file.exists():
+                    with open(chat_history_file, 'r') as f:
+                        chat_history = json.load(f)
+                    
+                    # Find last assistant message
+                    for msg in reversed(chat_history):
+                        if msg.get('role') == 'assistant':
+                            last_assistant_response = msg.get('content', '')[:3000]  # Increased for context
+                            conversation_context = f"\n\n## Last AI Response:\n{last_assistant_response}\n"
+                            print(f"📖 Found previous response: {len(last_assistant_response)} chars")
+                            break
+            except Exception as e:
+                print(f"⚠️ Could not load chat history: {e}")
         
         # =====================================================================
         # $500K ENTERPRISE MEMORY SYSTEM - ChatGPT-Level Persistent Memory
@@ -924,7 +1611,7 @@ async def send_message(
                 response_text = (
                     f"Nice to meet you, **{stored_name}**!\n\n"
                     f"I've saved your name to my memory. I'll remember you across all our conversations.\n\n"
-                    f"**Ready to analyze your business data.** What would you like to know?"
+                    f"**Ready to analyze your data.** What would you like to know?"
                 )
                 
                 assistant_msg = Message(role="assistant", content=response_text, timestamp=datetime.now().isoformat())
@@ -952,7 +1639,7 @@ async def send_message(
                     response_text = (
                         f"Your name is **{stored_name}**.\n\n"
                         f"I remember you from our previous conversations.\n\n"
-                        f"How can I help you with your business data today?"
+                        f"How can I help you with your data today?"
                     )
                 else:
                     response_text = (
@@ -1008,6 +1695,51 @@ async def send_message(
         
         query_lower = query.lower().strip()
         
+        # =====================================================================
+        # EMPTY/MINIMAL QUERY - ChatGPT-style: Ask what user wants
+        # Instead of giving full analysis for empty queries, be conversational
+        # =====================================================================
+        if len(query_lower) < 3 or query_lower in ['', '.', '..', '?', '!', 'ok', 'go']:
+            print(f"🤝 EMPTY/MINIMAL QUERY DETECTED: '{query}' → Asking what user wants")
+            
+            # Get data summary for helpful prompt
+            try:
+                from api.v1.endpoints.charts import get_user_data
+                df = get_user_data(user_id)
+                if df is not None and not df.empty:
+                    cols = [c for c in df.columns if not c.startswith('_')][:8]
+                    prompt_response = f"""👋 **I'm ready to help!**
+
+I have your data loaded with columns: **{', '.join(cols)}**
+
+**What would you like to know?** For example:
+- "What's the total revenue?"
+- "Show top 5 customers"
+- "Average salary by department"
+
+Just ask your question! 💬"""
+                else:
+                    prompt_response = """👋 **I'm ready to help!**
+
+Please upload a data file first, then ask me any question about your data.
+
+**What would you like to analyze?** 📊"""
+            except:
+                prompt_response = "👋 What would you like to know about your data?"
+            
+            # Save and return
+            assistant_msg = Message(role="assistant", content=prompt_response, timestamp=datetime.now().isoformat())
+            history.append(assistant_msg)
+            save_conversation(user_id, conversation_id, history)
+            
+            return ChatResponse(
+                message=prompt_response,
+                mode="chat",
+                sources=["Assistant"],
+                conversationId=conversation_id,
+                timestamp=datetime.now().isoformat()
+            )
+        
         # BUSINESS QUERY KEYWORDS - These should NEVER be treated as personal chat
         business_keywords = [
             'product', 'customer', 'revenue', 'sales', 'invoice', 'amount', 'total',
@@ -1040,17 +1772,179 @@ async def send_message(
                           'good morning', 'good afternoon', 'good evening', 'thanks', 'thank you']
         is_exact_greeting = query_lower.strip() in exact_greetings
         
+        # =====================================================================
+        # APP-SPECIFIC HELP QUERIES - How to use the application
+        # =====================================================================
+        upload_help_patterns = [
+            'how to upload', 'how do i upload', 'upload my data', 'uploading data',
+            'how to add data', 'add my data', 'import data', 'how to import',
+            'where to upload', 'where do i upload', 'upload file', 'upload files'
+        ]
+        is_upload_help = any(pattern in query_lower for pattern in upload_help_patterns)
+        
+        if is_upload_help:
+            upload_response = """## 📤 How to Upload Your Data
+
+**Step 1:** Click on **"DataHub"** in the left sidebar (or navigation menu)
+
+**Step 2:** In the DataHub page, click the **"Upload"** or **"Add Files"** button
+
+**Step 3:** Select your files:
+- ✅ **Supported formats:** CSV, Excel (.xlsx), PDF
+- 📄 Drag & drop files or click to browse
+
+**Step 4:** Click **"Train"** to process your data
+
+**Step 5:** Come back here to the **Analyst Chat** and ask questions about your data!
+
+---
+
+💡 **Tip:** After uploading, try asking:
+- "What data do I have?"
+- "Show me revenue trends"
+- "Who are my top customers?"
+"""
+            # Save and return immediately
+            user_msg = Message(role="user", content=query, timestamp=datetime.now().isoformat())
+            assistant_msg = Message(role="assistant", content=upload_response, timestamp=datetime.now().isoformat(), sources=["App Help"])
+            history.append(user_msg)
+            history.append(assistant_msg)
+            save_conversation(user_id, conversation_id, history)
+            
+            return ChatResponse(
+                message=upload_response,
+                mode="chat",
+                sources=["App Help"],
+                conversationId=conversation_id,
+                timestamp=datetime.now().isoformat()
+            )
+        
+        # =====================================================================
+        # VAGUE/EXPLORATION QUERIES - ChatGPT-style conversational response
+        # Instead of giving full analysis, ask what user wants
+        # =====================================================================
+        vague_exploration_patterns = [
+            'tell me about my data', 'what data do i have', 'what can you tell me',
+            'analyze my data', 'what do you see', 'what can you do',
+            'what can you analyze', 'show me my data', 'what is in my data',
+            'help me analyze', 'analyze this', 'what do you have',
+            'tell me about this file', 'what is this', 'start analysis',
+            'give me insights', 'give me overview', 'summarize my data',
+            'what can i ask', 'what questions', 'what should i ask'
+        ]
+        is_vague_exploration = any(pattern in query_lower for pattern in vague_exploration_patterns)
+        
         # Check if query is purely conversational (NOT a business query)
         is_short_message = len(query_lower.split()) <= 5
         is_personal = any(kw in query_lower for kw in personal_keywords) and is_short_message and not is_business_query
         
-        print(f"👤 Is personal: {is_personal}, Is exact greeting: {is_exact_greeting}, Is business: {is_business_query}")
+        # =====================================================================
+        # CRITICAL: Detect follow-up queries like "explain that", "what does it mean"
+        # These should ALWAYS use RAG with previous context, not chat mode!
+        # =====================================================================
+        followup_patterns = [
+            'explain that', 'explain it', 'explain this', 'explain above',
+            'what does that', 'what does it', 'what does this',
+            'tell me more', 'more about', 'elaborate', 'clarify',
+            'in words', 'in simple', 'in detail',
+            'what is that', 'what was that', 'meaning of',
+            # Patterns for "explain in one line" type queries
+            'in one line', 'in one sentence', 'in two lines', 'in two sentences',
+            'shorter version', 'short version', 'summarize above', 'summarize that',
+            'one liner', 'one-liner', 'simple terms', 'simpler',
+            'layman terms', 'briefly', 'brief version'
+        ]
+        is_followup_query = any(p in query_lower for p in followup_patterns)
+        
+        if is_followup_query:
+            is_personal = False  # Force NOT personal
+            is_business_query = True  # Force business query
+            print(f"🔗 FOLLOW-UP QUERY DETECTED: '{query[:30]}...' → Forcing RAG with context")
+        
+        print(f"👤 Is personal: {is_personal}, Is exact greeting: {is_exact_greeting}, Is business: {is_business_query}, Is followup: {is_followup_query}")
         
         # Keywords that indicate user wants data analysis, not image analysis
         data_query_keywords = ['predict', 'forecast', 'revenue', 'chart', 'visualization', 
                                'customer', 'product', 'trend', 'sales', 'compare', 'analysis',
                                'total', 'average', 'highest', 'lowest', 'best', 'worst']
         is_data_query = any(kw in query_lower for kw in data_query_keywords)
+        
+        # ========================================
+        # MODE ROUTING - PRIORITY ORDER IS CRITICAL
+        # ========================================
+        
+        # PRIORITY 0.5: VAGUE EXPLORATION - ChatGPT-style welcome
+        # Returns immediately with conversational welcome instead of full analysis
+        if is_vague_exploration:
+            print(f"🤝 VAGUE EXPLORATION DETECTED: Returning ChatGPT-style welcome")
+            
+            # Get data summary for welcome
+            try:
+                from api.v1.endpoints.charts import get_user_data
+                df = get_user_data(user_id)
+                if df is not None and not df.empty:
+                    file_count = df['_source_file'].nunique() if '_source_file' in df.columns else 1
+                    row_count = len(df)
+                    # Generate DYNAMIC examples based on actual columns
+                    numeric_cols = [c for c in df.columns if df[c].dtype in ['int64', 'float64'] and not c.startswith('_')][:3]
+                    text_cols = [c for c in df.columns if df[c].dtype == 'object' and not c.startswith('_') and df[c].nunique() < 50][:3]
+                    
+                    # Build dynamic example questions
+                    example_lines = []
+                    if numeric_cols and text_cols:
+                        example_lines.append(f"- 📊 **Analytics:** \"What's the total {numeric_cols[0]} by {text_cols[0]}?\"")
+                    if numeric_cols:
+                        example_lines.append(f"- 📈 **Trends:** \"Show {numeric_cols[0]} trend over time\"")
+                    if text_cols:
+                        example_lines.append(f"- 🏆 **Rankings:** \"Show top 5 {text_cols[0]}\"")
+                    if numeric_cols:
+                        example_lines.append(f"- 🔮 **Predictions:** \"Forecast {numeric_cols[0]}\"")
+                    if len(text_cols) > 1:
+                        example_lines.append(f"- 📉 **Comparisons:** \"Compare {text_cols[0]} by {text_cols[1]}\"")
+                    
+                    examples_text = '\n'.join(example_lines) if example_lines else '- Ask anything about your data!'
+                    
+                    welcome_response = f"""👋 **Hi! I'm your AI Data Analyst.**
+
+I can see you've uploaded some data! Let me show you what I found:
+
+📁 **Your Data:**
+- **Files:** {file_count} file(s)
+- **Records:** {row_count:,} rows
+- **Columns:** {', '.join(cols)}
+
+🔍 **What I can help with:**
+{examples_text}
+
+**What would you like to know about your data?** Just ask naturally! 💬"""
+                else:
+                    welcome_response = """👋 **Hi! I'm your AI Data Analyst.**
+
+I don't see any uploaded data yet. Please upload a CSV or Excel file first!
+
+📤 **To get started:**
+1. Click the upload button to add your data file
+2. Ask me anything about your data!
+
+**What types of data do you have?** I can help analyze HR, Sales, Finance, or any structured data! 📊"""
+            except Exception as e:
+                print(f"⚠️ Welcome data error: {e}")
+                welcome_response = "👋 Hi! I'm ready to help analyze your data. What would you like to know?"
+            
+            # Save conversation and return immediately
+            user_msg = Message(role="user", content=query, timestamp=datetime.now().isoformat())
+            assistant_msg = Message(role="assistant", content=welcome_response, timestamp=datetime.now().isoformat(), sources=["Welcome Assistant"])
+            history.append(user_msg)
+            history.append(assistant_msg)
+            save_conversation(user_id, conversation_id, history)
+            
+            return ChatResponse(
+                message=welcome_response,
+                mode="chat",
+                sources=["Welcome Assistant"],
+                conversationId=conversation_id,
+                timestamp=datetime.now().isoformat()
+            )
         
         # ========================================
         # MODE ROUTING - PRIORITY ORDER IS CRITICAL
@@ -1066,10 +1960,19 @@ async def send_message(
             mode = "chat"
             print(f"💬 PERSONAL CHAT MODE - Greeting/conversational query detected")
         
-        # PRIORITY 3: RESPECT EXPLICIT MODE SELECTION
-        elif mode in ["graphrag", "graph", "hybrid", "rag", "vision", "prediction"]:
+        # PRIORITY 3: RESPECT EXPLICIT MODE SELECTION (RAG modes + AI models)
+        elif mode in ["graphrag", "graph", "hybrid", "rag", "vision", "prediction", "agentic", "multirag"] or mode in AI_MODELS:
+            # AI MODELS - Direct to OpenRouter
+            if mode in AI_MODELS:
+                print(f"🤖 AI MODEL SELECTED: {mode} - Will use OpenRouter with RAG context")
+            # AGENTIC RAG - Uses AI agent with tools
+            elif mode == "agentic":
+                print(f"🤖 AGENTIC RAG MODE - AI Agent with tools (retrieve, calculate, visualize)")
+            # MULTI-RAG - Uses multiple retrieval sources with RRF fusion
+            elif mode == "multirag":
+                print(f"🔀 MULTI-RAG MODE - Multi-source retrieval with RRF fusion")
             # SPECIAL CASE: Vision mode selected but query is about DATA (not image)
-            if mode == "vision" and not has_image and is_data_query:
+            elif mode == "vision" and not has_image and is_data_query:
                 mode = "graph"  # Redirect to GraphRAG for data analysis
                 print(f"🔄 SMART REDIRECT: Vision mode + data query → GRAPH mode for charts/predictions")
             elif mode == "vision" and not has_image:
@@ -1137,6 +2040,102 @@ async def send_message(
         response = ""
         sources = []
         
+        # Get user's currency setting
+        try:
+            currency_symbol, currency_code = get_user_currency(user_id)
+        except:
+            currency_symbol = "$"
+            currency_code = "USD"
+        
+        # =====================================================================
+        # FOLLOW-UP QUERIES: Get last response from MAIN conversation history
+        # =====================================================================
+        if is_followup_query:
+            try:
+                print(f"🔗 FOLLOW-UP QUERY: '{query[:50]}...'")
+                
+                # Get last assistant response from MAIN history (not ProductionChatHandler!)
+                last_assistant_response = ""
+                for msg in reversed(history):
+                    if msg.role == "assistant":
+                        last_assistant_response = msg.content
+                        break
+                
+                if not last_assistant_response:
+                    print(f"⚠️ No previous assistant response found in main history")
+                else:
+                    print(f"✅ Found last response ({len(last_assistant_response)} chars): {last_assistant_response[:100]}...")
+                
+                # Build direct follow-up prompt - NO ProductionChatHandler
+                followup_prompt = f"""You are an AI Data Analyst explaining your previous response.
+
+## YOUR PREVIOUS RESPONSE (what the user is asking about):
+---
+{last_assistant_response[:3000]}
+---
+
+## USER'S FOLLOW-UP QUESTION:
+"{query}"
+
+## INSTRUCTIONS:
+- The user wants you to explain, simplify, or clarify YOUR PREVIOUS RESPONSE shown above
+- Do NOT generate new data, charts, or analysis
+- Do NOT mention heatmaps, revenue, or invoices unless they were in YOUR PREVIOUS RESPONSE
+- ONLY explain/rephrase/summarize what you said in YOUR PREVIOUS RESPONSE
+- Be concise and direct
+
+## YOUR EXPLANATION:"""
+
+                # Call LLM directly with follow-up context
+                import aiohttp
+                import os
+                
+                api_key = os.getenv("OPENROUTER_API_KEY")
+                if api_key:
+                    payload = {
+                        "model": "deepseek/deepseek-chat",
+                        "messages": [
+                            {"role": "system", "content": followup_prompt}
+                        ],
+                        "max_tokens": 1000,
+                        "temperature": 0.3,
+                    }
+                    
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    }
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            "https://openrouter.ai/api/v1/chat/completions",
+                            json=payload,
+                            headers=headers,
+                            timeout=aiohttp.ClientTimeout(total=30)
+                        ) as api_response:
+                            if api_response.status == 200:
+                                data = await api_response.json()
+                                response = data["choices"][0]["message"]["content"]
+                                sources = ["Follow-up Explanation"]
+                                
+                                # Add to history
+                                history.append(Message(role="user", content=query, timestamp=datetime.now().isoformat()))
+                                history.append(Message(role="assistant", content=response, timestamp=datetime.now().isoformat()))
+                                save_conversation(user_id, conversation_id, history)
+                                
+                                return ChatResponse(
+                                    message=response,
+                                    mode="rag",
+                                    sources=sources,
+                                    conversationId=conversation_id,
+                                    timestamp=datetime.now().isoformat()
+                                )
+                
+            except Exception as fe:
+                print(f"[FOLLOW-UP] Error: {fe}")
+                import traceback
+                traceback.print_exc()
+        
         if mode == "rag":
             from agents.nodes import rag_answer
             from agents.state import AgentState
@@ -1182,48 +2181,97 @@ async def send_message(
             
             # DEFINITIVE CLEANUP: Line-by-line filtering to remove ALL hybrid text
             cleaned_lines = []
-            skip_patterns = [
-                'reasoning type',
-                'mode weights',
-                'rag fusion',
-                'balanced fusion',
-                'graph-heavy',
-                'rag 50%',
-                'graph 50%',
-            ]
+            skip_patterns = ['reasoning type', 'mode weights', 'rag fusion', 'balanced fusion', 'graph-heavy', 'rag 50%', 'graph 50%']
             
             for line in response.split('\n'):
                 line_lower = line.lower().strip()
-                
-                # Skip lines containing hybrid terminology
                 if any(pattern in line_lower for pattern in skip_patterns):
                     continue
-                
-                # Replace HYBRID with PREDICTION in any remaining lines
                 if 'hybrid' in line_lower:
                     line = re.sub(r'\*?Analysis Mode:\s*\*?HYBRID\*?', '**Analysis Mode: PREDICTION**', line, flags=re.IGNORECASE)
                     line = re.sub(r'Mode:\s*HYBRID', 'Mode: PREDICTION', line, flags=re.IGNORECASE)
                     line = re.sub(r'HYBRID', 'PREDICTION', line, flags=re.IGNORECASE)
-                
-                # Skip empty asterisk lines (artifacts from removed content)
                 if line.strip() in ['**', '*', '---', '']:
                     if cleaned_lines and cleaned_lines[-1].strip() in ['**', '*', '---', '']:
-                        continue  # Skip consecutive empty markers
-                
+                        continue
                 cleaned_lines.append(line)
             
             response = '\n'.join(cleaned_lines)
-            
-            # Clean up multiple consecutive dashes/empty lines
             response = re.sub(r'\n{3,}', '\n\n', response)
             response = re.sub(r'(---\s*\n){2,}', '---\n', response)
             
-            # Ensure prediction footer exists at the end
             if 'Analysis Mode: PREDICTION' not in response:
                 response += "\n\n---\n📈 **Analysis Mode: PREDICTION**\n"
                 response += "Accuracy Tier: TIER 3 (Scenario-Based) - Snapshot data used\n"
             
             sources = ["Prediction Analysis"] + (state.sources if state.sources else [])
+            
+        elif mode == "agentic":
+            # AGENTIC RAG - AI Agent with tools
+            print(f"🤖 AGENTIC RAG: Executing agent-based analysis")
+            
+            # Get base context from RAG
+            context, rag_sources = rag_search(user_id, query, k=10, target_files=compare_files)
+            
+            if AGENTIC_RAG:
+                # Create agent and plan execution
+                agent = AgenticRAG(user_id=user_id)
+                plan = agent.plan_execution(query)
+                plan_str = " → ".join([a.value for a in plan])
+                
+                # Use agentic prompt as context
+                agentic_context = create_agentic_rag_prompt(query, context, [a.value for a in plan])
+                
+                # Call LLM with proper signature: (user_id, query, model_key, context)
+                response, _ = await ai_model_response(user_id, query, "llama-70b", agentic_context)
+                
+                # Add subtle agent mode indicator (not verbose plan)
+                response = f"📊 **Analysis** ({plan_str})\n\n{response}"
+                
+            else:
+                # Fallback to standard RAG with proper signature
+                response, _ = await ai_model_response(user_id, query, "llama-70b", context)
+            
+            sources = ["Agentic RAG Intelligence"]
+            
+        elif mode == "multirag":
+            # MULTI-RAG - Multiple retrieval sources with RRF fusion
+            print(f"🔀 MULTI-RAG: Executing multi-source retrieval with RRF fusion")
+            
+            if AGENTIC_RAG:
+                # Detect which sources to use based on query
+                sources_to_use = detect_best_sources(query)
+                print(f"📚 Using sources: {[s.value for s in sources_to_use]}")
+                
+                # Get context from vector search (primary)
+                context, rag_sources = rag_search(user_id, query, k=10, target_files=compare_files)
+                
+                # Get context from graph (if relationship query)
+                graph_context = ""
+                if RetrievalSource.GRAPH in sources_to_use:
+                    try:
+                        graph_results = graph_query(user_id, query)
+                        graph_context = f"\n\n## From Knowledge Graph:\n{graph_results}"
+                    except:
+                        pass
+                
+                # Combine contexts with source labels
+                combined_context = f"## From Vector Search:\n{context}{graph_context}"
+                
+                # Format response with multi-source info
+                source_names = [s.value for s in sources_to_use]
+                
+                # Call LLM with proper signature: (user_id, query, model_key, context)
+                response, _ = await ai_model_response(user_id, query, "llama-70b", combined_context)
+                
+                # Add multi-rag header
+                response = f"🔀 **Multi-RAG** | Sources: {', '.join(source_names)}\n\n{response}"
+                
+                sources = rag_sources + [f"Multi-RAG ({', '.join(source_names)})"]
+            else:
+                # Fallback to standard RAG with proper signature
+                context, sources = rag_search(user_id, query, k=10, target_files=compare_files)
+                response, _ = await ai_model_response(user_id, query, "llama-70b", context)
             
         elif mode == "vision":
             from agents.nodes import vision_answer
@@ -1349,13 +2397,11 @@ Rules:
 - Keep response under 3 sentences. Be warm and natural."""
             response = chat(prompt, max_tokens=200)
         
-        # Safety check: ensure response is valid
-        if not response or not isinstance(response, str):
-            print(f"⚠️ Invalid response: type={type(response)}, value={response}")
-            print(f"⚠️ Mode was: {mode}")
-            print(f"⚠️ Response object was: {repr(response)[:200]}")
-            response = "I encountered an error processing your request. Please try again."
-        
+        # =========================================================================
+        # FINAL STEP: Universal Chart Injection for ALL modes
+        # =========================================================================
+        response = append_chart_if_needed(response, query, user_id)
+
         print(f"✅ Sending response: mode={mode}, length={len(response)}")
         
         # 🔥 CACHE STORAGE - Save response for future similar queries
@@ -1373,7 +2419,8 @@ Rules:
         assistant_msg = Message(
             role="assistant",
             content=response,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
+            sources=sources if sources else None
         )
         history.append(assistant_msg)
         
@@ -1507,3 +2554,47 @@ async def delete_conversation(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# MODELS API - Get available AI models for frontend
+# ============================================================================
+
+@router.get("/models")
+async def get_available_models():
+    """
+    Get all available AI models for the frontend model selector.
+    Returns models grouped by category.
+    """
+    try:
+        if ADVANCED_RAG:
+            return get_available_models_api()
+        
+        # Fallback if advanced RAG not loaded
+        return {
+            "models": [
+                {"id": "deepseek", "label": "DeepSeek Chat", "description": "Fast • Accurate", "badge": "Best", "category": "general"},
+                {"id": "mistral", "label": "Mistral Small", "description": "Fast • Free", "badge": "Free", "category": "general"},
+                {"id": "llama", "label": "Llama 3.3 70B", "description": "Comprehensive", "badge": "Free", "category": "general"},
+            ],
+            "default": "deepseek",
+            "categories": {
+                "general": ["deepseek", "mistral", "llama"],
+                "vision": [],
+                "code": []
+            }
+        }
+    except Exception as e:
+        print(f"Error getting models: {e}")
+        return {"models": [], "default": "deepseek", "categories": {}}
+
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring"""
+    return {
+        "status": "healthy",
+        "rag_enhancements": RAG_ENHANCEMENTS,
+        "advanced_rag": ADVANCED_RAG if 'ADVANCED_RAG' in dir() else False,
+        "charts_available": CHARTS_AVAILABLE,
+    }

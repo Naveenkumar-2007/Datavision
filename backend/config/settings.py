@@ -17,9 +17,22 @@ class Settings:
     # API settings
     API_VERSION = "v1"
     
-    # Model settings
-    MODEL_NAME = "openai/gpt-oss-120b"
+    # Model settings - GROQ PRIMARY (Fast + High Quality)
+    MODEL_NAME = "groq/llama-3.3-70b-versatile"      # Primary model - Best quality
+    FAST_MODEL = "groq/llama-3.1-8b-instant"          # Fast model for simple queries
+    REASONING_MODEL = "groq/llama-3.3-70b-versatile"  # For complex queries
+    
+    # Fallback
+    FALLBACK_MODEL = "groq/llama-3.1-8b-instant"
+    
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+    
+    # Ollama Local LLM (Fallback when Groq fails)
+    OLLAMA_MODEL = "ollama/qwen2.5:3b"  # Smarter model for business analysis
+
+
+
+
     
     # Chunking settings (for ingestion pipeline)
     CHUNK_SIZE = 700
@@ -30,6 +43,19 @@ class Settings:
     
     # Graph settings
     GRAPH_MAX_NODES = 100
+    
+    # =========================================================================
+    # AUTHORITATIVE CURRENCY EXCHANGE RATES (Single Source of Truth)
+    # Update these rates as needed - they apply globally
+    # =========================================================================
+    EXCHANGE_RATES = {
+        "INR_TO_USD": 88.0,   # ₹88 = $1 (current rate)
+        "INR_TO_EUR": 92.0,   # ₹92 = €1
+        "INR_TO_GBP": 110.0,  # ₹110 = £1
+        "USD_TO_INR": 88.0,
+        "EUR_TO_INR": 92.0,
+        "GBP_TO_INR": 110.0,
+    }
     
     # Ensure directories exist
     @classmethod

@@ -1,13 +1,18 @@
 # Enterprise Query Classifier - LLM-Powered Intelligent Routing
 """
+$5M Enterprise Product - Query Classification System v2.0
+
 Advanced query classification system for enterprise AI modes.
 
 Features:
-- LLM-based intent classification
+- LLM-based intent classification (ChatGPT-quality understanding)
 - Multi-dimensional query analysis
-- Confidence scoring
-- Query type taxonomy
+- Confidence scoring with calibration
+- Extended query type taxonomy (12 types)
 - Entity extraction hints
+- Response format detection
+
+This module works with query_dispatcher.py for complete query understanding.
 """
 
 from dataclasses import dataclass
@@ -19,7 +24,7 @@ from core.llm import chat
 
 
 class QueryType(Enum):
-    """Taxonomy of business query types"""
+    """Extended taxonomy of business query types - 12 types for enterprise coverage"""
     FACTUAL = "factual"           # Simple facts: "What is X?"
     AGGREGATION = "aggregation"   # Sums, counts, averages
     COMPARISON = "comparison"     # Compare A vs B
@@ -29,6 +34,11 @@ class QueryType(Enum):
     PREDICTIVE = "predictive"     # What will happen?
     EXPLORATORY = "exploratory"   # Open-ended discovery
     VISUAL = "visual"             # Image/chart analysis
+    # NEW: Additional enterprise query types
+    RANKING = "ranking"           # Top/Bottom N queries
+    BREAKDOWN = "breakdown"       # Distribution/segmentation
+    SUMMARY = "summary"           # Summary/overview requests
+    ANOMALY = "anomaly"           # Unusual pattern detection
 
 
 class ReasoningDepth(Enum):
@@ -97,11 +107,30 @@ class EnterpriseQueryClassifier:
         ],
         QueryType.PREDICTIVE: [
             r"predict\b", r"forecast\b", r"will\b", r"expect\b",
-            r"future\b", r"projection\b", r"estimate\b"
+            r"future\b", r"projection\b", r"estimate\b", r"next\s+\d+"
         ],
         QueryType.VISUAL: [
             r"image\b", r"picture\b", r"chart\b", r"graph\b",
             r"screenshot\b", r"diagram\b", r"visual\b"
+        ],
+        # NEW: Additional pattern types for enterprise coverage
+        QueryType.RANKING: [
+            r"top\s+\d+", r"bottom\s+\d+", r"best\b", r"worst\b",
+            r"highest\b", r"lowest\b", r"biggest\b", r"smallest\b",
+            r"leading\b", r"trailing\b", r"rank\b"
+        ],
+        QueryType.BREAKDOWN: [
+            r"breakdown\b", r"by\s+category\b", r"by\s+region\b",
+            r"distribution\b", r"segment\b", r"split\b", r"portion\b",
+            r"pie\b", r"percentage\b", r"share\b"
+        ],
+        QueryType.SUMMARY: [
+            r"summary\b", r"summarize\b", r"overview\b", r"highlight\b",
+            r"key\s+points\b", r"main\s+findings\b", r"brief\b", r"snapshot\b"
+        ],
+        QueryType.ANOMALY: [
+            r"anomal\w+\b", r"unusual\b", r"outlier\b", r"strange\b",
+            r"unexpected\b", r"spike\b", r"dip\b", r"exception\b", r"risk\b"
         ]
     }
     
@@ -283,24 +312,52 @@ class EnterpriseQueryClassifier:
         initial_type: QueryType,
         entities: List[str]
     ) -> Optional[Dict]:
-        """Use LLM to refine classification for ambiguous cases"""
+        """
+        Use LLM to refine classification for ambiguous cases.
+        
+        This is the CORE of ChatGPT-quality understanding - the LLM figures out
+        query intent from natural language, not hardcoded patterns.
+        """
         
         try:
-            prompt = f"""Classify this business query:
+            # Enterprise-grade system prompt for accurate classification
+            system_prompt = """You are an expert query classifier for a Business Intelligence system.
+Your job is to understand user intent with extreme accuracy.
 
-Query: "{query}"
+Available query types:
+- factual: Simple fact lookup ("What is total revenue?")
+- aggregation: Needs calculation ("Sum of sales by region")
+- comparison: Comparing entities ("Compare A vs B")
+- trend: Time-based patterns ("Growth over last 6 months")
+- causal: Why/reason queries ("Why did sales drop?")
+- relational: Entity relationships ("Who bought Product X?")
+- predictive: Future forecasting ("Predict next quarter")
+- exploratory: Open discovery ("What can you tell me?")
+- ranking: Top/bottom N ("Top 5 customers")
+- breakdown: Distribution analysis ("Revenue by category")
+- summary: Overview requests ("Summarize my data")
+- anomaly: Unusual patterns ("Find outliers")
 
-Initial classification: {initial_type.value}
+RESPOND WITH JSON ONLY - NO OTHER TEXT."""
+
+            user_prompt = f"""Query: "{query}"
+
+Initial guess: {initial_type.value}
 Detected entities: {entities}
 
-Respond with JSON only:
+Classify this query:
 {{
-    "type": "factual|aggregation|comparison|trend|causal|relational|predictive|exploratory",
-    "confidence": 0.0-1.0,
-    "reasoning": "brief explanation"
+    "type": "<one of the types above>",
+    "confidence": <0.0-1.0>,
+    "reasoning": "<brief explanation>"
 }}"""
 
-            response = chat(prompt, max_tokens=150)
+            response = chat(
+                messages=[{"role": "user", "content": user_prompt}],
+                system=system_prompt,
+                temperature=0.1,  # Low temp for consistent classification
+                max_tokens=200
+            )
             
             # Parse JSON from response
             json_match = re.search(r'\{[^}]+\}', response, re.DOTALL)
@@ -314,7 +371,7 @@ Respond with JSON only:
                     result["type"] = type_map[type_str]
                     return result
         except Exception as e:
-            print(f"LLM refinement failed: {e}")
+            print(f"[CLASSIFIER] LLM refinement failed: {e}")
         
         return None
     

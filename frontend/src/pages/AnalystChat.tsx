@@ -6,7 +6,6 @@ import {
   FileText,
   TrendingUp,
   Network,
-  Image as ImageIcon,
   Mic,
   Paperclip,
   X,
@@ -22,10 +21,11 @@ import {
   ArrowLeft,
   Settings,
   Menu,
-  RotateCcw,
   Database,
   Eye,
   Layers,
+  RefreshCw,
+  Square,
 } from 'lucide-react';
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
@@ -38,7 +38,7 @@ const formatInlineText = (text: string): string => {
   return text
     .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code class="bg-dark-surface px-1.5 py-0.5 rounded text-orange-300 text-sm font-mono">$1</code>');
+    .replace(/`([^`]+)`/g, '<code class="bg-dark-surface px-1.5 py-0.5 rounded text-teal-300 text-sm font-mono">$1</code>');
 };
 
 // Component to render formatted text with inline styles
@@ -87,7 +87,7 @@ const ChartImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
       <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={handleDownload}
-          className="p-2 bg-dark-surface/90 hover:bg-orange-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-dark-border"
+          className="p-2 bg-dark-surface/90 hover:bg-teal-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-dark-border"
           title="Download Chart"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -97,7 +97,7 @@ const ChartImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
         </button>
         <button
           onClick={handleCopy}
-          className="p-2 bg-dark-surface/90 hover:bg-orange-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-dark-border"
+          className="p-2 bg-dark-surface/90 hover:bg-teal-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-dark-border"
           title="Copy Chart"
         >
           {copied ? (
@@ -157,16 +157,69 @@ const PlotlyChartBlock: React.FC<{ data: any[]; layout: any }> = ({ data, layout
 // Component to format markdown-like responses
 const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
   const formatContent = (text: string) => {
-    const normalizedText = text.replace(/\r\n/g, '\n');
+    let normalizedText = text.replace(/\r\n/g, '\n');
+
+    // PRE-PROCESS: Compact any pretty-printed JSON in chart blocks
+    // This fixes the issue where JSON gets split across paragraphs
+    normalizedText = normalizedText.replace(
+      /```plotly_chart\s*([\s\S]*?)```/gi,
+      (match, jsonContent) => {
+        try {
+          // Try to parse and re-stringify as compact JSON
+          const parsed = JSON.parse(jsonContent.trim());
+          return '```plotly_chart\n' + JSON.stringify(parsed) + '\n```';
+        } catch (e) {
+          // If parsing fails, try to compact manually (remove newlines/spaces in JSON)
+          const compacted = jsonContent.replace(/\n\s*/g, '').replace(/\s{2,}/g, ' ').trim();
+          return '```plotly_chart\n' + compacted + '\n```';
+        }
+      }
+    );
+
+    // Also handle JSON blocks that might have "type":"plotly"
+    normalizedText = normalizedText.replace(
+      /(\{[^{}]*"type"\s*:\s*"plotly"[^{}]*"data"[\s\S]*?"layout"[\s\S]*?\}(?:\s*\})*)/gi,
+      (match) => {
+        try {
+          // Find complete JSON by brace matching
+          let braceCount = 0;
+          let startIdx = match.indexOf('{');
+          let endIdx = startIdx;
+          for (let i = startIdx; i < match.length; i++) {
+            if (match[i] === '{') braceCount++;
+            if (match[i] === '}') braceCount--;
+            if (braceCount === 0) {
+              endIdx = i + 1;
+              break;
+            }
+          }
+          const jsonStr = match.substring(startIdx, endIdx);
+          const parsed = JSON.parse(jsonStr);
+          return '```plotly_chart\n' + JSON.stringify(parsed) + '\n```';
+        } catch (e) {
+          return match;
+        }
+      }
+    );
+
     const blocks: string[] = [];
     let currentBlock = '';
+    let insideCodeBlock = false;
     const lines = normalizedText.split('\n');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const isEmptyLine = line.trim() === '';
 
-      if (isEmptyLine && currentBlock.trim()) {
+      // Track if we're inside a code block (``` markers)
+      if (line.trim().startsWith('```')) {
+        insideCodeBlock = !insideCodeBlock;
+      }
+
+      // Don't split inside code blocks - keep them together
+      if (insideCodeBlock) {
+        currentBlock += (currentBlock ? '\n' : '') + line;
+      } else if (isEmptyLine && currentBlock.trim()) {
         blocks.push(currentBlock.trim());
         currentBlock = '';
       } else {
@@ -195,22 +248,39 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
       }
 
       // Code blocks - special handling for forecast_chart
-      if (para.startsWith('```')) {
-        // Check if it's a forecast chart - handle variations with whitespace
-        const isForecastChart = /^```\s*forecast_chart/i.test(para);
+      // Handle BOTH proper (```) and malformed (``) backticks
+      const isForecastChartBlock = /^`{2,3}\s*forecast_chart/i.test(para);
+      const hasChartTypeJson = para.includes('"chart_type"') && para.includes('"forecast');
+
+      if (para.startsWith('```') || para.startsWith('``') || isForecastChartBlock || hasChartTypeJson) {
+        // Check if it's a forecast chart - handle variations with whitespace and malformed backticks
+        const isForecastChart = /^`{2,3}\s*forecast_chart/i.test(para) || hasChartTypeJson;
 
         if (isForecastChart) {
-          // Extract JSON with improved regex that handles whitespace
-          const match = para.match(/^```\s*forecast_chart\s*([\s\S]*?)```\s*$/);
+          // Extract JSON with improved regex that handles both ``` and `` backticks
+          let chartJson = '';
 
+          // Try triple backticks first
+          let match = para.match(/^`{2,3}\s*forecast_chart\s*([\s\S]*?)`{2,3}\s*$/);
           if (match) {
-            const chartJson = match[1].trim();
-
-            // Skip if empty
-            if (!chartJson) {
-              return null;
+            chartJson = match[1].trim();
+          } else {
+            // Fallback: try to find JSON object directly
+            const jsonMatch = para.match(/\{[\s\S]*"chart_type"[\s\S]*\}/);
+            if (jsonMatch) {
+              chartJson = jsonMatch[0].trim();
             }
+          }
 
+          // Skip if empty
+          if (!chartJson) {
+            // Check if the paragraph IS the JSON (no backticks at all)
+            if (para.trim().startsWith('{') && para.includes('"chart_type"')) {
+              chartJson = para.trim();
+            }
+          }
+
+          if (chartJson) {
             try {
               const chartPayload = JSON.parse(chartJson);
 
@@ -223,7 +293,7 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
                 );
               }
             } catch (e) {
-              console.error('Chart JSON parse error:', e);
+              console.error('Chart JSON parse error:', e, 'JSON:', chartJson.substring(0, 200));
               // Show user-friendly error instead of raw JSON
               return (
                 <div key={idx} className="my-3 p-4 bg-red-900/20 border border-red-500/50 rounded-xl">
@@ -234,28 +304,73 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
           }
         }
 
-        // Check if it's a Plotly chart
-        const isPlotlyChart = /^```\s*plotly_chart/i.test(para);
+        // Check if it's a Plotly chart - improved detection
+        const isPlotlyChart = /^`{2,3}\s*plotly_chart/i.test(para) || para.includes('"type":"plotly"') || (para.includes('"data"') && para.includes('"layout"'));
         if (isPlotlyChart) {
-          const match = para.match(/^```\s*plotly_chart\s*([\s\S]*?)```\s*$/);
-          if (match) {
-            const chartJson = match[1].trim();
-            if (!chartJson) return null;
+          console.log('[CHART DEBUG] Detected plotly_chart block:', para.substring(0, 100));
 
+          // Try multiple patterns to extract JSON - BRACE COUNTING IS MOST RELIABLE
+          let chartJson = '';
+
+          // PATTERN 1 (PRIMARY): Use brace-counting for complete JSON extraction
+          // This is the most reliable method for nested JSON
+          if (para.includes('{') && (para.includes('"data"') || para.includes('"type"'))) {
+            const startIdx = para.indexOf('{');
+            if (startIdx !== -1) {
+              let braceCount = 0;
+              let endIdx = para.length;
+              for (let i = startIdx; i < para.length; i++) {
+                if (para[i] === '{') braceCount++;
+                if (para[i] === '}') braceCount--;
+                if (braceCount === 0) {
+                  endIdx = i + 1;
+                  break;
+                }
+              }
+              chartJson = para.substring(startIdx, endIdx);
+              console.log('[CHART] Brace-counting extracted', chartJson.length, 'chars');
+            }
+          }
+
+          // PATTERN 2 (FALLBACK): Regex for plotly_chart code block
+          if (!chartJson) {
+            const match = para.match(/`{2,3}\s*plotly_chart\s*\n?([\s\S]+?)\n?`{2,3}/);
+            if (match) {
+              chartJson = match[1].trim();
+              console.log('[CHART] Regex extracted', chartJson.length, 'chars');
+            }
+          }
+
+          console.log('[CHART DEBUG] Extracted JSON length:', chartJson.length, 'First 100 chars:', chartJson.substring(0, 100));
+
+          if (chartJson) {
             try {
               const plotlyData = JSON.parse(chartJson);
+              console.log('[CHART DEBUG] Parsed plotly data:', {
+                hasData: !!plotlyData.data,
+                hasLayout: !!plotlyData.layout,
+                chartType: plotlyData.chart_type,
+                dataLength: Array.isArray(plotlyData.data) ? plotlyData.data.length : 0
+              });
+
               if (plotlyData && plotlyData.data && plotlyData.layout) {
                 return (
                   <div key={idx} className="my-4 animate-fade-in">
                     <PlotlyChartBlock data={plotlyData.data} layout={plotlyData.layout} />
                   </div>
                 );
+              } else {
+                console.error('[CHART DEBUG] Missing data or layout:', {
+                  hasData: !!plotlyData.data,
+                  hasLayout: !!plotlyData.layout,
+                  keys: Object.keys(plotlyData)
+                });
               }
             } catch (e) {
-              console.error('Plotly chart parse error:', e);
+              console.error('Plotly chart parse error:', e, 'JSON sample:', chartJson.substring(0, 200));
               return (
                 <div key={idx} className="my-3 p-4 bg-red-900/20 border border-red-500/50 rounded-xl">
-                  <p className="text-red-400 text-sm">⚠️ Interactive chart rendering failed.</p>
+                  <p className="text-red-400 text-sm">⚠️ Interactive chart rendering failed. Check console for details.</p>
                 </div>
               );
             }
@@ -334,7 +449,7 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
                 const text = cleanLine.replace(/^[-•*●]\s*/, '');
                 return (
                   <li key={i} className="flex items-start gap-2 text-gray-300">
-                    <span className="text-orange-400 mt-0.5">•</span>
+                    <span className="text-teal-400 mt-0.5">•</span>
                     <span><InlineFormattedText text={text} /></span>
                   </li>
                 );
@@ -354,7 +469,7 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
               if (match) {
                 return (
                   <li key={i} className="flex items-start gap-3 text-gray-300">
-                    <span className="text-orange-400 font-semibold min-w-[1.5rem]">{match[1]}.</span>
+                    <span className="text-teal-400 font-semibold min-w-[1.5rem]">{match[1]}.</span>
                     <span><InlineFormattedText text={match[2]} /></span>
                   </li>
                 );
@@ -376,49 +491,72 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
   return <div className="space-y-1">{formatContent(content)}</div>;
 };
 
-// Premium ChatGPT-style Typing Indicator
+// Animated Bar Chart Logo for AI Assistant
+const AnimatedBotIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <defs>
+      <linearGradient id="botGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#14B8A6" />
+        <stop offset="100%" stopColor="#0EA5E9" />
+      </linearGradient>
+    </defs>
+    <rect x="4" y="12" width="3" height="8" rx="1" fill="url(#botGrad)">
+      <animate attributeName="height" values="8;14;8" dur="1.5s" repeatCount="indefinite" />
+      <animate attributeName="y" values="12;6;12" dur="1.5s" repeatCount="indefinite" />
+    </rect>
+    <rect x="10" y="8" width="3" height="12" rx="1" fill="url(#botGrad)">
+      <animate attributeName="height" values="12;18;12" dur="1.2s" repeatCount="indefinite" />
+      <animate attributeName="y" values="8;2;8" dur="1.2s" repeatCount="indefinite" />
+    </rect>
+    <rect x="16" y="10" width="3" height="10" rx="1" fill="url(#botGrad)">
+      <animate attributeName="height" values="10;16;10" dur="1.8s" repeatCount="indefinite" />
+      <animate attributeName="y" values="10;4;10" dur="1.8s" repeatCount="indefinite" />
+    </rect>
+  </svg>
+);
+
+// Typing Indicator - ChatGPT Style (Simple cursor blink)
 const TypingIndicator: React.FC = () => (
-  <div className="flex items-start gap-3 max-w-3xl slide-up">
-    <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 shadow-lg shadow-orange-500/10">
-      <img src="/logo.png" alt="AI" className="w-full h-full object-cover" />
+  <div className="flex items-start gap-3 max-w-3xl">
+    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+      <AnimatedBotIcon size={24} />
     </div>
-    <div className="flex items-center gap-2 px-4 py-3 bg-dark-card rounded-2xl border border-dark-border">
-      <div className="typing-dot"></div>
-      <div className="typing-dot"></div>
-      <div className="typing-dot"></div>
-      <span className="text-xs text-gray-500 ml-2">Analyzing...</span>
+    <div className="flex items-center py-3">
+      <span className="w-2 h-5 bg-gray-400 animate-pulse rounded-sm"></span>
     </div>
   </div>
 );
 
 // Premium Enterprise Welcome Screen
 const WelcomeScreen: React.FC<{ onSuggestionClick: (text: string) => void }> = ({ onSuggestionClick }) => {
+  // Universal suggestions that work for ANY domain
   const suggestions = [
-    { icon: TrendingUp, text: "Analyze revenue trends", description: "Get insights on performance" },
-    { icon: FileText, text: "Summarize my reports", description: "Extract key points" },
-    { icon: Network, text: "Find data connections", description: "Discover relationships" },
-    { icon: Sparkles, text: "Generate insights", description: "AI recommendations" },
+    { icon: TrendingUp, text: "Analyze trends in my data", description: "Discover patterns over time" },
+    { icon: FileText, text: "Summarize my uploaded data", description: "Get key insights" },
+    { icon: Network, text: "Find relationships in data", description: "Discover connections" },
+    { icon: Sparkles, text: "What data do I have?", description: "See available columns" },
   ];
 
+  // Universal quick prompts that work with any domain
   const quickPrompts = [
-    "Why did revenue drop last month?",
-    "Compare product performance",
-    "Find anomalies in data",
-    "Forecast next quarter",
-    "Show customer segments",
-    "Predict churn risk",
+    "What columns are in my data?",
+    "Show top 10 records",
+    "Calculate totals by category",
+    "Find the highest values",
+    "Compare categories",
+    "Show data distribution",
   ];
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh]">
       {/* Logo with premium animation */}
-      <div className="w-20 h-20 rounded-2xl overflow-hidden mb-6 shadow-2xl shadow-orange-500/30 float-animation">
-        <img src="/logo.png" alt="AI Analyst" className="w-full h-full object-cover" />
+      <div className="w-20 h-20 mb-6 shadow-2xl flex items-center justify-center">
+        <img src="/logo.png" alt="DataVision Logo" className="w-full h-full object-contain float-animation" />
       </div>
 
       {/* Title with slide-up */}
       <h1 className="text-3xl font-bold text-gray-100 mb-2 slide-up">
-        Your AI Business Analyst
+        Your DataVision Assistant
       </h1>
       <p className="text-gray-400 mb-8 text-sm slide-up slide-up-delay-1">
         Enterprise Intelligence • ₹40 Lakh/Year Value
@@ -432,8 +570,8 @@ const WelcomeScreen: React.FC<{ onSuggestionClick: (text: string) => void }> = (
             onClick={() => onSuggestionClick(suggestion.text)}
             className="premium-card flex items-start gap-3 p-4 text-left group"
           >
-            <div className="p-2 rounded-lg bg-orange-500/10 group-hover:bg-orange-500/20 transition-colors">
-              <suggestion.icon className="w-5 h-5 text-orange-400" />
+            <div className="p-2 rounded-lg bg-teal-500/10 group-hover:bg-teal-500/20 transition-colors">
+              <suggestion.icon className="w-5 h-5 text-teal-400" />
             </div>
             <div>
               <p className="font-medium text-gray-200 text-sm group-hover:text-white">{suggestion.text}</p>
@@ -478,6 +616,7 @@ const AnalystChat: React.FC = () => {
   const [mode, setMode] = useState<string>('rag');
   const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
@@ -494,10 +633,38 @@ const AnalystChat: React.FC = () => {
     'sql_executor': true,
     'vision_ocr': true,
   });
+
+  // Streaming state for ChatGPT-like word-by-word responses
+  const [useStreaming, setUseStreaming] = useState(false); // Disabled - use reliable non-streaming mode
+  const [streamingContent, setStreamingContent] = useState('');
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Feedback state for thumbs up/down
+  const [messageFeedback, setMessageFeedback] = useState<Record<string, 'up' | 'down' | null>>({});
+
+  // Handle stop generation (ChatGPT-style stop button in input area)
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+  };
+
+  // Handle thumbs up/down feedback
+  const handleFeedback = (messageId: string, type: 'up' | 'down') => {
+    setMessageFeedback(prev => ({
+      ...prev,
+      [messageId]: prev[messageId] === type ? null : type
+    }));
+    // You could also send this to the backend for analytics
+    console.log(`Feedback ${type} for message ${messageId}`);
+  };
 
   // MCP server definitions
   const mcpServers = [
@@ -508,19 +675,16 @@ const AnalystChat: React.FC = () => {
     { id: 'vision_ocr', name: 'Vision OCR', icon: '👁️', description: 'Image analysis' },
   ];
 
-  // Mode definitions - RAG modes + AI Models via OpenRouter
+  // Mode definitions - ALL modes support BOTH text AND charts/images
   const modes = [
-    // RAG Modes
-    { id: 'rag', label: 'RAG', icon: FileText, description: 'Document-based retrieval', badge: null, isAI: false },
-    { id: 'graphrag', label: 'GraphRAG', icon: Network, description: 'Knowledge graph analysis', badge: null, isAI: false },
-    { id: 'hybrid', label: 'Hybrid', icon: Layers, description: 'Best of both worlds', badge: null, isAI: false },
-    { id: 'vision', label: 'Vision', icon: Eye, description: 'Image and chart analysis', badge: 'New', isAI: false },
-    { id: 'prediction', label: 'Prediction', icon: TrendingUp, description: 'Forecasts and trends', badge: 'New', isAI: false },
-
-    // AI Models - TESTED & VERIFIED WORKING (3 models)
-    { id: 'deepseek-chat', label: 'DeepSeek Chat', icon: Sparkles, description: 'PRIMARY • Revenue, KPIs', badge: 'Best', isAI: true, logo: 'https://avatars.githubusercontent.com/u/145310065' },
-    { id: 'mistral-7b', label: 'Mistral 7B', icon: Sparkles, description: 'Fast • Decision Analysis', badge: null, isAI: true, logo: 'https://avatars.githubusercontent.com/u/132372032' },
-    { id: 'llama-70b', label: 'Llama 70B', icon: Sparkles, description: 'Meta AI • Comprehensive', badge: null, isAI: true, logo: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Meta-Logo.png' },
+    // RAG Modes - All support text + charts
+    { id: 'rag', label: 'RAG', icon: FileText, description: 'Text + Charts from documents', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
+    { id: 'graphrag', label: 'GraphRAG', icon: Network, description: 'Text + Relationship graphs', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
+    { id: 'hybrid', label: 'Hybrid', icon: Layers, description: 'Text + Charts combined', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
+    { id: 'agentic', label: 'Agentic RAG', icon: Sparkles, description: 'AI Agent + Tools + Charts', badge: 'Pro', isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
+    { id: 'multirag', label: 'Multi-RAG', icon: Layers, description: 'Multi-source + RRF fusion', badge: 'Pro', isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
+    { id: 'vision', label: 'Vision', icon: Eye, description: 'Image analysis + Charts', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true, supportsImages: true },
+    { id: 'prediction', label: 'Prediction', icon: TrendingUp, description: 'Forecasts + Trend charts', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
   ];
 
   const currentConversation = getCurrentConversation();
@@ -634,6 +798,12 @@ const AnalystChat: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       setSelectedImage(file);
+      // Create preview URL for thumbnail display
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreviewUrl(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
       setMode('vision');
       setInput(prev => prev || 'Analyze this image');
     }
@@ -651,6 +821,12 @@ const AnalystChat: React.FC = () => {
         if (blob) {
           const file = new File([blob], `pasted_image_${Date.now()}.png`, { type: blob.type });
           setSelectedImage(file);
+          // Create preview URL for thumbnail display
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            setImagePreviewUrl(e.target?.result as string);
+          };
+          reader.readAsDataURL(file);
           setMode('vision');
           setInput(prev => prev || 'Analyze this image');
         }
@@ -697,6 +873,7 @@ const AnalystChat: React.FC = () => {
     const filesToCompare = attachedFiles.map(f => f.name);
     setInput('');
     setSelectedImage(null);
+    setImagePreviewUrl(null);
     setAttachedFiles([]);
     setIsLoading(true);
 
@@ -718,27 +895,104 @@ const AnalystChat: React.FC = () => {
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
 
-      const response = await apiService.sendMessage(
-        messageToSend,
-        mode,
-        convId,
-        filesToCompare.length > 0 ? filesToCompare : undefined,
-        visionAttachments.length > 0 ? visionAttachments : undefined,
-        enabledMcps
-      );
+      // Check if we should use streaming (for RAG modes without images)
+      const canStream = useStreaming && !visionAttachments.length &&
+        ['rag', 'hybrid'].includes(mode);
 
-      const responseContent = response.data?.message || response.data?.answer || 'No response received';
-      const responseSources = response.data?.sources || [];
+      if (canStream) {
+        // STREAMING MODE - Word by word like ChatGPT
+        const assistantMsgId = (Date.now() + 1).toString();
 
-      const assistantMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant' as const,
-        content: String(responseContent),
-        timestamp: new Date().toISOString(),
-        sources: Array.isArray(responseSources) ? responseSources.map(s => String(s)) : [],
-      };
+        // Create placeholder message that will be updated
+        const streamingAssistantMessage = {
+          id: assistantMsgId,
+          role: 'assistant' as const,
+          content: '',
+          timestamp: new Date().toISOString(),
+          sources: [] as string[],
+        };
 
-      addMessageToConversation(convId, assistantMessage);
+        addMessageToConversation(convId, streamingAssistantMessage);
+        setStreamingMessageId(assistantMsgId);
+        setStreamingContent('');
+
+        let fullContent = '';
+
+        // Get model based on mode
+        const modelMap: Record<string, string> = {
+          'rag': 'deepseek',
+          'hybrid': 'deepseek',
+          'mistral-7b': 'mistral',
+          'llama-70b': 'llama',
+        };
+        const model = modelMap[mode] || 'deepseek';
+
+        await apiService.streamMessage(
+          messageToSend,
+          model,
+          // onChunk - update message word by word
+          (chunk: string) => {
+            fullContent += chunk;
+            setStreamingContent(fullContent);
+
+            // Update the message in conversation
+            const currentConv = getCurrentConversation();
+            if (currentConv) {
+              const updatedMessages = currentConv.messages.map(m =>
+                m.id === assistantMsgId
+                  ? { ...m, content: fullContent }
+                  : m
+              );
+              updateConversationMessages(convId, updatedMessages);
+            }
+          },
+          // onDone
+          () => {
+            setStreamingMessageId(null);
+            setStreamingContent('');
+            setIsLoading(false);
+          },
+          // onError
+          (error: string) => {
+            console.error('Streaming error:', error);
+            const currentConv = getCurrentConversation();
+            if (currentConv) {
+              const updatedMessages = currentConv.messages.map(m =>
+                m.id === assistantMsgId
+                  ? { ...m, content: fullContent || `Error: ${error}` }
+                  : m
+              );
+              updateConversationMessages(convId, updatedMessages);
+            }
+            setStreamingMessageId(null);
+            setIsLoading(false);
+          }
+        );
+      } else {
+        // NON-STREAMING MODE - Regular API call
+        const response = await apiService.sendMessage(
+          messageToSend,
+          mode,
+          convId,
+          filesToCompare.length > 0 ? filesToCompare : undefined,
+          visionAttachments.length > 0 ? visionAttachments : undefined,
+          enabledMcps
+        );
+
+        const responseContent = response.data?.message || response.data?.answer || 'No response received';
+        const responseSources = response.data?.sources || [];
+
+        const assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant' as const,
+          content: String(responseContent),
+          timestamp: new Date().toISOString(),
+          sources: Array.isArray(responseSources) ? responseSources.map(s => String(s)) : [],
+        };
+
+        addMessageToConversation(convId, assistantMessage);
+        setIsLoading(false);
+      }
     } catch (error: any) {
       const errorMessage = {
         id: (Date.now() + 1).toString(),
@@ -747,7 +1001,6 @@ const AnalystChat: React.FC = () => {
         timestamp: new Date().toISOString(),
       };
       addMessageToConversation(convId, errorMessage);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -834,6 +1087,108 @@ const AnalystChat: React.FC = () => {
     } catch (error) {
       console.error('Failed to copy:', error);
     }
+  };
+
+  // Handle export message to PDF/PPTX/Email
+  const handleExportMessage = async (content: string, format: 'pdf' | 'pptx' | 'email') => {
+    try {
+      const response = await fetch('/api/v1/exports/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Business Analyst Report',
+          content: content,
+          format: format,
+          workspace_id: localStorage.getItem('userId') || 'default'
+        })
+      });
+
+      if (!response.ok) throw new Error('Export failed');
+
+      const data = await response.json();
+
+      // Decode base64 and download
+      const binaryString = atob(data.content_base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: data.content_type });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = data.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + (error.message || 'Unknown error'));
+    }
+  };
+
+  // Handle regenerate response - find the previous user message and resend it
+  const handleRegenerate = async (messageId: string) => {
+    const currentConv = getCurrentConversation();
+    if (!currentConv) return;
+
+    // Find the assistant message index
+    const msgIndex = currentConv.messages.findIndex(m => m.id === messageId);
+    if (msgIndex <= 0) return;
+
+    // Find the previous user message
+    let userMsgIndex = msgIndex - 1;
+    while (userMsgIndex >= 0 && currentConv.messages[userMsgIndex].role !== 'user') {
+      userMsgIndex--;
+    }
+    if (userMsgIndex < 0) return;
+
+    const userMessage = currentConv.messages[userMsgIndex];
+
+    // Remove the assistant message we're regenerating
+    const updatedMessages = currentConv.messages.filter((_, i) => i !== msgIndex);
+    updateConversationMessages(currentConv.id, updatedMessages);
+
+    // Resend the user message
+    setInput(userMessage.content);
+    setTimeout(() => {
+      setInput('');
+      // Manually trigger send with the original message
+      const sendWithMessage = async () => {
+        setIsLoading(true);
+        try {
+          const response = await apiService.sendMessage(
+            userMessage.content,
+            mode,
+            currentConv.id,
+            undefined,
+            undefined,
+            enabledMcps
+          );
+          const assistantMessage = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant' as const,
+            content: String(response.data?.message || response.data?.answer || 'No response'),
+            timestamp: new Date().toISOString(),
+            sources: response.data?.sources || [],
+          };
+          addMessageToConversation(currentConv.id, assistantMessage);
+        } catch (error: any) {
+          const errorMessage = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant' as const,
+            content: `Sorry, I encountered an error: ${error.message || 'Unknown error'}`,
+            timestamp: new Date().toISOString(),
+          };
+          addMessageToConversation(currentConv.id, errorMessage);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      sendWithMessage();
+    }, 100);
   };
 
   const handleNewChat = () => {
@@ -926,7 +1281,7 @@ const AnalystChat: React.FC = () => {
                 onClick={() => selectConversation(conv.id)}
                 className={`group flex items-center gap-2 p-3 rounded-lg cursor-pointer chat-item ${currentConversationId === conv.id ? 'active' : ''}`}
               >
-                <MessageSquare className={`w-4 h-4 flex-shrink-0 ${currentConversationId === conv.id ? 'text-orange-400' : 'text-gray-500'}`} />
+                <MessageSquare className={`w-4 h-4 flex-shrink-0 ${currentConversationId === conv.id ? 'text-teal-400' : 'text-gray-500'}`} />
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm truncate ${currentConversationId === conv.id ? 'text-gray-100' : 'text-gray-300'}`}>
                     {conv.title}
@@ -1030,7 +1385,7 @@ const AnalystChat: React.FC = () => {
                               <button
                                 onClick={() => handleSaveAndResend(message.id)}
                                 disabled={!editingContent.trim()}
-                                className="px-4 py-1.5 bg-orange-600 hover:bg-orange-700 text-white text-sm rounded-lg disabled:opacity-50"
+                                className="px-4 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg disabled:opacity-50"
                               >
                                 Save & Resend
                               </button>
@@ -1058,8 +1413,9 @@ const AnalystChat: React.FC = () => {
                     ) : (
                       // Bot Message - Left side with logo, full width response
                       <div className="flex items-start gap-3 w-full max-w-full">
-                        <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 mt-1">
-                          <img src="/logo.png" alt="AI" className="w-full h-full object-cover" />
+                        {/* Animated Bar Chart Logo */}
+                        <div className="w-8 h-8 flex-shrink-0 mt-1 flex items-center justify-center">
+                          <AnimatedBotIcon size={24} />
                         </div>
                         <div className="flex-1">
                           <div className="prose prose-invert max-w-none">
@@ -1072,7 +1428,7 @@ const AnalystChat: React.FC = () => {
                                 </p>
                                 <div className="flex flex-wrap gap-2">
                                   {message.sources.map((source, i) => (
-                                    <span key={i} className="px-2 py-1 bg-orange-500/20 text-orange-300 rounded-lg text-xs">
+                                    <span key={i} className="px-2 py-1 bg-teal-500/20 text-teal-300 rounded-lg text-xs">
                                       {String(source)}
                                     </span>
                                   ))}
@@ -1081,23 +1437,41 @@ const AnalystChat: React.FC = () => {
                             )}
                           </div>
                           <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => handleCopyMessage(message.id, message.content)} className="p-1.5 hover:bg-dark-hover rounded-lg text-gray-500 hover:text-gray-300" title="Copy">
+                            <button onClick={() => handleCopyMessage(message.id, message.content)} className="p-1.5 hover:bg-dark-hover rounded-lg text-gray-500 hover:text-gray-300 transition-colors" title="Copy">
                               {copiedMessageId === message.id ? <CheckCheck className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
                             </button>
-                            <button className="p-1.5 hover:bg-dark-hover rounded-lg text-gray-500 hover:text-gray-300" title="Thumbs up">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <button
+                              onClick={() => handleFeedback(message.id, 'up')}
+                              className={`p-1.5 hover:bg-dark-hover rounded-lg transition-colors ${messageFeedback[message.id] === 'up'
+                                ? 'text-green-400 bg-green-400/10'
+                                : 'text-gray-500 hover:text-green-400'
+                                }`}
+                              title="Good response"
+                            >
+                              <svg className="w-4 h-4" fill={messageFeedback[message.id] === 'up' ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-1.53a2 2 0 01-1.271-.453L11 19.5a3 3 0 01-1-2.236V13a3 3 0 011-2.236L14 8.5V10z" />
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 10h-.5a2 2 0 00-2 2v6a2 2 0 002 2h.5" />
                               </svg>
                             </button>
-                            <button className="p-1.5 hover:bg-dark-hover rounded-lg text-gray-500 hover:text-gray-300" title="Thumbs down">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <button
+                              onClick={() => handleFeedback(message.id, 'down')}
+                              className={`p-1.5 hover:bg-dark-hover rounded-lg transition-colors ${messageFeedback[message.id] === 'down'
+                                ? 'text-red-400 bg-red-400/10'
+                                : 'text-gray-500 hover:text-red-400'
+                                }`}
+                              title="Bad response"
+                            >
+                              <svg className="w-4 h-4" fill={messageFeedback[message.id] === 'down' ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.737 3h1.53a2 2 0 011.271.453L13 4.5a3 3 0 011 2.236V11a3 3 0 01-1 2.236L10 15.5V14z" />
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 14h.5a2 2 0 002-2V6a2 2 0 00-2-2h-.5" />
                               </svg>
                             </button>
-                            <button className="p-1.5 hover:bg-dark-hover rounded-lg text-gray-500 hover:text-gray-300" title="Regenerate">
-                              <RotateCcw className="w-4 h-4" />
+                            <button
+                              onClick={() => handleRegenerate(message.id)}
+                              className="p-1.5 hover:bg-dark-hover rounded-lg text-gray-500 hover:text-teal-400 transition-colors"
+                              title="Regenerate response"
+                            >
+                              <RefreshCw className="w-4 h-4" />
                             </button>
                           </div>
                         </div>
@@ -1122,7 +1496,7 @@ const AnalystChat: React.FC = () => {
               <div className="mb-3 flex flex-wrap gap-2">
                 {attachedFiles.map((file, index) => (
                   <div key={index} className="flex items-center gap-2 px-3 py-2 bg-dark-card border border-dark-border rounded-lg text-sm">
-                    <FileText className="w-4 h-4 text-orange-400" />
+                    <FileText className="w-4 h-4 text-teal-400" />
                     <span className="text-gray-300 truncate max-w-[200px]">{file.name}</span>
                     <button
                       onClick={() => removeAttachedFile(index)} className="text-gray-500 hover:text-red-400">
@@ -1130,20 +1504,48 @@ const AnalystChat: React.FC = () => {
                     </button>
                   </div>
                 ))}
-                {selectedImage && (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-dark-card border border-dark-border rounded-lg text-sm text-gray-300">
-                    <ImageIcon className="w-4 h-4 text-orange-400" />
-                    <span className="truncate max-w-[150px]">{selectedImage.name}</span>
-                    <button onClick={() => setSelectedImage(null)} className="text-gray-500 hover:text-red-400">
-                      <X className="w-4 h-4" />
+              </div>
+            )}
+
+            {/* Image Preview - Shows separately from attached files */}
+            {selectedImage && imagePreviewUrl && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                <div className="relative group inline-block">
+                  {/* ChatGPT-style Image Preview Thumbnail */}
+                  <div className="relative w-32 h-24 rounded-xl overflow-hidden border-2 border-indigo-500/50 shadow-lg bg-dark-card transition-all duration-200 hover:border-indigo-400">
+                    <img
+                      src={imagePreviewUrl}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                    />
+                    {/* Overlay with actions */}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-200 flex items-center justify-center">
+                      {/* Edit/View button - top left */}
+                      <button
+                        className="absolute top-1 left-1 p-1 bg-black/50 hover:bg-black/70 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="View image"
+                      >
+                        <Pencil className="w-3 h-3 text-white" />
+                      </button>
+                    </div>
+                    {/* Dismiss button - top right */}
+                    <button
+                      onClick={() => {
+                        setSelectedImage(null);
+                        setImagePreviewUrl(null);
+                      }}
+                      className="absolute top-1 right-1 p-1 bg-gray-800/80 hover:bg-red-600 rounded-md text-white transition-colors"
+                      title="Remove image"
+                    >
+                      <X className="w-3 h-3" />
                     </button>
                   </div>
-                )}
+                </div>
               </div>
             )}
 
             {/* Input Bar Container */}
-            <div className="flex items-end gap-2 sm:gap-3 p-2 sm:p-3 bg-dark-card border border-dark-border rounded-2xl sm:rounded-2xl focus-within:border-orange-500/50 transition-colors">
+            <div className="flex items-end gap-2 sm:gap-3 p-2 sm:p-3 bg-dark-card border border-dark-border rounded-2xl sm:rounded-2xl focus-within:border-teal-500/50 transition-colors">
 
               {/* Left side buttons - Hidden on mobile, shown on desktop */}
               <div className="hidden sm:flex items-center gap-2">
@@ -1155,7 +1557,7 @@ const AnalystChat: React.FC = () => {
                       <div className="absolute bottom-full mb-2 left-0 w-64 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden z-50">
                         <div className="p-2 border-b border-dark-border flex items-center justify-between">
                           <p className="text-xs font-semibold text-gray-500 px-2">MCP SERVERS</p>
-                          <span className="text-xs text-orange-400">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length}</span>
+                          <span className="text-xs text-teal-400">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length}</span>
                         </div>
                         {mcpServers.map((mcp) => (
                           <button
@@ -1168,7 +1570,7 @@ const AnalystChat: React.FC = () => {
                               <p className={`text-sm ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
                               <p className="text-xs text-gray-500">{mcp.description}</p>
                             </div>
-                            <div className={`w-8 h-4 rounded-full transition-colors ${enabledMcps[mcp.id] ? 'bg-orange-500' : 'bg-gray-700'}`}>
+                            <div className={`w-8 h-4 rounded-full transition-colors ${enabledMcps[mcp.id] ? 'bg-teal-500' : 'bg-gray-700'}`}>
                               <div className={`w-3 h-3 rounded-full bg-white mt-0.5 transition-transform ${enabledMcps[mcp.id] ? 'translate-x-4 ml-0.5' : 'translate-x-0.5'}`} />
                             </div>
                           </button>
@@ -1273,7 +1675,7 @@ const AnalystChat: React.FC = () => {
                   <div className="fixed bottom-20 left-4 right-4 sm:absolute sm:bottom-full sm:left-0 sm:right-auto sm:mb-2 w-auto sm:w-64 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden z-50">
                     <div className="p-3 border-b border-dark-border flex items-center justify-between">
                       <p className="text-xs font-semibold text-gray-500">MCP SERVERS</p>
-                      <span className="text-xs text-orange-400">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length}</span>
+                      <span className="text-xs text-teal-400">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length}</span>
                     </div>
                     <div className="max-h-64 overflow-y-auto">
                       {mcpServers.map((mcp) => (
@@ -1287,7 +1689,7 @@ const AnalystChat: React.FC = () => {
                             <p className={`text-sm ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
                             <p className="text-xs text-gray-500">{mcp.description}</p>
                           </div>
-                          <div className={`w-8 h-4 rounded-full transition-colors ${enabledMcps[mcp.id] ? 'bg-orange-500' : 'bg-gray-700'}`}>
+                          <div className={`w-8 h-4 rounded-full transition-colors ${enabledMcps[mcp.id] ? 'bg-teal-500' : 'bg-gray-700'}`}>
                             <div className={`w-3 h-3 rounded-full bg-white mt-0.5 transition-transform ${enabledMcps[mcp.id] ? 'translate-x-4 ml-0.5' : 'translate-x-0.5'}`} />
                           </div>
                         </button>
@@ -1344,14 +1746,14 @@ const AnalystChat: React.FC = () => {
                               <div className="flex items-center gap-2">
                                 <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
                                 {m.badge && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-orange-500/20 text-orange-400 rounded">
+                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/20 text-teal-400 rounded">
                                     {m.badge}
                                   </span>
                                 )}
                               </div>
                               <p className="text-xs text-gray-500">{m.description}</p>
                             </div>
-                            {mode === m.id && <Check className="w-4 h-4 text-orange-400" />}
+                            {mode === m.id && <Check className="w-4 h-4 text-teal-400" />}
                           </button>
                         ))}
 
@@ -1401,20 +1803,30 @@ const AnalystChat: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Send Button - Large and prominent */}
-                <button
-                  onClick={handleSend}
-                  disabled={(!input.trim() && !selectedImage && attachedFiles.length === 0) || isLoading}
-                  className="p-3 sm:p-2.5 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl transition-colors disabled:cursor-not-allowed"
-                >
-                  <Send className="w-6 h-6 sm:w-5 sm:h-5" />
-                </button>
+                {/* Send/Stop Button - Transforms like ChatGPT */}
+                {isLoading ? (
+                  <button
+                    onClick={handleStopGeneration}
+                    className="p-3 sm:p-2.5 bg-gray-600 hover:bg-red-600 text-white rounded-xl transition-all duration-200"
+                    title="Stop generating"
+                  >
+                    <Square className="w-5 h-5 sm:w-4 sm:h-4 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim() && !selectedImage && attachedFiles.length === 0}
+                    className="p-3 sm:p-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl transition-colors disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-6 h-6 sm:w-5 sm:h-5" />
+                  </button>
+                )}
               </div>
             </div>
 
             {/* Disclaimer */}
             <p className="text-center text-xs text-gray-500 mt-3">
-              AI Business Analyst can make mistakes. Please double-check responses.
+              DataVision can make mistakes. Please double-check responses.
             </p>
           </div>
         </div >
