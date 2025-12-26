@@ -10,15 +10,12 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-    Upload,
     BarChart3,
     Zap,
     LineChart,
     PieChart,
     Sun,
     Moon,
-    TrendingUp,
-    CheckCircle,
 } from 'lucide-react';
 
 const Landing: React.FC = () => {
@@ -48,26 +45,26 @@ const Landing: React.FC = () => {
     const features = [
         {
             icon: Zap,
-            title: 'Zero Hardcoding',
-            description: 'Upload any dataset and get automatic insights without configuration.',
+            title: 'Universal Data Support',
+            description: 'Works with any data type - healthcare, sales, HR, finance, education, and more.',
             color: '#3B82F6',
         },
         {
             icon: BarChart3,
-            title: 'Automated Analysis',
-            description: 'AI detects patterns, trends, and anomalies in your data instantly.',
+            title: 'AI-Powered Analysis',
+            description: 'Chat with your data using RAG, GraphRAG, and Hybrid modes for deep insights.',
             color: '#22C55E',
         },
         {
             icon: LineChart,
-            title: 'Interactive Dashboard',
-            description: 'Dynamic charts and visualizations that adapt to your data schema.',
+            title: 'Dynamic Visualizations',
+            description: 'Auto-generated charts and dashboards that adapt to your data structure.',
             color: '#F59E0B',
         },
         {
             icon: PieChart,
-            title: 'Adaptive Insights',
-            description: 'Natural language summaries that explain what your data means.',
+            title: 'Smart Reports',
+            description: 'Scheduled email reports with key metrics and AI-generated insights.',
             color: '#8B5CF6',
         },
     ];
@@ -136,15 +133,14 @@ const Landing: React.FC = () => {
                             transition={{ duration: 0.5 }}
                         >
                             <h1 className="text-5xl lg:text-7xl font-bold mb-6 tracking-tight leading-tight" style={{ color: textPrimary }}>
-                                Transform your <span className="bg-gradient-to-r from-teal-400 to-blue-500 bg-clip-text text-transparent">Raw data</span> into actionable insights
+                                Transform your <span className="bg-gradient-to-r from-teal-400 to-blue-500 bg-clip-text text-transparent">data</span> into actionable insights
                             </h1>
 
                             <p
                                 className="text-lg leading-relaxed mb-8"
                                 style={{ color: textMuted }}
                             >
-                                Upload any dataset and let AI automatically generate insights, charts,
-                                and recommendations. No configuration required.
+                                Upload CSV, Excel, or import from Google Sheets. Chat with AI to analyze healthcare, sales, HR, finance, or any domain data instantly.
                             </p>
 
                             <motion.button
@@ -182,16 +178,16 @@ const Landing: React.FC = () => {
                                     <div className="flex-1 p-4">
                                         <div className="flex items-center gap-2 mb-4">
                                             <img src="/logo.png" alt="" className="w-5 h-5 object-contain" />
-                                            <p className="text-lg font-semibold" style={{ color: textPrimary }}>Overview</p>
+                                            <p className="text-lg font-semibold" style={{ color: textPrimary }}>Data Overview</p>
                                         </div>
 
-                                        {/* KPI Cards */}
+                                        {/* Dynamic KPI Cards - Generic placeholders */}
                                         <div className="grid grid-cols-4 gap-2 mb-4">
                                             {[
-                                                { label: 'Total Sales', value: '₹12.4 Cr', color: '#14B8A6' },
-                                                { label: 'Customers', value: '14.2k', color: '#2DD4BF' },
-                                                { label: 'Avg Order', value: '₹8,450', color: '#0D9488' },
-                                                { label: 'Conversion', value: '3.2%', color: '#14B8A6' },
+                                                { label: 'Total Records', value: '—', color: '#14B8A6' },
+                                                { label: 'Columns', value: '—', color: '#2DD4BF' },
+                                                { label: 'Metrics', value: '—', color: '#0D9488' },
+                                                { label: 'Categories', value: '—', color: '#14B8A6' },
                                             ].map((kpi, i) => (
                                                 <div key={i} className="p-2 rounded-lg" style={{ backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }}>
                                                     <p className="text-[10px] mb-1" style={{ color: textMuted }}>{kpi.label}</p>
@@ -204,7 +200,7 @@ const Landing: React.FC = () => {
                                         <div className="grid grid-cols-3 gap-2">
                                             {/* Trend */}
                                             <div className="col-span-2 p-3 rounded-lg" style={{ backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }}>
-                                                <p className="text-xs font-medium mb-2" style={{ color: textPrimary }}>Hiring Trend</p>
+                                                <p className="text-xs font-medium mb-2" style={{ color: textPrimary }}>Data Trend</p>
                                                 <div className="flex items-end gap-1 h-16">
                                                     {[40, 60, 35, 80, 55, 70, 90, 65, 85].map((h, i) => (
                                                         <div key={i} className="flex-1 rounded-t bg-gradient-to-t from-teal-500 to-teal-400" style={{ height: `${h}%` }}></div>
@@ -214,7 +210,7 @@ const Landing: React.FC = () => {
 
                                             {/* Donut */}
                                             <div className="p-3 rounded-lg" style={{ backgroundColor: isDark ? '#1E293B' : '#F8FAFC' }}>
-                                                <p className="text-xs font-medium mb-2" style={{ color: textPrimary }}>Roles</p>
+                                                <p className="text-xs font-medium mb-2" style={{ color: textPrimary }}>Breakdown</p>
                                                 <div className="relative w-12 h-12 mx-auto">
                                                     <svg viewBox="0 0 36 36" className="w-full h-full">
                                                         <circle cx="18" cy="18" r="12" fill="none" stroke="#14B8A6" strokeWidth="6" strokeDasharray="35 65" strokeDashoffset="25" />
@@ -281,7 +277,7 @@ const Landing: React.FC = () => {
                             Ready to unlock your data's potential?
                         </h2>
                         <p className="text-xl text-white/80 mb-8">
-                            Start analyzing your business data in minutes
+                            Upload any data and start getting AI-powered insights in minutes
                         </p>
                         <motion.button
                             whileHover={{ scale: 1.02 }}
@@ -299,9 +295,7 @@ const Landing: React.FC = () => {
             <footer className="py-10 px-6 border-t" style={{ borderColor }}>
                 <div className="max-w-6xl mx-auto flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                            <BarChart3 className="w-4 h-4 text-white" />
-                        </div>
+                        <img src="/logo.png" alt="DataVision Logo" className="w-7 h-7 object-contain" />
                         <span className="text-sm font-medium" style={{ color: textMuted }}>DataVision</span>
                     </div>
                     <p className="text-xs" style={{ color: textMuted }}>

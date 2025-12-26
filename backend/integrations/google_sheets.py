@@ -51,12 +51,37 @@ async def fetch_google_sheet_csv(sheet_id: str, sheet_name: Optional[str] = None
     else:
         url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
     
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-            if response.status == 200:
-                return await response.text()
-            else:
-                raise Exception(f"Failed to fetch sheet: HTTP {response.status}")
+    print(f"📊 Fetching Google Sheet from: {url}")
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30), allow_redirects=True) as response:
+                print(f"📊 Response status: {response.status}")
+                content = await response.text()
+                
+                # Check if we got actual CSV or an error page
+                if response.status == 200:
+                    # Check for common error patterns (HTML response instead of CSV)
+                    if content.strip().startswith('<!DOCTYPE') or content.strip().startswith('<html'):
+                        print(f"📊 Got HTML instead of CSV - sheet may not be public")
+                        raise Exception(
+                            "Sheet is not publicly accessible. Please make sure 'Anyone with the link' can view this sheet. "
+                            "Go to Share > General access > 'Anyone with the link'"
+                        )
+                    return content
+                elif response.status == 400:
+                    raise Exception("Invalid sheet URL or sheet ID")
+                elif response.status == 401 or response.status == 403:
+                    raise Exception(
+                        "Sheet is not publicly accessible. Please share the sheet with 'Anyone with the link can view' permission"
+                    )
+                elif response.status == 404:
+                    raise Exception("Sheet not found. Check if the URL is correct and the sheet exists")
+                else:
+                    raise Exception(f"Failed to fetch sheet: HTTP {response.status}")
+    except aiohttp.ClientError as e:
+        print(f"📊 Network error: {e}")
+        raise Exception(f"Network error while fetching sheet: {str(e)}")
 
 
 async def import_google_sheet(url_or_id: str, sheet_name: Optional[str] = None) -> pd.DataFrame:

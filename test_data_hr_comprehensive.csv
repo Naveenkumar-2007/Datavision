@@ -1,0 +1,51 @@
+Employee_ID,Name,Department,Position,Salary,Performance_Rating,Years_Experience,Age,Hire_Date,Project_Count,Training_Hours,Satisfaction_Score
+E001,John Smith,Engineering,Senior Engineer,95000,4.5,8,35,2016-03-15,12,45,8.5
+E002,Sarah Johnson,Engineering,Lead Engineer,110000,4.8,10,38,2014-06-20,15,32,9.2
+E003,Michael Brown,Engineering,Engineer,75000,4.2,5,29,2019-01-10,8,28,7.8
+E004,Emily Davis,Engineering,Junior Engineer,62000,4.0,2,25,2022-04-05,5,52,8.0
+E005,David Wilson,Engineering,Senior Engineer,98000,4.6,9,36,2015-08-12,11,38,8.8
+E006,Lisa Anderson,Marketing,Marketing Manager,88000,4.7,7,34,2017-02-28,10,25,9.0
+E007,James Taylor,Marketing,Marketing Specialist,68000,4.3,4,28,2020-05-15,7,30,8.2
+E008,Jennifer Martinez,Marketing,Senior Analyst,72000,4.4,6,31,2018-09-10,9,35,8.4
+E009,Robert Garcia,Marketing,Digital Marketer,65000,4 .1,3,27,2021-03-20,6,42,7.9
+E010,Mary Rodriguez,Marketing,Content Manager,70000,4.5,5,30,2019-07-08,8,28,8.6
+E011,Christopher Lee,Sales,Sales Director,115000,4.9,12,40,2012-11-05,18,22,9.5
+E012,Patricia White,Sales,Senior Sales Rep,82000,4.6,8,35,2016-01-18,13,28,8.9
+E013,Thomas Harris,Sales,Sales Representative,68000,4.3,4,28,2020-06-22,7,35,8.1
+E014,Jessica Clark,Sales,Junior Sales Rep,55000,4.0,2,24,2022-08-15,4,48,7.7
+E015,Daniel Lewis,Sales,Account Manager,78000,4.5,6,32,2018-04-10,10,30,8.5
+E016,Karen Walker,HR,HR Director,105000,4.8,11,39,2013-09-12,14,20,9.3
+E017,Matthew Hall,HR,HR Manager,85000,4.6,7,34,2017-05-25,9,26,8.7
+E018,Nancy Allen,HR,Recruiter,62000,4.2,3,26,2021-10-08,5,40,8.0
+E019,Mark Young,HR,Benefits Specialist,68000,4.4,5,30,2019-02-14,7,32,8.3
+E020,Susan King,HR,Training Coordinator,65000,4.3,4,28,2020-07-20,6,45,8.2
+E021,Paul Wright,Finance,CFO,135000,4.9,15,45,2009-03-01,20,15,9.6
+E022,Laura Scott,Finance,Finance Manager,95000,4.7,9,37,2015-11-18,12,24,9.0
+E023,Kevin Green,Finance,Senior Analyst,78000,4.5,6,32,2018-08-05,9,30,8.6
+E024,Sandra Adams,Finance,Financial Analyst,70000,4.3,4,28,2020-12-10,6,36,8.1
+E025,Brian Baker,Finance,Junior Analyst,58000,4.1,2,25,2022-02-28,4,50,7.8
+E026,Michelle Nelson,Engineering,Senior Engineer,96000,4.6,8,35,2016-06-15,11,40,8.7
+E027,George Carter,Engineering,Engineer,76000,4.3,5,30,2019-04-20,7,32,8.0
+E028,Betty Mitchell,Marketing,Brand Manager,82000,4.7,7,33,2017-10-12,10,28,8.9
+E029,Edward Perez,Sales,Territory Manager,85000,4.6,8,36,2016-02-08,12,26,8.8
+E030,Dorothy Roberts,HR,Compensation Analyst,72000,4.4,5,31,2019-09-25,7,34,8.4
+E031,Ronald Turner,Engineering,Tech Lead,105000,4.8,10,38,2014-12-03,14,30,9.1
+E032,Carol Phillips,Finance,Budget Analyst,74000,4.4,6,32,2018-05-17,8,32,8.3
+E033,Steven Campbell,Engineering,DevOps Engineer,88000,4.6,7,34,2017-07-22,10,36,8.7
+E034,Ruth Parker,Marketing,Social Media Manager,68000,4.3,4,28,2020-09-14,6,38,8.1
+E035,Raymond Evans,Sales,Inside Sales Rep,62000,4.2,3,26,2021-11-30,5,42,7.9
+E036,Sharon Edwards,HR,Talent Acquisition,70000,4.5,5,30,2019-03-08,7,30,8.5
+E037,Gary Collins,Finance,Tax Specialist,80000,4.6,8,35,2016-08-19,11,28,8.8
+E038,Deborah Stewart,Engineering,QA Engineer,72000,4.3,5,29,2019-06-12,7,34,8.2
+E039,Frank Sanchez,Marketing,Product Marketing,75000,4.5,6,31,2018-11-05,8,30,8.6
+E040,Cynthia Morris,Sales,Business Development,80000,4.6,7,33,2017-12-20,10,26,8.7
+E041,Jack Rogers,Engineering,Software Architect,115000,4.9,12,40,2012-04-15,16,25,9.4
+E042,Diane Reed,Marketing,Marketing Director,108000,4.8,10,38,2014-07-28,13,22,9.2
+E043,Gerald Cook,Sales,Regional Manager,98000,4.7,9,37,2015-10-10,12,24,9.0
+E044,Julie Morgan,HR,Employee Relations,68000,4.4,5,30,2019-12-18,6,36,8.3
+E045,Larry Bell,Finance,Investment Analyst,82000,4.6,7,34,2017-03-25,9,28,8.8
+E046,Denise Murphy,Engineering,Data Engineer,90000,4.7,8,35,2016-09-08,11,32,8.9
+E047,Jose Bailey,Marketing,SEO Specialist,65000,4.2,4,27,2020-11-22,5,40,8.0
+E048,Evelyn Rivera,Sales,Customer Success,72000,4.5,6,31,2018-07-14,8,30,8.5
+E049,Harold Cooper,HR,HRIS Manager,78000,4.6,7,33,2017-01-30,9,28,8.7
+E050,Frances Richardson,Finance,Accounting Manager,88000,4.7,8,36,2016-05-12,10,26,8.9

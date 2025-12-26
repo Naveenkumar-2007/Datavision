@@ -210,6 +210,7 @@ try:
         format_factual_response,
         format_prediction_response,
         clean_ai_artifacts,
+        clean_for_display,  # New v2.0 full cleaning pipeline
         validate_numbers_in_response,
         calculate_response_confidence,
         format_metric_table,
@@ -218,7 +219,26 @@ try:
     OUTPUT_FORMATTER_AVAILABLE = True
 except ImportError:
     OUTPUT_FORMATTER_AVAILABLE = False
+    clean_for_display = None
     print("⚠️ Output formatter not available")
+
+# Query Decomposer imports (LLM-powered query enhancement v2.0)
+try:
+    from core.query_decomposer import (
+        decompose_query,
+        llm_decompose_query,
+        classify_query_intent,
+        expand_query_with_schema,
+        QueryIntent,
+        TemporalExpression,
+        is_complex_query,
+        merge_results,
+    )
+    QUERY_DECOMPOSER_AVAILABLE = True
+    print("✓ Query Decomposer v2.0 loaded - LLM-powered query enhancement active")
+except ImportError as e:
+    QUERY_DECOMPOSER_AVAILABLE = False
+    print(f"⚠️ Query decomposer not available: {e}")
 
 # Visualization Intelligence imports (ChatGPT-level charts)
 try:
@@ -3019,21 +3039,36 @@ Ignore the Total Dataset Stats if they contradict what was shown in the chart.
                 premium_visual_generated = False
                 
                 # 2. PREMIUM VISUAL: MINDMAPS, KNOWLEDGE GRAPHS, RELATIONSHIPS
-                # Uses new LLM-driven graph_visualizations module
+                # Uses new LLM-driven graph_visualizations v2.0 module
                 graph_viz_keywords = ['mindmap', 'mind map', 'knowledge graph', 'network', 
-                                     'relationship', 'sankey', 'entity map', 'connections']
+                                     'relationship', 'sankey', 'entity map', 'connections',
+                                     'radial', 'cluster', 'hierarchy', 'tree diagram']
                 if any(w in q_lower for w in graph_viz_keywords):
                     try:
                         from agents.graph_visualizations import (
                             generate_mindmap, generate_knowledge_graph, 
-                            generate_relationship_diagram, detect_graph_visualization_type
+                            generate_relationship_diagram, detect_graph_visualization_type,
+                            generate_radial_mindmap, generate_entity_cluster,
+                            get_best_graph_visualization
                         )
                         
                         # LLM determines what type of visualization user wants
                         viz_type = detect_graph_visualization_type(question)
-                        print(f"[GRAPH VIZ] Detected visualization type: {viz_type}")
+                        print(f"[GRAPH VIZ v2.0] Detected visualization type: {viz_type}")
                         
-                        if viz_type == 'mindmap':
+                        if viz_type == 'radial':
+                            # NEW: Pro-level radial mindmap
+                            chart, explanation = generate_radial_mindmap(
+                                graph=graph, query=question, max_depth=3
+                            )
+                            if chart:
+                                chart_json = json.dumps(chart, separators=(',', ':'))
+                                answer += f"\n\n```plotly_chart\n{chart_json}\n```"
+                                answer += f"\n\n{explanation}"
+                                premium_visual_generated = True
+                                print(f"[GRAPH VIZ v2.0] ✅ Radial Mindmap generated")
+                        
+                        elif viz_type == 'mindmap':
                             # Generate Plotly treemap (frontend-compatible mindmap)
                             chart, explanation = generate_mindmap(
                                 graph=graph, query=question, max_depth=3
@@ -3043,8 +3078,19 @@ Ignore the Total Dataset Stats if they contradict what was shown in the chart.
                                 answer += f"\n\n```plotly_chart\n{chart_json}\n```"
                                 answer += f"\n\n{explanation}"
                                 premium_visual_generated = True
-                                print(f"[GRAPH VIZ] ✅ Mindmap treemap generated")
+                                print(f"[GRAPH VIZ v2.0] ✅ Mindmap treemap generated")
 
+                        elif viz_type == 'cluster':
+                            # NEW: Entity clustering visualization
+                            chart, explanation = generate_entity_cluster(
+                                df=df, query=question, currency_symbol=currency_symbol
+                            )
+                            if chart:
+                                chart_json = json.dumps(chart, separators=(',', ':'))
+                                answer += f"\n\n```plotly_chart\n{chart_json}\n```"
+                                answer += f"\n\n{explanation}"
+                                premium_visual_generated = True
+                                print(f"[GRAPH VIZ v2.0] ✅ Entity Cluster generated")
                         
                         elif viz_type == 'knowledge_graph':
                             # Generate Plotly network diagram
@@ -3057,7 +3103,7 @@ Ignore the Total Dataset Stats if they contradict what was shown in the chart.
                                 answer += f"\n\n```plotly_chart\n{chart_json}\n```"
                                 answer += f"\n\n{explanation}"
                                 premium_visual_generated = True
-                                print(f"[GRAPH VIZ] ✅ Knowledge Graph generated")
+                                print(f"[GRAPH VIZ v2.0] ✅ Knowledge Graph generated")
                         
                         elif viz_type in ['relationship', 'sankey']:
                             # Generate Sankey relationship diagram
@@ -3704,24 +3750,23 @@ Based on the user's question and the data provided, give a direct answer. If use
                         else:
                             chart_type = 'bar'
                     
-                    # Generate dynamic chart based on query
-                    print(f"[CHART DEBUG] x_col={x_col}, y_col={y_col}, df.columns={list(df.columns)}, chart_type={chart_type}")
-                    if x_col and y_col and x_col in df.columns and y_col in df.columns:
-                        chart = generate_dynamic_chart(
-                            df=df,
-                            chart_type=chart_type,
-                            x_col=x_col,
-                            y_col=y_col,
-                            title=f"Top {chart_limit} {entity.title()}s by Revenue",
-                            currency_symbol=currency_symbol,
-                            limit=chart_limit
-                        )
-                        
-                        if chart:
-                            import json
-                            chart_json = json.dumps(chart, separators=(',', ':'))
-                            answer += f"\n\n```plotly_chart\n{chart_json}\n```"
-                            print(f"[CHART DEBUG] Successfully generated {chart_type} chart, appended to answer")
+                    # Generate dynamic chart using smart_chart for full type support
+                    print(f"[CHART DEBUG] Using smart_chart for query: {question[:50]}...")
+                    # Use smart_chart which has full chart type detection including pie, violin, radar, etc.
+                    if SMART_CHART_AVAILABLE:
+                        try:
+                            chart, chart_explanation = smart_chart(
+                                query=question,
+                                df=df,
+                                currency_symbol=currency_symbol
+                            )
+                            if chart and 'error' not in chart:
+                                import json
+                                chart_json = json.dumps(chart, separators=(',', ':'))
+                                answer += f"\n\n```plotly_chart\n{chart_json}\n```"
+                                print(f"[CHART DEBUG] Successfully generated chart via smart_chart")
+                        except Exception as chart_err:
+                            print(f"[CHART DEBUG] smart_chart failed: {chart_err}")
         except Exception as viz_err:
             print(f"Visualization chart error: {viz_err}")
     

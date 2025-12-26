@@ -6,7 +6,7 @@
 @tailwind utilities;
 
 /* ==================================================================
-   AI BUSINESS ANALYST - ENTERPRISE THEME SYSTEM
+   DATA VISION - UNIVERSAL ANALYTICS THEME SYSTEM
    COMPLETE FIX FOR LIGHT/DARK MODE CONSISTENCY
    ================================================================== */
 
@@ -494,7 +494,8 @@ html.light-theme .btn-new-chat:hover {
    ------------------------------------------------------------------ */
 /* User Message - Subtle neutral pill (like Gemini) */
 .chat-bubble-user {
-  background-color: #374151 !important; /* Gray 700 - subtle dark pill */
+  background-color: #374151 !important;
+  /* Gray 700 - subtle dark pill */
   color: #ffffff !important;
   box-shadow: none;
   border-radius: 1.25rem;
@@ -506,7 +507,8 @@ html.light-theme .btn-new-chat:hover {
 
 /* Light theme user bubble - slightly darker gray */
 html.light-theme .chat-bubble-user {
-  background-color: #4B5563 !important; /* Gray 600 */
+  background-color: #4B5563 !important;
+  /* Gray 600 */
   color: #ffffff !important;
 }
 
@@ -532,7 +534,9 @@ html.light-theme .chat-bubble-bot {
   color: var(--text-primary) !important;
 }
 
-.prose p, .prose li, .prose span {
+.prose p,
+.prose li,
+.prose span {
   color: var(--text-secondary) !important;
 }
 
@@ -1732,6 +1736,7 @@ html.light-theme .apple-blur {
     opacity: 0;
     transform: translateY(20px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -1756,11 +1761,592 @@ html.light-theme .apple-blur {
 
 /* Stop button pulse */
 @keyframes stopPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
 }
 
 .stop-generating-btn:hover {
   animation: stopPulse 1.5s ease-in-out infinite;
 }
 
+/* =============================================================================
+   MCP TOOL EXECUTION ANIMATIONS - Claude-style
+============================================================================= */
+
+/* Shimmer effect for progress bars */
+@keyframes mcp-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.mcp-shimmer {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(45, 212, 191, 0.4) 50%,
+      transparent 100%);
+  background-size: 200% 100%;
+  animation: mcp-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Tool icon rotation */
+@keyframes mcp-tool-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(10deg);
+  }
+
+  75% {
+    transform: rotate(-10deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+.mcp-tool-active {
+  animation: mcp-tool-spin 2s ease-in-out infinite;
+}
+
+/* Pulse glow effect */
+@keyframes mcp-pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 20px 5px rgba(45, 212, 191, 0.2);
+  }
+}
+
+.mcp-tool-running {
+  animation: mcp-pulse-glow 2s ease-in-out infinite;
+}
+
+/* Success checkmark animation */
+@keyframes mcp-success-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.mcp-success-icon {
+  animation: mcp-success-pop 0.4s ease-out forwards;
+}
+
+/* Error shake animation */
+@keyframes mcp-error-shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-5px);
+  }
+
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+.mcp-error-shake {
+  animation: mcp-error-shake 0.3s ease-in-out;
+}
+
+/* Tool chain arrow animation */
+@keyframes mcp-arrow-pulse {
+
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translateX(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateX(3px);
+  }
+}
+
+.mcp-chain-arrow {
+  animation: mcp-arrow-pulse 1s ease-in-out infinite;
+}
+
+/* Permission dialog slide-in */
+@keyframes mcp-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mcp-permission-dialog {
+  animation: mcp-slide-in 0.3s ease-out forwards;
+}
+
+/* Tool execution card styles */
+.mcp-execution-card {
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+.mcp-execution-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Progress bar gradient animation */
+@keyframes mcp-progress-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.mcp-progress-bar {
+  background: linear-gradient(90deg,
+      #14B8A6,
+      #06B6D4,
+      #0EA5E9,
+      #06B6D4,
+      #14B8A6);
+  background-size: 200% 100%;
+  animation: mcp-progress-gradient 2s ease infinite;
+}
+
+/* Status dot pulse */
+@keyframes mcp-status-pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.3);
+  }
+}
+
+.mcp-status-dot-running {
+  animation: mcp-status-pulse 1s ease-in-out infinite;
+}
+
+/* Light mode adjustments */
+html.light-theme .mcp-execution-card {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #e2e8f0;
+}
+
+html.light-theme .mcp-execution-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* ==================================================================
+   CHATGPT-STYLE ANIMATIONS & UI POLISH
+   Premium conversational interface animations
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   MESSAGE SLIDE-UP ANIMATION (Like ChatGPT)
+   ------------------------------------------------------------------ */
+@keyframes messageSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-slide-up {
+  animation: messageSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Staggered message animation for multiple messages */
+.message-stagger-1 {
+  animation-delay: 0.05s;
+}
+
+.message-stagger-2 {
+  animation-delay: 0.1s;
+}
+
+.message-stagger-3 {
+  animation-delay: 0.15s;
+}
+
+/* ------------------------------------------------------------------
+   SMOOTH SCROLL BEHAVIOR
+   ------------------------------------------------------------------ */
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for chat */
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 3px;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* ------------------------------------------------------------------
+   TYPING CURSOR ANIMATION (ChatGPT Style)
+   ------------------------------------------------------------------ */
+@keyframes typingCursor {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: linear-gradient(180deg, #14B8A6 0%, #0D9488 100%);
+  margin-left: 2px;
+  animation: typingCursor 1s ease-in-out infinite;
+  border-radius: 1px;
+}
+
+/* ------------------------------------------------------------------
+   MESSAGE BUBBLE ANIMATIONS
+   ------------------------------------------------------------------ */
+.chat-bubble-user {
+  animation: messageSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chat-bubble-user:hover {
+  transform: scale(1.01);
+}
+
+/* Bot message with typewriter effect container */
+.bot-message-animate {
+  animation: messageSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ------------------------------------------------------------------
+   INPUT BAR ANIMATIONS
+   ------------------------------------------------------------------ */
+@keyframes inputFocusGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.15);
+  }
+
+  100% {
+    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.1);
+  }
+}
+
+.input-glow-focus:focus-within {
+  animation: inputFocusGlow 0.4s ease forwards;
+  border-color: #14B8A6 !important;
+}
+
+/* Send button pulse on hover */
+@keyframes sendButtonPulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.send-button-pulse:hover {
+  animation: sendButtonPulse 0.6s ease;
+}
+
+/* ------------------------------------------------------------------
+   FLOATING ANIMATION (For logo and icons)
+   ------------------------------------------------------------------ */
+@keyframes floatAnimation {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.float-animation {
+  animation: floatAnimation 3s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------
+   WELCOME SCREEN ANIMATIONS
+   ------------------------------------------------------------------ */
+@keyframes welcomeFade {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.welcome-animate {
+  animation: welcomeFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Staggered children animation */
+.stagger-children>* {
+  opacity: 0;
+  animation: messageSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.stagger-children>*:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.stagger-children>*:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.stagger-children>*:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.stagger-children>*:nth-child(4) {
+  animation-delay: 0.25s;
+}
+
+.stagger-children>*:nth-child(5) {
+  animation-delay: 0.3s;
+}
+
+.stagger-children>*:nth-child(6) {
+  animation-delay: 0.35s;
+}
+
+/* ------------------------------------------------------------------
+   MESSAGE ACTION BUTTONS (Copy, Edit, etc.)
+   ------------------------------------------------------------------ */
+.message-actions {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: all 0.2s ease;
+}
+
+.group:hover .message-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ------------------------------------------------------------------
+   LOADING SHIMMER (For skeleton loading)
+   ------------------------------------------------------------------ */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.loading-shimmer {
+  background: linear-gradient(90deg,
+      var(--bg-card) 25%,
+      var(--bg-hover) 50%,
+      var(--bg-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------
+   CHAT CONTAINER TRANSITION
+   ------------------------------------------------------------------ */
+.chat-container {
+  transition: padding-bottom 0.3s ease;
+}
+
+/* When input is focused, add breathing room */
+.chat-container.input-focused {
+  padding-bottom: 2rem;
+}
+
+/* ------------------------------------------------------------------
+   SMOOTH MESSAGE DISAPPEAR (For editing)
+   ------------------------------------------------------------------ */
+@keyframes messageFadeOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+.message-fade-out {
+  animation: messageFadeOut 0.2s ease forwards;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM GLASS MORPHISM CHAT INPUT
+   ------------------------------------------------------------------ */
+.glass-input {
+  background: rgba(30, 41, 59, 0.7) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.1) !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-input:focus-within {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border-color: rgba(20, 184, 166, 0.5) !important;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.1),
+    0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+html.light-theme .glass-input {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-color: rgba(203, 213, 225, 0.8) !important;
+}
+
+html.light-theme .glass-input:focus-within {
+  background: #ffffff !important;
+  border-color: #14B8A6 !important;
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.1),
+    0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* ------------------------------------------------------------------
+   RESPONSE STREAMING ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes streamingDot {
+
+  0%,
+  20% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  80%,
+  100% {
+    opacity: 0.3;
+  }
+}
+
+.streaming-indicator span {
+  animation: streamingDot 1.4s ease-in-out infinite;
+}
+
+.streaming-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.streaming-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* ==================================================================
+   INLINE CODE HIGHLIGHT - Theme Aware
+   For highlighted text in chat responses
+   ================================================================== */
+.inline-code-highlight {
+  background-color: rgba(20, 184, 166, 0.15);
+  color: #0d9488;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.375rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875em;
+  font-weight: 500;
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+/* Dark mode inline code */
+html:not(.light-theme) .inline-code-highlight {
+  background-color: rgba(20, 184, 166, 0.2);
+  color: #5eead4;
+  border-color: rgba(94, 234, 212, 0.3);
+}
+
+/* Light mode inline code - high contrast */
+html.light-theme .inline-code-highlight {
+  background-color: rgba(13, 148, 136, 0.12);
+  color: #0f766e;
+  border-color: rgba(13, 148, 136, 0.25);
+}

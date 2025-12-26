@@ -288,38 +288,157 @@ def format_insufficient_data_response(
 
 def clean_ai_artifacts(response: str) -> str:
     """
+    🧹 ChatGPT-Level Response Cleaning v2.0
+    
     Remove common AI response artifacts:
     - "As an AI..."
     - "I'd be happy to..."
-    - "Based on the information provided..."
+    - "Let me analyze..."
+    - Planning steps ("First, I'll...")
+    - Reasoning preambles ("Looking at the data...")
     - Excessive disclaimers
     """
     import re
     
-    # Common filler phrases
-    fillers = [
+    # Common filler phrases (at start of response)
+    start_fillers = [
         r"(?i)^as an ai[^.]*\.\s*",
         r"(?i)^i'd be happy to[^.]*\.\s*",
         r"(?i)^certainly[!,.]?\s*",
         r"(?i)^of course[!,.]?\s*",
         r"(?i)^sure[!,.]?\s*",
         r"(?i)^great question[!,.]?\s*",
-        r"(?i)based on the information provided,?\s*",
-        r"(?i)based on the data you've shared,?\s*",
-        r"(?i)let me analyze[^.]*\.\s*",
-        r"(?i)i've analyzed[^.]*\.\s*",
+        r"(?i)^good question[!,.]?\s*",
+        r"(?i)^based on the information provided,?\s*",
+        r"(?i)^based on the data you've shared,?\s*",
+        r"(?i)^based on my analysis,?\s*",
+        r"(?i)^based on the uploaded data,?\s*",
     ]
     
-    for pattern in fillers:
+    for pattern in start_fillers:
         response = re.sub(pattern, "", response)
     
-    # Remove multiple newlines
-    response = re.sub(r'\n{3,}', '\n\n', response)
+    # Planning preambles (remove entire sentences)
+    planning_patterns = [
+        r"(?i)let me analyze[^.]*\.\s*",
+        r"(?i)i've analyzed[^.]*\.\s*",
+        r"(?i)i'll start by[^.]*\.\s*",
+        r"(?i)first,? i'll[^.]*\.\s*",
+        r"(?i)first,? let me[^.]*\.\s*",
+        r"(?i)looking at the data[^.]*\.\s*",
+        r"(?i)looking at your data[^.]*\.\s*",
+        r"(?i)analyzing the[^.]*\.\s*",
+        r"(?i)to answer (this|your) question[^.]*\.\s*",
+        r"(?i)let me (check|look|find|see)[^.]*\.\s*",
+        r"(?i)i need to (first|analyze|check)[^.]*\.\s*",
+        r"(?i)here's what i found[^.:]*[.:]\s*",
+        r"(?i)here is (what|the)[^.:]*[.:]\s*",
+    ]
     
-    # Remove trailing whitespace
+    for pattern in planning_patterns:
+        response = re.sub(pattern, "", response)
+    
+    # Remove thinking/reasoning blocks
+    thinking_patterns = [
+        r"\*\*thinking\*\*:?[^*]*\*\*",
+        r"\*thinking\*:?[^*]*\*",
+        r"<thinking>.*?</thinking>",
+        r"\[thinking\].*?\[/thinking\]",
+        r"\[internal\].*?\[/internal\]",
+    ]
+    
+    for pattern in thinking_patterns:
+        response = re.sub(pattern, "", response, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Remove step-by-step planning
+    step_patterns = [
+        r"(?i)step \d+:?[^.]*\.\s*",
+        r"(?i)next,? i('ll|'m going to)[^.]*\.\s*",
+        r"(?i)now,? let me[^.]*\.\s*",
+        r"(?i)finally,? (i'll|let me)[^.]*\.\s*",
+    ]
+    
+    for pattern in step_patterns:
+        response = re.sub(pattern, "", response)
+    
+    # Remove disclaimers and hedging
+    disclaimer_patterns = [
+        r"(?i)\*?note:? (that )?this (is|may be)[^*\n]*\*?\s*",
+        r"(?i)please note[^.]*\.\s*",
+        r"(?i)it's (worth|important to) (noting|note)[^.]*\.\s*",
+        r"(?i)keep in mind[^.]*\.\s*",
+        r"(?i)i should (mention|note)[^.]*\.\s*",
+    ]
+    
+    for pattern in disclaimer_patterns:
+        response = re.sub(pattern, "", response)
+    
+    # Clean up resulting whitespace issues
+    response = re.sub(r'\n{3,}', '\n\n', response)
+    response = re.sub(r'^\s*\n', '', response)
     response = response.strip()
     
     return response
+
+
+def clean_for_display(response: str, max_length: int = 3000) -> str:
+    """
+    Full cleaning pipeline for display to user.
+    
+    1. Clean AI artifacts
+    2. Fix formatting issues
+    3. Remove duplicate mode labels
+    4. Truncate if too long
+    """
+    import re
+    
+    # Step 1: Clean artifacts
+    cleaned = clean_ai_artifacts(response)
+    
+    # Step 2: Remove duplicate mode labels and verbose metadata
+    duplicate_patterns = [
+        # Remove duplicate "Analysis Mode: X" lines
+        r'(?i)(\*\*?\s*Analysis Mode:?\s*\*?\*?:?\s*[A-Z]+\s*\*?\*?)\s*\n\s*\1',
+        r'(?i)✔️?\s*Analysis Mode:?\s*[A-Z]+\s*\n',
+        r'(?i)📊?\s*Analysis Mode:?\s*[A-Z]+\s*\n',
+        # Remove verbose reasoning metadata  
+        r'(?i)(Reasoning Type:?[^\n]*\n)',
+        r'(?i)(Mode Weights:?[^\n]*\n)',
+        r'(?i)(Accuracy Tier:?[^\n]*\n)',
+        # Remove redundant source markers when appearing multiple times
+        r'(\n---\s*){2,}',
+        # Remove empty metadata lines
+        r'\n\s*---\s*\n\s*---\s*\n',
+    ]
+    
+    for pattern in duplicate_patterns:
+        cleaned = re.sub(pattern, '', cleaned)
+    
+    # Step 3: Fix common formatting issues
+    cleaned = cleaned.replace('  ', ' ')
+    cleaned = cleaned.replace(' .', '.')
+    cleaned = cleaned.replace(' ,', ',')
+    
+    # Step 4: Fix table alignment
+    lines = cleaned.split('\n')
+    fixed_lines = []
+    for line in lines:
+        if '|' in line and line.count('|') >= 2:
+            # It's a table row - ensure proper spacing
+            cells = line.split('|')
+            cells = [c.strip() for c in cells]
+            line = ' | '.join(cells)
+        fixed_lines.append(line)
+    cleaned = '\n'.join(fixed_lines)
+    
+    # Step 5: Remove excessive newlines
+    cleaned = re.sub(r'\n{4,}', '\n\n\n', cleaned)
+    
+    # Step 6: Truncate if needed
+    if len(cleaned) > max_length:
+        cleaned = cleaned[:max_length-3] + '...'
+    
+    return cleaned.strip()
 
 
 def validate_numbers_in_response(response: str, context: str) -> str:

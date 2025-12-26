@@ -10,8 +10,6 @@ import {
   FileText,
   Download,
   TrendingUp,
-  Users,
-  ShoppingCart,
   Loader,
   AlertCircle,
   CheckCircle,
@@ -22,8 +20,6 @@ import {
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
   Cell,
@@ -33,9 +29,11 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   Legend,
+  BarChart as BarChartComponent,
+  Bar,
 } from 'recharts';
 import { apiService } from '@/services/api';
-import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency, convertCurrency, formatCompactCurrency } from '@/utils/currency';
+import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency } from '@/utils/currency';
 import { exportToPDF } from '@/utils/pdfExport';
 
 interface ThemeContext {
@@ -75,9 +73,9 @@ const Reports: React.FC = () => {
   const [generating, setGenerating] = useState(false);
   const [exportingPDF, setExportingPDF] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<string>('revenue');
+  const [selectedType, setSelectedType] = useState<string>('metrics');
   const [analytics, setAnalytics] = useState<any>(null);
-  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  // Removed dashboardStats - no longer needed
 
   const CHART_COLORS = ['#14B8A6', '#22C55E', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899'];
   const userPreferredCurrency = getUserPreferredCurrency();
@@ -85,19 +83,13 @@ const Reports: React.FC = () => {
   const currencySymbol = getCurrencySymbol(currency);
   const hasMultipleCurrencies = analytics?.currencyBreakdown?.currencies_count > 1;
 
-  const rawRevenue = hasMultipleCurrencies
-    ? analytics?.currencyBreakdown?.total_usd_equivalent || analytics?.metrics?.totalRevenue
-    : analytics?.metrics?.totalRevenue || 0;
-  const displayRevenue = hasMultipleCurrencies && currency !== 'USD'
-    ? convertCurrency(rawRevenue, 'USD', currency)
-    : rawRevenue;
-  const displayAvgOrder = displayRevenue / (analytics?.metrics?.totalInvoices || 1);
-
-  const CurrencyIcon = () => (
-    <div className="w-8 h-8 flex items-center justify-center font-bold" style={{ color: theme.textPrimary }}>
-      {currencySymbol}
-    </div>
-  );
+  // Commented out as these are no longer needed with dynamic metrics
+  // const rawRevenue = hasMultipleCurrencies
+  //   ? analytics?.currencyBreakdown?.total_usd_equivalent || analytics?.metrics?.totalRevenue
+  //   : analytics?.metrics?.totalRevenue || 0;
+  // const displayRevenue = hasMultipleCurrencies && currency !== 'USD'
+  //   ? convertCurrency(rawRevenue, 'USD', currency)
+  //   : rawRevenue;
 
   useEffect(() => {
     loadAnalytics();
@@ -105,12 +97,8 @@ const Reports: React.FC = () => {
 
   const loadAnalytics = async () => {
     try {
-      const [analyticsResponse, statsResponse] = await Promise.all([
-        apiService.getAnalyticsOverview(),
-        apiService.getDashboardStats()
-      ]);
+      const analyticsResponse = await apiService.getAnalyticsOverview();
       setAnalytics(analyticsResponse.data);
-      setDashboardStats(statsResponse.data);
     } catch (err) {
       console.error('Failed to load analytics:', err);
     }
@@ -155,21 +143,21 @@ const Reports: React.FC = () => {
   };
 
   const reportTypes = [
-    { value: 'revenue', label: 'Revenue Report', description: 'Revenue analysis', icon: CurrencyIcon },
-    { value: 'customer', label: 'Customer Report', description: 'Customer insights', icon: Users },
-    { value: 'product', label: 'Product Report', description: 'Product performance', icon: ShoppingCart },
-    { value: 'executive', label: 'Executive Summary', description: 'High-level overview', icon: TrendingUp },
+    { value: 'metrics', label: 'Metrics Analysis', description: 'Analyze numeric data', icon: TrendingUp },
+    { value: 'breakdown', label: 'Data Breakdown', description: 'Category distributions', icon: PieChartIcon },
+    { value: 'summary', label: 'Data Summary', description: 'Complete overview', icon: BarChart3 },
+    { value: 'executive', label: 'Executive Summary', description: 'High-level insights', icon: FileText },
   ];
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-2xl font-bold" style={{ color: theme.textPrimary }}>Business Reports</h1>
-        <p className="text-sm" style={{ color: theme.textMuted }}>Real reports generated from your uploaded files</p>
+        <h1 className="text-2xl font-bold" style={{ color: theme.textPrimary }}>Data Reports</h1>
+        <p className="text-sm" style={{ color: theme.textMuted }}>Automatic reports generated from your uploaded data</p>
       </motion.div>
 
-      {/* Key Metrics */}
+      {/* Key Metrics - Dynamic based on data */}
       {analytics?.hasData && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           {hasMultipleCurrencies && (
@@ -190,23 +178,85 @@ const Reports: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {[
-              { label: 'Total Revenue', value: formatCurrency(displayRevenue || 0, currency), icon: CurrencyIcon, color: '#22C55E' },
-              { label: 'Customers', value: analytics.metrics?.uniqueCustomers?.toLocaleString() || '0', icon: Users, color: '#14B8A6' },
-              { label: 'Orders', value: analytics.metrics?.totalInvoices?.toLocaleString() || '0', icon: ShoppingCart, color: '#F59E0B' },
-              { label: 'Avg Order', value: formatCurrency(displayAvgOrder || 0, currency), icon: TrendingUp, color: '#8B5CF6' },
-            ].map((metric, i) => (
-              <div key={i} className="p-4 rounded-2xl border" style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}>
-                <div className="flex items-center gap-3">
-                  <metric.icon className="w-8 h-8" style={{ color: metric.color }} />
-                  <div>
-                    <div className="text-xl font-bold" style={{ color: theme.textPrimary }}>{metric.value}</div>
-                    <div className="text-sm" style={{ color: theme.textMuted }}>{metric.label}</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Dynamic metrics from analytics - use actual available data */}
+            {(() => {
+              const colors = ['#22C55E', '#14B8A6', '#F59E0B', '#8B5CF6'];
+              const icons = [TrendingUp, BarChart3, FileText, PieChartIcon];
+
+              // Try multiple data sources in priority order
+              const metrics: any[] = [];
+
+              // 1. First try KPIs from overviewLayout
+              const kpis = analytics.overviewLayout?.kpis || [];
+              if (kpis.length > 0) {
+                kpis.slice(0, 4).forEach((kpi: any, i: number) => {
+                  metrics.push({
+                    label: kpi.name || kpi.label || `Metric ${i + 1}`,
+                    value: kpi.formattedValue || (typeof kpi.value === 'number' ? kpi.value.toLocaleString() : kpi.value) || '0',
+                    icon: icons[i % icons.length],
+                    color: colors[i % colors.length]
+                  });
+                });
+              }
+
+              // 2. If no KPIs, use base metrics from analytics
+              if (metrics.length === 0 && analytics.metrics) {
+                const m = analytics.metrics;
+                if (m.totalRevenue !== undefined && m.totalRevenue > 0) {
+                  metrics.push({
+                    label: 'Total Revenue',
+                    value: formatCurrency(m.totalRevenue, currency),
+                    icon: TrendingUp,
+                    color: '#22C55E'
+                  });
+                }
+                if (m.totalInvoices !== undefined) {
+                  metrics.push({
+                    label: 'Total Records',
+                    value: m.totalInvoices?.toLocaleString() || '0',
+                    icon: FileText,
+                    color: '#14B8A6'
+                  });
+                }
+                if (m.uniqueCustomers !== undefined && m.uniqueCustomers > 0) {
+                  metrics.push({
+                    label: 'Unique Entities',
+                    value: m.uniqueCustomers?.toLocaleString() || '0',
+                    icon: BarChart3,
+                    color: '#F59E0B'
+                  });
+                }
+                if (m.uniqueProducts !== undefined && m.uniqueProducts > 0) {
+                  metrics.push({
+                    label: 'Categories',
+                    value: m.uniqueProducts?.toLocaleString() || '0',
+                    icon: PieChartIcon,
+                    color: '#8B5CF6'
+                  });
+                }
+              }
+
+              // 3. Ultimate fallback - just show data availability
+              if (metrics.length === 0) {
+                metrics.push(
+                  { label: 'Data Available', value: analytics.hasData ? 'Yes' : 'No', icon: FileText, color: '#22C55E' },
+                  { label: 'Status', value: 'Ready', icon: TrendingUp, color: '#14B8A6' }
+                );
+              }
+
+              return metrics.slice(0, 4).map((metric: any, i: number) => (
+                <div key={i} className="p-4 rounded-2xl border" style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}>
+                  <div className="flex items-center gap-3">
+                    <metric.icon className="w-8 h-8" style={{ color: metric.color }} />
+                    <div>
+                      <div className="text-xl font-bold" style={{ color: theme.textPrimary }}>{metric.value}</div>
+                      <div className="text-sm" style={{ color: theme.textMuted }}>{metric.label}</div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
         </motion.div>
       )}
@@ -221,7 +271,7 @@ const Reports: React.FC = () => {
       >
         <h2 className="text-lg font-semibold mb-6" style={{ color: theme.textPrimary }}>Generate New Report</h2>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           {reportTypes.map((type) => (
             <button
               key={type.value}
@@ -309,63 +359,94 @@ const Reports: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-6">
-                {report.sections.map((section, i) => (
-                  <div key={i} className="border-l-4 pl-4" style={{ borderColor: '#14B8A6' }}>
-                    <h3 className="text-lg font-semibold mb-2" style={{ color: theme.textPrimary }}>{section.title}</h3>
-                    <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed" style={{ color: theme.textMuted }}>{section.content}</pre>
-                  </div>
-                ))}
+                {report.sections.map((section: any, i: number) => {
+                  // Check if section has chart data
+                  const hasChartData = Array.isArray(section.data) && section.data.length > 0 && section.chartType;
 
-                {dashboardStats?.hasData && (
-                  <div className="mt-8 pt-8 border-t" style={{ borderColor: theme.borderColor }}>
-                    <h3 className="text-lg font-bold mb-6 flex items-center gap-2" style={{ color: theme.textPrimary }}>
-                      <BarChart3 className="w-5 h-5 text-teal-400" />
-                      Visual Analytics
-                    </h3>
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {dashboardStats.revenueTimeline?.length > 0 && (
-                        <div className="p-6 rounded-xl border" style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}>
-                          <h4 className="text-base font-semibold mb-4" style={{ color: theme.textPrimary }}>Revenue Trend</h4>
-                          <ResponsiveContainer width="100%" height={200}>
-                            <AreaChart data={dashboardStats.revenueTimeline}>
-                              <defs>
-                                <linearGradient id="reportGradient" x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="5%" stopColor="#14B8A6" stopOpacity={0.4} />
-                                  <stop offset="95%" stopColor="#14B8A6" stopOpacity={0} />
-                                </linearGradient>
-                              </defs>
-                              <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} vertical={false} />
-                              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
-                              <YAxis axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} tickFormatter={(v) => formatCompactCurrency(v, currency)} />
-                              <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} formatter={(value: number) => [formatCurrency(value, currency), 'Revenue']} />
-                              <Area type="monotone" dataKey="revenue" stroke="#14B8A6" strokeWidth={2} fill="url(#reportGradient)" />
-                            </AreaChart>
-                          </ResponsiveContainer>
-                        </div>
-                      )}
+                  return (
+                    <div key={i} className="border-l-4 pl-4" style={{ borderColor: CHART_COLORS[i % CHART_COLORS.length] }}>
+                      <h3 className="text-lg font-semibold mb-2" style={{ color: theme.textPrimary }}>{section.title}</h3>
 
-                      {dashboardStats.segmentSummary?.length > 0 && (
-                        <div className="p-6 rounded-xl border" style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}>
-                          <h4 className="text-base font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
-                            <PieChartIcon className="w-4 h-4 text-emerald-400" />
-                            Customer Segments
-                          </h4>
+                      {/* Text content */}
+                      <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed mb-4" style={{ color: theme.textMuted }}>{section.content}</pre>
+
+                      {/* Chart visualization if available */}
+                      {hasChartData && (
+                        <div className="mt-4 p-4 rounded-xl border" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', borderColor: theme.borderColor }}>
                           <ResponsiveContainer width="100%" height={200}>
-                            <PieChart>
-                              <Pie data={dashboardStats.segmentSummary} dataKey="revenue" nameKey="segment" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3}>
-                                {dashboardStats.segmentSummary.map((_: any, index: number) => (
-                                  <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                                ))}
-                              </Pie>
-                              <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
-                              <Legend />
-                            </PieChart>
+                            {section.chartType === 'pie' ? (
+                              <PieChart>
+                                <Pie
+                                  data={section.data}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={40}
+                                  outerRadius={70}
+                                  paddingAngle={3}
+                                >
+                                  {section.data.map((item: any, index: number) => (
+                                    <Cell key={`cell-${index}`} fill={item.color || CHART_COLORS[index % CHART_COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                <Legend />
+                              </PieChart>
+                            ) : section.chartType === 'line' ? (
+                              <AreaChart data={section.data}>
+                                <defs>
+                                  <linearGradient id={`gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#14B8A6" stopOpacity={0.4} />
+                                    <stop offset="95%" stopColor="#14B8A6" stopOpacity={0} />
+                                  </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} vertical={false} />
+                                <XAxis dataKey="period" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                <YAxis axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                <Area type="monotone" dataKey="value" stroke="#14B8A6" strokeWidth={2} fill={`url(#gradient-${i})`} />
+                              </AreaChart>
+                            ) : section.chartType === 'bar' ? (
+                              /* Actual BAR chart for breakdown/executive reports */
+                              <BarChartComponent data={section.data} layout="vertical">
+                                <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} horizontal={true} vertical={false} />
+                                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} width={80} />
+                                <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                  {section.data.map((item: any, index: number) => (
+                                    <Cell key={`bar-${index}`} fill={item.color || CHART_COLORS[index % CHART_COLORS.length]} />
+                                  ))}
+                                </Bar>
+                              </BarChartComponent>
+                            ) : (
+                              /* Fallback to PIE chart */
+                              <PieChart>
+                                <Pie
+                                  data={section.data.slice(0, 8)}
+                                  dataKey="value"
+                                  nameKey="name"
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={40}
+                                  outerRadius={70}
+                                  paddingAngle={3}
+                                >
+                                  {section.data.slice(0, 8).map((item: any, index: number) => (
+                                    <Cell key={`cell-${index}`} fill={item.color || CHART_COLORS[index % CHART_COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                <Legend />
+                              </PieChart>
+                            )}
                           </ResponsiveContainer>
                         </div>
                       )}
                     </div>
-                  </div>
-                )}
+                  );
+                })}
               </div>
             )}
           </div>

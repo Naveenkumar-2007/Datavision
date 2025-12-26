@@ -14,6 +14,9 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from utils.paths import get_user_paths
 from config.settings import Settings
@@ -47,30 +50,39 @@ def _load_user_data(user_id: str) -> Optional[pd.DataFrame]:
         uploads_dir = paths.get("files")
         
         print(f"📂 [SCHEMA API] Looking for files in: {uploads_dir}")
+        logger.info(f"📂 [SCHEMA API] Looking for files in: {uploads_dir}")
         
         if not uploads_dir or not Path(uploads_dir).exists():
-            print(f"⚠️ [SCHEMA API] Directory doesn't exist: {uploads_dir}")
+            logger.warning(f"⚠️ [SCHEMA API] Directory doesn't exist: {uploads_dir}")
             return None
         
         all_data = []
         for file_path in Path(uploads_dir).glob("*"):
             if file_path.suffix.lower() in ['.csv', '.xlsx', '.xls']:
                 try:
-                    print(f"📄 [SCHEMA API] Loading file: {file_path.name}")
+                    logger.info(f"📄 [SCHEMA API] Loading file: {file_path.name}")
                     if file_path.suffix.lower() == '.csv':
-                        df = pd.read_csv(file_path)
+                        # FIXED: Force pandas to infer numeric types correctly
+                        df = pd.read_csv(
+                            file_path,
+                            low_memory=False,  # Read entire file to infer types
+                            na_values=['', 'NA', 'N/A', 'null', 'NULL'],  # Recognize NA values
+                            keep_default_na=True,  # Keep pandas default NA handling
+                        )
                     else:
                         df = pd.read_excel(file_path)
                     
                     df['_source_file'] = file_path.name
                     all_data.append(df)
-                    print(f"✅ [SCHEMA API] Loaded {len(df)} rows from {file_path.name}")
+                    logger.info(f"✅ [SCHEMA API] Loaded {len(df)} rows from {file_path.name}")
+                    if len(df) > 0:
+                        logger.info(f"📊 [SCHEMA API] Column dtypes: {dict(df.dtypes)}")
                 except Exception as e:
-                    print(f"Error loading {file_path}: {e}")
+                    logger.error(f"Error loading {file_path}: {e}")
         
         if all_data:
             combined = pd.concat(all_data, ignore_index=True)
-            print(f"✅ [SCHEMA API] Total: {len(combined)} rows from {len(all_data)} files")
+            logger.info(f"✅ [SCHEMA API] Total: {len(combined)} rows from {len(all_data)} files")
             return combined
         
         print(f"⚠️ [SCHEMA API] No CSV/Excel files found in {uploads_dir}")

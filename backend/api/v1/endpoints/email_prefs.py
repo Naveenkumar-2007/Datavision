@@ -182,19 +182,19 @@ async def send_daily_report_now(
         report_html = await generate_daily_report_html(user_id)
         
         if not report_html:
-            raise HTTPException(400, "No data available to generate report. Please upload some business data first.")
+            raise HTTPException(400, "No data available to generate report. Please upload some data first.")
         
-        # Send the report
+        # Send the report with Data Vision branding
         await send_insight_email(
             to_email=prefs.email_address,
-            title=f"Daily Business Summary - {datetime.now().strftime('%B %d, %Y')}",
+            title=f"Data Vision - Daily Report | {datetime.now().strftime('%B %d, %Y')}",
             body=report_html,
             workspace_id=user_id
         )
         
         return {
             "success": True,
-            "message": f"Daily report sent to {prefs.email_address}"
+            "message": f"Data Vision Daily Report sent to {prefs.email_address}"
         }
     except HTTPException:
         raise

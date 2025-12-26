@@ -18,19 +18,34 @@ import re
 
 
 class ChartType(Enum):
-    """All supported chart types"""
+    """All supported chart types - Universal Visualization v2.0"""
+    # Standard charts
     LINE = "line"                    # Trends, time-series
     BAR = "bar"                      # Comparisons
+    HORIZONTAL_BAR = "horizontal_bar"  # Horizontal comparisons
     GROUPED_BAR = "grouped_bar"      # Multi-category comparisons
     STACKED_BAR = "stacked_bar"      # Composition over categories
+    # Proportion charts
     PIE = "pie"                      # Proportions (dynamic limit from query)
     DONUT = "donut"                  # Proportions with center metric (dynamic)
+    SUNBURST = "sunburst"            # Hierarchical proportions
+    TREEMAP = "treemap"              # Space-filling hierarchies
+    # Trend/Area charts
     AREA = "area"                    # Cumulative trends
+    # Statistical charts
     SCATTER = "scatter"              # Correlations
+    BUBBLE = "bubble"                # Multi-dimensional data
+    BOX = "box"                      # Statistical distribution
+    HISTOGRAM = "histogram"          # Frequency distribution
+    RADAR = "radar"                  # Multi-variable comparison
     HEATMAP = "heatmap"              # Intensity matrices
+    # Financial/Process charts
     WATERFALL = "waterfall"          # Financial breakdowns
     FUNNEL = "funnel"                # Conversion analysis
+    GAUGE = "gauge"                  # Single metric display
+    # Prediction
     FORECAST = "forecast"            # Predictions with confidence bands
+    # No chart
     NONE = "none"                    # No visualization appropriate
 
 

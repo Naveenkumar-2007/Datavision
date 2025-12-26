@@ -26,6 +26,7 @@ import {
   Layers,
   RefreshCw,
   Square,
+  Zap,
 } from 'lucide-react';
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
@@ -36,9 +37,9 @@ const PlotlyChart = React.lazy(() => import('@/components/PlotlyChart'));
 // Helper function to format inline text (bold, italic, code)
 const formatInlineText = (text: string): string => {
   return text
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold">$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/`([^`]+)`/g, '<code class="bg-dark-surface px-1.5 py-0.5 rounded text-teal-300 text-sm font-mono">$1</code>');
+    .replace(/`([^`]+)`/g, '<code class="inline-code-highlight">$1</code>');
 };
 
 // Component to render formatted text with inline styles
@@ -151,6 +152,81 @@ const PlotlyChartBlock: React.FC<{ data: any[]; layout: any }> = ({ data, layout
         <PlotlyChart data={data} layout={layout} />
       </div>
     </React.Suspense>
+  );
+};
+
+// Typewriter Animation Component - ChatGPT-like word-by-word reveal
+const TypewriterText: React.FC<{
+  content: string;
+  isNew?: boolean;
+  onComplete?: () => void;
+}> = ({ content, isNew = false, onComplete }) => {
+  const [displayedContent, setDisplayedContent] = useState(isNew ? '' : content);
+  const [isComplete, setIsComplete] = useState(!isNew);
+  const hasAnimatedRef = useRef(false);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const onCompleteRef = useRef(onComplete);
+
+  // Keep onComplete ref updated without causing re-renders
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
+  useEffect(() => {
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    // If not a new message OR already animated, show full content immediately
+    if (!isNew || hasAnimatedRef.current) {
+      setDisplayedContent(content);
+      setIsComplete(true);
+      return;
+    }
+
+    // Mark as animating
+    hasAnimatedRef.current = true;
+
+    // Reset for new content
+    setDisplayedContent('');
+    setIsComplete(false);
+
+    // Split content into words for word-by-word animation
+    const words = content.split(/(\s+)/);
+    let currentIndex = 0;
+
+    intervalRef.current = setInterval(() => {
+      if (currentIndex < words.length) {
+        // Add 4 words at a time for faster animation
+        const nextIndex = Math.min(currentIndex + 4, words.length);
+        const wordsToAdd = words.slice(currentIndex, nextIndex).join('');
+        setDisplayedContent(prev => prev + wordsToAdd);
+        currentIndex = nextIndex;
+      } else {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+        setIsComplete(true);
+        onCompleteRef.current?.();
+      }
+    }, 25); // 25ms per chunk for smooth animation
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [content, isNew]); // Removed onComplete from deps - using ref instead
+
+  return (
+    <>
+      <FormattedMessage content={displayedContent} />
+      {!isComplete && <span className="typing-cursor"></span>}
+    </>
   );
 };
 
@@ -491,38 +567,64 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
   return <div className="space-y-1">{formatContent(content)}</div>;
 };
 
-// Animated Bar Chart Logo for AI Assistant
+// Animated Logo for AI Assistant - Uses actual DataVision logo with animation
 const AnimatedBotIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-    <defs>
-      <linearGradient id="botGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stopColor="#14B8A6" />
-        <stop offset="100%" stopColor="#0EA5E9" />
-      </linearGradient>
-    </defs>
-    <rect x="4" y="12" width="3" height="8" rx="1" fill="url(#botGrad)">
-      <animate attributeName="height" values="8;14;8" dur="1.5s" repeatCount="indefinite" />
-      <animate attributeName="y" values="12;6;12" dur="1.5s" repeatCount="indefinite" />
-    </rect>
-    <rect x="10" y="8" width="3" height="12" rx="1" fill="url(#botGrad)">
-      <animate attributeName="height" values="12;18;12" dur="1.2s" repeatCount="indefinite" />
-      <animate attributeName="y" values="8;2;8" dur="1.2s" repeatCount="indefinite" />
-    </rect>
-    <rect x="16" y="10" width="3" height="10" rx="1" fill="url(#botGrad)">
-      <animate attributeName="height" values="10;16;10" dur="1.8s" repeatCount="indefinite" />
-      <animate attributeName="y" values="10;4;10" dur="1.8s" repeatCount="indefinite" />
-    </rect>
-  </svg>
+  <div
+    className="relative flex items-center justify-center"
+    style={{ width: size, height: size }}
+  >
+    <img
+      src="/logo.png"
+      alt="DataVision"
+      className="w-full h-full object-contain"
+      style={{
+        animation: 'pulse-glow 2s ease-in-out infinite',
+      }}
+    />
+    <style>{`
+      @keyframes pulse-glow {
+        0%, 100% { 
+          filter: drop-shadow(0 0 2px rgba(20, 184, 166, 0.4));
+          transform: scale(1);
+        }
+        50% { 
+          filter: drop-shadow(0 0 8px rgba(20, 184, 166, 0.6));
+          transform: scale(1.05);
+        }
+      }
+    `}</style>
+  </div>
 );
 
-// Typing Indicator - ChatGPT Style (Simple cursor blink)
-const TypingIndicator: React.FC = () => (
-  <div className="flex items-start gap-3 max-w-3xl">
+// Mode-specific thinking messages for ChatGPT-like experience
+const getModeThinkingText = (modeId: string): string => {
+  const thinkingTexts: Record<string, string> = {
+    'rag': 'Searching documents...',
+    'graphrag': 'Building knowledge graph...',
+    'hybrid': 'Combining RAG + Graph...',
+    'agentic': 'Planning with AI agent...',
+    'multirag': 'Searching multiple sources...',
+    'vision': 'Analyzing image...',
+    'prediction': 'Generating forecast...',
+  };
+  return thinkingTexts[modeId] || 'Thinking...';
+};
+
+// Typing Indicator - ChatGPT Style with mode-specific thinking
+const TypingIndicator: React.FC<{ mode?: string }> = ({ mode = 'rag' }) => (
+  <div className="flex items-start gap-3 max-w-3xl message-slide-up">
     <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
       <AnimatedBotIcon size={24} />
     </div>
-    <div className="flex items-center py-3">
-      <span className="w-2 h-5 bg-gray-400 animate-pulse rounded-sm"></span>
+    <div className="flex flex-col gap-1 py-2">
+      <div className="flex items-center gap-2">
+        <div className="streaming-indicator flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+          <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+          <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+        </div>
+        <span className="text-sm text-gray-400 italic">{getModeThinkingText(mode)}</span>
+      </div>
     </div>
   </div>
 );
@@ -548,10 +650,10 @@ const WelcomeScreen: React.FC<{ onSuggestionClick: (text: string) => void }> = (
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh]">
-      {/* Logo with premium animation */}
-      <div className="w-20 h-20 mb-6 shadow-2xl flex items-center justify-center">
-        <img src="/logo.png" alt="DataVision Logo" className="w-full h-full object-contain float-animation" />
+    <div className="flex flex-col items-center justify-center min-h-[60vh] welcome-animate">
+      {/* Logo with premium floating animation */}
+      <div className="w-20 h-20 mb-6 flex items-center justify-center float-animation">
+        <img src="/logo.png" alt="DataVision Logo" className="w-full h-full object-contain drop-shadow-2xl" />
       </div>
 
       {/* Title with slide-up */}
@@ -623,6 +725,7 @@ const AnalystChat: React.FC = () => {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [messageImages, setMessageImages] = useState<Record<string, string>>({});
   const [modeDropdownOpen, setModeDropdownOpen] = useState(false);
+  const [animatingMessageId, setAnimatingMessageId] = useState<string | null>(null); // Track which message is animating
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mcpDropdownOpen, setMcpDropdownOpen] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false); // Plus menu state
@@ -632,6 +735,37 @@ const AnalystChat: React.FC = () => {
     'graph_builder': true,
     'sql_executor': true,
     'vision_ocr': true,
+    'data_transformer': true,
+    'data_validator': true,
+    'alert_engine': true,
+    'insight_engine': true,
+    'forecast_engine': true,
+  });
+
+  // MCP execution state for Claude-style animations
+  const [mcpExecutionStatus, setMcpExecutionStatus] = useState<{
+    isRunning: boolean;
+    currentTools: Array<{ name: string; icon: string; status: 'pending' | 'running' | 'success' }>;
+    startTime: number | null;
+  }>({
+    isRunning: false,
+    currentTools: [],
+    startTime: null,
+  });
+
+  // MCP Permission Dialog state (Claude-style Allow/Deny)
+  const [mcpPermissionDialog, setMcpPermissionDialog] = useState<{
+    isOpen: boolean;
+    pendingTools: Array<{ name: string; icon: string; description: string }>;
+    pendingMessage: string;
+    onAllow: (() => void) | null;
+    onDeny: (() => void) | null;
+  }>({
+    isOpen: false,
+    pendingTools: [],
+    pendingMessage: '',
+    onAllow: null,
+    onDeny: null,
   });
 
   // Streaming state for ChatGPT-like word-by-word responses
@@ -666,13 +800,18 @@ const AnalystChat: React.FC = () => {
     console.log(`Feedback ${type} for message ${messageId}`);
   };
 
-  // MCP server definitions
+  // MCP server definitions - Enhanced with new tools
   const mcpServers = [
-    { id: 'data_cleaner', name: 'Data Cleaner', icon: '🧹', description: 'Clean and format data' },
-    { id: 'vectorizer', name: 'Vectorizer', icon: '📊', description: 'Text embeddings' },
-    { id: 'graph_builder', name: 'Graph Builder', icon: '🔗', description: 'Knowledge graph' },
-    { id: 'sql_executor', name: 'SQL Executor', icon: '🗃️', description: 'Database queries' },
-    { id: 'vision_ocr', name: 'Vision OCR', icon: '👁️', description: 'Image analysis' },
+    { id: 'data_cleaner', name: 'Data Cleaner', icon: '🧹', description: 'Clean, deduplicate, normalize data', category: 'processing' },
+    { id: 'data_transformer', name: 'Data Transformer', icon: '🔄', description: 'Pivot, aggregate, format conversion', category: 'processing' },
+    { id: 'data_validator', name: 'Data Validator', icon: '✅', description: 'Schema validation, quality scoring', category: 'processing' },
+    { id: 'vectorizer', name: 'Vectorizer', icon: '📊', description: 'Text embeddings, similarity search', category: 'search' },
+    { id: 'graph_builder', name: 'Graph Builder', icon: '🔗', description: 'Entity relationships, knowledge graph', category: 'search' },
+    { id: 'sql_executor', name: 'SQL Executor', icon: '🗃️', description: 'Database queries, data retrieval', category: 'search' },
+    { id: 'insight_engine', name: 'Insight Engine', icon: '💡', description: 'Trend detection, anomaly alerts', category: 'analysis' },
+    { id: 'forecast_engine', name: 'Forecast Engine', icon: '📈', description: 'Time-series predictions, trends', category: 'analysis' },
+    { id: 'alert_engine', name: 'Alert Engine', icon: '🔔', description: 'Threshold monitoring, notifications', category: 'analysis' },
+    { id: 'vision_ocr', name: 'Vision OCR', icon: '👁️', description: 'Image analysis, table extraction', category: 'vision' },
   ];
 
   // Mode definitions - ALL modes support BOTH text AND charts/images
@@ -732,13 +871,13 @@ const AnalystChat: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
   };
 
-  // Auto-scroll ONLY when user is near bottom (doesn't interrupt reading)
+  // Auto-scroll ONLY when user is near bottom OR when loading (doesn't interrupt reading)
   useEffect(() => {
-    if (isNearBottom()) {
+    if (isNearBottom() || isLoading) {
       // Small delay to ensure DOM has rendered
       setTimeout(() => scrollToBottom('smooth'), 50);
     }
-  }, [messages]);
+  }, [messages, isLoading]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -835,66 +974,16 @@ const AnalystChat: React.FC = () => {
     }
   };
 
-  const handleSend = async () => {
-    const hasContent = input.trim().length > 0 || selectedImage || attachedFiles.length > 0;
-    if (!hasContent || isLoading) return;
-
-    let convId = currentConversationId;
-    if (!convId) {
-      convId = createConversation(mode);
-    }
-
-    const userMessage: any = {
-      id: Date.now().toString(),
-      role: 'user' as const,
-      content: input.trim(),
-      timestamp: new Date().toISOString(),
-      imageData: null as string | null, // Will be set if image attached
-    };
-
-    // If image selected, read as base64 BEFORE adding to conversation
-    if (selectedImage) {
-      const base64Content = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(selectedImage);
-      });
-
-      // Store base64 in message for persistence
-      userMessage.imageData = base64Content;
-      // Also set in messageImages state for immediate display
-      setMessageImages(prev => ({ ...prev, [userMessage.id]: base64Content }));
-    }
-
-    addMessageToConversation(convId, userMessage);
-
-    const messageToSend = input.trim();
-    const filesToCompare = attachedFiles.map(f => f.name);
-    setInput('');
-    setSelectedImage(null);
-    setImagePreviewUrl(null);
-    setAttachedFiles([]);
+  // Reusable function to process user message (MCPs, API, Animation)
+  const processUserMessage = async (
+    messageText: string,
+    convId: string,
+    visionAttachments: any[] = [],
+    filesToCompare?: string[]
+  ) => {
     setIsLoading(true);
 
     try {
-      let visionAttachments: any[] = [];
-
-      // Use the already-stored imageData from userMessage
-      if (userMessage.imageData) {
-        visionAttachments.push({
-          name: 'uploaded_image',
-          type: 'image/png',
-          size: 0,
-          content: userMessage.imageData
-        });
-      }
-
-      if (attachedFiles.length > 0) {
-        await apiService.uploadFiles(attachedFiles);
-        window.dispatchEvent(new CustomEvent('filesUpdated'));
-      }
-
       // Check if we should use streaming (for RAG modes without images)
       const canStream = useStreaming && !visionAttachments.length &&
         ['rag', 'hybrid'].includes(mode);
@@ -928,7 +1017,7 @@ const AnalystChat: React.FC = () => {
         const model = modelMap[mode] || 'deepseek';
 
         await apiService.streamMessage(
-          messageToSend,
+          messageText,
           model,
           // onChunk - update message word by word
           (chunk: string) => {
@@ -969,15 +1058,107 @@ const AnalystChat: React.FC = () => {
           }
         );
       } else {
-        // NON-STREAMING MODE - Regular API call
+        // NON-STREAMING MODE - Regular API call with MCP animation
+        let mcpsToUse = enabledMcps;
+
+        // Detect which MCPs might be triggered based on query (EXPANDED keyword matching)
+        const queryLower = messageText.toLowerCase();
+        const potentialTools: Array<{ name: string; icon: string; status: 'pending' | 'running' | 'success'; description: string }> = [];
+
+        // Helper function for partial keyword matching (handles plurals like anomaly/anomalies)
+        const matchesAny = (keywords: string[]) => keywords.some(kw => queryLower.includes(kw));
+
+        // DETECT TOOLS (Data Validator, Alert Engine, Insight Engine, Forecast Engine, Data Transformer)
+        if (enabledMcps.data_validator && matchesAny(['quality', 'validat', 'check', 'clean', 'issue', 'error', 'problem', 'missing', 'null', 'empty', 'duplicate', 'correct', 'accurate', 'verify', 'schema', 'format', 'consistent'])) {
+          potentialTools.push({ name: 'Data Validator', icon: '✅', status: 'pending', description: 'Check data quality and validate schema' });
+        }
+        if (enabledMcps.alert_engine && matchesAny(['anomal', 'alert', 'unusual', 'spike', 'drop', 'warning', 'outlier', 'abnormal', 'unexpected', 'strange', 'weird', 'concern', 'risk', 'critical', 'threshold', 'monitor', 'detect'])) {
+          potentialTools.push({ name: 'Alert Engine', icon: '🔔', status: 'pending', description: 'Detect anomalies and threshold breaches' });
+        }
+        if (enabledMcps.insight_engine && matchesAny(['insight', 'trend', 'pattern', 'analyz', 'discover', 'find', 'show', 'summary', 'overview', 'key', 'important', 'significant', 'notable', 'growth', 'decline', 'performance', 'metric', 'kpi', 'business'])) {
+          potentialTools.push({ name: 'Insight Engine', icon: '💡', status: 'pending', description: 'Generate business insights and trends' });
+        }
+        if (enabledMcps.forecast_engine && matchesAny(['predict', 'forecast', 'future', 'next month', 'projection', 'estimate', 'expect', 'anticipat', 'plan', 'budget', 'target', 'goal', 'quarterly', 'yearly', 'what if', 'scenario'])) {
+          potentialTools.push({ name: 'Forecast Engine', icon: '📈', status: 'pending', description: 'Predict future trends and metrics' });
+        }
+        if (enabledMcps.data_transformer && matchesAny(['pivot', 'aggregat', 'group', 'transform', 'convert', 'reshape', 'merge', 'combine', 'split', 'filter', 'sort', 'calculate', 'total', 'sum', 'average', 'count', 'by region', 'by category', 'breakdown'])) {
+          potentialTools.push({ name: 'Data Transformer', icon: '🔄', status: 'pending', description: 'Transform and aggregate data' });
+        }
+
+        // Show permission dialog if tools detected
+        if (potentialTools.length > 0) {
+          // Show Claude-style permission dialog with Allow/Deny
+          const toolsToRun = [...potentialTools];
+
+          // Create a promise that resolves when user clicks Allow or Deny
+          const userChoice = await new Promise<'allow' | 'deny'>((resolve) => {
+            setMcpPermissionDialog({
+              isOpen: true,
+              pendingTools: toolsToRun.map(t => ({ name: t.name, icon: t.icon, description: t.description })),
+              pendingMessage: messageText,
+              onAllow: () => {
+                setMcpPermissionDialog(prev => ({ ...prev, isOpen: false }));
+                resolve('allow');
+              },
+              onDeny: () => {
+                setMcpPermissionDialog(prev => ({ ...prev, isOpen: false }));
+                resolve('deny');
+              }
+            });
+          });
+
+          if (userChoice === 'allow') {
+            // User allowed - show MCP execution animation
+            setMcpExecutionStatus({
+              isRunning: true,
+              currentTools: toolsToRun.map((t, idx) => ({
+                name: t.name,
+                icon: t.icon,
+                status: idx === 0 ? 'running' : 'pending'
+              })),
+              startTime: Date.now(),
+            });
+
+            // Animate through tools
+            let toolIndex = 0;
+            const animationInterval = setInterval(() => {
+              toolIndex++;
+              if (toolIndex < toolsToRun.length) {
+                setMcpExecutionStatus(prev => ({
+                  ...prev,
+                  currentTools: prev.currentTools.map((t, idx) => ({
+                    ...t,
+                    status: idx < toolIndex ? 'success' : idx === toolIndex ? 'running' : 'pending'
+                  }))
+                }));
+              } else {
+                setMcpExecutionStatus(prev => ({
+                  ...prev,
+                  currentTools: prev.currentTools.map(t => ({ ...t, status: 'success' }))
+                }));
+                clearInterval(animationInterval);
+              }
+            }, 400);
+
+            // Wait for animation to show
+            await new Promise(resolve => setTimeout(resolve, 300));
+          } else {
+            // User denied - disable MCPs for this request
+            mcpsToUse = {};
+          }
+        }
+
         const response = await apiService.sendMessage(
-          messageToSend,
+          messageText,
           mode,
           convId,
-          filesToCompare.length > 0 ? filesToCompare : undefined,
+          filesToCompare && filesToCompare.length > 0 ? filesToCompare : undefined,
           visionAttachments.length > 0 ? visionAttachments : undefined,
-          enabledMcps
+          mcpsToUse
         );
+
+        // Clear MCP animation
+        setMcpExecutionStatus({ isRunning: false, currentTools: [], startTime: null });
 
         const responseContent = response.data?.message || response.data?.answer || 'No response received';
         const responseSources = response.data?.sources || [];
@@ -991,9 +1172,11 @@ const AnalystChat: React.FC = () => {
         };
 
         addMessageToConversation(convId, assistantMessage);
+        setAnimatingMessageId(assistantMessage.id); // Trigger typewriter animation
         setIsLoading(false);
       }
     } catch (error: any) {
+      console.error('Error processing message:', error);
       const errorMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant' as const,
@@ -1002,7 +1185,75 @@ const AnalystChat: React.FC = () => {
       };
       addMessageToConversation(convId, errorMessage);
       setIsLoading(false);
+      setMcpExecutionStatus({ isRunning: false, currentTools: [], startTime: null });
     }
+  };
+
+  const handleSend = async () => {
+    const hasContent = input.trim().length > 0 || selectedImage || attachedFiles.length > 0;
+    if (!hasContent || isLoading) return;
+
+    let convId = currentConversationId;
+    if (!convId) {
+      convId = createConversation(mode);
+    }
+
+    const userMessage: any = {
+      id: Date.now().toString(),
+      role: 'user' as const,
+      content: input.trim(),
+      timestamp: new Date().toISOString(),
+      imageData: null,
+    };
+
+    // If image selected, read as base64 BEFORE adding to conversation
+    if (selectedImage) {
+      const base64Content = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(selectedImage);
+      });
+
+      // Store base64 in message for persistence
+      userMessage.imageData = base64Content;
+      // Also set in messageImages state for immediate display
+      setMessageImages(prev => ({ ...prev, [userMessage.id]: base64Content }));
+    }
+
+    addMessageToConversation(convId, userMessage);
+
+    // Scroll to bottom immediately after sending message (ChatGPT behavior)
+    setTimeout(() => scrollToBottom('smooth'), 100);
+
+    const messageToSend = input.trim();
+    const filesToCompare = attachedFiles.map(f => f.name);
+
+    // Create vision attachments
+    let visionAttachments: any[] = [];
+    // Use the already-stored imageData from userMessage
+    if (userMessage.imageData) {
+      visionAttachments.push({
+        name: 'uploaded_image',
+        type: 'image/png',
+        size: 0,
+        content: userMessage.imageData
+      });
+    }
+
+    // Upload files
+    if (attachedFiles.length > 0) {
+      await apiService.uploadFiles(attachedFiles);
+      window.dispatchEvent(new CustomEvent('filesUpdated'));
+    }
+
+    // Reset Input
+    setInput('');
+    setSelectedImage(null);
+    setImagePreviewUrl(null);
+    setAttachedFiles([]);
+
+    // Process Message
+    await processUserMessage(messageToSend, convId, visionAttachments, filesToCompare);
   };
 
   const handleEditMessage = (messageId: string, content: string) => {
@@ -1034,7 +1285,6 @@ const AnalystChat: React.FC = () => {
 
     setEditingMessageId(null);
     setEditingContent('');
-    setIsLoading(true);
 
     const userMessage = {
       id: Date.now().toString(),
@@ -1044,39 +1294,7 @@ const AnalystChat: React.FC = () => {
     };
     addMessageToConversation(convId, userMessage);
 
-    try {
-      const response = await apiService.sendMessage(
-        messageToSend,
-        mode,
-        convId,
-        undefined,
-        undefined,
-        enabledMcps
-      );
-
-      const responseContent = response.data?.message || response.data?.answer || 'No response received';
-      const responseSources = response.data?.sources || [];
-
-      const assistantMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant' as const,
-        content: String(responseContent),
-        timestamp: new Date().toISOString(),
-        sources: Array.isArray(responseSources) ? responseSources.map(s => String(s)) : [],
-      };
-
-      addMessageToConversation(convId, assistantMessage);
-    } catch (error: any) {
-      const errorMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant' as const,
-        content: `Sorry, I encountered an error: ${error.response?.data?.detail || error.message || 'Unknown error'}`,
-        timestamp: new Date().toISOString(),
-      };
-      addMessageToConversation(convId, errorMessage);
-    } finally {
-      setIsLoading(false);
-    }
+    await processUserMessage(messageToSend, convId);
   };
 
   const handleCopyMessage = async (messageId: string, content: string) => {
@@ -1145,50 +1363,25 @@ const AnalystChat: React.FC = () => {
     }
     if (userMsgIndex < 0) return;
 
-    const userMessage = currentConv.messages[userMsgIndex];
+    const userMessage = currentConv.messages[userMsgIndex] as any;
 
     // Remove the assistant message we're regenerating
     const updatedMessages = currentConv.messages.filter((_, i) => i !== msgIndex);
     updateConversationMessages(currentConv.id, updatedMessages);
 
-    // Resend the user message
-    setInput(userMessage.content);
-    setTimeout(() => {
-      setInput('');
-      // Manually trigger send with the original message
-      const sendWithMessage = async () => {
-        setIsLoading(true);
-        try {
-          const response = await apiService.sendMessage(
-            userMessage.content,
-            mode,
-            currentConv.id,
-            undefined,
-            undefined,
-            enabledMcps
-          );
-          const assistantMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant' as const,
-            content: String(response.data?.message || response.data?.answer || 'No response'),
-            timestamp: new Date().toISOString(),
-            sources: response.data?.sources || [],
-          };
-          addMessageToConversation(currentConv.id, assistantMessage);
-        } catch (error: any) {
-          const errorMessage = {
-            id: (Date.now() + 1).toString(),
-            role: 'assistant' as const,
-            content: `Sorry, I encountered an error: ${error.message || 'Unknown error'}`,
-            timestamp: new Date().toISOString(),
-          };
-          addMessageToConversation(currentConv.id, errorMessage);
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      sendWithMessage();
-    }, 100);
+    // Prepare vision attachments if image existed
+    let visionAttachments: any[] = [];
+    if (userMessage.imageData) {
+      visionAttachments.push({
+        name: 'uploaded_image',
+        type: 'image/png',
+        size: 0,
+        content: userMessage.imageData
+      });
+    }
+
+    // Call processUserMessage
+    await processUserMessage(userMessage.content, currentConv.id, visionAttachments);
   };
 
   const handleNewChat = () => {
@@ -1226,9 +1419,8 @@ const AnalystChat: React.FC = () => {
 
       {/* Left Sidebar - Chat History */}
       <aside className={`
-        w-64 flex-shrink-0 bg-dark-surface border-r border-dark-border flex flex-col transition-all duration-300
-        fixed lg:relative inset-y-0 left-0 z-50
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
+        fixed inset-y-0 left-0 z-50 w-72 bg-dark-card border-r border-dark-border flex flex-col transition-transform duration-300 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         {/* Sidebar Header */}
         <div className="p-4 border-b border-dark-border flex items-center justify-between min-w-[256px]">
@@ -1332,28 +1524,52 @@ const AnalystChat: React.FC = () => {
       )}
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0 bg-dark-bg overflow-hidden">
+      <div className={`flex-1 flex flex-col min-w-0 bg-dark-bg transition-all duration-300 overflow-hidden ${sidebarOpen ? 'lg:ml-72' : ''}`}>
 
-        {/* Mobile hamburger menu button */}
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="lg:hidden absolute top-4 left-4 z-30 p-2 bg-dark-card hover:bg-dark-hover border border-dark-border rounded-lg transition-colors"
-          title="Open menu"
-        >
-          <Menu className="w-5 h-5 text-gray-400" />
-        </button>
+        {/* Top Navigation Bar - Now visible on Desktop too */}
+        <div className="h-16 border-b border-dark-border flex items-center justify-between px-4 bg-dark-card/50 backdrop-blur-sm sticky top-0 z-20">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 hover:bg-dark-hover rounded-lg transition-colors text-gray-400 hover:text-white"
+              title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex flex-col">
+              <h1 className="text-base font-semibold text-white leading-tight">Analyst Chat</h1>
+              <p className="text-xs text-gray-500">
+                {currentMode.label} Mode • {Object.values(enabledMcps).filter(Boolean).length} Active Tools
+              </p>
+            </div>
+          </div>
 
-        {/* Messages Container - Scrollable */}
-        <div ref={chatContainerRef} className="flex-1 overflow-y-auto scroll-smooth">
-          <div className="max-w-3xl mx-auto px-4 py-6">
+          {/* Top Right Actions */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setUseStreaming(!useStreaming)}
+              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${useStreaming ? 'bg-teal-500/10 text-teal-400' : 'bg-dark-hover text-gray-500'
+                }`}
+              title="Toggle Streaming"
+            >
+              <Zap className={`w-3 h-3 ${useStreaming ? 'fill-current' : ''}`} />
+              {useStreaming ? 'Fast' : 'Standard'}
+            </button>
+          </div>
+        </div>
+
+        {/* Messages Container - Scrollable with ChatGPT-like experience */}
+        <div ref={chatContainerRef} className="flex-1 overflow-y-auto scroll-smooth chat-scroll">
+          <div className="max-w-5xl mx-auto px-4 py-6">
             {messages.length === 0 ? (
               <WelcomeScreen onSuggestionClick={handleSuggestionClick} />
             ) : (
               <div className="space-y-6">
-                {messages.filter(msg => msg && msg.id && msg.content).map((message) => (
+                {messages.filter(msg => msg && msg.id && msg.content).map((message, index) => (
                   <div
                     key={message.id}
-                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in group`}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} message-slide-up group`}
+                    style={{ animationDelay: `${Math.min(index * 0.05, 0.3)}s` }}
                   >
                     {message.role === 'user' ? (
                       // User Message - Right side, contained bubble
@@ -1412,14 +1628,18 @@ const AnalystChat: React.FC = () => {
                       </div>
                     ) : (
                       // Bot Message - Left side with logo, full width response
-                      <div className="flex items-start gap-3 w-full max-w-full">
-                        {/* Animated Bar Chart Logo */}
+                      <div className="flex items-start gap-3 w-full max-w-full bot-message-animate">
+                        {/* DataVision Logo with animation */}
                         <div className="w-8 h-8 flex-shrink-0 mt-1 flex items-center justify-center">
                           <AnimatedBotIcon size={24} />
                         </div>
                         <div className="flex-1">
                           <div className="prose prose-invert max-w-none">
-                            <FormattedMessage content={message.content || 'No content'} />
+                            <TypewriterText
+                              content={message.content || 'No content'}
+                              isNew={message.id === animatingMessageId}
+                              onComplete={() => setAnimatingMessageId(null)}
+                            />
 
                             {message.sources && Array.isArray(message.sources) && message.sources.length > 0 && (
                               <div className="mt-4 pt-4 border-t border-dark-border">
@@ -1480,7 +1700,104 @@ const AnalystChat: React.FC = () => {
                   </div>
                 ))}
 
-                {isLoading && <TypingIndicator />}
+                {/* MCP Permission Dialog - Claude Style Allow/Deny */}
+                {mcpPermissionDialog.isOpen && (
+                  <div className="flex items-start gap-3 w-full max-w-full animate-fadeIn">
+                    <div className="w-8 h-8 flex-shrink-0 mt-1 flex items-center justify-center">
+                      <span className="text-xl">🔧</span>
+                    </div>
+                    <div className="flex-1 bg-dark-card border border-amber-500/50 rounded-xl p-4 shadow-xl">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
+                        <span className="text-sm text-amber-500 font-medium">Permission Required</span>
+                      </div>
+                      <p className="text-gray-300 dark:text-gray-300 text-sm mb-3">
+                        DataVision wants to use the following tools:
+                      </p>
+                      <div className="space-y-2 mb-4">
+                        {mcpPermissionDialog.pendingTools.map((tool) => (
+                          <div
+                            key={tool.name}
+                            className="flex items-center gap-3 px-3 py-2 bg-dark-hover/50 border border-dark-border rounded-lg"
+                          >
+                            <span className="text-lg">{tool.icon}</span>
+                            <div className="flex-1">
+                              <span className="text-sm font-medium text-gray-200">{tool.name}</span>
+                              <p className="text-xs text-gray-500">{tool.description}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => mcpPermissionDialog.onDeny?.()}
+                          className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 bg-dark-hover hover:bg-dark-border rounded-lg transition-colors border border-transparent hover:border-dark-border"
+                        >
+                          Deny
+                        </button>
+                        <button
+                          onClick={() => mcpPermissionDialog.onAllow?.()}
+                          className="px-4 py-2 text-sm text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors shadow-lg shadow-teal-900/20"
+                        >
+                          Allow
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {isLoading && (
+                  <div className="space-y-3">
+                    {/* MCP Tool Execution Animation - Claude Style */}
+                    {mcpExecutionStatus.isRunning && mcpExecutionStatus.currentTools.length > 0 && (
+                      <div className="flex items-start gap-3 w-full max-w-full animate-fadeIn">
+                        <div className="w-8 h-8 flex-shrink-0 mt-1 flex items-center justify-center">
+                          <div className="animate-spin text-xl">⚙️</div>
+                        </div>
+                        <div className="flex-1 bg-dark-card/80 backdrop-blur-sm border border-accent-primary/30 rounded-xl p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <div className="w-2 h-2 bg-accent-primary rounded-full animate-pulse"></div>
+                            <span className="text-sm text-accent-primary font-medium">Running MCP Tools</span>
+                          </div>
+                          <div className="space-y-2">
+                            {mcpExecutionStatus.currentTools.map((tool) => (
+                              <div
+                                key={tool.name}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-300 ${tool.status === 'running'
+                                  ? 'bg-accent-primary/20 border border-accent-primary/40'
+                                  : tool.status === 'success'
+                                    ? 'bg-green-500/20 border border-green-500/40'
+                                    : 'bg-dark-hover/50 border border-dark-border'
+                                  }`}
+                              >
+                                <span className={`text-lg ${tool.status === 'running' ? 'animate-bounce' : ''}`}>
+                                  {tool.status === 'success' ? '✓' : tool.icon}
+                                </span>
+                                <span className={`text-sm ${tool.status === 'running' ? 'text-accent-primary' :
+                                  tool.status === 'success' ? 'text-green-400' : 'text-gray-400'
+                                  }`}>
+                                  {tool.name}
+                                </span>
+                                {tool.status === 'running' && (
+                                  <div className="ml-auto flex items-center gap-1">
+                                    <div className="w-1 h-1 bg-accent-primary rounded-full animate-ping"></div>
+                                    <span className="text-xs text-accent-primary">Running...</span>
+                                  </div>
+                                )}
+                                {tool.status === 'success' && (
+                                  <span className="ml-auto text-xs text-green-400">Done</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Regular Typing Indicator with mode-specific text */}
+                    <TypingIndicator mode={mode} />
+                  </div>
+                )}
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -1544,49 +1861,20 @@ const AnalystChat: React.FC = () => {
               </div>
             )}
 
-            {/* Input Bar Container */}
-            <div className="flex items-end gap-2 sm:gap-3 p-2 sm:p-3 bg-dark-card border border-dark-border rounded-2xl sm:rounded-2xl focus-within:border-teal-500/50 transition-colors">
+            {/* Input Bar Container - Premium Glass Effect */}
+            <div className="flex items-end gap-2 sm:gap-3 p-2 sm:p-3 glass-input input-glow-focus rounded-2xl sm:rounded-2xl">
 
               {/* Left side buttons - Hidden on mobile, shown on desktop */}
               <div className="hidden sm:flex items-center gap-2">
-                {/* MCP Servers Toggle */}
-                <div className="relative">
-                  {mcpDropdownOpen && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setMcpDropdownOpen(false)} />
-                      <div className="absolute bottom-full mb-2 left-0 w-64 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden z-50">
-                        <div className="p-2 border-b border-dark-border flex items-center justify-between">
-                          <p className="text-xs font-semibold text-gray-500 px-2">MCP SERVERS</p>
-                          <span className="text-xs text-teal-400">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length}</span>
-                        </div>
-                        {mcpServers.map((mcp) => (
-                          <button
-                            key={mcp.id}
-                            onClick={() => setEnabledMcps(prev => ({ ...prev, [mcp.id]: !prev[mcp.id] }))}
-                            className="flex items-center gap-3 w-full p-3 hover:bg-dark-hover transition-colors"
-                          >
-                            <span className="text-lg">{mcp.icon}</span>
-                            <div className="flex-1 text-left">
-                              <p className={`text-sm ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
-                              <p className="text-xs text-gray-500">{mcp.description}</p>
-                            </div>
-                            <div className={`w-8 h-4 rounded-full transition-colors ${enabledMcps[mcp.id] ? 'bg-teal-500' : 'bg-gray-700'}`}>
-                              <div className={`w-3 h-3 rounded-full bg-white mt-0.5 transition-transform ${enabledMcps[mcp.id] ? 'translate-x-4 ml-0.5' : 'translate-x-0.5'}`} />
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  <button
-                    onClick={() => setMcpDropdownOpen(!mcpDropdownOpen)}
-                    className="p-2 hover:bg-dark-hover rounded-lg transition-colors text-gray-400 hover:text-gray-200 relative"
-                    title="MCP Servers"
-                  >
-                    <Database className="w-5 h-5" />
-                    <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${Object.values(enabledMcps).every(Boolean) ? 'bg-green-500' : 'bg-yellow-500'}`} />
-                  </button>
-                </div>
+                {/* MCP Servers Toggle - Uses unified dropdown below */}
+                <button
+                  onClick={() => setMcpDropdownOpen(!mcpDropdownOpen)}
+                  className="p-2 hover:bg-dark-hover rounded-lg transition-colors text-gray-400 hover:text-gray-200 relative"
+                  title="MCP Servers"
+                >
+                  <Database className="w-5 h-5" />
+                  <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${Object.values(enabledMcps).every(Boolean) ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                </button>
 
                 {/* File Upload */}
                 <button
@@ -1668,29 +1956,30 @@ const AnalystChat: React.FC = () => {
                 </button>
               </div>
 
-              {/* MCP Dropdown - Now works on mobile too */}
+              {/* MCP Dropdown - Unified for desktop and mobile with animation */}
               {mcpDropdownOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setMcpDropdownOpen(false)} />
-                  <div className="fixed bottom-20 left-4 right-4 sm:absolute sm:bottom-full sm:left-0 sm:right-auto sm:mb-2 w-auto sm:w-64 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden z-50">
-                    <div className="p-3 border-b border-dark-border flex items-center justify-between">
-                      <p className="text-xs font-semibold text-gray-500">MCP SERVERS</p>
-                      <span className="text-xs text-teal-400">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length}</span>
+                  <div className="fixed bottom-20 left-4 right-4 sm:absolute sm:bottom-full sm:left-0 sm:right-auto sm:mb-2 w-auto sm:w-72 bg-dark-card border border-dark-border rounded-xl shadow-2xl overflow-hidden z-50 message-slide-up">
+                    <div className="p-3 border-b border-dark-border flex items-center justify-between bg-dark-surface/50">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">MCP Servers</p>
+                      <span className="text-xs text-teal-400 font-medium">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length} active</span>
                     </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      {mcpServers.map((mcp) => (
+                    <div className="max-h-80 overflow-y-auto chat-scroll">
+                      {mcpServers.map((mcp, index) => (
                         <button
                           key={mcp.id}
                           onClick={() => setEnabledMcps(prev => ({ ...prev, [mcp.id]: !prev[mcp.id] }))}
-                          className="flex items-center gap-3 w-full p-3 hover:bg-dark-hover transition-colors"
+                          className="flex items-center gap-3 w-full p-3 hover:bg-dark-hover transition-all duration-200 group"
+                          style={{ animationDelay: `${index * 0.03}s` }}
                         >
-                          <span className="text-lg">{mcp.icon}</span>
+                          <span className="text-lg group-hover:scale-110 transition-transform">{mcp.icon}</span>
                           <div className="flex-1 text-left">
-                            <p className={`text-sm ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
-                            <p className="text-xs text-gray-500">{mcp.description}</p>
+                            <p className={`text-sm font-medium transition-colors ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
+                            <p className="text-xs text-gray-500 line-clamp-1">{mcp.description}</p>
                           </div>
-                          <div className={`w-8 h-4 rounded-full transition-colors ${enabledMcps[mcp.id] ? 'bg-teal-500' : 'bg-gray-700'}`}>
-                            <div className={`w-3 h-3 rounded-full bg-white mt-0.5 transition-transform ${enabledMcps[mcp.id] ? 'translate-x-4 ml-0.5' : 'translate-x-0.5'}`} />
+                          <div className={`w-9 h-5 rounded-full transition-all duration-300 ${enabledMcps[mcp.id] ? 'bg-teal-500' : 'bg-gray-700'} flex items-center`}>
+                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-300 ${enabledMcps[mcp.id] ? 'translate-x-4' : 'translate-x-0.5'}`} />
                           </div>
                         </button>
                       ))}
@@ -1731,10 +2020,10 @@ const AnalystChat: React.FC = () => {
                   {modeDropdownOpen && (
                     <>
                       <div className="fixed inset-0 z-40" onClick={() => setModeDropdownOpen(false)} />
-                      <div className="fixed bottom-20 left-4 right-4 sm:absolute sm:bottom-full sm:left-auto sm:right-0 sm:mb-2 w-auto sm:w-72 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden z-50 max-h-[70vh] overflow-y-auto">
+                      <div className="fixed bottom-20 left-4 right-4 sm:absolute sm:bottom-full sm:left-auto sm:right-0 sm:mb-2 w-auto sm:w-72 bg-dark-card border border-dark-border rounded-xl shadow-2xl overflow-hidden z-50 max-h-[70vh] overflow-y-auto chat-scroll message-slide-up">
                         {/* RAG Modes */}
-                        <div className="p-2 border-b border-dark-border">
-                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider px-2">RAG Modes</span>
+                        <div className="p-2 border-b border-dark-border bg-dark-surface/50">
+                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2">Analysis Modes</span>
                         </div>
                         {modes.filter(m => !m.isAI).map((m) => (
                           <button
@@ -1816,7 +2105,7 @@ const AnalystChat: React.FC = () => {
                   <button
                     onClick={handleSend}
                     disabled={!input.trim() && !selectedImage && attachedFiles.length === 0}
-                    className="p-3 sm:p-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl transition-colors disabled:cursor-not-allowed"
+                    className="p-3 sm:p-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl transition-all duration-200 send-button-pulse disabled:cursor-not-allowed transform hover:scale-105"
                   >
                     <Send className="w-6 h-6 sm:w-5 sm:h-5" />
                   </button>

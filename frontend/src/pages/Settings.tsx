@@ -667,28 +667,6 @@ const Settings: React.FC = () => {
               </select>
             </div>
           </div>
-
-          {/* Currency */}
-          <div className="max-w-md">
-            <label className="block text-sm text-gray-400 mb-2">Currency (All values will be converted to this)</label>
-            <select
-              value={preferences.currency}
-              onChange={(e) => setPreferences({ ...preferences, currency: e.target.value })}
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
-            >
-              <option value="INR">₹ Indian Rupee (INR)</option>
-              <option value="USD">$ US Dollar (USD)</option>
-              <option value="EUR">€ Euro (EUR)</option>
-              <option value="GBP">£ British Pound (GBP)</option>
-              <option value="JPY">¥ Japanese Yen (JPY)</option>
-              <option value="AUD">A$ Australian Dollar (AUD)</option>
-              <option value="CAD">C$ Canadian Dollar (CAD)</option>
-              <option value="CHF">CHF Swiss Franc (CHF)</option>
-              <option value="CNY">¥ Chinese Yuan (CNY)</option>
-              <option value="SGD">S$ Singapore Dollar (SGD)</option>
-            </select>
-            <p className="text-sm text-gray-500 mt-2">Uploaded data in other currencies will be auto-converted</p>
-          </div>
         </div>
       </motion.div>
 

@@ -96,12 +96,9 @@ const DataHub: React.FC = () => {
     onDrop,
     accept: {
       'application/pdf': ['.pdf'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'text/plain': ['.txt'],
       'application/vnd.ms-excel': ['.xls'],
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
       'text/csv': ['.csv'],
-      'application/json': ['.json'],
       'image/*': ['.png', '.jpg', '.jpeg', '.gif'],
     },
   });
@@ -283,7 +280,6 @@ const DataHub: React.FC = () => {
                       { name: 'PDF', color: 'bg-red-500' },
                       { name: 'Excel', color: 'bg-emerald-500' },
                       { name: 'CSV', color: 'bg-green-500' },
-                      { name: 'Word', color: 'bg-blue-500' },
                       { name: 'Images', color: 'bg-orange-500' },
                     ].map((format) => (
                       <span key={format.name} className={`px-3 py-1.5 ${format.color} rounded-lg text-sm text-white font-semibold`}>
@@ -406,8 +402,8 @@ const DataHub: React.FC = () => {
                 <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
                   {getFileIcon(file.type)}
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-medium mb-1" style={{ color: theme.textPrimary }}>{file.name}</h3>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-medium mb-1 truncate" style={{ color: theme.textPrimary }}>{file.name}</h3>
                   <div className="flex items-center gap-4 text-sm" style={{ color: theme.textMuted }}>
                     <span>{formatFileSize(file.size)}</span>
                     <span>•</span>

@@ -93,8 +93,8 @@ sys.path.insert(0, str(backend_root))
 from api.v1.endpoints import files, chat, analytics, reports, graph, auth, admin, notifications, email_prefs, charts, schema_api, exports
 
 app = FastAPI(
-    title="AI Business Analyst API - Enterprise Edition",
-    description="Multi-tenant AI-powered business intelligence with real RAG",
+    title="Data Vision API - Enterprise Analytics Platform",
+    description="Universal data analytics with AI-powered insights",
     version="2.0.0"
 )
 
@@ -218,6 +218,15 @@ def run_email_check():
 @app.on_event("startup")
 async def start_email_scheduler():
     """Start the background email scheduler on app startup"""
+    
+    # Configure logging to ensure we see INFO logs
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger("uvicorn")
+    logger.info("="*50)
+    logger.info("🚀 BACKEND STARTING - NEW CODE LOADED (LOGGING ENABLED)")
+    logger.info("="*50)
+    
     global email_scheduler
     try:
         email_scheduler = BackgroundScheduler()
@@ -317,7 +326,7 @@ else:
     @app.get("/")
     async def root():
         return {
-            "message": "AI Business Analyst API - Enterprise Edition",
+            "message": "Data Vision API - Enterprise Analytics Platform",
             "version": "2.0.0",
             "status": "online",
             "docs": "/docs"
@@ -377,7 +386,7 @@ async def test_email_notification():
         success = await send_email(
             to_email="test@example.com", 
             subject="Test Notification",
-            body="<h1>It Works!</h1><p>This is a test email from the AI Business Analyst.</p>"
+            body="<h1>It Works!</h1><p>This is a test email from Data Vision.</p>"
         )
         
         return {"success": success, "message": "Email sent" if success else "Failed to send email"}

@@ -104,6 +104,11 @@ export const apiService = {
         graph_builder: true,
         sql_executor: true,
         vision_ocr: true,
+        data_transformer: true,
+        data_validator: true,
+        alert_engine: true,
+        insight_engine: true,
+        forecast_engine: true,
       },
     });
   },

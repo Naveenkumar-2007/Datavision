@@ -84,6 +84,91 @@ def get_user_email_prefs(user_id: str):
     return None
 
 
+def detect_data_domain(user_id: str) -> str:
+    """
+    Detect the domain/type of data uploaded by the user.
+    Returns: healthcare, sales, finance, hr, marketing, inventory, education, or generic
+    """
+    try:
+        from utils.paths import get_user_paths
+        import pandas as pd
+        
+        paths = get_user_paths(user_id)
+        files_dir = paths.get("files")
+        
+        if not files_dir or not files_dir.exists():
+            return "generic"
+        
+        # Collect all column names from CSV/Excel files
+        all_columns = set()
+        for f in files_dir.iterdir():
+            if f.suffix.lower() in ['.csv', '.xlsx', '.xls']:
+                try:
+                    if f.suffix.lower() == '.csv':
+                        df = pd.read_csv(f, nrows=1)
+                    else:
+                        df = pd.read_excel(f, nrows=1)
+                    all_columns.update([c.lower().strip() for c in df.columns])
+                except:
+                    continue
+        
+        if not all_columns:
+            return "generic"
+        
+        cols_str = ' '.join(all_columns)
+        
+        # Healthcare domain keywords
+        healthcare_keywords = ['patient', 'diagnosis', 'symptom', 'disease', 'treatment', 'medicine', 
+                                'prescription', 'doctor', 'hospital', 'medical', 'health', 'clinical',
+                                'icd', 'medication', 'blood', 'bp', 'pulse', 'lab', 'test_result']
+        if any(kw in cols_str for kw in healthcare_keywords):
+            return "healthcare"
+        
+        # HR domain keywords
+        hr_keywords = ['employee', 'salary', 'department', 'hire_date', 'termination', 'leave', 
+                       'attendance', 'performance', 'bonus', 'payroll', 'position', 'designation',
+                       'joining', 'resignation', 'hr', 'staff']
+        if any(kw in cols_str for kw in hr_keywords):
+            return "hr"
+        
+        # Finance domain keywords
+        finance_keywords = ['account', 'debit', 'credit', 'ledger', 'balance', 'transaction',
+                           'interest', 'loan', 'investment', 'profit', 'loss', 'expense',
+                           'budget', 'fiscal', 'tax', 'audit']
+        if any(kw in cols_str for kw in finance_keywords):
+            return "finance"
+        
+        # Sales domain keywords
+        sales_keywords = ['revenue', 'order', 'customer', 'product', 'invoice', 'sale', 'purchase',
+                         'quantity', 'price', 'discount', 'amount', 'payment', 'shipping']
+        if any(kw in cols_str for kw in sales_keywords):
+            return "sales"
+        
+        # Marketing domain keywords
+        marketing_keywords = ['campaign', 'click', 'impression', 'conversion', 'lead', 'engagement',
+                             'reach', 'ctr', 'cpc', 'roi', 'ad', 'advertisement', 'social']
+        if any(kw in cols_str for kw in marketing_keywords):
+            return "marketing"
+        
+        # Inventory domain keywords
+        inventory_keywords = ['stock', 'warehouse', 'inventory', 'sku', 'reorder', 'supplier',
+                             'vendor', 'bin', 'batch', 'shelf', 'storage']
+        if any(kw in cols_str for kw in inventory_keywords):
+            return "inventory"
+        
+        # Education domain keywords
+        education_keywords = ['student', 'grade', 'course', 'class', 'subject', 'teacher',
+                             'enrollment', 'exam', 'score', 'gpa', 'semester', 'school']
+        if any(kw in cols_str for kw in education_keywords):
+            return "education"
+        
+        return "generic"
+        
+    except Exception as e:
+        logger.error(f"Error detecting data domain for {user_id}: {e}")
+        return "generic"
+
+
 def get_user_email(user_id: str):
     """Get user's email address from preferences or Supabase"""
     prefs = get_user_email_prefs(user_id)
@@ -105,81 +190,157 @@ def get_user_email(user_id: str):
 
 
 async def generate_daily_report_html(user_id: str) -> str:
-    """Generate daily summary report HTML"""
+    """Generate daily summary report HTML - works with ANY data type"""
     try:
-        df = revenue_dataframe(user_id)
+        import pandas as pd
+        from utils.paths import get_user_paths
+        
+        paths = get_user_paths(user_id)
+        files_dir = paths.get("files")
+        
+        if not files_dir or not files_dir.exists():
+            return None
+        
+        # Load all CSV/Excel files and combine
+        all_data = []
+        for f in files_dir.iterdir():
+            if f.suffix.lower() in ['.csv', '.xlsx', '.xls']:
+                try:
+                    if f.suffix.lower() == '.csv':
+                        df = pd.read_csv(f)
+                    else:
+                        df = pd.read_excel(f)
+                    all_data.append(df)
+                except:
+                    continue
+        
+        if not all_data:
+            return None
+        
+        # Combine all dataframes
+        df = pd.concat(all_data, ignore_index=True) if len(all_data) > 1 else all_data[0]
         
         if df.empty:
             return None
         
-        currency_symbol, currency_code = get_user_currency(user_id)
+        # Standardize column names
+        df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
         
-        # Calculate daily metrics
-        total_revenue = df['amount'].sum()
-        total_orders = len(df)
-        unique_customers = df['customer'].nunique() if 'customer' in df.columns else 0
-        top_product = df.groupby('product')['amount'].sum().idxmax() if 'product' in df.columns else "N/A"
-        avg_order = total_revenue / total_orders if total_orders > 0 else 0
+        # ===== DYNAMIC METRICS DETECTION =====
+        total_rows = len(df)
+        total_columns = len(df.columns)
+        
+        # Find numeric columns for statistics
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        
+        # Find categorical columns for grouping
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        # Build dynamic metrics list
+        metrics = []
+        
+        metrics.append(("📊 Total Records", f"{total_rows:,}"))
+        metrics.append(("📁 Data Columns", f"{total_columns}"))
+        
+        # Add numeric column statistics
+        for col in numeric_cols[:3]:  # Top 3 numeric columns
+            col_sum = df[col].sum()
+            col_avg = df[col].mean()
+            col_clean = col.replace('_', ' ').title()
+            if col_sum > 0:
+                metrics.append((f"📈 Total {col_clean}", f"{col_sum:,.2f}"))
+            if col_avg > 0:
+                metrics.append((f"📉 Avg {col_clean}", f"{col_avg:,.2f}"))
+        
+        # Add unique counts for categorical columns
+        for col in categorical_cols[:2]:  # Top 2 categorical columns
+            unique_count = df[col].nunique()
+            col_clean = col.replace('_', ' ').title()
+            if unique_count > 0 and unique_count < len(df):  # Only if meaningful
+                metrics.append((f"🏷️ Unique {col_clean}", f"{unique_count:,}"))
+        
+        # ===== TOP VALUES SECTION =====
+        top_values_html = ""
+        for col in categorical_cols[:1]:  # Top category breakdown
+            if col in df.columns:
+                top_items = df[col].value_counts().head(5)
+                if len(top_items) > 0:
+                    col_clean = col.replace('_', ' ').title()
+                    top_values_html = f'''
+                    <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                        <h4 style="color: #92400e; margin: 0 0 10px 0;">🏆 Top {col_clean}</h4>
+                        <table style="width: 100%; border-collapse: collapse;">
+                    '''
+                    for item, count in top_items.items():
+                        top_values_html += f'''
+                            <tr>
+                                <td style="padding: 5px 10px; border-bottom: 1px solid #fcd34d;">{str(item)[:30]}</td>
+                                <td style="padding: 5px 10px; border-bottom: 1px solid #fcd34d; text-align: right; font-weight: bold;">{count:,}</td>
+                            </tr>
+                        '''
+                    top_values_html += '</table></div>'
+                    break
+        
+        # ===== BUILD HTML REPORT =====
+        metrics_rows = ""
+        for label, value in metrics[:8]:  # Limit to 8 metrics
+            metrics_rows += f'''
+                <tr>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">
+                        <strong>{label}</strong>
+                    </td>
+                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-size: 16px; color: #14b8a6;">
+                        {value}
+                    </td>
+                </tr>
+            '''
         
         html = f"""
-        <h2>📊 Your Daily Business Summary</h2>
-        
-        <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0;">
-            <h3 style="color: #1e293b; margin-top: 0;">Key Metrics</h3>
-            <table style="width: 100%; border-collapse: collapse;">
-                <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">
-                        <strong>💰 Total Revenue</strong>
-                    </td>
-                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-size: 18px; color: #22c55e;">
-                        {currency_symbol}{total_revenue:,.2f}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">
-                        <strong>📦 Total Orders</strong>
-                    </td>
-                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right;">
-                        {total_orders}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">
-                        <strong>👥 Active Customers</strong>
-                    </td>
-                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right;">
-                        {unique_customers}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">
-                        <strong>📈 Avg Order Value</strong>
-                    </td>
-                    <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right;">
-                        {currency_symbol}{avg_order:,.2f}
-                    </td>
-                </tr>
-                <tr>
-                    <td style="padding: 10px;">
-                        <strong>⭐ Top Product</strong>
-                    </td>
-                    <td style="padding: 10px; text-align: right;">
-                        {top_product}
-                    </td>
-                </tr>
-            </table>
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <!-- Header with Data Vision branding -->
+            <div style="background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); padding: 25px; border-radius: 12px 12px 0 0; text-align: center;">
+                <h1 style="color: white; margin: 0; font-size: 24px;">📊 Data Vision</h1>
+                <p style="color: rgba(255,255,255,0.9); margin: 5px 0 0 0; font-size: 14px;">Your Daily Data Report</p>
+            </div>
+            
+            <!-- Main Content -->
+            <div style="background: #ffffff; padding: 25px; border: 1px solid #e5e7eb; border-top: none;">
+                <h2 style="color: #1e293b; margin-top: 0; font-size: 18px;">📈 Key Metrics Summary</h2>
+                
+                <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 15px 0;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                        {metrics_rows}
+                    </table>
+                </div>
+                
+                {top_values_html}
+                
+                <!-- Data Overview -->
+                <div style="background: #ecfdf5; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                    <h4 style="color: #065f46; margin: 0 0 10px 0;">📋 Data Overview</h4>
+                    <p style="color: #047857; margin: 0; font-size: 14px;">
+                        Your dataset contains <strong>{total_rows:,}</strong> records across <strong>{total_columns}</strong> columns.
+                        {f"Including {len(numeric_cols)} numeric and {len(categorical_cols)} categorical fields." if numeric_cols or categorical_cols else ""}
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Footer -->
+            <div style="background: #f1f5f9; padding: 20px; border-radius: 0 0 12px 12px; text-align: center; border: 1px solid #e5e7eb; border-top: none;">
+                <p style="color: #64748b; font-size: 13px; margin: 0;">
+                    This is your automated report from <strong>Data Vision</strong>.<br/>
+                    <a href="{APP_URL}/analyst" style="color: #14b8a6; text-decoration: none;">💬 Ask AI for more insights →</a>
+                </p>
+            </div>
         </div>
-        
-        <p style="color: #64748b; font-size: 14px;">
-            This is your automated daily summary from AI Business Analyst.
-            <a href="{APP_URL}/chat" style="color: #f97316;">Ask AI for more insights →</a>
-        </p>
         """
         
         return html
         
     except Exception as e:
         logger.error(f"Error generating daily report for {user_id}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -232,11 +393,11 @@ async def send_daily_reports():
                 if report_html:
                     await send_insight_email(
                         to_email=email,
-                        title=f"Daily Business Summary - {datetime.now().strftime('%B %d, %Y')}",
+                        title=f"Data Vision - Daily Report | {datetime.now().strftime('%B %d, %Y')}",
                         body=report_html,
                         workspace_id=user_id
                     )
-                    print(f"  ✅ Sent daily report to {email} for user {user_id}")
+                    print(f"  ✅ Sent Data Vision daily report to {email} for user {user_id}")
                     
         except Exception as e:
             logger.error(f"Error sending daily report to {user_id}: {e}")
@@ -292,11 +453,11 @@ async def send_weekly_reports():
                 if report_html:
                     await send_insight_email(
                         to_email=email,
-                        title=f"Weekly Business Report - Week of {datetime.now().strftime('%B %d, %Y')}",
+                        title=f"Data Vision - Weekly Report | Week of {datetime.now().strftime('%B %d, %Y')}",
                         body=report_html,
                         workspace_id=user_id
                     )
-                    logger.info(f"Sent weekly report to {email} for user {user_id}")
+                    logger.info(f"Sent Data Vision weekly report to {email} for user {user_id}")
                     
         except Exception as e:
             logger.error(f"Error sending weekly report to {user_id}: {e}")

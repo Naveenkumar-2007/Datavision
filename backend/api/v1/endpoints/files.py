@@ -786,9 +786,7 @@ async def import_google_sheet(
     """
     try:
         from integrations.google_sheets import import_google_sheet as gs_import, extract_sheet_id
-        from ingestion.pipeline import ingest
-        import tempfile
-        import os
+        from ingestion.pipeline import IngestionPipeline
         
         # Validate sheet ID
         sheet_id = extract_sheet_id(sheet_url)
@@ -796,20 +794,31 @@ async def import_google_sheet(
             raise HTTPException(status_code=400, detail="Invalid Google Sheets URL")
         
         # Import sheet to DataFrame
+        print(f"📊 Importing Google Sheet: {sheet_id}")
         df = await gs_import(sheet_url, sheet_name)
         
         if df.empty:
             raise HTTPException(status_code=400, detail="Sheet is empty or could not be read")
         
-        # Save as temporary CSV
+        print(f"📊 Sheet loaded: {len(df)} rows, {len(df.columns)} columns")
+        
+        # Save as CSV to user's files directory
         paths = get_user_paths(user_id)
         temp_filename = f"google_sheet_{sheet_id[:8]}.csv"
-        temp_path = paths["uploads"] / temp_filename
+        temp_path = paths["files"] / temp_filename
         
         df.to_csv(temp_path, index=False)
+        print(f"📊 Saved to: {temp_path}")
         
-        # Run ingestion pipeline
-        result = ingest(user_id)
+        # Run ingestion pipeline using process method (for files already on disk)
+        pipeline = IngestionPipeline()
+        file_info = [{
+            "id": f"gs_{sheet_id[:8]}",
+            "name": temp_filename,
+            "size": temp_path.stat().st_size if temp_path.exists() else 0,
+            "type": "text/csv"
+        }]
+        pipeline.process(file_info, user_id, paths["files"].parent)
         
         # Invalidate cache
         invalidate_user_cache(user_id)

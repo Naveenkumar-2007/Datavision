@@ -34,7 +34,7 @@ const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '
       {/* Text */}
       {showText && (
         <div className="flex flex-col">
-          <span className={`font-bold text-gray-100 ${text} leading-tight`}>
+          <span className={`font-bold text-gray-900 dark:text-gray-100 ${text} leading-tight`}>
             DataVision
           </span>
         </div>

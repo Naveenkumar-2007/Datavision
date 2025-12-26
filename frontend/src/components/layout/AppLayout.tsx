@@ -54,7 +54,7 @@ const AppLayout: React.FC = () => {
   const textMuted = isDark ? '#9CA3AF' : '#64748B';
   const borderColor = isDark ? '#262626' : '#E2E8F0';
   const sidebarBg = isDark ? 'rgba(10, 10, 11, 0.98)' : 'rgba(255, 255, 255, 0.98)';
-  const accentColor = '#14B8A6'; // Teal - matching landing page CTA
+
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -165,7 +165,7 @@ const AppLayout: React.FC = () => {
           </button>
 
           {/* Page Title */}
-          <div className="hidden lg:block">
+          <div className="block">
             <h1 className="text-lg font-semibold" style={{ color: textPrimary }}>
               {navItems.find(item => isActive(item.path))?.label || 'DataVision'}
             </h1>
@@ -193,7 +193,7 @@ const AppLayout: React.FC = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
-            className="max-w-7xl mx-auto w-full"
+            className="w-full mx-auto"
           >
             <Outlet context={{ isDark, bgColor, cardBg, textPrimary, textMuted, borderColor }} />
           </motion.div>

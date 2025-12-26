@@ -70,6 +70,16 @@ try:
 except ImportError:
     CHARTS_AVAILABLE = False
 
+# Import smart_chart for LLM-driven chart generation with ALL chart types
+try:
+    from agents.smart_chart import smart_chart
+    SMART_CHART_AVAILABLE = True
+    print("✅ Smart Chart loaded in chat.py - LLM-driven charts active")
+except ImportError:
+    SMART_CHART_AVAILABLE = False
+    print("⚠️ Smart Chart not available in chat.py")
+
+
 # Import memory engine for chart context storage - USE SHARED SINGLETON
 try:
     from core.memory_engine import get_shared_memory
@@ -241,6 +251,243 @@ MODE_PROFILES = {
         "uses_graph": False
     }
 }
+
+# ============================================================================
+# MCP PROCESSOR - Intelligent Tool Execution Based on Query and Enabled MCPs
+# ============================================================================
+
+def run_enabled_mcps(query: str, user_id: str, enabled_mcps: dict, df=None) -> dict:
+    """
+    Execute enabled MCP tools based on query intent and return enhanced context.
+    
+    This function analyzes the query and runs appropriate MCPs in sequence,
+    building up context and insights for the LLM response.
+    
+    Args:
+        query: User's question
+        user_id: User ID for data access
+        enabled_mcps: Dict of {mcp_name: bool} for enabled tools
+        df: Optional DataFrame (if already loaded)
+    
+    Returns:
+        Dict with:
+        - mcp_context: Additional context from MCP tools
+        - mcp_insights: List of insights generated
+        - mcp_alerts: Any alerts triggered
+        - tools_used: List of tools that ran
+    """
+    result = {
+        "mcp_context": "",
+        "mcp_insights": [],
+        "mcp_alerts": [],
+        "tools_used": [],
+        "data_quality_score": None
+    }
+    
+    query_lower = query.lower()
+    
+    # Get DataFrame if not provided
+    if df is None:
+        try:
+            from api.v1.endpoints.charts import get_user_data
+            df = get_user_data(user_id)
+        except:
+            return result
+    
+    if df is None or df.empty:
+        return result
+    
+    # EXPANDED Keywords to detect MCP relevance (partial matching for plurals)
+    data_quality_keywords = [
+        'quality', 'validat', 'check', 'clean', 'issue', 'error', 'problem',
+        'missing', 'null', 'empty', 'duplicate', 'correct', 'accurate', 'verify'
+    ]
+    alert_keywords = [
+        'anomal', 'alert', 'unusual', 'spike', 'drop', 'warning', 'outlier',
+        'abnormal', 'unexpected', 'strange', 'weird', 'concern', 'risk', 'critical'
+    ]
+    transform_keywords = [
+        'pivot', 'aggregat', 'group', 'transform', 'convert', 'reshape',
+        'merge', 'combine', 'split', 'filter', 'sort', 'breakdown', 'by region'
+    ]
+    insight_keywords = [
+        'insight', 'trend', 'pattern', 'analyz', 'find', 'discover', 'show',
+        'summary', 'overview', 'important', 'significant', 'growth', 'performance'
+    ]
+    forecast_keywords = [
+        'predict', 'forecast', 'future', 'next month', 'projection', 'estimate',
+        'expect', 'anticipat', 'plan', 'budget', 'target', 'quarterly', 'yearly'
+    ]
+    
+    mcp_logs = []
+    
+    # =========================================================================
+    # DATA VALIDATOR MCP - Check data quality
+    # =========================================================================
+    if enabled_mcps.get('data_validator', False):
+        is_quality_query = any(kw in query_lower for kw in data_quality_keywords)
+        
+        if is_quality_query:
+            try:
+                from mcp.data_validator import validate_data
+                validation_result = validate_data(df)
+                
+                if validation_result.get('success'):
+                    quality_score = validation_result.get('quality_score', 0)
+                    result["data_quality_score"] = quality_score
+                    result["tools_used"].append("Data Validator")
+                    
+                    # Add quality context
+                    issues = validation_result.get('issues', [])
+                    if issues:
+                        issue_summary = ", ".join([f"{i['rule']}: {i['message'][:50]}" for i in issues[:3]])
+                        result["mcp_context"] += f"\n📊 **Data Quality Score: {quality_score}/100**\n"
+                        result["mcp_context"] += f"Issues found: {len(issues)} ({issue_summary})\n"
+                    else:
+                        result["mcp_context"] += f"\n✅ **Data Quality Score: {quality_score}/100** - No issues found\n"
+                    
+                    mcp_logs.append(f"✅ Data Validator: Quality score {quality_score}")
+            except Exception as e:
+                mcp_logs.append(f"⚠️ Data Validator error: {str(e)[:50]}")
+    
+    # =========================================================================
+    # ALERT ENGINE MCP - Check for anomalies and threshold breaches
+    # =========================================================================
+    if enabled_mcps.get('alert_engine', False):
+        is_alert_query = any(kw in query_lower for kw in alert_keywords)
+        
+        # Always run for anomaly detection if enabled
+        if is_alert_query or enabled_mcps.get('alert_engine', False):
+            try:
+                from mcp.alert_engine import evaluate_alerts
+                
+                # Run with default rules (anomaly detection)
+                alert_result = evaluate_alerts(df)
+                
+                if alert_result.get('success'):
+                    alerts = alert_result.get('alerts', [])
+                    result["tools_used"].append("Alert Engine")
+                    
+                    # Add critical/high alerts to context
+                    important_alerts = [a for a in alerts if a.get('priority') in ['critical', 'high']]
+                    if important_alerts:
+                        result["mcp_context"] += f"\n🔔 **Alerts Detected ({len(important_alerts)}):**\n"
+                        for alert in important_alerts[:3]:
+                            result["mcp_context"] += f"- [{alert['priority'].upper()}] {alert['title']}: {alert['message'][:80]}\n"
+                            result["mcp_alerts"].append(alert)
+                        mcp_logs.append(f"🔔 Alert Engine: {len(important_alerts)} alerts")
+                    else:
+                        mcp_logs.append(f"✅ Alert Engine: No critical alerts")
+            except Exception as e:
+                mcp_logs.append(f"⚠️ Alert Engine error: {str(e)[:50]}")
+    
+    # =========================================================================
+    # INSIGHT ENGINE MCP - Generate business insights
+    # =========================================================================
+    if enabled_mcps.get('insight_engine', False):
+        is_insight_query = any(kw in query_lower for kw in insight_keywords)
+        
+        if is_insight_query:
+            try:
+                from mcp.insight_engine import generate_insights
+                
+                # Get basic metrics for insight generation
+                numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns
+                
+                # Find revenue-like column
+                revenue_col = None
+                for col in numeric_cols:
+                    if any(kw in col.lower() for kw in ['revenue', 'amount', 'total', 'sales', 'price']):
+                        revenue_col = col
+                        break
+                
+                if revenue_col:
+                    revenue = float(df[revenue_col].sum())
+                    customers = df['Customer_Name'].nunique() if 'Customer_Name' in df.columns else 0
+                    orders = len(df)
+                    
+                    insight_result = generate_insights(
+                        revenue=revenue,
+                        revenue_previous=revenue * 0.9,
+                        customers=customers,
+                        orders=orders
+                    )
+                    
+                    if insight_result.get('insights'):
+                        result["tools_used"].append("Insight Engine")
+                        top_insights = insight_result['insights'][:3]
+                        result["mcp_context"] += f"\n💡 **Auto-Generated Insights:**\n"
+                        for ins in top_insights:
+                            icon = ins.get('icon', '💡')
+                            message = ins.get('message', '')
+                            result["mcp_context"] += f"- {icon} {message}\n"
+                            result["mcp_insights"].append(ins)
+                        mcp_logs.append(f"💡 Insight Engine: {len(top_insights)} insights")
+            except Exception as e:
+                mcp_logs.append(f"⚠️ Insight Engine error: {str(e)[:50]}")
+    
+    # =========================================================================
+    # FORECAST ENGINE MCP - Time-series predictions
+    # =========================================================================
+    if enabled_mcps.get('forecast_engine', False):
+        is_forecast_query = any(kw in query_lower for kw in forecast_keywords)
+        
+        if is_forecast_query:
+            try:
+                from mcp.forecast_engine import forecast_from_dataframe
+                
+                # Find date and value columns
+                date_col = None
+                value_col = None
+                
+                for col in df.columns:
+                    if any(kw in col.lower() for kw in ['date', 'time', 'month', 'year', 'period']):
+                        date_col = col
+                        break
+                
+                for col in df.select_dtypes(include=['int64', 'float64']).columns:
+                    if any(kw in col.lower() for kw in ['revenue', 'amount', 'total', 'sales']):
+                        value_col = col
+                        break
+                
+                if date_col and value_col:
+                    forecast_result = forecast_from_dataframe(df, date_col, value_col, periods=3)
+                    
+                    if forecast_result and 'forecast' in str(forecast_result):
+                        result["tools_used"].append("Forecast Engine")
+                        result["mcp_context"] += f"\n📈 **Forecast Generated:**\n"
+                        result["mcp_context"] += f"Based on {date_col} and {value_col} data\n"
+                        mcp_logs.append(f"📈 Forecast Engine: Generated forecast")
+            except Exception as e:
+                mcp_logs.append(f"⚠️ Forecast Engine error: {str(e)[:50]}")
+    
+    # =========================================================================
+    # DATA TRANSFORMER MCP - Pivot/aggregate operations
+    # =========================================================================
+    if enabled_mcps.get('data_transformer', False):
+        is_transform_query = any(kw in query_lower for kw in transform_keywords)
+        
+        if is_transform_query:
+            try:
+                from mcp.data_transformer import infer_data_schema
+                
+                schema_result = infer_data_schema(df)
+                if schema_result.get('success'):
+                    result["tools_used"].append("Data Transformer")
+                    schema = schema_result.get('schema', {})
+                    result["mcp_context"] += f"\n🔄 **Data Schema Detected:**\n"
+                    result["mcp_context"] += f"- Rows: {schema.get('row_count', 0)}, Columns: {schema.get('column_count', 0)}\n"
+                    mcp_logs.append(f"🔄 Data Transformer: Schema inferred")
+            except Exception as e:
+                mcp_logs.append(f"⚠️ Data Transformer error: {str(e)[:50]}")
+    
+    # Log MCP execution
+    if mcp_logs:
+        print(f"🔧 MCP Tools Executed:")
+        for log in mcp_logs:
+            print(f"   {log}")
+    
+    return result
 
 # ============================================================================
 # MODEL PROFILES - AI Model Speed vs Intelligence
@@ -897,26 +1144,49 @@ def smart_route_model(query: str, selected_model: str) -> str:
 
 
 # Chart keywords for detecting visualization requests
+# Chart keywords for detecting visualization requests
 CHART_KEYWORDS = [
     'chart', 'graph', 'visualize', 'visualization', 'plot', 'trend',
     'show me', 'display', 'bar chart', 'pie chart', 'line chart',
-    'revenue trend', 'customer distribution', 'product comparison'
+    'revenue trend', 'customer distribution', 'product comparison',
+    'violin', 'radar', 'spider', 'funnel', 'gauge', 'heatmap',
+    'treemap', 'sunburst', 'bubble', 'scatter', 'box plot',
+    'waterfall', 'area chart', 'donut', 'histogram'
 ]
 
 def detect_chart_request(query: str) -> str:
     """Detect what type of chart the user is asking for"""
     query_lower = query.lower()
     
-    if any(k in query_lower for k in ['trend', 'over time', 'timeline', 'revenue trend']):
-        return 'trend'
-    elif any(k in query_lower for k in ['bar', 'product', 'compare', 'comparison', 'top product']):
+    # Specific chart types (Priority)
+    if 'violin' in query_lower: return 'violin'
+    if 'radar' in query_lower or 'spider' in query_lower: return 'radar'
+    if 'funnel' in query_lower: return 'funnel'
+    if 'heatmap' in query_lower: return 'heatmap'
+    if 'treemap' in query_lower: return 'treemap'
+    if 'sunburst' in query_lower: return 'sunburst'
+    if 'gauge' in query_lower or 'kpi' in query_lower: return 'gauge'
+    if 'waterfall' in query_lower: return 'waterfall'
+    if 'bubble' in query_lower: return 'bubble'
+    if 'scatter' in query_lower or 'correlation' in query_lower: return 'scatter'
+    if 'box' in query_lower and 'plot' in query_lower: return 'box'
+    if 'histogram' in query_lower or 'frequency' in query_lower: return 'histogram'
+    if 'donut' in query_lower or 'doughnut' in query_lower: return 'donut'
+    if 'area' in query_lower and 'chart' in query_lower: return 'area'
+    
+    # General categories
+    if any(k in query_lower for k in ['trend', 'over time', 'timeline', 'revenue trend', 'line chart']):
+        return 'line'
+    elif any(k in query_lower for k in ['bar', 'product', 'compare', 'comparison', 'top product', 'ranking']):
         return 'bar'
-    elif any(k in query_lower for k in ['pie', 'distribution', 'breakdown', 'customer']):
+    elif any(k in query_lower for k in ['pie', 'distribution', 'breakdown', 'customer', 'share']):
         return 'pie'
     elif any(k in query_lower for k in ['predict', 'forecast', 'future', 'next month', 'projection']):
         return 'prediction'
+    
+    # Catch-all for generic "show me a chart"
     elif any(k in query_lower for k in CHART_KEYWORDS):
-        return 'trend'  # Default to trend chart
+        return 'generic'
     
     return None  # Not a chart request
 
@@ -1225,28 +1495,28 @@ CONVERSATION HISTORY:
                             df = get_user_data(user_id)
                             if df is not None and not df.empty:
                                 # =========================================================
-                                # QUERY-AWARE CHART GENERATION (Dynamic based on query)
+                                # SMART CHART: LLM-driven chart with ALL types supported
+                                # Pie, Donut, Violin, Radar, Treemap, Combo, etc.
                                 # =========================================================
-                                # Use query-aware generator that extracts count, entity, type
-                                chart_json = generate_query_aware_chart(df, query)
+                                currency_symbol, _ = get_user_currency(user_id)
+                                chart_json = None
                                 
-                                # FALLBACK: If query-aware chart failed, try simple approaches
-                                if chart_json and 'error' in chart_json:
-                                    print(f"Query-aware chart failed: {chart_json.get('error')}")
-                                    # Fallback based on detected type
-                                    if chart_type == 'trend':
-                                        chart_json = generate_revenue_trend_chart(df)
-                                    elif chart_type == 'bar':
-                                        chart_json = generate_product_bar_chart(df)
-                                    elif chart_type == 'pie':
-                                        chart_json = generate_customer_pie_chart(df)
-                                    else:
-                                        chart_json = generate_revenue_trend_chart(df)
+                                if SMART_CHART_AVAILABLE:
+                                    try:
+                                        chart_json, chart_explanation = smart_chart(
+                                            query=query,
+                                            df=df,
+                                            currency_symbol=currency_symbol
+                                        )
+                                        print(f"[CHAT] smart_chart generated: {type(chart_json)}")
+                                    except Exception as smart_err:
+                                        print(f"[CHAT] smart_chart error: {smart_err}")
+                                        chart_json = None
                                 
-                                # Final fallback if still error
-                                if chart_json and 'error' in chart_json:
-                                    print(f"Fallback chart failed, trying pie chart")
-                                    chart_json = generate_customer_pie_chart(df)
+                                # Fallback to legacy if smart_chart failed
+                                if not chart_json or (isinstance(chart_json, dict) and 'error' in chart_json):
+                                    print(f"[CHAT] Falling back to generate_query_aware_chart")
+                                    chart_json = generate_query_aware_chart(df, query)
                                 
                                 # Append Plotly chart to response
                                 if chart_json and 'error' not in chart_json:
@@ -2048,6 +2318,28 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
             currency_code = "USD"
         
         # =====================================================================
+        # MCP PROCESSING - Run enabled MCPs and get enhanced context/insights
+        # =====================================================================
+        mcp_result = None
+        mcp_context_text = ""
+        
+        if enabled_mcps and is_business_query:
+            print(f"🔧 Running MCP tools for query: {query[:50]}...")
+            mcp_result = run_enabled_mcps(query, user_id, enabled_mcps)
+            
+            if mcp_result and mcp_result.get("tools_used"):
+                tools_used = mcp_result["tools_used"]
+                print(f"✅ MCPs used: {', '.join(tools_used)}")
+                
+                # Add MCP context to enhance the response
+                mcp_context_text = mcp_result.get("mcp_context", "")
+                
+                # Add MCP tools used to sources
+                for tool in tools_used:
+                    if f"MCP: {tool}" not in sources:
+                        sources.append(f"MCP: {tool}")
+        
+        # =====================================================================
         # FOLLOW-UP QUERIES: Get last response from MAIN conversation history
         # =====================================================================
         if is_followup_query:
@@ -2396,6 +2688,18 @@ Rules:
 - If thanked: Say you are welcome.
 - Keep response under 3 sentences. Be warm and natural."""
             response = chat(prompt, max_tokens=200)
+        
+        # =========================================================================
+        # MCP CONTEXT INJECTION - Append MCP insights to response
+        # =========================================================================
+        if mcp_context_text and is_business_query:
+            # Add MCP insights at the end of the response
+            response = response + "\n\n---\n" + mcp_context_text
+        
+        # Add MCP tools used indicator (subtle, Claude-style)
+        if mcp_result and mcp_result.get("tools_used"):
+            tools_list = ", ".join(mcp_result["tools_used"])
+            response += f"\n\n🔧 *Tools used: {tools_list}*"
         
         # =========================================================================
         # FINAL STEP: Universal Chart Injection for ALL modes

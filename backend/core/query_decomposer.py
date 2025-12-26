@@ -1,6 +1,14 @@
 """
-Advanced Query Decomposer - Break complex queries into sub-queries
-==================================================================
+Advanced Query Decomposer v2.0 - LLM-Powered Query Understanding
+=================================================================
+
+PRO FEATURES:
+- LLM-powered semantic decomposition (when patterns fail)
+- Temporal expression parsing ("last quarter", "YoY")
+- Context-aware query expansion using data schema
+- Multi-hop reasoning ("First find X, then analyze Y")
+- Comparison detection ("A vs B", "before and after")
+- Intent classification for smarter routing
 
 Handles sophisticated query patterns for enterprise RAG:
 - Basic comparisons: "compare X and Y"
@@ -13,10 +21,236 @@ Handles sophisticated query patterns for enterprise RAG:
 """
 
 import re
-from typing import List, Tuple, Dict
+import json
+from typing import List, Tuple, Dict, Optional
+from enum import Enum
 
 
-def decompose_query(query: str) -> List[str]:
+class QueryIntent(Enum):
+    """Semantic intent of the query"""
+    FACTUAL = "factual"           # "What is total revenue?"
+    COMPARISON = "comparison"     # "Compare X and Y"
+    TREND = "trend"               # "Show trend over time"
+    RANKING = "ranking"           # "Top 5 customers"
+    AGGREGATION = "aggregation"   # "Total by category"
+    BREAKDOWN = "breakdown"       # "Revenue breakdown"
+    PREDICTION = "prediction"     # "Forecast next month"
+    CORRELATION = "correlation"   # "Relationship between X and Y"
+    ANOMALY = "anomaly"           # "Find unusual patterns"
+    EXPLANATION = "explanation"   # "Explain this/why"
+    MULTI_HOP = "multi_hop"       # "First X, then Y"
+
+
+class TemporalExpression:
+    """Parse temporal expressions from queries"""
+    
+    PATTERNS = {
+        # Relative periods
+        r'\b(this|current)\s+(month|week|year|quarter)\b': ('relative', 'current'),
+        r'\b(last|previous)\s+(month|week|year|quarter)\b': ('relative', 'previous'),
+        r'\b(next)\s+(month|week|year|quarter)\b': ('relative', 'next'),
+        # Specific periods
+        r'\bq([1-4])\b': ('quarter', None),
+        r'\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b': ('month', None),
+        r'\b(20\d{2})\b': ('year', None),
+        # Comparisons
+        r'\b(yoy|year.over.year)\b': ('comparison', 'yoy'),
+        r'\b(mom|month.over.month)\b': ('comparison', 'mom'),
+        r'\b(qoq|quarter.over.quarter)\b': ('comparison', 'qoq'),
+        r'\b(ytd|year.to.date)\b': ('range', 'ytd'),
+        r'\b(mtd|month.to.date)\b': ('range', 'mtd'),
+    }
+    
+    @classmethod
+    def extract(cls, query: str) -> List[Dict]:
+        """Extract temporal expressions from query"""
+        expressions = []
+        query_lower = query.lower()
+        
+        for pattern, (expr_type, expr_value) in cls.PATTERNS.items():
+            match = re.search(pattern, query_lower)
+            if match:
+                expressions.append({
+                    'type': expr_type,
+                    'value': expr_value or match.group(0),
+                    'match': match.group(0)
+                })
+        
+        return expressions
+
+
+def llm_decompose_query(query: str, schema_context: str = "") -> List[str]:
+    """
+    🧠 LLM-POWERED QUERY DECOMPOSITION
+    
+    Use LLM to intelligently break down complex queries when
+    regex patterns are insufficient.
+    
+    Args:
+        query: Complex user query
+        schema_context: Available columns/schema for context
+        
+    Returns:
+        List of simpler sub-queries
+    """
+    try:
+        from core.llm import chat
+        
+        prompt = f"""You are a query decomposition expert. Break this complex query into simpler sub-queries.
+
+USER QUERY: "{query}"
+
+{f"AVAILABLE DATA COLUMNS: {schema_context}" if schema_context else ""}
+
+RULES:
+1. Only decompose if the query has MULTIPLE distinct questions
+2. Each sub-query should be answerable independently
+3. Preserve the user's intent in each sub-query
+4. Maximum 5 sub-queries
+5. If the query is simple, return just the original query
+
+RESPOND WITH ONLY A JSON ARRAY OF STRINGS. Examples:
+- Simple: ["What is total revenue?"]
+- Complex: ["What is Q1 revenue?", "What is Q2 revenue?", "Compare Q1 vs Q2"]
+
+JSON ARRAY:"""
+
+        response = chat(prompt, max_tokens=300)
+        
+        # Parse JSON response
+        response = response.strip()
+        if response.startswith("```"):
+            response = response.split("```")[1]
+            if response.startswith("json"):
+                response = response[4:]
+        response = response.strip()
+        
+        sub_queries = json.loads(response)
+        
+        if isinstance(sub_queries, list) and len(sub_queries) > 0:
+            print(f"[LLM DECOMPOSE] '{query[:50]}...' -> {len(sub_queries)} sub-queries")
+            return sub_queries
+            
+    except Exception as e:
+        print(f"[LLM DECOMPOSE] Fallback to regex: {e}")
+    
+    return [query]  # Fallback
+
+
+def expand_query_with_schema(query: str, columns: List[str]) -> str:
+    """
+    🧠 SCHEMA-AWARE QUERY EXPANSION
+    
+    Expand ambiguous queries based on available data columns.
+    
+    Examples:
+    - "show me revenue" + columns=['total_amount'] -> "show me total_amount as revenue"
+    - "top customers" + columns=['client_name'] -> "top clients by client_name"
+    """
+    if not columns:
+        return query
+    
+    query_lower = query.lower()
+    expansions = []
+    
+    # Revenue/amount mapping
+    amount_keywords = ['revenue', 'sales', 'amount', 'value', 'total']
+    amount_cols = [c for c in columns if any(kw in c.lower() for kw in 
+                   ['amount', 'revenue', 'sales', 'total', 'value', 'price', 'cost'])]
+    
+    if any(kw in query_lower for kw in amount_keywords) and amount_cols:
+        expansions.append(f"[Using column: {amount_cols[0]} for amounts]")
+    
+    # Customer/entity mapping
+    entity_keywords = ['customer', 'client', 'buyer', 'account']
+    entity_cols = [c for c in columns if any(kw in c.lower() for kw in 
+                   ['customer', 'client', 'name', 'account', 'company', 'buyer'])]
+    
+    if any(kw in query_lower for kw in entity_keywords) and entity_cols:
+        expansions.append(f"[Using column: {entity_cols[0]} for entities]")
+    
+    # Date mapping
+    if any(kw in query_lower for kw in ['trend', 'monthly', 'over time', 'timeline']):
+        date_cols = [c for c in columns if any(kw in c.lower() for kw in 
+                     ['date', 'time', 'day', 'month', 'year', 'period'])]
+        if date_cols:
+            expansions.append(f"[Using column: {date_cols[0]} for time series]")
+    
+    if expansions:
+        return query + " " + " ".join(expansions)
+    
+    return query
+
+
+def classify_query_intent(query: str) -> QueryIntent:
+    """
+    🧠 INTELLIGENT INTENT CLASSIFICATION
+    
+    Classify the semantic intent of a query for smarter routing.
+    Uses pattern matching first, LLM fallback for ambiguous cases.
+    """
+    query_lower = query.lower()
+    
+    # Pattern-based classification (fast path)
+    intent_patterns = {
+        QueryIntent.COMPARISON: [
+            r'\b(compare|comparison|vs|versus|between|against)\b',
+            r'\b(difference|differ)\b',
+            r'\b(which is (better|worse|higher|lower))\b',
+        ],
+        QueryIntent.TREND: [
+            r'\b(trend|over time|monthly|weekly|daily|yearly)\b',
+            r'\b(growth|decline|change over)\b',
+            r'\b(timeline|progression|evolution)\b',
+        ],
+        QueryIntent.RANKING: [
+            r'\b(top|bottom|best|worst|highest|lowest)\s*\d*\b',
+            r'\b(rank|ranking|leader|leaderboard)\b',
+        ],
+        QueryIntent.AGGREGATION: [
+            r'\b(total|sum|count|average|mean|median)\b',
+            r'\b(by|per|grouped by|for each)\b',
+        ],
+        QueryIntent.BREAKDOWN: [
+            r'\b(breakdown|break down|split|distribution)\b',
+            r'\b(composition|proportion|percentage|share)\b',
+        ],
+        QueryIntent.PREDICTION: [
+            r'\b(predict|forecast|projection|future)\b',
+            r'\b(next month|next year|next quarter)\b',
+            r'\b(will be|expected|anticipated)\b',
+        ],
+        QueryIntent.CORRELATION: [
+            r'\b(correlation|relationship|correlate|related)\b',
+            r'\b(affect|impact|influence)\b',
+        ],
+        QueryIntent.ANOMALY: [
+            r'\b(anomaly|anomalies|unusual|outlier)\b',
+            r'\b(strange|unexpected|abnormal)\b',
+        ],
+        QueryIntent.EXPLANATION: [
+            r'\b(explain|why|how come|reason)\b',
+            r'\b(elaborate|clarify|describe)\b',
+        ],
+        QueryIntent.MULTI_HOP: [
+            r'\b(first|then|after that|next)\b.*\b(then|after|and then)\b',
+            r'\b(step 1|step 2)\b',
+        ],
+    }
+    
+    best_intent = QueryIntent.FACTUAL
+    best_score = 0
+    
+    for intent, patterns in intent_patterns.items():
+        score = sum(1 for p in patterns if re.search(p, query_lower))
+        if score > best_score:
+            best_score = score
+            best_intent = intent
+    
+    return best_intent
+
+
+def decompose_query(query: str, use_llm: bool = True, schema_context: str = "") -> List[str]:
     """
     Break complex queries into simpler sub-queries for better retrieval.
     

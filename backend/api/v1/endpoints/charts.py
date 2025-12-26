@@ -1135,6 +1135,123 @@ def generate_dynamic_bar_chart(df: pd.DataFrame, group_col: str = None, metric_c
     return plotly_json
 
 
+def generate_donut_chart(df: pd.DataFrame, query: str = "", colors: List[str] = None) -> Dict[str, Any]:
+    """Generate donut chart (pie with hole in center)"""
+    if df.empty:
+        return {"error": "No data available"}
+    
+    detected = auto_detect_columns(df, query)
+    cat_col = detected.get("category")
+    num_col = detected.get("numeric")
+    
+    if not cat_col or not num_col:
+        return {"error": "Could not detect columns for donut chart"}
+    
+    grouped = df.groupby(cat_col)[num_col].sum().sort_values(ascending=False).head(10)
+    
+    # Use provided colors or get from palette
+    if not colors:
+        colors = get_color_palette("vibrant", len(grouped))
+    
+    return apply_premium_layout({
+        "data": [{
+            "type": "pie",
+            "labels": [str(x) for x in grouped.index.tolist()],
+            "values": [float(x) for x in grouped.values.tolist()],
+            "hole": 0.4,  # This makes it a donut!
+            "marker": {"colors": colors[:len(grouped)]},
+            "textinfo": "label+percent",
+            "hovertemplate": "%{label}<br>%{value:,.0f}<br>%{percent}<extra></extra>"
+        }],
+        "layout": {"height": 400}
+    }, f"{num_col} Distribution by {cat_col}")
+
+
+def generate_sunburst_chart(df: pd.DataFrame, query: str = "", colors: List[str] = None) -> Dict[str, Any]:
+    """Generate hierarchical sunburst chart"""
+    if df.empty:
+        return {"error": "No data available"}
+    
+    detected = auto_detect_columns(df, query)
+    cat_cols = detected.get("all_categorical", [])
+    num_col = detected.get("numeric")
+    
+    if len(cat_cols) < 1 or not num_col:
+        return {"error": "Need categorical and numeric columns for sunburst"}
+    
+    # Use first categorical for main breakdown
+    cat_col = cat_cols[0]
+    grouped = df.groupby(cat_col)[num_col].sum()
+    
+    labels = ["Total"] + [str(x) for x in grouped.index]
+    parents = [""] + ["Total"] * len(grouped)
+    values = [float(grouped.sum())] + [float(v) for v in grouped.values]
+    
+    # Use provided colors or get from palette
+    if not colors:
+        colors = get_color_palette("professional", len(labels))
+    
+    return apply_premium_layout({
+        "data": [{
+            "type": "sunburst",
+            "labels": labels,
+            "parents": parents,
+            "values": values,
+            "branchvalues": "total",
+            "marker": {"colors": colors},
+            "textinfo": "label+percent entry",
+            "hovertemplate": "%{label}<br>%{value:,.0f}<extra></extra>"
+        }],
+        "layout": {"height": 450}
+    }, f"Hierarchical Breakdown: {cat_col}")
+
+
+def generate_bubble_chart(df: pd.DataFrame, query: str = "", colors: List[str] = None) -> Dict[str, Any]:
+    """Generate bubble chart with size proportional to values"""
+    if df.empty:
+        return {"error": "No data available"}
+    
+    detected = auto_detect_columns(df, query)
+    cat_col = detected.get("category")
+    num_col = detected.get("numeric")
+    
+    if not cat_col or not num_col:
+        return {"error": "Could not detect columns for bubble chart"}
+    
+    grouped = df.groupby(cat_col)[num_col].sum().sort_values(ascending=False).head(15)
+    
+    # Normalize sizes (min 20, max 80)
+    max_val = grouped.max() if len(grouped) > 0 else 1
+    sizes = [max(20, min(80, (v / max_val) * 60 + 20)) for v in grouped.values]
+    
+    # Use provided colors or get from palette
+    if not colors:
+        colors = get_color_palette("vibrant", len(grouped))
+    
+    return apply_premium_layout({
+        "data": [{
+            "type": "scatter",
+            "mode": "markers+text",
+            "x": list(range(len(grouped))),
+            "y": grouped.values.tolist(),
+            "text": grouped.index.tolist(),
+            "textposition": "top center",
+            "marker": {
+                "size": sizes,
+                "color": colors,
+                "opacity": 0.7,
+                "line": {"width": 2, "color": "white"}
+            },
+            "hovertemplate": "%{text}<br>%{y:,.0f}<extra></extra>"
+        }],
+        "layout": {
+            "xaxis": {"visible": False},
+            "yaxis": {"title": num_col},
+            "height": 400
+        }
+    }, f"Bubble Size by {num_col}")
+
+
 def generate_query_aware_chart(df: pd.DataFrame, query: str) -> Dict[str, Any]:
     """
     Generate chart dynamically based on user query.
@@ -1143,15 +1260,95 @@ def generate_query_aware_chart(df: pd.DataFrame, query: str) -> Dict[str, Any]:
     
     CRITICAL: Check for EXPLICIT chart type keywords FIRST to respect user intent.
     """
-    from agents.smart_chart import smart_chart
+    from agents.smart_chart import smart_chart, get_color_palette_from_query
     
     query_lower = query.lower()
     print(f"[CHART] Orchestrating visualization for: {query[:50]}...")
     
     # ==========================================================================
-    # STEP 1: CHECK FOR EXPLICIT CHART TYPE KEYWORDS FIRST
-    # This ensures we respect the user's specific chart type request
+    # EXTRACT COLOR PREFERENCE FROM QUERY
     # ==========================================================================
+    colors = get_color_palette_from_query(query)
+    print(f"[CHART] Color palette selected: {colors[:3]}...")
+    
+    # ==========================================================================
+    # STEP 1: PRIORITIZE LLM-DRIVEN SMART CHART (INTELLIGENT AGENT)
+    # This handles ALL chart types (violin, radar, pie, etc.) with advanced logic
+    # ==========================================================================
+    try:
+        if 'smart_chart' in globals() or 'smart_chart' in locals():
+            currency_symbol, _ = get_user_currency("default")
+            print(f"[CHART] 🧠 Attempting Smart Chart for: '{query}'")
+            chart_result, _ = smart_chart(query, df, currency_symbol=currency_symbol)
+            
+            # If successful, return immediately!
+            if chart_result and 'error' not in chart_result:
+                chart_type = chart_result.get('data', [{}])[0].get('type', 'unknown')
+                print(f"✅ [CHART] Smart Chart successful! generated: {chart_type}")
+                return chart_result
+            else:
+                print(f"⚠️ [CHART] Smart Chart returned valid format but marked as error or empty")
+    except Exception as e:
+        print(f"⚠️ [CHART] Smart Chart failed (falling back to manual): {e}")
+
+    # ==========================================================================
+    # STEP 2: MANUAL FALLBACKS (If Smart Chart fails)
+    # Check for EXPLICIT chart type keywords to respect user intent
+    # ==========================================================================
+    
+    # PIE CHART - User explicitly asked for pie chart (MUST be first check)
+    # Broadened detection: 'pie' alone now triggers pie chart
+    if 'pie' in query_lower and 'spider' not in query_lower:
+        print(f"[CHART] 🥧 PIE CHART request detected in: '{query}'")
+        result = generate_customer_pie_chart(df, colors=colors)
+        if result and 'error' not in result:
+            print(f"✅ [CHART] Pie chart generated successfully!")
+            return result
+        else:
+            error_msg = result.get('error', 'Unknown') if result else 'None returned'
+            print(f"⚠️ [CHART] Pie chart failed: {error_msg}")
+    
+    # DONUT CHART - User explicitly asked for donut
+    if any(kw in query_lower for kw in ['donut', 'doughnut']):
+        print(f"[CHART] 🍩 Explicit DONUT CHART request detected")
+        result = generate_donut_chart(df, query, colors=colors)
+        if result and 'error' not in result:
+            print(f"✅ [CHART] Donut chart generated successfully!")
+            return result
+    
+    # SUNBURST CHART - User explicitly asked for sunburst
+    if any(kw in query_lower for kw in ['sunburst', 'sun burst', 'hierarchical pie']):
+        print(f"[CHART] ☀️ Explicit SUNBURST CHART request detected")
+        result = generate_sunburst_chart(df, query, colors=colors)
+        if result and 'error' not in result:
+            print(f"✅ [CHART] Sunburst chart generated successfully!")
+            return result
+    
+    # BUBBLE CHART - User explicitly asked for bubble
+    if any(kw in query_lower for kw in ['bubble chart', 'bubble graph', 'bubble']):
+        print(f"[CHART] 🫧 Explicit BUBBLE CHART request detected")
+        result = generate_bubble_chart(df, query, colors=colors)
+        if result and 'error' not in result:
+            print(f"✅ [CHART] Bubble chart generated successfully!")
+            return result
+    
+    # BAR CHART - User explicitly asked for bar chart
+    if any(kw in query_lower for kw in ['bar chart', 'bar graph', 'as a bar']):
+        print(f"[CHART] 📊 Explicit BAR CHART request detected")
+        cols = auto_detect_columns(df, query)
+        if cols.get('category') and cols.get('numeric'):
+            result = generate_dynamic_bar_chart(df, cols['category'], cols['numeric'], cols['title'])
+            if result and 'error' not in result:
+                print(f"✅ [CHART] Bar chart generated successfully!")
+                return result
+    
+    # LINE CHART - User explicitly asked for line chart
+    if any(kw in query_lower for kw in ['line chart', 'line graph']):
+        print(f"[CHART] 📈 Explicit LINE CHART request detected")
+        result = generate_revenue_trend_chart(df)
+        if result and 'error' not in result:
+            print(f"✅ [CHART] Line chart generated successfully!")
+            return result
     
     # BOX PLOT - User explicitly asked for box plot
     if 'box' in query_lower and ('plot' in query_lower or 'chart' in query_lower):
@@ -1251,18 +1448,7 @@ def generate_query_aware_chart(df: pd.DataFrame, query: str) -> Dict[str, Any]:
         if 'error' not in result:
             return result
     
-    # ==========================================================================
-    # STEP 2: TRY LLM-DRIVEN SMART CHART FOR OTHER QUERIES
-    # This handles general queries without explicit chart type
-    # ==========================================================================
-    try:
-        currency_symbol, _ = get_user_currency("default")
-        chart_result, _ = smart_chart(query, df, currency_symbol=currency_symbol)
-        if chart_result and 'error' not in chart_result:
-            print(f"✅ [CHART] Smart Chart (LLM) successful")
-            return chart_result
-    except Exception as e:
-        print(f"⚠️ [CHART] Smart Chart failed: {e}")
+
 
     # ==========================================================================
     # STEP 3: DYNAMIC BAR/PIE FALLBACK
@@ -1270,9 +1456,21 @@ def generate_query_aware_chart(df: pd.DataFrame, query: str) -> Dict[str, Any]:
     cols = auto_detect_columns(df, query)
     if cols.get('category') and cols.get('numeric'):
         if 'pie' in query_lower or 'donut' in query_lower:
+            # 1. Try smart/specific pie chart first
             result = generate_customer_pie_chart(df)
             if 'error' not in result:
                 return result
+            
+            # 2. Desperate Fallback: Force Generic Pie Chart using detected columns
+            # This prevents showing a bar chart when user explicitly asked for Pie
+            print(f"[CHART] 🥧 Force Generic Pie Chart for: '{query}'")
+            return generate_dynamic_pie_chart(
+                df, 
+                category_col=cols.get('category'), 
+                value_col=cols.get('numeric'),
+                title=f"Distribution of {cols.get('numeric')} by {cols.get('category')}"
+            )
+            
         # Default to bar chart for aggregation queries
         result = generate_dynamic_bar_chart(
             df, 
@@ -1280,6 +1478,7 @@ def generate_query_aware_chart(df: pd.DataFrame, query: str) -> Dict[str, Any]:
             metric_col=cols.get('numeric'),
             title=cols.get('title')
         )
+
         if 'error' not in result:
             return result
     
@@ -1292,8 +1491,13 @@ def generate_query_aware_chart(df: pd.DataFrame, query: str) -> Dict[str, Any]:
 
 
 
-def generate_customer_pie_chart(df: pd.DataFrame) -> Dict[str, Any]:
-    """Generate pie chart - UNIVERSAL for ANY domain (HR, Sales, etc.)"""
+def generate_customer_pie_chart(df: pd.DataFrame, colors: List[str] = None) -> Dict[str, Any]:
+    """Generate pie chart - UNIVERSAL for ANY domain (HR, Sales, etc.)
+    
+    Args:
+        df: DataFrame with the data
+        colors: Optional list of colors from query-based palette
+    """
     if df.empty:
         return {"error": "No data available"}
     
@@ -1305,7 +1509,7 @@ def generate_customer_pie_chart(df: pd.DataFrame) -> Dict[str, Any]:
         # Sales
         'customer', 'client', 'category', 'product',
         # General
-        'region', 'location', 'type', 'group', 'name'
+        'region', 'location', 'type', 'group', 'name', 'segment'
     ]
     
     for col in df.columns:
@@ -1335,7 +1539,7 @@ def generate_customer_pie_chart(df: pd.DataFrame) -> Dict[str, Any]:
         # Sales
         'amount', 'revenue', 'total', 'sales', 'price', 'value',
         # General
-        'cost', 'sum', 'count'
+        'cost', 'sum', 'count', 'quantity'
     ]
     
     for col in df.columns:
@@ -1355,26 +1559,40 @@ def generate_customer_pie_chart(df: pd.DataFrame) -> Dict[str, Any]:
                 break
     
     if amount_col is None:
-        return {"error": "No numeric data found"}
+        return {"error": "No numeric data found for pie chart"}
     
     print(f"[PIE CHART] Using group_col={group_col}, amount_col={amount_col}")
+    
+    # Ensure numeric type
+    if not pd.api.types.is_numeric_dtype(df[amount_col]):
+        df[amount_col] = pd.to_numeric(df[amount_col], errors='coerce')
     
     # Get ALL items dynamically - no hardcoded limit
     grouped = df.groupby(group_col)[amount_col].sum().sort_values(ascending=False)
     
+    if grouped.empty or grouped.sum() == 0:
+        return {"error": "No data to visualize after grouping"}
+    
     labels = [str(x) for x in grouped.index.tolist()]
     values = [float(x) for x in grouped.values.tolist()]
     
-    # Expanded colors for 20+ items
-    colors = [
-        '#10b981', '#06b6d4', '#f59e0b', '#ef4444', '#8b5cf6',
-        '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
-        '#a855f7', '#22c55e', '#3b82f6', '#f43f5e', '#0ea5e9',
-        '#d946ef', '#eab308', '#0284c7', '#78716c', '#dc2626'
-    ]
+    # Use provided colors or default palette
+    if not colors:
+        colors = [
+            '#10b981', '#06b6d4', '#f59e0b', '#ef4444', '#8b5cf6',
+            '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16',
+            '#a855f7', '#22c55e', '#3b82f6', '#f43f5e', '#0ea5e9',
+            '#d946ef', '#eab308', '#0284c7', '#78716c', '#dc2626'
+        ]
+    
+    # Extend colors if needed
+    while len(colors) < len(labels):
+        colors = colors + colors
     
     # Dynamic title based on detected columns
     title = f"{amount_col.replace('_', ' ').title()} by {group_col.replace('_', ' ').title()}"
+    
+    print(f"[PIE CHART] ✅ Creating pie chart with {len(labels)} slices")
     
     plotly_json = {
         "data": [{
@@ -1384,7 +1602,8 @@ def generate_customer_pie_chart(df: pd.DataFrame) -> Dict[str, Any]:
             "hole": 0.4,
             "marker": {"colors": colors[:len(labels)]},
             "textinfo": "label+percent",
-            "textposition": "outside"
+            "textposition": "outside",
+            "hovertemplate": "%{label}<br>%{value:,.0f}<br>%{percent}<extra></extra>"
         }],
         "layout": {
             "title": {"text": title, "font": {"size": 18, "color": "#e5e7eb"}},
@@ -1392,11 +1611,66 @@ def generate_customer_pie_chart(df: pd.DataFrame) -> Dict[str, Any]:
             "plot_bgcolor": "rgba(0,0,0,0)",
             "font": {"color": "#e5e7eb"},
             "showlegend": True,
-            "legend": {"x": 1, "y": 0.5, "font": {"color": "#9ca3af"}}
+            "legend": {"x": 1, "y": 0.5, "font": {"color": "#9ca3af"}},
+            "height": 450
         }
     }
     
     return plotly_json
+
+
+def generate_dynamic_pie_chart(
+    df: pd.DataFrame, 
+    category_col: str, 
+    value_col: str, 
+    title: str = "Pie Chart"
+) -> Dict[str, Any]:
+    """
+    Force generate a generic pie chart from known columns.
+    Used as valid backup when smart detection fails but we have columns.
+    """
+    if df.empty or not category_col or not value_col:
+        return {"error": "Invalid data for pie chart"}
+        
+    try:
+        # Aggregate data properly
+        grouped = df.groupby(category_col)[value_col].sum().sort_values(ascending=False)
+        
+        # Limit to top 20 slices to avoiding crashing functionality
+        grouped = grouped.head(20)
+        
+        labels = [str(x) for x in grouped.index.tolist()]
+        values = [float(x) for x in grouped.values.tolist()]
+        
+        colors = [
+            '#10b981', '#06b6d4', '#f59e0b', '#ef4444', '#8b5cf6',
+            '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'
+        ]
+        
+        return {
+            "data": [{
+                "labels": labels,
+                "values": values,
+                "type": "pie",
+                "hole": 0.4, # Donut style looks modern
+                "marker": {"colors": colors[:len(labels)]},
+                "textinfo": "label+percent",
+                "textposition": "outside",
+                "hovertemplate": "%{label}<br>%{value:,.0f}<br>%{percent}<extra></extra>"
+            }],
+            "layout": {
+                "title": {"text": title, "font": {"size": 16, "color": "#e5e7eb"}},
+                "paper_bgcolor": "rgba(0,0,0,0)",
+                "plot_bgcolor": "rgba(0,0,0,0)",
+                "font": {"color": "#e5e7eb"},
+                "showlegend": True,
+                "legend": {"x": 1, "y": 0.5},
+                "height": 450
+            }
+        }
+    except Exception as e:
+        print(f"Generic pie chart failed: {e}")
+        return {"error": str(e)}
 
 
 def generate_prediction_chart(df: pd.DataFrame) -> Dict[str, Any]:
