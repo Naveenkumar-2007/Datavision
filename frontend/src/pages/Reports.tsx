@@ -97,7 +97,8 @@ const Reports: React.FC = () => {
 
   const loadAnalytics = async () => {
     try {
-      const analyticsResponse = await apiService.getAnalyticsOverview();
+      // Use unified analytics for consistency with Overview and Dashboards
+      const analyticsResponse = await apiService.getUnifiedAnalytics();
       setAnalytics(analyticsResponse.data);
     } catch (err) {
       console.error('Failed to load analytics:', err);
@@ -157,7 +158,7 @@ const Reports: React.FC = () => {
         <p className="text-sm" style={{ color: theme.textMuted }}>Automatic reports generated from your uploaded data</p>
       </motion.div>
 
-      {/* Key Metrics - Dynamic based on data */}
+      {/* Key Metrics - Dynamic from Unified Analytics */}
       {analytics?.hasData && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           {hasMultipleCurrencies && (
@@ -179,83 +180,113 @@ const Reports: React.FC = () => {
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Dynamic metrics from analytics - use actual available data */}
+            {/* Use KPIs from unified analytics (same as Overview/Dashboards) */}
             {(() => {
-              const colors = ['#22C55E', '#14B8A6', '#F59E0B', '#8B5CF6'];
-              const icons = [TrendingUp, BarChart3, FileText, PieChartIcon];
+              // Get KPIs from unified analytics - same source as Overview/Dashboards
+              const kpis = analytics.overviewLayout?.kpis || analytics.dashboardLayout?.kpis || [];
 
-              // Try multiple data sources in priority order
-              const metrics: any[] = [];
-
-              // 1. First try KPIs from overviewLayout
-              const kpis = analytics.overviewLayout?.kpis || [];
               if (kpis.length > 0) {
-                kpis.slice(0, 4).forEach((kpi: any, i: number) => {
-                  metrics.push({
-                    label: kpi.name || kpi.label || `Metric ${i + 1}`,
-                    value: kpi.formattedValue || (typeof kpi.value === 'number' ? kpi.value.toLocaleString() : kpi.value) || '0',
-                    icon: icons[i % icons.length],
-                    color: colors[i % colors.length]
-                  });
+                return kpis.slice(0, 4).map((kpi: any, i: number) => {
+                  const kpiColor = kpi.color || CHART_COLORS[i % CHART_COLORS.length];
+                  const hasDelta = kpi.delta !== null && kpi.delta !== undefined;
+                  const isPositive = hasDelta && kpi.delta > 0;
+                  const hasSparkline = kpi.sparkline && kpi.sparkline.length > 2;
+
+                  // Generate sparkline path
+                  const getSparkPath = () => {
+                    if (!hasSparkline) return '';
+                    const data = kpi.sparkline;
+                    const max = Math.max(...data);
+                    const min = Math.min(...data);
+                    const range = max - min || 1;
+                    const step = 50 / (data.length - 1);
+                    return data.map((v: number, idx: number) =>
+                      `${idx === 0 ? 'M' : 'L'}${idx * step},${18 - ((v - min) / range) * 14}`
+                    ).join(' ');
+                  };
+
+                  return (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.08 }}
+                      className="p-4 rounded-2xl border relative overflow-hidden"
+                      style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                    >
+                      {/* Gradient accent */}
+                      <div
+                        className="absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl opacity-20 pointer-events-none"
+                        style={{ background: `radial-gradient(circle, ${kpiColor} 0%, transparent 70%)` }}
+                      />
+
+                      <div className="relative z-10 flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-2 h-2 rounded-full" style={{ background: kpiColor }} />
+                            <span className="text-[10px] uppercase font-bold tracking-wider" style={{ color: kpiColor }}>
+                              {kpi.title}
+                            </span>
+                          </div>
+                          <div className="text-2xl font-black" style={{ color: theme.textPrimary }}>
+                            {kpi.format === 'currency' && <span className="text-lg opacity-60">$</span>}
+                            {typeof kpi.value === 'number' ? kpi.value.toLocaleString() : kpi.value}
+                          </div>
+                          {hasDelta ? (
+                            <div className="flex items-center gap-1.5 mt-2">
+                              <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isPositive ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingUp className="w-3 h-3 rotate-180" />}
+                                {isPositive ? '+' : ''}{kpi.delta.toFixed(1)}%
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[10px] mt-2" style={{ color: theme.textMuted }}>Current value</div>
+                          )}
+                        </div>
+
+                        {/* Mini sparkline */}
+                        {hasSparkline && (
+                          <svg className="w-12 h-6" viewBox="0 0 50 18">
+                            <defs>
+                              <linearGradient id={`rpt-grad-${i}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" stopColor={isPositive ? '#22C55E' : '#EF4444'} stopOpacity="0.3" />
+                                <stop offset="100%" stopColor={isPositive ? '#22C55E' : '#EF4444'} stopOpacity="0" />
+                              </linearGradient>
+                            </defs>
+                            <path d={`${getSparkPath()} L50,18 L0,18 Z`} fill={`url(#rpt-grad-${i})`} />
+                            <path d={getSparkPath()} fill="none" stroke={isPositive ? '#22C55E' : '#EF4444'} strokeWidth="1.5" strokeLinecap="round" />
+                          </svg>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
                 });
               }
 
-              // 2. If no KPIs, use base metrics from analytics
-              if (metrics.length === 0 && analytics.metrics) {
-                const m = analytics.metrics;
-                if (m.totalRevenue !== undefined && m.totalRevenue > 0) {
-                  metrics.push({
-                    label: 'Total Revenue',
-                    value: formatCurrency(m.totalRevenue, currency),
-                    icon: TrendingUp,
-                    color: '#22C55E'
-                  });
-                }
-                if (m.totalInvoices !== undefined) {
-                  metrics.push({
-                    label: 'Total Records',
-                    value: m.totalInvoices?.toLocaleString() || '0',
-                    icon: FileText,
-                    color: '#14B8A6'
-                  });
-                }
-                if (m.uniqueCustomers !== undefined && m.uniqueCustomers > 0) {
-                  metrics.push({
-                    label: 'Unique Entities',
-                    value: m.uniqueCustomers?.toLocaleString() || '0',
-                    icon: BarChart3,
-                    color: '#F59E0B'
-                  });
-                }
-                if (m.uniqueProducts !== undefined && m.uniqueProducts > 0) {
-                  metrics.push({
-                    label: 'Categories',
-                    value: m.uniqueProducts?.toLocaleString() || '0',
-                    icon: PieChartIcon,
-                    color: '#8B5CF6'
-                  });
-                }
-              }
-
-              // 3. Ultimate fallback - just show data availability
-              if (metrics.length === 0) {
-                metrics.push(
-                  { label: 'Data Available', value: analytics.hasData ? 'Yes' : 'No', icon: FileText, color: '#22C55E' },
-                  { label: 'Status', value: 'Ready', icon: TrendingUp, color: '#14B8A6' }
-                );
-              }
-
-              return metrics.slice(0, 4).map((metric: any, i: number) => (
-                <div key={i} className="p-4 rounded-2xl border" style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}>
-                  <div className="flex items-center gap-3">
-                    <metric.icon className="w-8 h-8" style={{ color: metric.color }} />
-                    <div>
-                      <div className="text-xl font-bold" style={{ color: theme.textPrimary }}>{metric.value}</div>
-                      <div className="text-sm" style={{ color: theme.textMuted }}>{metric.label}</div>
+              // Fallback if no KPIs from unified analytics
+              const dataShape = analytics.dataShape || {};
+              return (
+                <>
+                  <div className="p-4 rounded-2xl border" style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}>
+                    <div className="flex items-center gap-3">
+                      <FileText className="w-8 h-8" style={{ color: '#22C55E' }} />
+                      <div>
+                        <div className="text-xl font-bold" style={{ color: theme.textPrimary }}>{(dataShape.rows || 0).toLocaleString()}</div>
+                        <div className="text-sm" style={{ color: theme.textMuted }}>Total Records</div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ));
+                  <div className="p-4 rounded-2xl border" style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}>
+                    <div className="flex items-center gap-3">
+                      <BarChart3 className="w-8 h-8" style={{ color: '#14B8A6' }} />
+                      <div>
+                        <div className="text-xl font-bold" style={{ color: theme.textPrimary }}>{dataShape.columns || 0}</div>
+                        <div className="text-sm" style={{ color: theme.textMuted }}>Data Columns</div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              );
             })()}
           </div>
         </motion.div>

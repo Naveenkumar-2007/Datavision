@@ -54,14 +54,27 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
         }
     });
 }
+// Helper to get the correct base URL for redirects
+const getBaseUrl = (): string => {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return window.location.origin;
+    }
+    // Production URL - Hugging Face Space
+    return 'https://killerkumar-ai-business-analyst.hf.space';
+};
 
 // Simple auth helpers
 export const auth = {
     signUp: async (email: string, password: string, metadata?: Record<string, any>) => {
+        const baseUrl = getBaseUrl();
+
         return supabase.auth.signUp({
             email,
             password,
-            options: { data: metadata }
+            options: {
+                data: metadata,
+                emailRedirectTo: `${baseUrl}/login`
+            }
         });
     },
 
@@ -70,16 +83,18 @@ export const auth = {
     },
 
     signInWithMagicLink: async (email: string) => {
+        const baseUrl = getBaseUrl();
         return supabase.auth.signInWithOtp({
             email,
-            options: { emailRedirectTo: `${window.location.origin}/auth/callback` }
+            options: { emailRedirectTo: `${baseUrl}/auth/callback` }
         });
     },
 
     signInWithOAuth: async (provider: 'google' | 'github') => {
+        const baseUrl = getBaseUrl();
         return supabase.auth.signInWithOAuth({
             provider,
-            options: { redirectTo: `${window.location.origin}/auth/callback` }
+            options: { redirectTo: `${baseUrl}/auth/callback` }
         });
     },
 
@@ -96,8 +111,9 @@ export const auth = {
     },
 
     resetPassword: async (email: string) => {
+        const baseUrl = getBaseUrl();
         return supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/auth/reset-password`
+            redirectTo: `${baseUrl}/auth/reset-password`
         });
     },
 

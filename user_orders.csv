@@ -16,7 +16,7 @@ ORD014,RetailChain,Enterprise,Electronics,Tablet 10inch,East,Direct,2024-01-18,3
 ORD015,Office Depot,SMB,Office Supplies,Filing Cabinet,West,Retail,2024-01-20,10,180,1800,10,70,24,4.2,3
 ORD016,CloudTech,Enterprise,Software,Cloud Storage Pro,South,Online,2024-01-21,8,1200,9600,12,0,42,4.7,3
 ORD017,CornerShop,Small Business,Electronics,Power Strip,North,Retail,2024-01-22,60,18,1080,5,28,36,4.1,1
-ORD018,BigCorp,Enterprise,Office Supplies,Conference Table,East,Partner,2024-01-24,5,850,4250,8,150,18,4.5,5
+ORD018,BigCorp,Enterprise,Office Supplies,Conference Table,East,Partner,2024-01-24,5,850,4250,8,150,18 ,4.5,5
 ORD019,TechSavvy,SMB,Electronics,External SSD 1TB,West,Online,2024-01-25,22,110,2420,7,42,34,4.4,2
 ORD020,Solutions Inc,Enterprise,Software,Project Manager Pro,South,Direct,2024-01-26,12,2500,30000,18,0,46,4.8,4
 ORD021,MiniMart LLC,Small Business,Office Supplies,Stapler Pack,North,Retail,2024-01-28,40,15,600,0,20,40,4.0,1
@@ -80,7 +80,7 @@ ORD078,TechGiant,Enterprise,Software,Cloud Infrastructure,East,Direct,2024-04-22
 ORD079,SmallBiz Co,Small Business,Electronics,Extension Cord Smart,West,Online,2024-04-23,88,19,1672,0,28,38,4.0,1
 ORD080,Innovation Labs,SMB,Electronics,Portable Monitor 15inch,South,Partner,2024-04-25,13,225,2925,9,46,29,4.4,3
 ORD081,RetailChain,Enterprise,Office Supplies,Ergonomic Desks,North,Direct,2024-04-27,11,720,7920,12,135,21,4.6,5
-ORD082,Office Depot,SMB,Electronics,Barcode Scanner,East,Retail,2024-04-28,15,168,2520,8,52,27,4.3,3
+ORD082,Office Depot,SMB,Electronics,Barcode  Scanner,East,Retail,2024-04-28,15,168,2520,8,52,27,4.3,3
 ORD083,CloudTech,Enterprise,Software,Container Platform,West,Online,2024-04-30,9,2800,25200,17,0,44,4.8,4
 ORD084,CornerShop,Small Business,Office Supplies,Clipboard Pack,South,Retail,2024-05-01,65,11,715,5,21,36,4.0,1
 ORD085,BigCorp,Enterprise,Electronics,Digital Signage 4pack,North,Partner,2024-05-03,8,1850,14800,13,155,27,4.5,5

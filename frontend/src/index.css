@@ -40,6 +40,67 @@
   --table-header-bg: rgba(20, 184, 166, 0.2);
   --table-row-hover: rgba(255, 255, 255, 0.05);
   --table-row-active: rgba(20, 184, 166, 0.1);
+
+  /* =========================================
+     PREMIUM DESIGN TOKENS - ChatGPT Level
+     ========================================= */
+
+  /* Spacing System (8px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Shadows - Premium Depth */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-glow-teal: 0 0 20px rgba(45, 212, 191, 0.3);
+  --shadow-glow-sm: 0 0 10px rgba(45, 212, 191, 0.2);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+
+  /* Animation Timing */
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
+
+  /* Border Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* Typography Scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+
+  /* Gradients - Premium */
+  --gradient-dark: linear-gradient(180deg, #0a0a0f 0%, #111118 100%);
+  --gradient-card: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+  --gradient-accent: linear-gradient(135deg, #2DD4BF 0%, #14B8A6 100%);
+  --gradient-glow: radial-gradient(ellipse at center, rgba(45, 212, 191, 0.15) 0%, transparent 70%);
 }
 
 /* LIGHT MODE - Complete Override */
@@ -2349,4 +2410,321 @@ html.light-theme .inline-code-highlight {
   background-color: rgba(13, 148, 136, 0.12);
   color: #0f766e;
   border-color: rgba(13, 148, 136, 0.25);
+}
+
+/* ==================================================================
+   PREMIUM UI COMPONENTS - ChatGPT Level v2.0
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   CHATGPT-STYLE INPUT BAR
+   ------------------------------------------------------------------ */
+.chat-input-premium {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2xl);
+  transition: all var(--duration-normal) var(--ease-smooth);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-input-premium:focus-within {
+  border-color: var(--accent-primary);
+  box-shadow: var(--shadow-glow-teal), var(--shadow-md);
+}
+
+.chat-input-premium input,
+.chat-input-premium textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  resize: none;
+}
+
+.chat-input-premium input::placeholder,
+.chat-input-premium textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Send Button - Premium */
+.chat-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--gradient-accent);
+  border: none;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-smooth);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-send-btn:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-glow-teal);
+}
+
+.chat-send-btn:active {
+  transform: scale(0.95);
+}
+
+.chat-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM CARD COMPONENT
+   ------------------------------------------------------------------ */
+.card-premium {
+  background: var(--bg-card);
+  background-image: var(--gradient-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  transition: all var(--duration-slow) var(--ease-smooth);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-premium:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+/* Card with glow on hover */
+.card-glow:hover {
+  box-shadow: var(--shadow-glow-sm), var(--shadow-lg);
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM BUTTONS
+   ------------------------------------------------------------------ */
+.btn-premium {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius-lg);
+  border: none;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-smooth);
+}
+
+.btn-primary {
+  background: var(--gradient-accent);
+  color: #0a0a0f;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover {
+  box-shadow: var(--shadow-glow-teal), var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-active);
+  border-color: var(--border-hover);
+}
+
+/* ------------------------------------------------------------------
+   CHATGPT-STYLE MESSAGE BUBBLES
+   ------------------------------------------------------------------ */
+.message-user {
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.15) 0%, rgba(20, 184, 166, 0.1) 100%);
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-sm) var(--radius-xl);
+  padding: var(--space-4) var(--space-5);
+}
+
+.message-ai {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-xl) var(--radius-sm);
+  padding: var(--space-4) var(--space-5);
+}
+
+/* ------------------------------------------------------------------
+   TYPING INDICATOR - ChatGPT Style
+   ------------------------------------------------------------------ */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-4);
+}
+
+.typing-indicator .dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  animation: typingBounce 1.4s infinite ease-in-out;
+}
+
+.typing-indicator .dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-indicator .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typingBounce {
+
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM SIDEBAR NAVIGATION
+   ------------------------------------------------------------------ */
+.nav-item-premium {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-smooth);
+  border: 1px solid transparent;
+}
+
+.nav-item-premium:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-item-premium.active {
+  background: rgba(45, 212, 191, 0.1);
+  color: var(--accent-primary);
+  border-color: rgba(45, 212, 191, 0.2);
+}
+
+/* ------------------------------------------------------------------
+   MOBILE-OPTIMIZED TOUCH TARGETS
+   ------------------------------------------------------------------ */
+@media (max-width: 768px) {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .mobile-spacing {
+    padding: var(--space-4);
+  }
+
+  .mobile-text {
+    font-size: var(--text-base);
+    line-height: 1.6;
+  }
+}
+
+/* ------------------------------------------------------------------
+   SMOOTH PAGE TRANSITIONS
+   ------------------------------------------------------------------ */
+.page-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all var(--duration-slow) var(--ease-smooth);
+}
+
+.page-exit {
+  opacity: 1;
+}
+
+.page-exit-active {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-smooth);
+}
+
+/* ------------------------------------------------------------------
+   GLASSMORPHISM EFFECT - Premium
+   ------------------------------------------------------------------ */
+.glass-premium {
+  background: rgba(24, 24, 27, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+html.light-theme .glass-premium {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* ------------------------------------------------------------------
+   SKELETON LOADING - Premium Animation
+   ------------------------------------------------------------------ */
+.skeleton {
+  background: linear-gradient(90deg,
+      var(--bg-hover) 25%,
+      var(--bg-active) 50%,
+      var(--bg-hover) 75%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite;
+  border-radius: var(--radius-md);
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ------------------------------------------------------------------
+   FOCUS VISIBLE - Accessible Premium Focus Ring
+   ------------------------------------------------------------------ */
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent-primary);
 }

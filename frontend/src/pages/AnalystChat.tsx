@@ -1861,8 +1861,8 @@ const AnalystChat: React.FC = () => {
               </div>
             )}
 
-            {/* Input Bar Container - Premium Glass Effect */}
-            <div className="flex items-end gap-2 sm:gap-3 p-2 sm:p-3 glass-input input-glow-focus rounded-2xl sm:rounded-2xl">
+            {/* Input Bar Container - Premium ChatGPT Style */}
+            <div className="chat-input-premium flex items-end gap-2 sm:gap-3 p-3 sm:p-4">
 
               {/* Left side buttons - Hidden on mobile, shown on desktop */}
               <div className="hidden sm:flex items-center gap-2">
@@ -2105,9 +2105,9 @@ const AnalystChat: React.FC = () => {
                   <button
                     onClick={handleSend}
                     disabled={!input.trim() && !selectedImage && attachedFiles.length === 0}
-                    className="p-3 sm:p-2.5 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl transition-all duration-200 send-button-pulse disabled:cursor-not-allowed transform hover:scale-105"
+                    className="chat-send-btn touch-target"
                   >
-                    <Send className="w-6 h-6 sm:w-5 sm:h-5" />
+                    <Send className="w-5 h-5 text-gray-900" />
                   </button>
                 )}
               </div>

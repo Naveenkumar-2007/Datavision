@@ -116,16 +116,54 @@ export default function Signup() {
                     className="max-w-md w-full rounded-2xl p-8 text-center border shadow-xl"
                     style={{ backgroundColor: cardBg, borderColor }}
                 >
-                    <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-green-500/30">
-                        <svg className="w-8 h-8 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    {/* Email Icon */}
+                    <div className="w-20 h-20 bg-teal-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-teal-500/30">
+                        <svg className="w-10 h-10 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                         </svg>
                     </div>
-                    <h2 className="text-2xl font-bold mb-3" style={{ color: textPrimary }}>Account Created!</h2>
-                    <p className="mb-6" style={{ color: textMuted }}>
-                        Please check your email to verify your account.
-                        After verification, you can sign in.
+
+                    <h2 className="text-2xl font-bold mb-2" style={{ color: textPrimary }}>Account Created!</h2>
+
+                    {/* Check Your Inbox - Prominent */}
+                    <div className="py-4 px-6 rounded-xl mb-4" style={{ backgroundColor: isDark ? 'rgba(20, 184, 166, 0.15)' : 'rgba(20, 184, 166, 0.1)', border: '1px solid rgba(20, 184, 166, 0.3)' }}>
+                        <p className="text-xl font-bold mb-1" style={{ color: '#14B8A6' }}>
+                            📧 Check your inbox
+                        </p>
+                        <p className="text-sm" style={{ color: textMuted }}>
+                            We've sent a confirmation email to:
+                        </p>
+                        <p className="font-medium mt-1" style={{ color: textPrimary }}>
+                            {formData.email}
+                        </p>
+                    </div>
+
+                    <div className="space-y-3 text-sm mb-6" style={{ color: textMuted }}>
+                        <p>
+                            <span className="inline-flex items-center gap-1">
+                                <span className="text-green-500">✓</span>
+                                Click the link in the email to verify your account
+                            </span>
+                        </p>
+                        <p>
+                            <span className="inline-flex items-center gap-1">
+                                <span className="text-green-500">✓</span>
+                                After verification, you can sign in
+                            </span>
+                        </p>
+                    </div>
+
+                    <p className="text-xs mb-6" style={{ color: textMuted }}>
+                        Didn't receive the email? Check your spam folder or{' '}
+                        <button
+                            onClick={() => setSuccess(false)}
+                            className="underline hover:no-underline"
+                            style={{ color: '#14B8A6' }}
+                        >
+                            try again
+                        </button>
                     </p>
+
                     <Link
                         to="/login"
                         className="inline-block px-8 py-3 font-semibold rounded-lg transition-all hover:opacity-90"

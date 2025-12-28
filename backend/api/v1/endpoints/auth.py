@@ -56,6 +56,7 @@ class OAuthRequest(BaseModel):
 async def signup(request: SignupRequest):
     """
     Create a new user account with email and password.
+    Supabase sends confirmation email via configured SMTP (Resend).
     """
     auth_service = get_auth_service()
     
@@ -78,7 +79,29 @@ async def signup(request: SignupRequest):
         "success": True,
         "user": result.get("user"),
         "session": result.get("session"),
-        "message": result.get("message", "Account created successfully")
+        "message": "Account created! Please check your inbox to confirm your email."
+    }
+
+
+@router.get("/confirm-email")
+async def confirm_email(token: str):
+    """
+    Verify email confirmation token and mark user as verified.
+    Called when user clicks the confirmation link in email.
+    """
+    from services.confirmation_email import verify_confirmation_token
+    
+    result = await verify_confirmation_token(token)
+    
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Invalid token"))
+    
+    # Token is valid - user email is confirmed
+    return {
+        "success": True,
+        "message": "Email confirmed successfully! You can now log in.",
+        "email": result.get("email"),
+        "redirect": "/login"
     }
 
 

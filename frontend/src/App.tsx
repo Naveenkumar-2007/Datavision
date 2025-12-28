@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { AuthProvider } from './contexts/AuthContext';
+import SplashScreen from './components/SplashScreen';
 import Landing from './pages/Landing';
 import Overview from './pages/Overview';
 import DataHub from './pages/DataHub';
@@ -13,10 +15,13 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ForgotPassword from './pages/ForgotPassword';
 import AuthCallback from './pages/AuthCallback';
+import EmailConfirm from './pages/EmailConfirm';
 import AppLayout from './components/layout/AppLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
   // Apply theme on mount - DEFAULT IS DARK
   useEffect(() => {
     // By default, ensure dark mode (remove light-theme class)
@@ -52,40 +57,51 @@ function App() {
   }, []);
 
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/auth/callback" element={<AuthCallback />} />
+    <>
+      {/* Splash Screen */}
+      <AnimatePresence>
+        {showSplash && (
+          <SplashScreen onComplete={() => setShowSplash(false)} />
+        )}
+      </AnimatePresence>
 
-          {/* Chat - Full screen without main navigation */}
-          <Route path="/chat" element={
-            <ProtectedRoute>
-              <AnalystChat />
-            </ProtectedRoute>
-          } />
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            {/* Public routes */}
+            <Route path="/" element={<Landing />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/auth/confirm" element={<EmailConfirm />} />
 
-          {/* Protected routes with AppLayout (main navigation) */}
-          <Route element={
-            <ProtectedRoute>
-              <AppLayout />
-            </ProtectedRoute>
-          }>
-            <Route path="/overview" element={<Overview />} />
-            <Route path="/data-hub" element={<DataHub />} />
-            <Route path="/dashboards" element={<Dashboards />} />
-            <Route path="/reports" element={<Reports />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/settings/notifications" element={<NotificationSettings />} />
-          </Route>
-        </Routes>
-      </AuthProvider>
-    </BrowserRouter>
+            {/* Chat - Full screen without main navigation */}
+            <Route path="/chat" element={
+              <ProtectedRoute>
+                <AnalystChat />
+              </ProtectedRoute>
+            } />
+
+            {/* Protected routes with AppLayout (main navigation) */}
+            <Route element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }>
+              <Route path="/overview" element={<Overview />} />
+              <Route path="/data-hub" element={<DataHub />} />
+              <Route path="/dashboards" element={<Dashboards />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/notifications" element={<NotificationSettings />} />
+            </Route>
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
+    </>
   );
 }
 
 export default App;
+
