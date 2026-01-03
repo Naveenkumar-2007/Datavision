@@ -794,7 +794,7 @@ class ProductionMLEngine:
         else:
             # Regression metrics
             try:
-                from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+                # Use global imports to avoid UnboundLocalError
                 self.metrics['r2'] = float(r2_score(y_test, best_pred))
                 self.metrics['mae'] = float(mean_absolute_error(y_test, best_pred))
                 self.metrics['rmse'] = float(np.sqrt(mean_squared_error(y_test, best_pred)))
