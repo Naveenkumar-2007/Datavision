@@ -482,18 +482,22 @@ const MLPredictions: React.FC = () => {
                         <button
                             onClick={async () => {
                                 try {
+                                    const dataToSend = {
+                                        user_id: localStorage.getItem('userId') || 'default',
+                                        model_name: result.best_model.name,
+                                        data: Object.fromEntries(
+                                            Object.entries(predictionInput).map(([k, v]) => [k, parseFloat(v) || v])
+                                        )
+                                    };
+                                    console.log('🔮 Sending prediction request:', dataToSend);
+
                                     const response = await fetch('http://localhost:8000/api/v2/automl/predict', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({
-                                            user_id: localStorage.getItem('userId') || 'default',
-                                            model_name: result.best_model.name,
-                                            data: Object.fromEntries(
-                                                Object.entries(predictionInput).map(([k, v]) => [k, parseFloat(v) || v])
-                                            )
-                                        })
+                                        body: JSON.stringify(dataToSend)
                                     });
                                     const data = await response.json();
+                                    console.log('🔮 Prediction response:', data);
                                     setPredictionResult(data);
                                 } catch (e: any) {
                                     alert(`Prediction failed: ${e.message}`);
@@ -525,7 +529,8 @@ const MLPredictions: React.FC = () => {
                             </motion.div>
                         )}
                     </div>
-                )}
+                )
+                }
             </motion.div>
 
             {/* Footer */}
