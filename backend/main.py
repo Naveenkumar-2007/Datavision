@@ -99,8 +99,14 @@ try:
 except ImportError as e:
     print(f"⚠️ AutoML API not available: {e}")
 
-@app.get("/")
-async def root():
+from fastapi.responses import FileResponse
+
+# Frontend static directory (pre-built React app)
+frontend_static_dir = "/app/static"
+
+@app.get("/api")
+async def api_info():
+    """API information endpoint"""
     return {
         "platform": "DataVision - Universal AI Data Platform", 
         "version": "2.0.0",
@@ -125,6 +131,19 @@ async def root():
             "enterprise_exports"
         ]
     }
+
+# Serve React frontend - must be after all API routes
+@app.get("/")
+async def serve_frontend():
+    """Serve React frontend"""
+    index_path = os.path.join(frontend_static_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"error": "Frontend not found", "path": index_path}
+
+# Mount static assets (JS, CSS, images)
+if os.path.exists(frontend_static_dir):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_static_dir, "assets")), name="frontend-assets")
 
 @app.on_event("startup")
 async def startup_event():
