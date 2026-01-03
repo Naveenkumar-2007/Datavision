@@ -145,9 +145,8 @@ function createTreemapChart(data: any[], theme: any, config: any) {
         marker: {
             colors: values.map((_: any, i: number) => theme.primary[i % 5]),
             line: { width: 2, color: theme.background }
-        },
-        pathbar: { visible: true }
-    }];
+        }
+    } as any];
 
     return { plotData, layout: {} };
 }
@@ -187,7 +186,7 @@ function createWaterfallChart(data: any[], theme: any, config: any) {
         increasing: { marker: { color: '#10b981' } },
         decreasing: { marker: { color: '#ef4444' } },
         totals: { marker: { color: theme.primary[0] } }
-    }];
+    } as any];
 
     return {
         plotData,
@@ -214,7 +213,7 @@ function createFunnelChart(data: any[], theme: any, config: any) {
             line: { color: theme.background, width: 2 }
         },
         connector: { line: { color: theme.grid, width: 2 } }
-    }];
+    } as any];
 
     return { plotData, layout: {} };
 }
@@ -351,9 +350,9 @@ function createNetworkChart(data: any[], theme: any, config: any) {
     });
 
     // Node trace
-    const nodeTrace: Data = {
+    const nodeTrace: any = {
         type: 'scatter',
-        mode: 'markers+text' as const,
+        mode: 'markers+text',
         x: nodePositions.map((p: any) => p.x),
         y: nodePositions.map((p: any) => p.y),
         text: nodes.map((n: any) => n.name || n.id),
