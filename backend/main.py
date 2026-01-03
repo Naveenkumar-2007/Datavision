@@ -141,9 +141,37 @@ async def serve_frontend():
         return FileResponse(index_path)
     return {"error": "Frontend not found", "path": index_path}
 
+# Serve logo files
+@app.get("/logo.png")
+async def serve_logo_png():
+    return FileResponse(os.path.join(frontend_static_dir, "logo.png"))
+
+@app.get("/logo.jpg")
+async def serve_logo_jpg():
+    return FileResponse(os.path.join(frontend_static_dir, "logo.jpg"))
+
+# Serve service worker
+@app.get("/sw.js")
+async def serve_sw():
+    return FileResponse(os.path.join(frontend_static_dir, "sw.js"))
+
 # Mount static assets (JS, CSS, images)
 if os.path.exists(frontend_static_dir):
-    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_static_dir, "assets")), name="frontend-assets")
+    assets_dir = os.path.join(frontend_static_dir, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
+
+# Catch-all route for SPA (React Router) - must be LAST
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    """Fallback for client-side routing"""
+    # Don't catch API routes
+    if full_path.startswith("api/"):
+        return {"error": "Not found"}
+    index_path = os.path.join(frontend_static_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"error": "Frontend not found"}
 
 @app.on_event("startup")
 async def startup_event():
