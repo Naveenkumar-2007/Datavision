@@ -1516,7 +1516,7 @@ const TrendChart: React.FC<{ data: any[]; metrics: MetricCalc[]; colors: string[
                 <XAxis dataKey={chartData.xKey} tick={{ fill: theme.muted, fontSize: 9 }} axisLine={false} />
                 <YAxis hide />
                 <Tooltip contentStyle={{ background: theme.card, borderRadius: 8, border: `1px solid ${theme.border}`, color: theme.text }} />
-                <Area type="monotone" dataKey={chartData.yKey} stroke={colors[0]} strokeWidth={2} fill="url(#areaGrad)" />
+                <Area type="monotone" dataKey={chartData.yKey || 'value'} stroke={colors[0]} strokeWidth={2} fill="url(#areaGrad)" />
             </AreaChart>
         </ResponsiveContainer>
     );

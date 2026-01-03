@@ -141,7 +141,7 @@ function createTreemapChart(data: any[], theme: any, config: any) {
         labels,
         parents,
         values,
-        textinfo: 'label+value+percent parent',
+        textinfo: 'label+value+percent' as const,
         marker: {
             colors: values.map((_: any, i: number) => theme.primary[i % 5]),
             line: { width: 2, color: theme.background }
@@ -184,9 +184,6 @@ function createWaterfallChart(data: any[], theme: any, config: any) {
         x: data.map(d => d[xKey]),
         y: data.map(d => d[yKey]),
         textposition: 'outside',
-        connector: {
-            line: { color: theme.grid, width: 2, dash: 'dot' }
-        },
         increasing: { marker: { color: '#10b981' } },
         decreasing: { marker: { color: '#ef4444' } },
         totals: { marker: { color: theme.primary[0] } }
@@ -211,7 +208,7 @@ function createFunnelChart(data: any[], theme: any, config: any) {
         type: 'funnel',
         y: data.map(d => d[xKey]),
         x: data.map(d => d[yKey]),
-        textinfo: 'value+percent initial',
+        textinfo: 'value+percent' as const,
         marker: {
             color: data.map((_, i) => theme.primary[i % 5]),
             line: { color: theme.background, width: 2 }
@@ -349,14 +346,14 @@ function createNetworkChart(data: any[], theme: any, config: any) {
     edges.forEach((edge: any) => {
         const src = nodePositions[edge.source];
         const tgt = nodePositions[edge.target];
-        (edgeTraces.x as number[]).push(src.x, tgt.x, null);
-        (edgeTraces.y as number[]).push(src.y, tgt.y, null);
+        (edgeTraces.x as (number | null)[]).push(src.x, tgt.x, null);
+        (edgeTraces.y as (number | null)[]).push(src.y, tgt.y, null);
     });
 
     // Node trace
     const nodeTrace: Data = {
         type: 'scatter',
-        mode: 'markers+text',
+        mode: 'markers+text' as const,
         x: nodePositions.map((p: any) => p.x),
         y: nodePositions.map((p: any) => p.y),
         text: nodes.map((n: any) => n.name || n.id),

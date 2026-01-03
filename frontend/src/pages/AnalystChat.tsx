@@ -1910,13 +1910,13 @@ const AnalystChat: React.FC = () => {
                           )}
 
                           {/* 🤖 ML Charts - Matplotlib/Seaborn Visualizations from Predict Mode */}
-                          {message.mlCharts && Array.isArray(message.mlCharts) && message.mlCharts.length > 0 && (
+                          {(message as any).mlCharts && Array.isArray((message as any).mlCharts) && (message as any).mlCharts.length > 0 && (
                             <div className="mt-4 space-y-4">
                               <div className="flex items-center gap-2 text-sm text-teal-400 border-t border-dark-border pt-3">
                                 <Zap className="w-4 h-4" />
                                 <span>ML Visualizations • Real scikit-learn analysis</span>
                               </div>
-                              {message.mlCharts.map((chart: { type: string; image: string; title?: string }, i: number) => (
+                              {(message as any).mlCharts.map((chart: { type: string; image: string; title?: string }, i: number) => (
                                 chart.image && (
                                   <div key={i} className="p-4 bg-gradient-to-br from-dark-surface to-dark-bg rounded-xl border border-dark-border shadow-lg">
                                     <div className="flex items-center gap-2 mb-3">
