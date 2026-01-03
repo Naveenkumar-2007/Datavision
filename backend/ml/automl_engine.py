@@ -1,14 +1,13 @@
 """
-🚀 PRODUCTION ML ENGINE - Simple & Correct
-===========================================
+🚀 PRODUCTION ML ENGINE v3.0
+=============================
 
-This is a simplified, correct ML pipeline that:
-1. Uses pandas for all preprocessing (no sklearn ColumnTransformer complexity)
-2. Stores EXACT column order and preprocessing steps
-3. Guarantees same preprocessing for train and predict
-4. Can reproduce predictions on training data
-
-NO COMPLEX ABSTRACTIONS. Just correct, working ML.
+ROBUST AutoML Pipeline with:
+- Smart column selection (keep useful, drop useless)
+- Proper data cleaning
+- Correct regression/classification detection
+- Best model selection with hyperparameter tuning
+- Task-appropriate visualizations
 """
 
 import os
@@ -21,20 +20,24 @@ import logging
 
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, cross_val_score
-from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.preprocessing import LabelEncoder, StandardScaler, RobustScaler
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score, 
-    r2_score, mean_absolute_error, mean_squared_error, roc_auc_score
+    accuracy_score, precision_score, recall_score, f1_score,
+    r2_score, mean_absolute_error, mean_squared_error
 )
 
 # Models
 from sklearn.ensemble import (
     RandomForestClassifier, RandomForestRegressor,
     GradientBoostingClassifier, GradientBoostingRegressor,
-    ExtraTreesClassifier, ExtraTreesRegressor
+    ExtraTreesClassifier, ExtraTreesRegressor,
+    HistGradientBoostingClassifier, HistGradientBoostingRegressor
 )
-from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.linear_model import LogisticRegression, Ridge, ElasticNet, Lasso
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
 try:
     import xgboost as xgb
@@ -48,6 +51,12 @@ try:
 except ImportError:
     HAS_LGB = False
 
+try:
+    from catboost import CatBoostClassifier, CatBoostRegressor
+    HAS_CATBOOST = True
+except ImportError:
+    HAS_CATBOOST = False
+
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
@@ -56,161 +65,347 @@ STORAGE_PATH = "./storage/automl"
 
 @dataclass
 class TrainResult:
-    """Complete training result"""
+    """Training result"""
     success: bool
-    task_type: str  # 'classification' or 'regression'
+    task_type: str
     target_column: str
     feature_columns: List[str]
-    
-    # Best model info
     best_model_name: str
     best_model_metrics: Dict[str, float]
-    
-    # All models
     leaderboard: List[Dict]
-    
-    # Feature importance
     feature_importance: List[Dict]
-    
-    # For charts
     y_test: np.ndarray
     y_pred: np.ndarray
     y_proba: Optional[np.ndarray]
-    
-    # Feature metadata for UI
     feature_metadata: List[Dict]
-    
-    # Data info
     n_rows: int
     n_cols: int
-    
-    # Timing
     processing_time: float
 
 
-class SimpleMLEngine:
+class ProductionMLEngine:
     """
-    Simple, correct ML engine that works.
+    Production-Ready ML Engine v3.0
     
-    Key principles:
-    1. Store EVERYTHING needed for prediction
-    2. Use same preprocessing for train and predict
-    3. Debug-friendly (print statements, simple data flow)
+    Features:
+    - Smart column detection and selection
+    - Robust data cleaning
+    - Automatic task detection
+    - Hyperparameter tuning
+    - Feature importance analysis
     """
     
     def __init__(self):
-        # Model state
+        # Model
         self.model = None
         self.model_name = None
         
-        # Preprocessing state - stored for prediction
-        self.feature_columns: List[str] = []
+        # Task info
+        self.task_type: str = ""  # 'binary_classification', 'multiclass_classification', 'regression'
+        self.task_type_simple: str = ""  # 'classification' or 'regression'
+        self.n_classes: int = 0
+        
+        # Columns
         self.target_column: str = ""
-        self.task_type: str = ""
+        self.feature_columns: List[str] = []
+        self.numeric_cols: List[str] = []
+        self.categorical_cols: List[str] = []
+        self.text_cols: List[str] = []
+        self.dropped_cols: List[str] = []
         
-        # Encoding info
-        self.label_encoders: Dict[str, LabelEncoder] = {}  # For categorical features
-        self.target_encoder: Optional[LabelEncoder] = None  # For classification target
-        
-        # Feature stats for UI
-        self.feature_metadata: List[Dict] = []
-        
-        # Numeric fill values (median)
+        # Preprocessing
+        self.label_encoders: Dict[str, LabelEncoder] = {}
+        self.target_encoder: Optional[LabelEncoder] = None
+        self.text_vectorizers: Dict[str, TfidfVectorizer] = {}
+        self.scaler: Optional[RobustScaler] = None
         self.numeric_fill_values: Dict[str, float] = {}
-        
-        # For verification
-        self.training_data_sample: Optional[pd.DataFrame] = None
+        self.feature_metadata: List[Dict] = []
     
-    def _detect_task_type(self, y: pd.Series) -> str:
-        """Detect if classification or regression"""
-        n_unique = y.nunique()
+    # =========================================================================
+    # COLUMN ANALYSIS & SELECTION
+    # =========================================================================
+    
+    def _analyze_column(self, series: pd.Series, col_name: str) -> Dict:
+        """Analyze a single column and determine its type and usefulness"""
+        n_unique = series.nunique()
+        n_total = len(series)
+        n_missing = series.isna().sum()
+        missing_pct = n_missing / n_total
+        unique_ratio = n_unique / n_total if n_total > 0 else 0
         
-        if pd.api.types.is_object_dtype(y) or pd.api.types.is_categorical_dtype(y):
-            return 'classification'
-        if n_unique <= 10:
-            return 'classification'
-        return 'regression'
+        # Determine column type
+        col_lower = col_name.lower()
+        
+        # Check if it's an ID column
+        is_id = any(x in col_lower for x in ['id', '_id', 'index', 'key', 'code']) and unique_ratio > 0.9
+        
+        # Check if it's a date column
+        is_date = any(x in col_lower for x in ['date', 'time', 'timestamp', 'created', 'updated'])
+        
+        # Check if numeric
+        is_numeric = pd.api.types.is_numeric_dtype(series)
+        
+        # Check if boolean
+        is_bool = series.dtype == bool or (is_numeric and n_unique == 2 and set(series.dropna().unique()).issubset({0, 1}))
+        
+        # Determine usefulness
+        should_drop = False
+        drop_reason = None
+        
+        if is_id:
+            should_drop = True
+            drop_reason = "ID column (unique identifier)"
+        elif is_date:
+            should_drop = True
+            drop_reason = "Date column (not processed)"
+        elif missing_pct > 0.7:
+            should_drop = True
+            drop_reason = f"Too many missing ({missing_pct:.0%})"
+        elif n_unique == 1:
+            should_drop = True
+            drop_reason = "Constant value"
+        elif not is_numeric and unique_ratio > 0.95:
+            should_drop = True
+            drop_reason = "Unique per row (no pattern)"
+        
+        # Determine final type
+        if is_numeric:
+            if is_bool:
+                dtype = 'boolean'
+            else:
+                dtype = 'numeric'
+        elif n_unique <= 50:
+            dtype = 'categorical'
+        else:
+            dtype = 'text'
+        
+        return {
+            'name': col_name,
+            'dtype': dtype,
+            'n_unique': n_unique,
+            'n_missing': n_missing,
+            'missing_pct': missing_pct,
+            'unique_ratio': unique_ratio,
+            'should_drop': should_drop,
+            'drop_reason': drop_reason
+        }
+    
+    def _select_columns(self, df: pd.DataFrame, target_col: str) -> Tuple[List[str], List[str], List[str], List[str]]:
+        """
+        Smart column selection:
+        - Keep useful numeric columns
+        - Keep categorical with reasonable cardinality
+        - Keep text columns that might have predictive value
+        - Drop IDs, dates, constants, and mostly-missing columns
+        """
+        numeric_cols = []
+        categorical_cols = []
+        text_cols = []
+        dropped = []
+        
+        print("📊 Analyzing columns...")
+        
+        for col in df.columns:
+            if col == target_col:
+                continue
+            
+            analysis = self._analyze_column(df[col], col)
+            
+            if analysis['should_drop']:
+                dropped.append(col)
+                print(f"   ❌ {col}: {analysis['drop_reason']}")
+            elif analysis['dtype'] == 'numeric' or analysis['dtype'] == 'boolean':
+                numeric_cols.append(col)
+            elif analysis['dtype'] == 'categorical':
+                categorical_cols.append(col)
+            elif analysis['dtype'] == 'text':
+                # Only keep text if not too unique
+                if analysis['unique_ratio'] < 0.8:
+                    text_cols.append(col)
+                else:
+                    dropped.append(col)
+                    print(f"   ❌ {col}: Text too unique ({analysis['unique_ratio']:.0%})")
+        
+        print(f"   ✅ Keeping: {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, {len(text_cols)} text")
+        print(f"   ❌ Dropped: {len(dropped)} columns")
+        
+        return numeric_cols, categorical_cols, text_cols, dropped
+    
+    # =========================================================================
+    # TARGET DETECTION
+    # =========================================================================
     
     def _detect_target(self, df: pd.DataFrame) -> str:
-        """Auto-detect target column"""
+        """Smart target detection with priority keywords"""
+        
+        # Priority 1: Exact match keywords
+        exact_keywords = ['target', 'label', 'class', 'output', 'y']
         for col in df.columns:
-            c = col.lower()
-            if any(x in c for x in ['target', 'label', 'class', 'churn', 'fraud', 'price', 'closeusd', 'salary']):
+            if col.lower().strip() in exact_keywords:
+                print(f"🎯 Target (exact match): {col}")
                 return col
+        
+        # Priority 2: Contains keywords (sorted by priority)
+        contains_keywords = [
+            'target', 'label', 'class', 'churn', 'fraud', 'default', 'outcome',
+            'survived', 'sentiment', 'rating', 'score',
+            'price', 'salary', 'income', 'revenue', 'amount', 'value', 'total'
+        ]
+        
+        for keyword in contains_keywords:
+            for col in df.columns:
+                if keyword in col.lower():
+                    print(f"🎯 Target (contains '{keyword}'): {col}")
+                    return col
+        
+        # Priority 3: Heuristic - prefer last column if it's a good target
+        last_col = df.columns[-1]
+        last_unique = df[last_col].nunique()
+        
+        if last_unique <= 20 or pd.api.types.is_numeric_dtype(df[last_col]):
+            print(f"🎯 Target (last column): {last_col}")
+            return last_col
+        
+        # Priority 4: Find best candidate
+        candidates = []
+        for col in df.columns:
+            n_unique = df[col].nunique()
+            is_numeric = pd.api.types.is_numeric_dtype(df[col])
+            score = 0
+            
+            if n_unique == 2:
+                score = 100  # Binary - great target
+            elif n_unique <= 10:
+                score = 50  # Multiclass
+            elif is_numeric:
+                score = 30  # Regression
+            
+            if score > 0:
+                candidates.append((col, score))
+        
+        if candidates:
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            print(f"🎯 Target (best candidate): {candidates[0][0]}")
+            return candidates[0][0]
+        
+        print(f"🎯 Target (fallback): {df.columns[-1]}")
         return df.columns[-1]
     
-    def _preprocess_training(self, df: pd.DataFrame, target_col: str) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-        """
-        Preprocess data for training.
-        CRITICAL: Store all preprocessing info for later prediction.
-        """
-        print("🔧 Preprocessing...")
+    def _detect_task_type(self, y: pd.Series) -> Tuple[str, int]:
+        """Detect task type based on target column"""
+        n_unique = y.nunique()
+        n_samples = len(y)
         
-        # Separate features and target
+        # String/object type -> classification
+        if pd.api.types.is_object_dtype(y) or pd.api.types.is_categorical_dtype(y):
+            if n_unique == 2:
+                return 'binary_classification', 2
+            return 'multiclass_classification', n_unique
+        
+        # Boolean -> binary
+        if pd.api.types.is_bool_dtype(y):
+            return 'binary_classification', 2
+        
+        # Integer with few values -> classification
+        if pd.api.types.is_integer_dtype(y):
+            if n_unique == 2:
+                return 'binary_classification', 2
+            if n_unique <= 15:
+                return 'multiclass_classification', n_unique
+        
+        # Float with few unique whole numbers
+        if pd.api.types.is_float_dtype(y):
+            if n_unique <= 10:
+                # Check if values are integers
+                non_null = y.dropna()
+                if len(non_null) > 0 and (non_null % 1 == 0).all():
+                    if n_unique == 2:
+                        return 'binary_classification', 2
+                    return 'multiclass_classification', n_unique
+        
+        return 'regression', 0
+    
+    # =========================================================================
+    # DATA CLEANING & PREPROCESSING
+    # =========================================================================
+    
+    def _clean_numeric(self, series: pd.Series) -> Tuple[np.ndarray, float]:
+        """Clean numeric column: handle missing, outliers"""
+        # Convert to numeric, coerce errors
+        numeric = pd.to_numeric(series, errors='coerce')
+        
+        # Calculate fill value (median is robust to outliers)
+        fill_val = numeric.median()
+        if pd.isna(fill_val):
+            fill_val = 0.0
+        
+        # Fill missing
+        cleaned = numeric.fillna(fill_val).values.astype(float)
+        
+        # Handle inf
+        cleaned = np.nan_to_num(cleaned, nan=fill_val, posinf=fill_val, neginf=fill_val)
+        
+        return cleaned, fill_val
+    
+    def _preprocess_training(self, df: pd.DataFrame, target_col: str) -> Tuple[np.ndarray, np.ndarray]:
+        """Preprocess data for training"""
+        
         X = df.drop(columns=[target_col]).copy()
         y = df[target_col].copy()
         
-        # Store target column
         self.target_column = target_col
-        self.task_type = self._detect_task_type(y)
         
-        # Identify column types
-        numeric_cols = []
-        categorical_cols = []
+        # Detect task type
+        task_info = self._detect_task_type(y)
+        self.task_type = task_info[0]
+        self.n_classes = task_info[1]
+        self.task_type_simple = 'classification' if 'classification' in self.task_type else 'regression'
         
-        for col in X.columns:
-            if pd.api.types.is_numeric_dtype(X[col]):
-                numeric_cols.append(col)
-            else:
-                # Only keep categorical with <= 50 unique values
-                if X[col].nunique() <= 50:
-                    categorical_cols.append(col)
-                else:
-                    print(f"   ⚠️ Dropping high-cardinality: {col}")
+        print(f"   Task: {self.task_type} ({'n_classes=' + str(self.n_classes) if self.n_classes else 'continuous'})")
         
-        # Store feature columns (ordered!)
-        self.feature_columns = numeric_cols + categorical_cols
+        # Select columns
+        self.numeric_cols, self.categorical_cols, self.text_cols, self.dropped_cols = \
+            self._select_columns(df, target_col)
         
-        print(f"   Features: {len(self.feature_columns)} ({len(numeric_cols)} numeric, {len(categorical_cols)} categorical)")
+        self.feature_columns = self.numeric_cols + self.categorical_cols + self.text_cols
+        
+        if len(self.feature_columns) == 0:
+            raise ValueError("No valid features found after column selection")
         
         # Process features
-        processed = []
+        processed_parts = []
         self.feature_metadata = []
         
-        # Numeric features
-        for col in numeric_cols:
-            series = X[col].astype(float)
-            median_val = series.median()
-            # Handle case where median is NaN (all values missing)
-            if pd.isna(median_val):
-                median_val = 0.0
-            self.numeric_fill_values[col] = median_val
-            filled = series.fillna(median_val)
-            processed.append(filled.values.reshape(-1, 1))
+        # 1. NUMERIC FEATURES
+        if self.numeric_cols:
+            numeric_data = []
+            for col in self.numeric_cols:
+                cleaned, fill_val = self._clean_numeric(X[col])
+                self.numeric_fill_values[col] = fill_val
+                numeric_data.append(cleaned)
+                
+                self.feature_metadata.append({
+                    'name': col,
+                    'type': 'numeric',
+                    'min': float(np.nanmin(cleaned)) if not np.isnan(np.nanmin(cleaned)) else 0,
+                    'max': float(np.nanmax(cleaned)) if not np.isnan(np.nanmax(cleaned)) else 0,
+                    'mean': float(np.nanmean(cleaned)) if not np.isnan(np.nanmean(cleaned)) else 0
+                })
             
-            # Safe conversion for metadata (handle NaN/inf)
-            def safe_float(v, default=0.0):
-                try:
-                    f = float(v)
-                    return f if not (pd.isna(f) or np.isinf(f)) else default
-                except:
-                    return default
+            numeric_array = np.column_stack(numeric_data)
             
-            self.feature_metadata.append({
-                'name': col,
-                'type': 'numeric',
-                'min': safe_float(series.min()),
-                'max': safe_float(series.max()),
-                'mean': safe_float(series.mean())
-            })
+            # Scale with RobustScaler (handles outliers better)
+            self.scaler = RobustScaler()
+            numeric_scaled = self.scaler.fit_transform(numeric_array)
+            processed_parts.append(numeric_scaled)
         
-        # Categorical features - Label encode
-        for col in categorical_cols:
-            series = X[col].fillna('_MISSING_').astype(str)
+        # 2. CATEGORICAL FEATURES
+        for col in self.categorical_cols:
+            series = X[col].fillna('_MISSING_').astype(str).str.strip()
             encoder = LabelEncoder()
-            encoded = encoder.fit_transform(series)
+            encoded = encoder.fit_transform(series).reshape(-1, 1)
             self.label_encoders[col] = encoder
-            processed.append(encoded.reshape(-1, 1))
+            processed_parts.append(encoded.astype(float))
             
             self.feature_metadata.append({
                 'name': col,
@@ -218,117 +413,183 @@ class SimpleMLEngine:
                 'options': encoder.classes_.tolist()[:30]
             })
         
+        # 3. TEXT FEATURES
+        for col in self.text_cols.copy():
+            series = X[col].fillna('').astype(str)
+            
+            try:
+                vectorizer = TfidfVectorizer(
+                    max_features=50,
+                    stop_words='english',
+                    ngram_range=(1, 2),
+                    min_df=1,
+                    max_df=0.95
+                )
+                vectors = vectorizer.fit_transform(series).toarray()
+                
+                if vectors.shape[1] > 0:
+                    self.text_vectorizers[col] = vectorizer
+                    processed_parts.append(vectors)
+                    self.feature_metadata.append({
+                        'name': col,
+                        'type': 'text',
+                        'vocab_size': len(vectorizer.vocabulary_)
+                    })
+                    print(f"   ✅ {col}: {len(vectorizer.vocabulary_)} text features")
+                else:
+                    self.text_cols.remove(col)
+            except Exception as e:
+                print(f"   ⚠️ Skipping {col}: {str(e)[:40]}")
+                self.text_cols.remove(col)
+        
         # Combine
-        X_processed = np.hstack(processed) if processed else np.array([])
+        if processed_parts:
+            X_processed = np.hstack(processed_parts)
+        else:
+            raise ValueError("No valid features after preprocessing")
+        
+        # Clean final array
+        X_processed = np.nan_to_num(X_processed, nan=0.0, posinf=0.0, neginf=0.0)
         
         # Process target
-        if self.task_type == 'classification':
+        if self.task_type_simple == 'classification':
             self.target_encoder = LabelEncoder()
-            y_processed = self.target_encoder.fit_transform(y.astype(str))
+            y_processed = self.target_encoder.fit_transform(y.fillna('_MISSING_').astype(str).str.strip())
         else:
-            y_processed = y.values.astype(float)
+            y_processed = pd.to_numeric(y, errors='coerce').fillna(0).values.astype(float)
+            y_processed = np.nan_to_num(y_processed, nan=0.0)
         
-        # Store sample for verification
-        self.training_data_sample = df.head(10).copy()
+        print(f"   Final shape: {X_processed.shape}")
         
-        return X_processed, y_processed, self.feature_columns
+        return X_processed, y_processed
     
     def _preprocess_single(self, data: Dict[str, Any]) -> np.ndarray:
-        """
-        Preprocess a single prediction input.
-        Uses EXACT same steps as training.
-        """
-        processed = []
+        """Preprocess single input for prediction"""
+        parts = []
         
-        for col in self.feature_columns:
-            value = data.get(col)
-            
-            if col in self.numeric_fill_values:
-                # Numeric feature
+        # Numeric
+        if self.numeric_cols:
+            numeric_vals = []
+            for col in self.numeric_cols:
+                val = data.get(col, self.numeric_fill_values.get(col, 0))
                 try:
-                    val = float(value) if value is not None else self.numeric_fill_values[col]
-                except (ValueError, TypeError):
-                    val = self.numeric_fill_values[col]
-                processed.append(val)
+                    numeric_vals.append(float(val) if val is not None else self.numeric_fill_values.get(col, 0))
+                except:
+                    numeric_vals.append(self.numeric_fill_values.get(col, 0))
+            
+            numeric_array = np.array([numeric_vals])
+            if self.scaler:
+                parts.append(self.scaler.transform(numeric_array))
             else:
-                # Categorical feature
-                encoder = self.label_encoders.get(col)
-                if encoder is not None:
-                    str_val = str(value) if value is not None else '_MISSING_'
-                    if str_val in encoder.classes_:
-                        encoded = encoder.transform([str_val])[0]
-                    else:
-                        encoded = 0  # Unknown category
-                    processed.append(float(encoded))
-                else:
-                    processed.append(0.0)
+                parts.append(numeric_array)
         
-        return np.array([processed])
+        # Categorical
+        for col in self.categorical_cols:
+            encoder = self.label_encoders.get(col)
+            if encoder:
+                val = str(data.get(col, '_MISSING_')).strip()
+                encoded = encoder.transform([val])[0] if val in encoder.classes_ else 0
+                parts.append(np.array([[float(encoded)]]))
+        
+        # Text
+        for col in self.text_cols:
+            vectorizer = self.text_vectorizers.get(col)
+            if vectorizer:
+                text = str(data.get(col, ''))
+                parts.append(vectorizer.transform([text]).toarray())
+        
+        return np.hstack(parts) if parts else np.array([[0]])
     
-    def _get_models(self) -> Dict[str, Any]:
-        """Get model pool based on task type"""
-        if self.task_type == 'classification':
+    # =========================================================================
+    # MODELS
+    # =========================================================================
+    
+    def _get_models(self) -> Dict[str, Tuple[Any, Dict]]:
+        """Get models with hyperparameter grids based on task"""
+        
+        if self.task_type_simple == 'classification':
             models = {
-                'LogisticRegression': LogisticRegression(max_iter=500, n_jobs=-1, random_state=42),
-                'RandomForest': RandomForestClassifier(n_estimators=100, max_depth=12, n_jobs=-1, random_state=42),
-                'ExtraTrees': ExtraTreesClassifier(n_estimators=100, max_depth=12, n_jobs=-1, random_state=42),
-                'GradientBoosting': GradientBoostingClassifier(n_estimators=100, max_depth=5, random_state=42),
+                'LogisticRegression': (
+                    LogisticRegression(max_iter=500, n_jobs=-1, random_state=42),
+                    {'C': [0.1, 1, 10]}
+                ),
+                'RandomForest': (
+                    RandomForestClassifier(n_jobs=-1, random_state=42),
+                    {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}
+                ),
+                'HistGradientBoosting': (
+                    HistGradientBoostingClassifier(random_state=42),
+                    {'max_iter': [100, 200], 'max_depth': [5, 10]}
+                ),
             }
             if HAS_XGB:
-                models['XGBoost'] = xgb.XGBClassifier(n_estimators=100, max_depth=6, n_jobs=-1, random_state=42, eval_metric='logloss', verbosity=0)
+                models['XGBoost'] = (
+                    xgb.XGBClassifier(n_jobs=-1, random_state=42, verbosity=0, eval_metric='logloss'),
+                    {'n_estimators': [100, 200], 'max_depth': [5, 10]}
+                )
             if HAS_LGB:
-                models['LightGBM'] = lgb.LGBMClassifier(n_estimators=100, max_depth=6, verbose=-1, random_state=42)
+                models['LightGBM'] = (
+                    lgb.LGBMClassifier(n_jobs=-1, random_state=42, verbose=-1),
+                    {'n_estimators': [100, 200], 'max_depth': [5, 10]}
+                )
         else:
             models = {
-                'Ridge': Ridge(random_state=42),
-                'RandomForest': RandomForestRegressor(n_estimators=200, max_depth=None, n_jobs=-1, random_state=42),
-                'ExtraTrees': ExtraTreesRegressor(n_estimators=200, max_depth=None, n_jobs=-1, random_state=42),
-                'GradientBoosting': GradientBoostingRegressor(n_estimators=100, max_depth=5, random_state=42),
+                'Ridge': (
+                    Ridge(random_state=42),
+                    {'alpha': [0.1, 1, 10]}
+                ),
+                'RandomForest': (
+                    RandomForestRegressor(n_jobs=-1, random_state=42),
+                    {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}
+                ),
+                'HistGradientBoosting': (
+                    HistGradientBoostingRegressor(random_state=42),
+                    {'max_iter': [100, 200], 'max_depth': [5, 10]}
+                ),
             }
             if HAS_XGB:
-                models['XGBoost'] = xgb.XGBRegressor(n_estimators=200, max_depth=20, n_jobs=-1, random_state=42, verbosity=0)
+                models['XGBoost'] = (
+                    xgb.XGBRegressor(n_jobs=-1, random_state=42, verbosity=0),
+                    {'n_estimators': [100, 200], 'max_depth': [5, 10]}
+                )
             if HAS_LGB:
-                models['LightGBM'] = lgb.LGBMRegressor(n_estimators=200, max_depth=20, verbose=-1, random_state=42)
+                models['LightGBM'] = (
+                    lgb.LGBMRegressor(n_jobs=-1, random_state=42, verbose=-1),
+                    {'n_estimators': [100, 200], 'max_depth': [5, 10]}
+                )
         
         return models
     
+    # =========================================================================
+    # TRAINING
+    # =========================================================================
+    
     async def train(self, df: pd.DataFrame, target_col: Optional[str] = None, user_id: str = "default") -> TrainResult:
-        """Train models on data"""
+        """Main training pipeline"""
         start = datetime.now()
         
         print("=" * 60)
-        print("🚀 SIMPLE ML ENGINE - Training")
+        print("🚀 PRODUCTION ML ENGINE v3.0")
         print("=" * 60)
+        print(f"📊 Data: {len(df)} rows, {len(df.columns)} columns")
         
-        # Auto-detect target
+        # Detect target
         if not target_col:
             target_col = self._detect_target(df)
-            print(f"🎯 Auto-detected target: {target_col}")
-        
-        # Drop date columns (usually not useful for ML)
-        for col in df.columns:
-            if 'date' in col.lower():
-                print(f"   ⚠️ Dropping date column: {col}")
-                df = df.drop(columns=[col])
+        else:
+            print(f"🎯 Target (user specified): {target_col}")
         
         # Preprocess
-        X, y, feature_cols = self._preprocess_training(df, target_col)
-        
-        print(f"   Task type: {self.task_type}")
-        print(f"   Data shape: {X.shape}")
+        X, y = self._preprocess_training(df, target_col)
         
         # Split
-        if self.task_type == 'classification':
-            stratify = y
-        else:
-            stratify = None
-        
+        stratify = y if self.task_type_simple == 'classification' and self.n_classes < 100 else None
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=stratify
         )
         print(f"   Train: {len(X_train)}, Test: {len(X_test)}")
         
-        # Train models
+        # Get models
         models = self._get_models()
         results = []
         
@@ -338,111 +599,113 @@ class SimpleMLEngine:
         best_pred = None
         best_proba = None
         
-        print(f"🤖 Training {len(models)} models...")
+        scoring = 'f1_weighted' if self.task_type_simple == 'classification' else 'r2'
         
-        for name, model in models.items():
+        # Reduce CV for complex problems
+        n_iter = 5 if self.n_classes > 20 or len(X) > 50000 else 8
+        cv_folds = 2 if self.n_classes > 20 or len(X) > 50000 else 3
+        
+        print(f"🤖 Training {len(models)} models (tuning: {n_iter} iter, {cv_folds}-fold CV)...")
+        
+        for idx, (name, (model, params)) in enumerate(models.items(), 1):
             try:
                 t0 = datetime.now()
+                print(f"   [{idx}/{len(models)}] {name}...", end=" ", flush=True)
                 
-                # Fit
-                model.fit(X_train, y_train)
+                search = RandomizedSearchCV(
+                    model, params, n_iter=min(n_iter, np.prod([len(v) for v in params.values()])),
+                    cv=cv_folds, scoring=scoring, n_jobs=-1, random_state=42
+                )
+                search.fit(X_train, y_train)
                 
-                # Predict
-                y_pred = model.predict(X_test)
+                best_est = search.best_estimator_
+                y_pred = best_est.predict(X_test)
+                
                 y_proba = None
-                if hasattr(model, 'predict_proba'):
+                if hasattr(best_est, 'predict_proba'):
                     try:
-                        y_proba = model.predict_proba(X_test)
+                        y_proba = best_est.predict_proba(X_test)
                     except:
                         pass
                 
                 # Metrics
-                if self.task_type == 'classification':
+                if self.task_type_simple == 'classification':
                     score = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-                    metrics = {
-                        'f1': round(score, 4),
-                        'accuracy': round(accuracy_score(y_test, y_pred), 4),
-                    }
+                    acc = accuracy_score(y_test, y_pred)
+                    metrics = {'f1': round(score, 4), 'accuracy': round(acc, 4)}
                 else:
                     score = r2_score(y_test, y_pred)
-                    metrics = {
-                        'r2': round(score, 4),
-                        'mae': round(mean_absolute_error(y_test, y_pred), 4),
-                    }
+                    mae = mean_absolute_error(y_test, y_pred)
+                    metrics = {'r2': round(score, 4), 'mae': round(mae, 4)}
                 
                 elapsed = (datetime.now() - t0).total_seconds()
-                
-                # Feature importance
-                importance = self._get_importance(model, feature_cols)
                 
                 results.append({
                     'name': name,
                     'metrics': metrics,
-                    'training_time': elapsed,
-                    'importance': importance
+                    'training_time': round(elapsed, 2),
+                    'importance': self._get_importance(best_est),
+                    'best_params': search.best_params_
                 })
                 
-                metric_name = 'f1' if self.task_type == 'classification' else 'r2'
-                print(f"   {name}: {metric_name}={score:.3f} ({elapsed:.1f}s)")
+                metric_name = 'f1' if self.task_type_simple == 'classification' else 'r2'
+                print(f"{metric_name}={score:.3f} ({elapsed:.1f}s)")
                 
                 if score > best_score:
                     best_score = score
-                    best_model = model
+                    best_model = best_est
                     best_name = name
                     best_pred = y_pred
                     best_proba = y_proba
                     
             except Exception as e:
-                print(f"   {name}: ERROR - {e}")
+                print(f"ERROR - {str(e)[:50]}")
         
-        # Store best model
         self.model = best_model
         self.model_name = best_name
         
         print(f"🏆 Best: {best_name} (score={best_score:.3f})")
         
-        # PRODUCTION STEP: Retrain best model on FULL data for deployment
-        print(f"🔄 Retraining {best_name} on FULL data...")
-        final_model = self._get_models()[best_name]
-        final_model.fit(X, y)  # Train on ALL data, not just train split
-        self.model = final_model
-        print(f"   ✅ Model retrained on {len(X)} samples")
+        # Retrain on full data
+        print(f"🔄 Retraining {best_name} on full data...")
+        self.model.fit(X, y)
+        print(f"   ✅ Retrained on {len(X)} samples")
         
         # Sort results
-        metric_key = 'f1' if self.task_type == 'classification' else 'r2'
+        metric_key = 'f1' if self.task_type_simple == 'classification' else 'r2'
         results.sort(key=lambda x: x['metrics'].get(metric_key, 0), reverse=True)
         
-        # Save model
+        # Save
         self._save(user_id)
         
-        # Verify predictions on training sample
-        self._verify_predictions(df.head(5), target_col)
+        # Verify
+        self._verify(df.head(5), target_col)
         
         processing_time = (datetime.now() - start).total_seconds()
         
         print("=" * 60)
-        print(f"✅ Training complete in {processing_time:.1f}s")
+        print(f"✅ Complete in {processing_time:.1f}s")
         print("=" * 60)
         
         return TrainResult(
             success=True,
             task_type=self.task_type,
             target_column=target_col,
-            feature_columns=feature_cols,
+            feature_columns=self.feature_columns,
             best_model_name=best_name,
             best_model_metrics=results[0]['metrics'] if results else {},
             leaderboard=results,
             feature_importance=results[0].get('importance', []) if results else [],
             y_test=y_test,
             y_pred=best_pred,
-            y_proba=best_proba[:, 1] if best_proba is not None and self.task_type == 'classification' and len(best_proba.shape) > 1 else None,
+            y_proba=best_proba[:, 1] if best_proba is not None and self.task_type_simple == 'classification' and len(best_proba.shape) > 1 and best_proba.shape[1] == 2 else None,
             feature_metadata=self.feature_metadata,
             n_rows=len(df),
             n_cols=len(df.columns),
             processing_time=processing_time
         )
     
-    def _get_importance(self, model, feature_cols: List[str]) -> List[Dict]:
+    def _get_importance(self, model) -> List[Dict]:
         """Get feature importance"""
         if hasattr(model, 'feature_importances_'):
             values = model.feature_importances_
@@ -451,40 +714,54 @@ class SimpleMLEngine:
         else:
             return []
         
-        if len(values) != len(feature_cols):
-            return []
+        # Build feature names
+        names = []
+        for col in self.numeric_cols:
+            names.append(col)
+        for col in self.categorical_cols:
+            names.append(col)
+        for col in self.text_cols:
+            vec = self.text_vectorizers.get(col)
+            if vec:
+                for w in list(vec.vocabulary_.keys())[:5]:
+                    names.append(f"{col}:{w}")
+        
+        if len(values) != len(names):
+            names = [f"Feature_{i}" for i in range(len(values))]
         
         if values.sum() > 0:
             values = values / values.sum()
         
         importance = []
-        for rank, (name, val) in enumerate(sorted(zip(feature_cols, values), key=lambda x: x[1], reverse=True), 1):
-            importance.append({'feature': name, 'importance': round(float(val), 4), 'rank': rank})
+        for rank, (n, v) in enumerate(sorted(zip(names, values), key=lambda x: x[1], reverse=True), 1):
+            if rank > 15:
+                break
+            importance.append({'feature': n, 'importance': round(float(v), 4), 'rank': rank})
         
-        return importance[:15]
+        return importance
     
-    def _verify_predictions(self, df: pd.DataFrame, target_col: str):
-        """Verify model can predict training data correctly"""
-        print("\n📋 Verification - Predicting on training sample:")
-        
+    def _verify(self, df: pd.DataFrame, target_col: str):
+        """Verify predictions"""
+        print("\n📋 Verification:")
         for i in range(min(5, len(df))):
             row = df.iloc[i]
             actual = row[target_col]
             
-            # Build input dict
-            input_data = {col: row[col] for col in self.feature_columns if col in row.index}
+            data = {col: row[col] for col in self.feature_columns if col in row.index}
             
             try:
-                pred = self.predict(input_data)
-                pred_val = pred['prediction']
+                pred = self.predict(data)
+                p = pred['prediction']
                 
-                if self.task_type == 'regression':
-                    error = abs(float(pred_val) - float(actual))
-                    pct = error / abs(float(actual)) * 100 if float(actual) != 0 else 0
-                    print(f"   Row {i}: Actual={actual:.2f}, Pred={float(pred_val):.2f}, Error={pct:.1f}%")
+                if self.task_type_simple == 'regression':
+                    try:
+                        err = abs(float(p) - float(actual)) / abs(float(actual)) * 100 if float(actual) != 0 else 0
+                        print(f"   Row {i}: Actual={actual:.2f}, Pred={float(p):.2f}, Error={err:.1f}%")
+                    except:
+                        print(f"   Row {i}: Actual={actual}, Pred={p}")
                 else:
-                    match = "✅" if str(pred_val) == str(actual) else "❌"
-                    print(f"   Row {i}: Actual={actual}, Pred={pred_val} {match}")
+                    match = "✅" if str(p) == str(actual) else "❌"
+                    print(f"   Row {i}: Actual={actual}, Pred={p} {match}")
             except Exception as e:
                 print(f"   Row {i}: ERROR - {e}")
     
@@ -494,88 +771,92 @@ class SimpleMLEngine:
             raise ValueError("No model trained")
         
         X = self._preprocess_single(data)
-        prediction = self.model.predict(X)[0]
+        pred = self.model.predict(X)[0]
         
-        # Decode if classification
-        if self.target_encoder is not None:
+        if self.target_encoder:
             try:
-                prediction = self.target_encoder.inverse_transform([int(prediction)])[0]
+                pred = self.target_encoder.inverse_transform([int(pred)])[0]
             except:
                 pass
         
-        # Probability
-        probability = None
-        confidence = None
+        prob = None
+        conf = None
         if hasattr(self.model, 'predict_proba'):
             try:
                 proba = self.model.predict_proba(X)[0]
-                probability = proba.tolist()
-                confidence = float(max(proba))
+                prob = [float(p) for p in proba]
+                conf = float(max(proba))
             except:
                 pass
         
-        return {
-            'prediction': str(prediction),
-            'probability': probability,
-            'confidence': confidence,
-            'model': self.model_name
-        }
+        return {'prediction': str(pred), 'probability': prob, 'confidence': conf, 'model': self.model_name}
     
     def _save(self, user_id: str):
-        """Save model and all preprocessing state"""
+        """Save model and preprocessors"""
         save_dir = os.path.join(STORAGE_PATH, user_id)
         os.makedirs(save_dir, exist_ok=True)
-        
-        save_path = os.path.join(save_dir, "model.pkl")
         
         data = {
             'model': self.model,
             'model_name': self.model_name,
-            'feature_columns': self.feature_columns,
-            'target_column': self.target_column,
             'task_type': self.task_type,
+            'task_type_simple': self.task_type_simple,
+            'n_classes': self.n_classes,
+            'target_column': self.target_column,
+            'feature_columns': self.feature_columns,
+            'numeric_cols': self.numeric_cols,
+            'categorical_cols': self.categorical_cols,
+            'text_cols': self.text_cols,
             'label_encoders': self.label_encoders,
             'target_encoder': self.target_encoder,
+            'text_vectorizers': self.text_vectorizers,
+            'scaler': self.scaler,
             'numeric_fill_values': self.numeric_fill_values,
             'feature_metadata': self.feature_metadata,
         }
         
-        with open(save_path, 'wb') as f:
+        with open(os.path.join(save_dir, "model.pkl"), 'wb') as f:
             pickle.dump(data, f)
         
-        print(f"💾 Saved to {save_path}")
+        print(f"💾 Saved to {save_dir}")
     
     def load(self, user_id: str) -> bool:
-        """Load model and preprocessing state"""
-        load_path = os.path.join(STORAGE_PATH, user_id, "model.pkl")
+        """Load model"""
+        path = os.path.join(STORAGE_PATH, user_id, "model.pkl")
         
-        if not os.path.exists(load_path):
+        if not os.path.exists(path):
             return False
         
         try:
-            with open(load_path, 'rb') as f:
+            with open(path, 'rb') as f:
                 data = pickle.load(f)
             
             self.model = data['model']
             self.model_name = data['model_name']
-            self.feature_columns = data['feature_columns']
-            self.target_column = data['target_column']
-            self.task_type = data['task_type']
-            self.label_encoders = data['label_encoders']
-            self.target_encoder = data['target_encoder']
-            self.numeric_fill_values = data['numeric_fill_values']
-            self.feature_metadata = data['feature_metadata']
+            self.task_type = data.get('task_type', '')
+            self.task_type_simple = data.get('task_type_simple', '')
+            self.n_classes = data.get('n_classes', 0)
+            self.target_column = data.get('target_column', '')
+            self.feature_columns = data.get('feature_columns', [])
+            self.numeric_cols = data.get('numeric_cols', [])
+            self.categorical_cols = data.get('categorical_cols', [])
+            self.text_cols = data.get('text_cols', [])
+            self.label_encoders = data.get('label_encoders', {})
+            self.target_encoder = data.get('target_encoder')
+            self.text_vectorizers = data.get('text_vectorizers', {})
+            self.scaler = data.get('scaler')
+            self.numeric_fill_values = data.get('numeric_fill_values', {})
+            self.feature_metadata = data.get('feature_metadata', [])
             
-            print(f"📂 Loaded from {load_path}")
+            print(f"📂 Loaded from {path}")
             return True
         except Exception as e:
-            print(f"⚠️ Load failed: {e}")
+            print(f"⚠️ Load error: {e}")
             return False
     
     def get_feature_metadata(self) -> List[Dict]:
-        """Get feature metadata for UI"""
         return self.feature_metadata
 
 
 # Global instance
-automl_engine = SimpleMLEngine()
+automl_engine = ProductionMLEngine()

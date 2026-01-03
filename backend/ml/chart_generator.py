@@ -1,27 +1,19 @@
 """
-🧠 INTELLIGENT ML VISUALIZATION ENGINE
-=======================================
+📊 ML CHART GENERATOR v3.0
+===========================
 
-Production-ready visualization pipeline that:
-- Automatically analyzes dataset and ML task
-- Selects only meaningful, decision-oriented charts
-- Provides explanations for each visualization
-- Helps users decide if ML model is reliable
-
-Library Selection:
-- Matplotlib: Static, publication-grade plots
-- Seaborn: Statistical plots (KDE, violin, heatmaps)
-- Uses appropriate colors based on data patterns
+THEME-AWARE Charts that work in both dark and light modes:
+- Light gray background (#f8f9fa) - visible in both themes
+- High contrast colors
+- More chart variety
 """
 
 import io
 import base64
-from typing import Dict, List, Optional, Any, Tuple
-from dataclasses import dataclass
+from typing import Dict, List, Optional
 import warnings
 
 import numpy as np
-import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -30,252 +22,65 @@ from scipy import stats
 
 warnings.filterwarnings('ignore')
 
-
-# =============================================================================
-# VISUALIZATION DECISIONS
-# =============================================================================
-
-@dataclass
-class ChartDecision:
-    """Represents a decision about whether to show a chart"""
-    name: str
-    should_show: bool
-    reason: str
-    insight: str  # What decision this helps make
-    warning: Optional[str] = None
-
-
-# =============================================================================
-# STYLING
-# =============================================================================
-
-# Professional, minimal color scheme
+# High-contrast colors visible in both themes
 COLORS = {
-    'primary': '#0ea5e9',      # Sky blue
-    'success': '#10b981',      # Emerald
-    'warning': '#f59e0b',      # Amber
-    'danger': '#ef4444',       # Red
-    'purple': '#8b5cf6',       # Purple
-    'pink': '#ec4899',         # Pink
-    'cyan': '#06b6d4',         # Cyan
-    'bg': '#0f172a',           # Dark bg
-    'card': '#1e293b',         # Card bg
-    'text': '#f8fafc',         # Text
-    'muted': '#64748b',        # Muted
-    'grid': '#334155',         # Grid
+    'blue': '#2563eb',
+    'green': '#16a34a',
+    'red': '#dc2626',
+    'orange': '#ea580c',
+    'purple': '#9333ea',
+    'cyan': '#0891b2',
+    'pink': '#db2777',
+    'amber': '#d97706',
+    'teal': '#0d9488',
+    'indigo': '#4f46e5',
 }
 
-# Distinct color palettes for different charts
-PALETTE_MODELS = ['#10b981', '#0ea5e9', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4']
-PALETTE_FEATURES = ['#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316']
-PALETTE_COMPARISON = ['#10b981', '#3b82f6']
+PALETTE = list(COLORS.values())
+
+# Background that works in both themes
+BG_COLOR = '#f8f9fa'  # Very light gray - visible on dark and light
 
 
-def setup_style():
-    """Set professional dark theme"""
-    plt.style.use('dark_background')
+def setup_theme_aware_style():
+    """Style that works in both dark and light themes"""
     plt.rcParams.update({
-        'figure.facecolor': COLORS['card'],
-        'axes.facecolor': COLORS['card'],
-        'axes.edgecolor': COLORS['muted'],
-        'axes.labelcolor': COLORS['text'],
-        'axes.labelsize': 11,
-        'axes.titlesize': 13,
-        'text.color': COLORS['text'],
-        'xtick.color': COLORS['muted'],
-        'ytick.color': COLORS['muted'],
-        'xtick.labelsize': 9,
-        'ytick.labelsize': 9,
-        'grid.color': COLORS['grid'],
-        'grid.alpha': 0.3,
-        'legend.fontsize': 9,
-        'legend.framealpha': 0.8,
+        'figure.facecolor': BG_COLOR,
+        'axes.facecolor': '#ffffff',
+        'axes.edgecolor': '#d1d5db',
+        'axes.labelcolor': '#1f2937',
+        'axes.labelsize': 12,
+        'axes.titlesize': 14,
+        'axes.titleweight': 'bold',
+        'text.color': '#1f2937',
+        'xtick.color': '#4b5563',
+        'ytick.color': '#4b5563',
+        'xtick.labelsize': 10,
+        'ytick.labelsize': 10,
+        'grid.color': '#e5e7eb',
+        'grid.alpha': 0.7,
+        'grid.linewidth': 0.8,
+        'legend.fontsize': 10,
+        'legend.framealpha': 1,
+        'legend.edgecolor': '#d1d5db',
+        'legend.facecolor': '#ffffff',
+        'font.family': 'sans-serif',
     })
 
 
 def fig_to_base64(fig) -> str:
     """Convert figure to base64"""
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=120, bbox_inches='tight', 
-                facecolor=COLORS['card'], edgecolor='none')
+    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight',
+                facecolor=BG_COLOR, edgecolor='none')
     buf.seek(0)
     img = base64.b64encode(buf.getvalue()).decode('utf-8')
     plt.close(fig)
     return f"data:image/png;base64,{img}"
 
 
-# =============================================================================
-# VISUALIZATION INTELLIGENCE
-# =============================================================================
-
-class VisualizationIntelligence:
-    """Decides which charts to show based on data + task"""
-    
-    def analyze_data(
-        self,
-        y_test: np.ndarray,
-        y_pred: np.ndarray,
-        y_proba: Optional[np.ndarray],
-        task_type: str,
-        leaderboard: List[Dict],
-        feature_importance: List[Dict]
-    ) -> Dict[str, ChartDecision]:
-        """Analyze data and decide which visualizations add value"""
-        
-        decisions = {}
-        
-        # MODEL COMPARISON - Always show if multiple models
-        if len(leaderboard) > 1:
-            decisions['model_comparison'] = ChartDecision(
-                name='Model Performance Comparison',
-                should_show=True,
-                reason=f'Comparing {len(leaderboard)} trained models',
-                insight='Helps select the best model and understand performance gaps'
-            )
-        
-        # FEATURE IMPORTANCE - Show if available
-        if feature_importance and len(feature_importance) > 0:
-            top_features = [f['feature'] for f in feature_importance[:3]]
-            decisions['feature_importance'] = ChartDecision(
-                name='Feature Importance',
-                should_show=True,
-                reason=f'Top features: {", ".join(top_features)}',
-                insight='Identifies which features drive predictions - useful for feature selection'
-            )
-        
-        # TASK-SPECIFIC DECISIONS
-        if task_type == 'regression':
-            decisions.update(self._regression_decisions(y_test, y_pred))
-        else:
-            decisions.update(self._classification_decisions(y_test, y_pred, y_proba))
-        
-        return decisions
-    
-    def _regression_decisions(self, y_test: np.ndarray, y_pred: np.ndarray) -> Dict[str, ChartDecision]:
-        """Decide which regression charts to show"""
-        decisions = {}
-        
-        if y_test is None or y_pred is None:
-            return decisions
-        
-        residuals = y_test - y_pred
-        
-        # ACTUAL VS PREDICTED - Always show for regression
-        r2 = 1 - np.sum(residuals**2) / np.sum((y_test - np.mean(y_test))**2)
-        decisions['actual_vs_predicted'] = ChartDecision(
-            name='Actual vs Predicted',
-            should_show=True,
-            reason=f'R² = {r2:.3f}',
-            insight='Shows prediction accuracy - points should cluster around diagonal',
-            warning='Model underperforming' if r2 < 0.7 else None
-        )
-        
-        # RESIDUAL PLOT - Show to check for patterns
-        decisions['residual_plot'] = ChartDecision(
-            name='Residual Analysis',
-            should_show=True,
-            reason='Checking for systematic errors',
-            insight='Residuals should be random with no patterns - patterns indicate model bias'
-        )
-        
-        # ERROR DISTRIBUTION - Show to check normality
-        _, p_value = stats.normaltest(residuals) if len(residuals) > 20 else (0, 1)
-        decisions['error_distribution'] = ChartDecision(
-            name='Error Distribution',
-            should_show=True,
-            reason=f'Normality p-value = {p_value:.3f}',
-            insight='Errors should follow normal distribution for reliable predictions',
-            warning='Non-normal errors detected' if p_value < 0.05 else None
-        )
-        
-        # Q-Q PLOT - Show if errors may not be normal
-        if p_value < 0.05:
-            decisions['qq_plot'] = ChartDecision(
-                name='Q-Q Plot',
-                should_show=True,
-                reason='Errors deviate from normality',
-                insight='Helps identify if outliers or heavy tails are affecting model'
-            )
-        
-        return decisions
-    
-    def _classification_decisions(
-        self, 
-        y_test: np.ndarray, 
-        y_pred: np.ndarray,
-        y_proba: Optional[np.ndarray]
-    ) -> Dict[str, ChartDecision]:
-        """Decide which classification charts to show"""
-        decisions = {}
-        
-        if y_test is None or y_pred is None:
-            return decisions
-        
-        n_classes = len(np.unique(y_test))
-        is_binary = n_classes == 2
-        
-        # Check imbalance
-        class_counts = np.bincount(y_test.astype(int))
-        imbalance_ratio = min(class_counts) / max(class_counts) if max(class_counts) > 0 else 1
-        is_imbalanced = imbalance_ratio < 0.3
-        
-        # CONFUSION MATRIX - Always show
-        decisions['confusion_matrix'] = ChartDecision(
-            name='Confusion Matrix',
-            should_show=True,
-            reason=f'{n_classes} classes detected',
-            insight='Shows where model makes mistakes - which classes are confused'
-        )
-        
-        # CLASS DISTRIBUTION - Show if imbalanced
-        if is_imbalanced:
-            decisions['class_distribution'] = ChartDecision(
-                name='Class Distribution',
-                should_show=True,
-                reason=f'Imbalance ratio: {imbalance_ratio:.2f}',
-                insight='Shows class balance - imbalanced data can bias predictions',
-                warning='Severe class imbalance detected'
-            )
-        
-        # ROC CURVE - Binary only
-        if is_binary and y_proba is not None:
-            decisions['roc_curve'] = ChartDecision(
-                name='ROC Curve',
-                should_show=True,
-                reason='Binary classification with probabilities',
-                insight='AUC shows overall discriminative ability - higher is better'
-            )
-        
-        # PRECISION-RECALL - Imbalanced binary
-        if is_binary and is_imbalanced and y_proba is not None:
-            decisions['precision_recall'] = ChartDecision(
-                name='Precision-Recall Curve',
-                should_show=True,
-                reason='Imbalanced binary classification',
-                insight='Better metric than ROC for imbalanced data - focuses on positive class'
-            )
-        
-        # PROBABILITY DISTRIBUTION - If probabilities available
-        if y_proba is not None:
-            decisions['probability_distribution'] = ChartDecision(
-                name='Prediction Confidence',
-                should_show=True,
-                reason='Model outputs probabilities',
-                insight='Shows model confidence - bimodal is good, uniform is concerning'
-            )
-        
-        return decisions
-
-
-# =============================================================================
-# CHART GENERATORS
-# =============================================================================
-
-class ProductionChartGenerator:
-    """Generates production-ready ML visualizations"""
-    
-    def __init__(self):
-        self.intelligence = VisualizationIntelligence()
+class MLChartGenerator:
+    """Theme-aware ML chart generator with extensive chart variety"""
     
     def generate_all_charts(
         self,
@@ -284,136 +89,137 @@ class ProductionChartGenerator:
         y_pred: np.ndarray,
         y_proba: Optional[np.ndarray] = None,
         feature_importance: Optional[List[Dict]] = None,
-        leaderboard: Optional[List[Dict]] = None,
-        cv_scores: Optional[Dict[str, List[float]]] = None
+        leaderboard: Optional[List[Dict]] = None
     ) -> Dict[str, str]:
-        """Generate all applicable charts with intelligent selection"""
+        """Generate comprehensive charts for task type"""
         
-        setup_style()
+        setup_theme_aware_style()
         charts = {}
         
-        print(f"📊 Analyzing visualization needs for {task_type}...")
+        is_classification = 'classification' in task_type.lower()
         
-        # Get intelligent decisions
-        decisions = self.intelligence.analyze_data(
-            y_test, y_pred, y_proba, task_type, 
-            leaderboard or [], feature_importance or []
-        )
+        print(f"📊 Generating charts for {task_type}...")
         
-        # Show decisions
-        for key, decision in decisions.items():
-            if decision.should_show:
-                symbol = "⚠️" if decision.warning else "✅"
-                print(f"   {symbol} {decision.name}: {decision.reason}")
+        # =====================================================================
+        # COMMON CHARTS (Both regression and classification)
+        # =====================================================================
         
-        # Generate selected charts
-        if decisions.get('model_comparison', ChartDecision('', False, '', '')).should_show:
-            charts['model_comparison'] = self._model_comparison(leaderboard, task_type)
+        if leaderboard and len(leaderboard) > 0:
+            charts['model_comparison'] = self._model_comparison(leaderboard, is_classification)
+            charts['training_time'] = self._training_time(leaderboard)
         
-        if decisions.get('feature_importance', ChartDecision('', False, '', '')).should_show:
+        if feature_importance and len(feature_importance) > 0:
             charts['feature_importance'] = self._feature_importance(feature_importance)
         
-        # Task-specific charts
-        if task_type == 'regression':
-            if decisions.get('actual_vs_predicted', ChartDecision('', False, '', '')).should_show:
-                charts['actual_vs_predicted'] = self._actual_vs_predicted(y_test, y_pred)
-            
-            if decisions.get('residual_plot', ChartDecision('', False, '', '')).should_show:
-                charts['residual_plot'] = self._residual_plot(y_test, y_pred)
-            
-            if decisions.get('error_distribution', ChartDecision('', False, '', '')).should_show:
-                charts['error_distribution'] = self._error_distribution(y_test, y_pred)
-            
-            if decisions.get('qq_plot', ChartDecision('', False, '', '')).should_show:
-                charts['qq_plot'] = self._qq_plot(y_test, y_pred)
+        # =====================================================================
+        # TASK-SPECIFIC CHARTS
+        # =====================================================================
         
-        else:  # Classification
-            if decisions.get('confusion_matrix', ChartDecision('', False, '', '')).should_show:
+        if y_test is not None and y_pred is not None:
+            if is_classification:
+                # Classification charts
                 charts['confusion_matrix'] = self._confusion_matrix(y_test, y_pred)
-            
-            if decisions.get('class_distribution', ChartDecision('', False, '', '')).should_show:
                 charts['class_distribution'] = self._class_distribution(y_test, y_pred)
-            
-            if decisions.get('roc_curve', ChartDecision('', False, '', '')).should_show:
-                charts['roc_curve'] = self._roc_curve(y_test, y_proba)
-            
-            if decisions.get('precision_recall', ChartDecision('', False, '', '')).should_show:
-                charts['precision_recall'] = self._precision_recall(y_test, y_proba)
-            
-            if decisions.get('probability_distribution', ChartDecision('', False, '', '')).should_show:
-                charts['probability_distribution'] = self._probability_distribution(y_proba)
+                charts['classification_metrics'] = self._classification_metrics(y_test, y_pred)
+                charts['prediction_accuracy_pie'] = self._prediction_accuracy_pie(y_test, y_pred)
+                
+                if y_proba is not None:
+                    charts['roc_curve'] = self._roc_curve(y_test, y_proba)
+                    charts['probability_histogram'] = self._probability_histogram(y_proba)
+                    charts['confidence_gauge'] = self._confidence_gauge(y_proba)
+            else:
+                # Regression charts
+                charts['actual_vs_predicted'] = self._actual_vs_predicted(y_test, y_pred)
+                charts['residual_plot'] = self._residual_plot(y_test, y_pred)
+                charts['error_histogram'] = self._error_histogram(y_test, y_pred)
+                charts['prediction_error'] = self._prediction_error(y_test, y_pred)
+                charts['qq_plot'] = self._qq_plot(y_test, y_pred)
+                charts['regression_metrics'] = self._regression_metrics(y_test, y_pred)
+                charts['error_boxplot'] = self._error_boxplot(y_test, y_pred)
         
-        # CV Stability (if available)
-        if cv_scores:
-            charts['cv_stability'] = self._cv_stability(cv_scores)
-        
-        print(f"   📈 Generated {len(charts)} decision-oriented charts")
-        
+        print(f"   ✅ Generated {len(charts)} charts")
         return charts
     
     # =========================================================================
     # COMMON CHARTS
     # =========================================================================
     
-    def _model_comparison(self, leaderboard: List[Dict], task_type: str) -> str:
-        """Leaderboard bar chart"""
+    def _model_comparison(self, leaderboard: List[Dict], is_classification: bool) -> str:
+        """Model performance comparison"""
         fig, ax = plt.subplots(figsize=(10, 6))
         
-        names = [m['name'] for m in leaderboard[:8]]
-        metric = 'r2' if task_type == 'regression' else 'f1'
-        scores = [m['metrics'].get(metric, m['metrics'].get('accuracy', 0)) for m in leaderboard[:8]]
+        names = [m['name'] for m in leaderboard[:8]][::-1]
+        metric = 'f1' if is_classification else 'r2'
+        scores = [m['metrics'].get(metric, m['metrics'].get('accuracy', 0)) for m in leaderboard[:8]][::-1]
         
-        # Color by performance (best = green, worst = orange)
-        colors = [PALETTE_MODELS[i % len(PALETTE_MODELS)] for i in range(len(names))]
+        colors = [PALETTE[i % len(PALETTE)] for i in range(len(names))]
         
-        bars = ax.barh(names[::-1], scores[::-1], color=colors[::-1], 
-                      edgecolor='white', linewidth=0.5, height=0.7)
+        bars = ax.barh(range(len(names)), scores, color=colors, height=0.65, 
+                      edgecolor='white', linewidth=2)
         
         # Value labels
-        for bar, score in zip(bars, scores[::-1]):
-            ax.text(bar.get_width() + 0.01, bar.get_y() + bar.get_height()/2,
-                   f'{score:.3f}', va='center', fontsize=10, fontweight='bold')
+        for bar, score in zip(bars, scores):
+            ax.text(bar.get_width() + 0.02, bar.get_y() + bar.get_height()/2,
+                   f'{score:.3f}', va='center', fontsize=11, fontweight='bold')
         
+        ax.set_yticks(range(len(names)))
+        ax.set_yticklabels(names)
         ax.set_xlabel(f'{metric.upper()} Score', fontweight='bold')
-        ax.set_title('Model Performance Ranking', fontweight='bold', pad=15)
-        ax.set_xlim(0, max(scores) * 1.12)
+        ax.set_title('🏆 Model Performance Comparison', fontweight='bold', pad=15, fontsize=14)
+        ax.set_xlim(0, max(scores) * 1.2 if scores else 1)
+        ax.grid(axis='x', alpha=0.3)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
         
-        # Add insight text
-        best = names[0]
-        ax.text(0.02, -0.12, f"⭐ Best: {best} | Consider deployment readiness",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
+        plt.tight_layout()
+        return fig_to_base64(fig)
+    
+    def _training_time(self, leaderboard: List[Dict]) -> str:
+        """Training time comparison"""
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
+        names = [m['name'] for m in leaderboard[:8]]
+        times = [m.get('training_time', 0) for m in leaderboard[:8]]
+        
+        bars = ax.bar(names, times, color=COLORS['cyan'], edgecolor='white', linewidth=2)
+        
+        for bar, t in zip(bars, times):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                   f'{t:.1f}s', ha='center', fontsize=10, fontweight='bold')
+        
+        ax.set_ylabel('Time (seconds)', fontweight='bold')
+        ax.set_title('⏱️ Training Time by Model', fontweight='bold', pad=15, fontsize=14)
+        ax.grid(axis='y', alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        plt.xticks(rotation=45, ha='right')
         
         plt.tight_layout()
         return fig_to_base64(fig)
     
     def _feature_importance(self, importance: List[Dict]) -> str:
-        """Feature importance with gradient colors"""
+        """Feature importance chart"""
         fig, ax = plt.subplots(figsize=(10, 6))
         
-        features = [f['feature'] for f in importance[:10]]
-        values = [f['importance'] for f in importance[:10]]
+        features = [f['feature'][:20] for f in importance[:10]][::-1]
+        values = [f['importance'] for f in importance[:10]][::-1]
         
-        # Gradient from purple to pink
-        colors = [PALETTE_FEATURES[i % len(PALETTE_FEATURES)] for i in range(len(features))]
+        colors = [COLORS['indigo'] if v == max(values) else COLORS['blue'] for v in values]
         
-        bars = ax.barh(features[::-1], values[::-1], color=colors[::-1],
-                      edgecolor='white', linewidth=0.5, height=0.7)
+        bars = ax.barh(range(len(features)), values, color=colors, height=0.65,
+                      edgecolor='white', linewidth=2)
         
-        for bar, val in zip(bars, values[::-1]):
+        for bar, val in zip(bars, values):
             ax.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height()/2,
                    f'{val:.1%}', va='center', fontsize=10, fontweight='bold')
         
-        ax.set_xlabel('Relative Importance', fontweight='bold')
-        ax.set_title('Feature Importance Analysis', fontweight='bold', pad=15)
+        ax.set_yticks(range(len(features)))
+        ax.set_yticklabels(features)
+        ax.set_xlabel('Importance', fontweight='bold')
+        ax.set_title('📊 Feature Importance', fontweight='bold', pad=15, fontsize=14)
+        ax.grid(axis='x', alpha=0.3)
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        
-        # Insight
-        top3 = ', '.join(features[:3])
-        ax.text(0.02, -0.12, f"🎯 Key drivers: {top3}",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
         
         plt.tight_layout()
         return fig_to_base64(fig)
@@ -423,38 +229,24 @@ class ProductionChartGenerator:
     # =========================================================================
     
     def _actual_vs_predicted(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Actual vs Predicted with R² annotation"""
-        fig, ax = plt.subplots(figsize=(9, 8))
+        """Actual vs Predicted scatter"""
+        fig, ax = plt.subplots(figsize=(8, 8))
         
-        # Calculate R²
-        ss_res = np.sum((y_test - y_pred)**2)
-        ss_tot = np.sum((y_test - np.mean(y_test))**2)
-        r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+        r2 = 1 - np.sum((y_test - y_pred)**2) / np.sum((y_test - np.mean(y_test))**2)
         
-        # Scatter with transparency
-        ax.scatter(y_test, y_pred, c=COLORS['primary'], alpha=0.4, s=25, 
-                  edgecolors='white', linewidth=0.3)
+        ax.scatter(y_test, y_pred, c=COLORS['blue'], alpha=0.6, s=40, 
+                  edgecolors='white', linewidth=0.5)
         
-        # Perfect prediction line
         lims = [min(y_test.min(), y_pred.min()), max(y_test.max(), y_pred.max())]
-        ax.plot(lims, lims, '--', color=COLORS['success'], linewidth=2.5, 
-               label='Perfect Prediction', zorder=10)
+        ax.plot(lims, lims, '--', color=COLORS['green'], linewidth=3, label='Perfect Prediction')
         
-        ax.set_xlabel('Actual Values', fontweight='bold')
-        ax.set_ylabel('Predicted Values', fontweight='bold')
-        ax.set_title('Prediction Accuracy', fontweight='bold', pad=15)
-        ax.legend(loc='upper left')
-        ax.grid(True, alpha=0.2)
-        
-        # Add R² annotation
-        ax.text(0.95, 0.05, f'R² = {r2:.4f}', transform=ax.transAxes,
-               fontsize=14, fontweight='bold', ha='right',
-               bbox=dict(boxstyle='round', facecolor=COLORS['success'], alpha=0.3))
-        
-        # Insight
-        quality = "Excellent" if r2 > 0.95 else "Good" if r2 > 0.8 else "Fair" if r2 > 0.5 else "Poor"
-        ax.text(0.02, -0.1, f"📊 Model quality: {quality} | Closer to diagonal = better",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
+        ax.set_xlabel('Actual Values', fontweight='bold', fontsize=12)
+        ax.set_ylabel('Predicted Values', fontweight='bold', fontsize=12)
+        ax.set_title(f'📈 Actual vs Predicted (R² = {r2:.4f})', fontweight='bold', pad=15, fontsize=14)
+        ax.legend(loc='upper left', fontsize=10)
+        ax.grid(alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
         plt.tight_layout()
         return fig_to_base64(fig)
@@ -464,97 +256,155 @@ class ProductionChartGenerator:
         fig, ax = plt.subplots(figsize=(10, 6))
         
         residuals = y_test - y_pred
-        
-        # Color by sign (positive = underpredict, negative = overpredict)
-        colors = np.where(residuals >= 0, COLORS['success'], COLORS['danger'])
-        
-        ax.scatter(y_pred, residuals, c=colors, alpha=0.5, s=20, 
-                  edgecolors='white', linewidth=0.2)
-        
-        # Zero line
-        ax.axhline(y=0, color=COLORS['primary'], linewidth=2.5, label='Zero Error')
-        
-        # Confidence bands (±2σ)
         std = np.std(residuals)
-        ax.axhline(y=2*std, color=COLORS['warning'], linestyle='--', alpha=0.7, label=f'±2σ = ±{2*std:.1f}')
-        ax.axhline(y=-2*std, color=COLORS['warning'], linestyle='--', alpha=0.7)
         
-        # Fill band
-        ax.fill_between([y_pred.min(), y_pred.max()], -2*std, 2*std,
-                       alpha=0.1, color=COLORS['warning'])
+        colors = [COLORS['green'] if r >= 0 else COLORS['red'] for r in residuals]
+        ax.scatter(y_pred, residuals, c=colors, alpha=0.6, s=35, 
+                  edgecolors='white', linewidth=0.3)
         
-        ax.set_xlabel('Predicted Values', fontweight='bold')
-        ax.set_ylabel('Residuals (Actual - Predicted)', fontweight='bold')
-        ax.set_title('Residual Analysis', fontweight='bold', pad=15)
+        ax.axhline(0, color=COLORS['blue'], linewidth=2.5)
+        ax.axhline(2*std, color=COLORS['orange'], linewidth=2, linestyle='--', label=f'+2σ ({2*std:.1f})')
+        ax.axhline(-2*std, color=COLORS['orange'], linewidth=2, linestyle='--', label=f'-2σ ({-2*std:.1f})')
+        ax.fill_between([y_pred.min(), y_pred.max()], -2*std, 2*std, alpha=0.1, color=COLORS['orange'])
+        
+        ax.set_xlabel('Predicted Values', fontweight='bold', fontsize=12)
+        ax.set_ylabel('Residuals (Actual - Predicted)', fontweight='bold', fontsize=12)
+        ax.set_title('📉 Residual Analysis', fontweight='bold', pad=15, fontsize=14)
         ax.legend(loc='upper right')
-        ax.grid(True, alpha=0.2)
-        
-        # Insight
-        outliers = np.sum(np.abs(residuals) > 2*std)
-        ax.text(0.02, -0.1, f"⚠️ {outliers} predictions outside ±2σ | Look for patterns",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
+        ax.grid(alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
         plt.tight_layout()
         return fig_to_base64(fig)
     
-    def _error_distribution(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Error distribution with normality check"""
+    def _error_histogram(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
+        """Error distribution"""
         fig, ax = plt.subplots(figsize=(10, 6))
         
         errors = y_test - y_pred
         
-        # Histogram
-        n, bins, patches = ax.hist(errors, bins=40, density=True, alpha=0.7,
-                                  color=COLORS['primary'], edgecolor='white', linewidth=0.5)
+        ax.hist(errors, bins=40, density=True, alpha=0.7, color=COLORS['blue'],
+               edgecolor='white', linewidth=1)
         
-        # KDE overlay
-        kde = stats.gaussian_kde(errors)
-        x = np.linspace(errors.min(), errors.max(), 200)
-        ax.plot(x, kde(x), color=COLORS['pink'], linewidth=3, label='Density')
+        if len(errors) > 10:
+            kde = stats.gaussian_kde(errors)
+            x = np.linspace(errors.min(), errors.max(), 200)
+            ax.plot(x, kde(x), color=COLORS['red'], linewidth=3, label='Density')
         
-        # Normal distribution overlay
-        mean, std = np.mean(errors), np.std(errors)
-        normal = stats.norm.pdf(x, mean, std)
-        ax.plot(x, normal, '--', color=COLORS['warning'], linewidth=2, label='Normal Dist.')
+        ax.axvline(0, color=COLORS['green'], linewidth=2.5, linestyle='-', label='Zero Error')
+        ax.axvline(np.mean(errors), color=COLORS['orange'], linewidth=2, linestyle='--',
+                  label=f'Mean = {np.mean(errors):.2f}')
         
-        # Mean line
-        ax.axvline(mean, color=COLORS['success'], linewidth=2, label=f'Mean = {mean:.2f}')
-        
-        ax.set_xlabel('Prediction Error', fontweight='bold')
-        ax.set_ylabel('Density', fontweight='bold')
-        ax.set_title('Error Distribution Analysis', fontweight='bold', pad=15)
+        ax.set_xlabel('Prediction Error', fontweight='bold', fontsize=12)
+        ax.set_ylabel('Density', fontweight='bold', fontsize=12)
+        ax.set_title('📊 Error Distribution', fontweight='bold', pad=15, fontsize=14)
         ax.legend(loc='upper right')
+        ax.grid(alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
-        # Normality test
-        _, p_val = stats.normaltest(errors) if len(errors) > 20 else (0, 1)
-        normal_label = "✅ Normal" if p_val > 0.05 else "⚠️ Non-normal"
-        ax.text(0.02, -0.1, f"{normal_label} (p={p_val:.3f}) | Ideal: centered at 0, bell-shaped",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
+        plt.tight_layout()
+        return fig_to_base64(fig)
+    
+    def _prediction_error(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
+        """Error by value"""
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        errors = np.abs(y_test - y_pred)
+        
+        scatter = ax.scatter(y_test, errors, c=errors, cmap='RdYlGn_r',
+                           alpha=0.7, s=35, edgecolors='white', linewidth=0.3)
+        
+        z = np.polyfit(y_test, errors, 1)
+        ax.plot(np.sort(y_test), np.poly1d(z)(np.sort(y_test)), 
+               color=COLORS['red'], linewidth=2.5, linestyle='--', label='Trend')
+        
+        plt.colorbar(scatter, ax=ax, label='Absolute Error', shrink=0.8)
+        
+        ax.set_xlabel('Actual Values', fontweight='bold', fontsize=12)
+        ax.set_ylabel('Absolute Error', fontweight='bold', fontsize=12)
+        ax.set_title('🎯 Prediction Error by Value', fontweight='bold', pad=15, fontsize=14)
+        ax.legend(loc='upper right')
+        ax.grid(alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
         plt.tight_layout()
         return fig_to_base64(fig)
     
     def _qq_plot(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Q-Q plot for residual normality"""
+        """Q-Q plot for residuals"""
         fig, ax = plt.subplots(figsize=(8, 8))
         
         residuals = y_test - y_pred
-        
-        # Q-Q plot
         stats.probplot(residuals, dist="norm", plot=ax)
         
-        # Style the plot
-        ax.get_lines()[0].set_markerfacecolor(COLORS['primary'])
-        ax.get_lines()[0].set_markeredgecolor('white')
+        ax.get_lines()[0].set_color(COLORS['blue'])
         ax.get_lines()[0].set_markersize(6)
-        ax.get_lines()[1].set_color(COLORS['success'])
-        ax.get_lines()[1].set_linewidth(2)
+        ax.get_lines()[1].set_color(COLORS['red'])
+        ax.get_lines()[1].set_linewidth(2.5)
         
-        ax.set_title('Q-Q Plot (Normality Check)', fontweight='bold', pad=15)
-        ax.grid(True, alpha=0.2)
+        ax.set_title('📐 Q-Q Plot (Residual Normality)', fontweight='bold', pad=15, fontsize=14)
+        ax.grid(alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
-        ax.text(0.02, -0.1, "📈 Points on line = normal errors | Deviations = outliers/heavy tails",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
+        plt.tight_layout()
+        return fig_to_base64(fig)
+    
+    def _regression_metrics(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
+        """Regression metrics summary"""
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
+        r2 = 1 - np.sum((y_test - y_pred)**2) / np.sum((y_test - np.mean(y_test))**2)
+        mae = np.mean(np.abs(y_test - y_pred))
+        rmse = np.sqrt(np.mean((y_test - y_pred)**2))
+        mape = np.mean(np.abs((y_test - y_pred) / np.where(y_test==0, 1, y_test))) * 100
+        
+        metrics = ['R² Score', 'MAE', 'RMSE', 'MAPE (%)']
+        values = [r2, mae, rmse, mape]
+        colors = [COLORS['green'] if r2 > 0.7 else COLORS['orange'], 
+                 COLORS['blue'], COLORS['purple'], COLORS['cyan']]
+        
+        bars = ax.bar(metrics, values, color=colors, edgecolor='white', linewidth=2)
+        
+        for bar, val in zip(bars, values):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(values)*0.02,
+                   f'{val:.3f}', ha='center', fontsize=12, fontweight='bold')
+        
+        ax.set_ylabel('Value', fontweight='bold', fontsize=12)
+        ax.set_title('📋 Regression Metrics Summary', fontweight='bold', pad=15, fontsize=14)
+        ax.grid(axis='y', alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        plt.tight_layout()
+        return fig_to_base64(fig)
+    
+    def _error_boxplot(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
+        """Error boxplot"""
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        errors = y_test - y_pred
+        abs_errors = np.abs(errors)
+        
+        bp = ax.boxplot([errors, abs_errors], labels=['Signed Error', 'Absolute Error'],
+                       patch_artist=True, widths=0.6)
+        
+        bp['boxes'][0].set_facecolor(COLORS['blue'])
+        bp['boxes'][1].set_facecolor(COLORS['orange'])
+        
+        for element in ['whiskers', 'caps', 'medians']:
+            plt.setp(bp[element], color='#374151', linewidth=2)
+        
+        ax.axhline(0, color=COLORS['green'], linewidth=2, linestyle='--', alpha=0.7)
+        
+        ax.set_ylabel('Error', fontweight='bold', fontsize=12)
+        ax.set_title('📦 Error Distribution (Box Plot)', fontweight='bold', pad=15, fontsize=14)
+        ax.grid(axis='y', alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
         plt.tight_layout()
         return fig_to_base64(fig)
@@ -564,196 +414,204 @@ class ProductionChartGenerator:
     # =========================================================================
     
     def _confusion_matrix(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Normalized confusion matrix"""
+        """Confusion matrix heatmap"""
         from sklearn.metrics import confusion_matrix, accuracy_score
         
         fig, ax = plt.subplots(figsize=(8, 7))
         
         cm = confusion_matrix(y_test, y_pred)
-        cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        cm_norm = np.nan_to_num(cm_norm)
         
-        # Heatmap
-        sns.heatmap(cm_normalized, annot=True, fmt='.1%', cmap='Blues', ax=ax,
-                   cbar_kws={'label': 'Proportion'},
+        sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Blues', ax=ax,
+                   cbar_kws={'label': 'Proportion', 'shrink': 0.8},
                    annot_kws={'size': 12, 'weight': 'bold'},
-                   linewidths=2, linecolor=COLORS['card'])
+                   linewidths=2, linecolor='white')
         
         acc = accuracy_score(y_test, y_pred)
-        ax.set_xlabel('Predicted Class', fontweight='bold')
-        ax.set_ylabel('Actual Class', fontweight='bold')
-        ax.set_title(f'Confusion Matrix (Accuracy: {acc:.1%})', fontweight='bold', pad=15)
-        
-        ax.text(0.02, -0.1, "🎯 Diagonal = correct | Off-diagonal = errors to investigate",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
+        ax.set_xlabel('Predicted', fontweight='bold', fontsize=12)
+        ax.set_ylabel('Actual', fontweight='bold', fontsize=12)
+        ax.set_title(f'🎯 Confusion Matrix (Accuracy: {acc:.1%})', fontweight='bold', pad=15, fontsize=14)
         
         plt.tight_layout()
         return fig_to_base64(fig)
     
     def _class_distribution(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Actual vs Predicted class distribution"""
+        """Class distribution comparison"""
         fig, ax = plt.subplots(figsize=(10, 6))
         
-        classes, actual_counts = np.unique(y_test, return_counts=True)
-        _, pred_counts = np.unique(y_pred, return_counts=True)
+        classes, actual = np.unique(y_test, return_counts=True)
+        _, pred = np.unique(y_pred, return_counts=True)
         
-        # Ensure same length
-        if len(pred_counts) < len(actual_counts):
-            pred_counts = np.pad(pred_counts, (0, len(actual_counts) - len(pred_counts)))
+        if len(pred) < len(actual):
+            pred = np.pad(pred, (0, len(actual) - len(pred)))
         
-        x = np.arange(len(classes))
-        width = 0.35
+        x = np.arange(min(len(classes), 10))
+        width = 0.4
         
-        bars1 = ax.bar(x - width/2, actual_counts, width, label='Actual',
-                      color=COLORS['success'], edgecolor='white', linewidth=1)
-        bars2 = ax.bar(x + width/2, pred_counts, width, label='Predicted',
-                      color=COLORS['primary'], edgecolor='white', linewidth=1)
+        ax.bar(x - width/2, actual[:10], width, label='Actual', 
+              color=COLORS['blue'], edgecolor='white', linewidth=2)
+        ax.bar(x + width/2, pred[:10], width, label='Predicted',
+              color=COLORS['green'], edgecolor='white', linewidth=2)
         
-        ax.set_xlabel('Class', fontweight='bold')
-        ax.set_ylabel('Count', fontweight='bold')
-        ax.set_title('Class Distribution Comparison', fontweight='bold', pad=15)
+        ax.set_xlabel('Class', fontweight='bold', fontsize=12)
+        ax.set_ylabel('Count', fontweight='bold', fontsize=12)
+        ax.set_title('📊 Class Distribution: Actual vs Predicted', fontweight='bold', pad=15, fontsize=14)
         ax.set_xticks(x)
-        ax.set_xticklabels([f'Class {c}' for c in classes])
         ax.legend()
+        ax.grid(axis='y', alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
-        # Calculate imbalance
-        ratio = min(actual_counts) / max(actual_counts) if max(actual_counts) > 0 else 1
-        warning = "⚠️ Imbalanced" if ratio < 0.3 else "✅ Balanced"
-        ax.text(0.02, -0.12, f"{warning} (ratio: {ratio:.2f}) | Similar bars = model respects class balance",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
+        plt.tight_layout()
+        return fig_to_base64(fig)
+    
+    def _classification_metrics(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
+        """Classification metrics summary"""
+        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+        
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+        rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+        f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+        
+        metrics = ['Accuracy', 'Precision', 'Recall', 'F1 Score']
+        values = [acc, prec, rec, f1]
+        colors = [COLORS['blue'], COLORS['green'], COLORS['orange'], COLORS['purple']]
+        
+        bars = ax.bar(metrics, values, color=colors, edgecolor='white', linewidth=2)
+        
+        for bar, val in zip(bars, values):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
+                   f'{val:.1%}', ha='center', fontsize=12, fontweight='bold')
+        
+        ax.set_ylim(0, 1.15)
+        ax.set_ylabel('Score', fontweight='bold', fontsize=12)
+        ax.set_title('📋 Classification Metrics', fontweight='bold', pad=15, fontsize=14)
+        ax.grid(axis='y', alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        
+        plt.tight_layout()
+        return fig_to_base64(fig)
+    
+    def _prediction_accuracy_pie(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
+        """Correct vs incorrect predictions pie"""
+        fig, ax = plt.subplots(figsize=(8, 8))
+        
+        correct = np.sum(y_test == y_pred)
+        incorrect = len(y_test) - correct
+        
+        sizes = [correct, incorrect]
+        labels = [f'Correct\n({correct})', f'Incorrect\n({incorrect})']
+        colors = [COLORS['green'], COLORS['red']]
+        explode = (0.02, 0.02)
+        
+        wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors, 
+                                         autopct='%1.1f%%', startangle=90,
+                                         explode=explode, shadow=False,
+                                         wedgeprops={'edgecolor': 'white', 'linewidth': 3})
+        
+        plt.setp(autotexts, size=14, weight='bold', color='white')
+        plt.setp(texts, size=12, weight='bold')
+        
+        ax.set_title('✅ Prediction Accuracy', fontweight='bold', pad=15, fontsize=14)
         
         plt.tight_layout()
         return fig_to_base64(fig)
     
     def _roc_curve(self, y_test: np.ndarray, y_proba: np.ndarray) -> str:
-        """ROC curve with AUC"""
+        """ROC curve"""
         from sklearn.metrics import roc_curve, auc
         
-        fig, ax = plt.subplots(figsize=(9, 8))
+        fig, ax = plt.subplots(figsize=(8, 8))
         
         try:
             fpr, tpr, _ = roc_curve(y_test, y_proba)
             roc_auc = auc(fpr, tpr)
             
-            # Fill area
-            ax.fill_between(fpr, tpr, alpha=0.3, color=COLORS['primary'])
+            ax.fill_between(fpr, tpr, alpha=0.2, color=COLORS['blue'])
+            ax.plot(fpr, tpr, color=COLORS['blue'], linewidth=3,
+                   label=f'ROC (AUC = {roc_auc:.3f})')
+            ax.plot([0, 1], [0, 1], '--', color=COLORS['red'], linewidth=2,
+                   label='Random (AUC = 0.5)')
             
-            # Main curve
-            ax.plot(fpr, tpr, color=COLORS['primary'], linewidth=3,
-                   label=f'ROC Curve (AUC = {roc_auc:.3f})')
-            
-            # Random baseline
-            ax.plot([0, 1], [0, 1], '--', color=COLORS['danger'], linewidth=2,
-                   label='Random Classifier')
-            
-            ax.set_xlabel('False Positive Rate', fontweight='bold')
-            ax.set_ylabel('True Positive Rate', fontweight='bold')
-            ax.set_title('ROC Curve Analysis', fontweight='bold', pad=15)
-            ax.legend(loc='lower right')
-            ax.grid(True, alpha=0.2)
-            ax.set_xlim([0, 1])
-            ax.set_ylim([0, 1.02])
-            
-            # Quality assessment
-            quality = "Excellent" if roc_auc > 0.9 else "Good" if roc_auc > 0.8 else "Fair" if roc_auc > 0.7 else "Poor"
-            ax.text(0.02, -0.1, f"📊 Discriminative ability: {quality} | AUC > 0.8 is typically good",
-                   transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
-            
-        except Exception as e:
-            ax.text(0.5, 0.5, f'Could not generate ROC\n{str(e)[:40]}',
-                   ha='center', va='center')
+            ax.set_xlabel('False Positive Rate', fontweight='bold', fontsize=12)
+            ax.set_ylabel('True Positive Rate', fontweight='bold', fontsize=12)
+            ax.set_title('📈 ROC Curve', fontweight='bold', pad=15, fontsize=14)
+            ax.legend(loc='lower right', fontsize=11)
+            ax.set_xlim([-0.02, 1.02])
+            ax.set_ylim([-0.02, 1.02])
+        except:
+            ax.text(0.5, 0.5, 'ROC not available\n(multiclass)', ha='center', va='center', fontsize=14)
+        
+        ax.grid(alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
         plt.tight_layout()
         return fig_to_base64(fig)
     
-    def _precision_recall(self, y_test: np.ndarray, y_proba: np.ndarray) -> str:
-        """Precision-Recall curve for imbalanced data"""
-        from sklearn.metrics import precision_recall_curve, average_precision_score
-        
-        fig, ax = plt.subplots(figsize=(9, 8))
-        
-        try:
-            precision, recall, _ = precision_recall_curve(y_test, y_proba)
-            ap = average_precision_score(y_test, y_proba)
-            
-            ax.fill_between(recall, precision, alpha=0.3, color=COLORS['purple'])
-            ax.plot(recall, precision, color=COLORS['purple'], linewidth=3,
-                   label=f'PR Curve (AP = {ap:.3f})')
-            
-            ax.set_xlabel('Recall', fontweight='bold')
-            ax.set_ylabel('Precision', fontweight='bold')
-            ax.set_title('Precision-Recall Curve', fontweight='bold', pad=15)
-            ax.legend(loc='lower left')
-            ax.grid(True, alpha=0.2)
-            ax.set_xlim([0, 1])
-            ax.set_ylim([0, 1.02])
-            
-            ax.text(0.02, -0.1, "📊 Better than ROC for imbalanced data | Higher curve = better",
-                   transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
-            
-        except Exception as e:
-            ax.text(0.5, 0.5, f'Could not generate PR curve', ha='center', va='center')
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _probability_distribution(self, y_proba: np.ndarray) -> str:
-        """Prediction probability distribution"""
+    def _probability_histogram(self, y_proba: np.ndarray) -> str:
+        """Probability distribution"""
         fig, ax = plt.subplots(figsize=(10, 6))
         
         proba = y_proba.flatten() if len(y_proba.shape) > 1 else y_proba
         
         ax.hist(proba, bins=50, density=True, alpha=0.7,
-               color=COLORS['cyan'], edgecolor='white', linewidth=0.5)
+               color=COLORS['cyan'], edgecolor='white', linewidth=1)
         
-        # KDE
         if len(proba) > 10:
-            kde = stats.gaussian_kde(proba)
+            kde = stats.gaussian_kde(np.clip(proba, 0.01, 0.99))
             x = np.linspace(0, 1, 200)
-            ax.plot(x, kde(x), color=COLORS['pink'], linewidth=3, label='Density')
+            ax.plot(x, kde(x), color=COLORS['purple'], linewidth=3, label='Density')
         
-        # Decision threshold
-        ax.axvline(0.5, color=COLORS['danger'], linewidth=2, linestyle='--',
-                  label='Decision Threshold')
+        ax.axvline(0.5, color=COLORS['red'], linewidth=2.5, linestyle='--', label='Threshold (0.5)')
         
-        ax.set_xlabel('Prediction Probability', fontweight='bold')
-        ax.set_ylabel('Density', fontweight='bold')
-        ax.set_title('Model Confidence Distribution', fontweight='bold', pad=15)
-        ax.legend()
+        ax.set_xlabel('Prediction Probability', fontweight='bold', fontsize=12)
+        ax.set_ylabel('Density', fontweight='bold', fontsize=12)
+        ax.set_title('🎲 Model Confidence Distribution', fontweight='bold', pad=15, fontsize=14)
+        ax.legend(loc='upper right')
         ax.set_xlim([0, 1])
-        
-        # Check if bimodal (good) or uniform (concerning)
-        ax.text(0.02, -0.1, "🎯 Bimodal (peaks at 0 and 1) = confident model | Uniform = uncertain",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
+        ax.grid(alpha=0.3)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
         
         plt.tight_layout()
         return fig_to_base64(fig)
     
-    def _cv_stability(self, cv_scores: Dict[str, List[float]]) -> str:
-        """Cross-validation stability visualization"""
-        fig, ax = plt.subplots(figsize=(10, 6))
+    def _confidence_gauge(self, y_proba: np.ndarray) -> str:
+        """Average confidence gauge"""
+        fig, ax = plt.subplots(figsize=(8, 6))
         
-        models = list(cv_scores.keys())
-        means = [np.mean(scores) for scores in cv_scores.values()]
-        stds = [np.std(scores) for scores in cv_scores.values()]
+        avg_conf = np.mean(np.max(y_proba.reshape(-1, 1) if len(y_proba.shape) == 1 else y_proba, axis=-1) if len(y_proba.shape) > 1 else y_proba)
         
-        x = np.arange(len(models))
-        colors = [PALETTE_MODELS[i % len(PALETTE_MODELS)] for i in range(len(models))]
+        # Gauge chart
+        theta = np.linspace(0, np.pi, 100)
+        r = 1
         
-        bars = ax.bar(x, means, yerr=stds, color=colors, edgecolor='white',
-                     capsize=5, error_kw={'linewidth': 2})
+        ax.fill_between(theta, 0, r, alpha=0.15, color=COLORS['red'])
+        ax.fill_between(theta[50:], 0, r, alpha=0.15, color=COLORS['orange'])
+        ax.fill_between(theta[70:], 0, r, alpha=0.15, color=COLORS['green'])
         
-        ax.set_xlabel('Model', fontweight='bold')
-        ax.set_ylabel('CV Score', fontweight='bold')
-        ax.set_title('Model Stability (CV Variance)', fontweight='bold', pad=15)
-        ax.set_xticks(x)
-        ax.set_xticklabels(models, rotation=45, ha='right')
+        # Needle
+        angle = np.pi * (1 - avg_conf)
+        ax.annotate('', xy=(angle, 0.85), xytext=(np.pi/2, 0),
+                   arrowprops=dict(arrowstyle='->', lw=3, color=COLORS['blue']))
         
-        ax.text(0.02, -0.2, "📊 Small error bars = stable model | Large bars = high variance",
-               transform=ax.transAxes, fontsize=9, color=COLORS['muted'])
+        ax.text(np.pi/2, -0.3, f'{avg_conf:.1%}', ha='center', fontsize=24, fontweight='bold', color=COLORS['blue'])
+        ax.text(np.pi/2, -0.5, 'Average Confidence', ha='center', fontsize=12, color='#374151')
+        
+        ax.set_xlim(0, np.pi)
+        ax.set_ylim(-0.7, 1.1)
+        ax.axis('off')
+        ax.set_title('🎯 Model Confidence Level', fontweight='bold', pad=15, fontsize=14)
         
         plt.tight_layout()
         return fig_to_base64(fig)
 
 
 # Global instance
-chart_generator = ProductionChartGenerator()
+chart_generator = MLChartGenerator()
