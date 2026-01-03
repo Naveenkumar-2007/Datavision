@@ -26,7 +26,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
-    r2_score, mean_absolute_error, mean_squared_error
+    r2_score, mean_absolute_error, mean_squared_error, confusion_matrix
 )
 
 # Models
@@ -780,7 +780,7 @@ class ProductionMLEngine:
         # Calculate and store confusion matrix for classification
         if self.task_type_simple == 'classification':
             try:
-                from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precision_score, recall_score
+                # Use global imports instead of local re-import to avoid UnboundLocalError
                 self.confusion_matrix = confusion_matrix(y_test, best_pred)
                 # Also store full metrics
                 self.metrics['accuracy'] = float(accuracy_score(y_test, best_pred))
