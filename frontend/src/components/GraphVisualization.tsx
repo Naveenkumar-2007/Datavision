@@ -89,7 +89,7 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({ userId, maxNode
   const fetchGraphData = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`http://localhost:8000/api/v1/graph/${userId}/visualization?max_nodes=${maxNodes}`);
+      const response = await fetch(`/api/v1/graph/${userId}/visualization?max_nodes=${maxNodes}`);
       if (!response.ok) throw new Error('Failed to fetch graph data');
       const data: GraphData = await response.json();
       setGraphData(data);

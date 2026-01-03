@@ -107,7 +107,7 @@ const DataHub: React.FC = () => {
     try {
       // Get the file from server and send to AutoML
       const userId = localStorage.getItem('userId') || 'default';
-      const fileResponse = await fetch(`http://localhost:8000/api/v1/files/${userId}/${dataFiles[0].name}/download`);
+      const fileResponse = await fetch(`/api/v1/files/${userId}/${dataFiles[0].name}/download`);
 
       if (!fileResponse.ok) throw new Error('Failed to get file');
 
@@ -116,7 +116,7 @@ const DataHub: React.FC = () => {
       formData.append('file', fileBlob, dataFiles[0].name);
       formData.append('user_id', userId);
 
-      const automlResponse = await fetch('http://localhost:8000/api/v2/automl/train', {
+      const automlResponse = await fetch('/api/v2/automl/train', {
         method: 'POST',
         body: formData,
       });
@@ -204,7 +204,7 @@ const DataHub: React.FC = () => {
   const handleDownload = async (fileId: string) => {
     try {
       const userId = localStorage.getItem('userId') || 'user_001';
-      const response = await fetch(`http://localhost:8000/api/v1/files/${userId}/${fileId}/download`);
+      const response = await fetch(`/api/v1/files/${userId}/${fileId}/download`);
       if (!response.ok) throw new Error('Download failed');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);

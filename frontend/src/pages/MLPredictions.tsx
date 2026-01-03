@@ -491,7 +491,7 @@ const MLPredictions: React.FC = () => {
                                     };
                                     console.log('🔮 Sending prediction request:', dataToSend);
 
-                                    const response = await fetch('http://localhost:8000/api/v2/automl/predict', {
+                                    const response = await fetch('/api/v2/automl/predict', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify(dataToSend)

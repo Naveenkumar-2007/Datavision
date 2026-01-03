@@ -98,7 +98,7 @@ const Settings: React.FC = () => {
     const loadEmailPrefs = async () => {
       try {
         const userId = authUser?.id || localStorage.getItem('userId') || 'default';
-        const response = await fetch(`http://localhost:8000/api/v1/settings/email-prefs`, {
+        const response = await fetch(`/api/v1/settings/email-prefs`, {
           headers: { 'X-User-ID': userId }
         });
         if (response.ok) {
@@ -121,7 +121,7 @@ const Settings: React.FC = () => {
     try {
       const userId = authUser?.id || localStorage.getItem('userId') || 'default';
       console.log('Saving email prefs:', emailPrefs);
-      const response = await fetch(`http://localhost:8000/api/v1/settings/email-prefs`, {
+      const response = await fetch(`/api/v1/settings/email-prefs`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -160,7 +160,7 @@ const Settings: React.FC = () => {
     setStatusMessage(null);
     try {
       const userId = authUser?.id || localStorage.getItem('userId') || 'default';
-      const response = await fetch(`http://localhost:8000/api/v1/settings/email-prefs/test`, {
+      const response = await fetch(`/api/v1/settings/email-prefs/test`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -201,7 +201,7 @@ const Settings: React.FC = () => {
     setStatusMessage(null);
     try {
       const userId = authUser?.id || localStorage.getItem('userId') || 'default';
-      const response = await fetch(`http://localhost:8000/api/v1/settings/email-prefs/send-daily-report`, {
+      const response = await fetch(`/api/v1/settings/email-prefs/send-daily-report`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -301,7 +301,7 @@ const Settings: React.FC = () => {
   const handleExportData = async () => {
     try {
       const userId = localStorage.getItem('userId') || 'user_001';
-      const response = await fetch(`http://localhost:8000/api/v1/files/list/${userId}`);
+      const response = await fetch(`/api/v1/files/list/${userId}`);
       const data = await response.json();
 
       const exportData = {
@@ -331,7 +331,7 @@ const Settings: React.FC = () => {
 
     try {
       const userId = localStorage.getItem('userId') || 'user_001';
-      const response = await fetch(`http://localhost:8000/api/v1/files/${userId}/rebuild`, {
+      const response = await fetch(`/api/v1/files/${userId}/rebuild`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -357,7 +357,7 @@ const Settings: React.FC = () => {
 
     try {
       const userId = localStorage.getItem('userId') || 'user_001';
-      const response = await fetch(`http://localhost:8000/api/v1/files/${userId}/all`, {
+      const response = await fetch(`/api/v1/files/${userId}/all`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' }
       });
