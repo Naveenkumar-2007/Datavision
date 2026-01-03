@@ -1,28 +1,31 @@
 FROM python:3.11-slim
 
-# Force rebuild with updated requirements - 2025-12-12-v2
+# Force rebuild with optimized build order - 2026-01-03
 WORKDIR /app
 
-# Install Node.js for frontend build
+# Install Node.js for frontend build FIRST (before heavy Python deps)
 RUN apt-get update && apt-get install -y \
     curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy and build frontend
+# Build frontend FIRST (before Python deps to avoid OOM)
 COPY frontend/package*.json frontend/
 WORKDIR /app/frontend
 RUN npm ci
+
+# Copy frontend source and build with memory limit
 COPY frontend/ .
+ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 
-# Copy ALL backend source files
+# Now install Python dependencies (after frontend build is done)
 WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy ALL backend source files
 COPY backend/ backend/
 
 # Create directory for serving frontend
