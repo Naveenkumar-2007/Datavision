@@ -292,37 +292,93 @@ class ProductionMLEngine:
         return df.columns[-1]
     
     def _detect_task_type(self, y: pd.Series) -> Tuple[str, int]:
-        """Detect task type based on target column"""
+        """
+        PRODUCTION-LEVEL Task Type Detection
+        
+        Uses multiple heuristics:
+        1. Data type (string = classification)
+        2. Unique value count
+        3. Unique ratio (unique/total)
+        4. Value characteristics (decimals, range)
+        """
         n_unique = y.nunique()
         n_samples = len(y)
+        unique_ratio = n_unique / n_samples if n_samples > 0 else 0
         
-        # String/object type -> classification
+        print(f"   🔍 Analyzing target: {n_unique} unique values, ratio={unique_ratio:.2%}")
+        
+        # ====== RULE 1: String/Object type = Classification ======
         if pd.api.types.is_object_dtype(y) or pd.api.types.is_categorical_dtype(y):
             if n_unique == 2:
+                print(f"   ✅ Binary Classification (string, 2 classes)")
                 return 'binary_classification', 2
-            return 'multiclass_classification', n_unique
-        
-        # Boolean -> binary
-        if pd.api.types.is_bool_dtype(y):
-            return 'binary_classification', 2
-        
-        # Integer with few values -> classification
-        if pd.api.types.is_integer_dtype(y):
-            if n_unique == 2:
-                return 'binary_classification', 2
-            if n_unique <= 15:
+            elif n_unique <= 50:
+                print(f"   ✅ Multiclass Classification (string, {n_unique} classes)")
+                return 'multiclass_classification', n_unique
+            else:
+                # Too many classes for effective classification
+                print(f"   ⚠️ High-cardinality string ({n_unique} unique) - treating as multiclass")
                 return 'multiclass_classification', n_unique
         
-        # Float with few unique whole numbers
-        if pd.api.types.is_float_dtype(y):
-            if n_unique <= 10:
-                # Check if values are integers
-                non_null = y.dropna()
-                if len(non_null) > 0 and (non_null % 1 == 0).all():
-                    if n_unique == 2:
-                        return 'binary_classification', 2
-                    return 'multiclass_classification', n_unique
+        # ====== RULE 2: Boolean = Binary Classification ======
+        if pd.api.types.is_bool_dtype(y):
+            print(f"   ✅ Binary Classification (boolean)")
+            return 'binary_classification', 2
         
+        # ====== RULE 3: Numeric Analysis ======
+        y_clean = pd.to_numeric(y, errors='coerce').dropna()
+        
+        if len(y_clean) == 0:
+            print(f"   ⚠️ No valid numeric values - defaulting to regression")
+            return 'regression', 0
+        
+        # Check for binary (0/1 or similar)
+        unique_vals = set(y_clean.unique())
+        if unique_vals.issubset({0, 1}) or unique_vals.issubset({-1, 1}):
+            print(f"   ✅ Binary Classification (0/1 or -1/1)")
+            return 'binary_classification', 2
+        
+        # Check if values are whole numbers
+        is_whole_numbers = (y_clean % 1 == 0).all()
+        
+        # Integer with few unique values = Classification
+        if is_whole_numbers:
+            if n_unique == 2:
+                print(f"   ✅ Binary Classification (2 integer classes)")
+                return 'binary_classification', 2
+            elif n_unique <= 10:
+                print(f"   ✅ Multiclass Classification ({n_unique} integer classes)")
+                return 'multiclass_classification', n_unique
+            elif n_unique <= 20 and unique_ratio < 0.05:
+                # Low unique ratio suggests classification
+                print(f"   ✅ Multiclass Classification ({n_unique} classes, low ratio)")
+                return 'multiclass_classification', n_unique
+        
+        # ====== RULE 4: Continuous values = Regression ======
+        # Check for decimal places
+        has_decimals = not is_whole_numbers
+        
+        # Check value range (large range suggests regression)
+        val_range = y_clean.max() - y_clean.min()
+        
+        if has_decimals:
+            print(f"   ✅ Regression (continuous decimals, range={val_range:.2f})")
+            return 'regression', 0
+        
+        if unique_ratio > 0.1 and n_unique > 20:
+            print(f"   ✅ Regression (high unique ratio={unique_ratio:.1%}, {n_unique} values)")
+            return 'regression', 0
+        
+        if val_range > 100 and n_unique > 30:
+            print(f"   ✅ Regression (large range={val_range:.0f})")
+            return 'regression', 0
+        
+        # Default based on unique count
+        if n_unique <= 15:
+            print(f"   ✅ Multiclass Classification ({n_unique} classes, default)")
+            return 'multiclass_classification', n_unique
+        
+        print(f"   ✅ Regression (default, {n_unique} unique values)")
         return 'regression', 0
     
     # =========================================================================
@@ -384,12 +440,23 @@ class ProductionMLEngine:
                 self.numeric_fill_values[col] = fill_val
                 numeric_data.append(cleaned)
                 
+                # Calculate percentiles for better display
+                try:
+                    p25 = float(np.nanpercentile(cleaned, 25))
+                    p75 = float(np.nanpercentile(cleaned, 75))
+                except:
+                    p25 = p75 = fill_val
+                
                 self.feature_metadata.append({
                     'name': col,
                     'type': 'numeric',
                     'min': float(np.nanmin(cleaned)) if not np.isnan(np.nanmin(cleaned)) else 0,
-                    'max': float(np.nanmax(cleaned)) if not np.isnan(np.nanmax(cleaned)) else 0,
-                    'mean': float(np.nanmean(cleaned)) if not np.isnan(np.nanmean(cleaned)) else 0
+                    'max': float(np.nanmax(cleaned)) if not np.isnan(np.nanmax(cleaned)) else 100,
+                    'mean': float(np.nanmean(cleaned)) if not np.isnan(np.nanmean(cleaned)) else 50,
+                    'default': float(fill_val),
+                    'p25': p25,
+                    'p75': p75,
+                    'placeholder': f"{fill_val:.2f} (typical: {p25:.1f} - {p75:.1f})"
                 })
             
             numeric_array = np.column_stack(numeric_data)
@@ -407,10 +474,15 @@ class ProductionMLEngine:
             self.label_encoders[col] = encoder
             processed_parts.append(encoded.astype(float))
             
+            # Get most common value as default
+            mode = series.mode()[0] if len(series.mode()) > 0 else encoder.classes_[0]
+            
             self.feature_metadata.append({
                 'name': col,
                 'type': 'categorical',
-                'options': encoder.classes_.tolist()[:30]
+                'options': encoder.classes_.tolist()[:50],
+                'default': mode,
+                'n_categories': len(encoder.classes_)
             })
         
         # 3. TEXT FEATURES
@@ -675,7 +747,39 @@ class ProductionMLEngine:
         metric_key = 'f1' if self.task_type_simple == 'classification' else 'r2'
         results.sort(key=lambda x: x['metrics'].get(metric_key, 0), reverse=True)
         
-        # Save
+        # CRITICAL: Store training metrics on self BEFORE saving
+        # These are needed for get_model_metrics() to return real values
+        self._y_test = y_test
+        self._y_pred = best_pred
+        self._y_proba = best_proba
+        self.metrics = results[0]['metrics'] if results else {}
+        
+        # Calculate and store confusion matrix for classification
+        if self.task_type_simple == 'classification':
+            try:
+                from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precision_score, recall_score
+                self.confusion_matrix = confusion_matrix(y_test, best_pred)
+                # Also store full metrics
+                self.metrics['accuracy'] = float(accuracy_score(y_test, best_pred))
+                self.metrics['f1'] = float(f1_score(y_test, best_pred, average='weighted', zero_division=0))
+                self.metrics['precision'] = float(precision_score(y_test, best_pred, average='weighted', zero_division=0))
+                self.metrics['recall'] = float(recall_score(y_test, best_pred, average='weighted', zero_division=0))
+                print(f"📊 Stored metrics: Accuracy={self.metrics['accuracy']:.1%}, F1={self.metrics['f1']:.1%}")
+            except Exception as cm_err:
+                print(f"⚠️ Confusion matrix error: {cm_err}")
+                self.confusion_matrix = None
+        else:
+            # Regression metrics
+            try:
+                from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
+                self.metrics['r2'] = float(r2_score(y_test, best_pred))
+                self.metrics['mae'] = float(mean_absolute_error(y_test, best_pred))
+                self.metrics['rmse'] = float(np.sqrt(mean_squared_error(y_test, best_pred)))
+                print(f"📊 Stored metrics: R²={self.metrics['r2']:.3f}, MAE={self.metrics['mae']:.2f}")
+            except Exception as reg_err:
+                print(f"⚠️ Regression metrics error: {reg_err}")
+        
+        # Save (now includes metrics, y_test, y_pred, confusion_matrix)
         self._save(user_id)
         
         # Verify
@@ -813,6 +917,10 @@ class ProductionMLEngine:
             'scaler': self.scaler,
             'numeric_fill_values': self.numeric_fill_values,
             'feature_metadata': self.feature_metadata,
+            'metrics': getattr(self, 'metrics', {}),
+            'confusion_matrix': getattr(self, 'confusion_matrix', None),
+            'y_test': getattr(self, '_y_test', None),
+            'y_pred': getattr(self, '_y_pred', None),
         }
         
         with open(os.path.join(save_dir, "model.pkl"), 'wb') as f:
@@ -822,7 +930,11 @@ class ProductionMLEngine:
     
     def load(self, user_id: str) -> bool:
         """Load model"""
-        path = os.path.join(STORAGE_PATH, user_id, "model.pkl")
+        # Ensure storage directory exists
+        save_dir = os.path.join(STORAGE_PATH, user_id)
+        os.makedirs(save_dir, exist_ok=True)
+        
+        path = os.path.join(save_dir, "model.pkl")
         
         if not os.path.exists(path):
             return False
@@ -847,12 +959,53 @@ class ProductionMLEngine:
             self.scaler = data.get('scaler')
             self.numeric_fill_values = data.get('numeric_fill_values', {})
             self.feature_metadata = data.get('feature_metadata', [])
+            self.metrics = data.get('metrics', {})
+            self.confusion_matrix = data.get('confusion_matrix')
+            self._y_test = data.get('y_test')
+            self._y_pred = data.get('y_pred')
             
             print(f"📂 Loaded from {path}")
             return True
         except Exception as e:
             print(f"⚠️ Load error: {e}")
             return False
+    
+    def get_model_metrics(self) -> Dict[str, Any]:
+        """Get model performance metrics"""
+        metrics = getattr(self, 'metrics', {})
+        
+        result = {
+            'model_name': self.model_name,
+            'task_type': self.task_type,
+            'target': self.target_column,
+            'n_features': len(self.feature_columns),
+            'metrics': metrics,
+        }
+        
+        # Add confusion matrix for classification
+        if self.task_type_simple == 'classification':
+            cm = getattr(self, 'confusion_matrix', None)
+            if cm is not None:
+                result['confusion_matrix'] = cm.tolist() if hasattr(cm, 'tolist') else cm
+            
+            # Calculate from stored predictions
+            y_test = getattr(self, '_y_test', None)
+            y_pred = getattr(self, '_y_pred', None)
+            
+            if y_test is not None and y_pred is not None:
+                try:
+                    from sklearn.metrics import confusion_matrix, accuracy_score, f1_score, precision_score, recall_score
+                    
+                    cm = confusion_matrix(y_test, y_pred)
+                    result['confusion_matrix'] = cm.tolist()
+                    result['metrics']['accuracy'] = float(accuracy_score(y_test, y_pred))
+                    result['metrics']['f1'] = float(f1_score(y_test, y_pred, average='weighted'))
+                    result['metrics']['precision'] = float(precision_score(y_test, y_pred, average='weighted', zero_division=0))
+                    result['metrics']['recall'] = float(recall_score(y_test, y_pred, average='weighted', zero_division=0))
+                except Exception as e:
+                    print(f"Metrics calc error: {e}")
+        
+        return result
     
     def get_feature_metadata(self) -> List[Dict]:
         return self.feature_metadata

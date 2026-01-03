@@ -16,13 +16,13 @@ Each mode is a DISTINCT powerhouse with unique capabilities.
 from .analyst_engine import AnalystEngine, analyst_response
 from .deepthink_engine import DeepThinkEngine, deepthink_response
 from .vision_engine import VisionEngine, vision_response
-from .predict_engine import PredictEngine, predict_response
+from .predict_engine import predict_response, predict_response_sync
 from .agent_engine import AgentEngine, agent_response
 
 __all__ = [
     'AnalystEngine', 'analyst_response',
     'DeepThinkEngine', 'deepthink_response',
     'VisionEngine', 'vision_response',
-    'PredictEngine', 'predict_response',
+    'predict_response', 'predict_response_sync',
     'AgentEngine', 'agent_response',
 ]

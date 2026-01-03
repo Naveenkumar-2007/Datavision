@@ -525,6 +525,37 @@ def run_enabled_mcps(query: str, user_id: str, enabled_mcps: dict, df=None) -> d
             except Exception as e:
                 mcp_logs.append(f"⚠️ Data Transformer error: {str(e)[:50]}")
     
+    # =========================================================================
+    # ML PREDICTION MCP - Use trained AutoML models for predictions
+    # =========================================================================
+    ml_predict_keywords = [
+        'predict', 'classify', 'forecast', 'estimate', 'what will', 'what would',
+        'ml prediction', 'model prediction', 'trained model'
+    ]
+    
+    if enabled_mcps.get('ml_prediction', True):  # Enabled by default
+        is_ml_query = any(kw in query_lower for kw in ml_predict_keywords)
+        
+        if is_ml_query:
+            try:
+                from mcp.ml_prediction_mcp import run_ml_prediction, get_ml_model_context
+                
+                # Get model context
+                ml_context = get_ml_model_context(user_id)
+                if ml_context:
+                    result["mcp_context"] += f"\n{ml_context}\n"
+                    result["tools_used"].append("ML Prediction Engine")
+                    
+                    # Try to make prediction
+                    pred_result = run_ml_prediction(query, user_id, df)
+                    if pred_result.get('success') and pred_result.get('prediction'):
+                        result["mcp_context"] += pred_result.get('explanation', '')
+                        mcp_logs.append(f"🤖 ML Prediction: {pred_result.get('prediction')}")
+                    else:
+                        mcp_logs.append(f"🤖 ML Model ready for predictions")
+            except Exception as e:
+                mcp_logs.append(f"⚠️ ML Prediction error: {str(e)[:50]}")
+    
     # Log MCP execution
     if mcp_logs:
         print(f"🔧 MCP Tools Executed:")
@@ -2222,10 +2253,36 @@ Please upload a data file first, then ask me any question about your data.
                     print(f"🧠 DEEP THINK ENGINE returned: {len(response)} chars")
                     
                 elif mode == 'predict':
-                    # 🔮 PREDICT - 3-tier forecasting
-                    response = predict_response_sync(user_id, query, context)
-                    sources = ["Predict Engine", "3-Tier Forecasting"]
-                    print(f"🔮 PREDICT ENGINE returned: {len(response)} chars")
+                    # 🔮 PREDICT - REAL ML Predictions using trained model
+                    # Use SYNC predict_response to avoid asyncio.run() conflicts
+                    try:
+                        from core.mode_engines.predict_engine import predict_response_sync
+                        
+                        # Get DataFrame for prediction
+                        df = None
+                        try:
+                            from api.v1.endpoints.charts import get_user_data
+                            df = get_user_data(user_id)
+                        except:
+                            pass
+                        
+                        # Run SYNC prediction with real ML (avoids asyncio.run issues)
+                        result = predict_response_sync(user_id, query, context, df)
+                        response = result.get('answer', 'Error making prediction')
+                        
+                        if result.get('ml_used'):
+                            sources = result.get('sources', ["Trained ML Model", "ML Prediction"])
+                        else:
+                            sources = ["Predict Engine", "Data Analysis"]
+                        
+                        print(f"🔮 PREDICT ENGINE (SYNC ML): {result.get('ml_used')} - {len(response)} chars")
+                        
+                    except Exception as pred_err:
+                        print(f"⚠️ ML Predict error: {pred_err}")
+                        import traceback
+                        traceback.print_exc()
+                        response = "⚠️ Error making prediction. Please try again."
+                        sources = ["Predict Engine", "Error"]
                     
                 elif mode == 'agent':
                     # 🤖 AGENT - Full autonomous with web search
@@ -2233,8 +2290,9 @@ Please upload a data file first, then ask me any question about your data.
                     sources = ["Agent Engine", "Web Search", "Multi-Tool"]
                     print(f"🤖 AGENT ENGINE returned: {len(response)} chars")
                 
-                # Add chart if visualization requested
-                response = append_chart_if_needed(response, query, user_id)
+                # Add chart if visualization requested - SKIP for predict mode (has own charts)
+                if mode != 'predict':
+                    response = append_chart_if_needed(response, query, user_id)
                 
                 # Save and return
                 history.append(Message(role="user", content=query, timestamp=datetime.now().isoformat()))
