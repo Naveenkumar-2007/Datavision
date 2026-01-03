@@ -16,6 +16,10 @@ interface ChatMessage {
   content: string;
   timestamp: string;
   sources?: string[];
+  // 🏆 Competition-winning features
+  suggestions?: string[];  // Dynamic follow-up suggestions
+  confidence?: number;     // Data grounding confidence (0-1)
+  mode?: string;           // Which AI mode generated this
 }
 
 interface Conversation {
@@ -52,6 +56,10 @@ interface UserState {
   queryStats: { totalQueries: number; avgResponseTime: number };
   setGraphStats: (stats: { nodes: number; relationships: number }) => void;
   setQueryStats: (stats: { totalQueries: number; avgResponseTime: number }) => void;
+
+  // Theme
+  isDark: boolean;
+  toggleTheme: () => void;
 }
 
 const createWelcomeMessage = (): ChatMessage => ({
@@ -209,6 +217,10 @@ export const useUserStore = create<UserState>()(
       queryStats: { totalQueries: 0, avgResponseTime: 0 },
       setGraphStats: (stats) => set({ graphStats: stats }),
       setQueryStats: (stats) => set({ queryStats: stats }),
+
+      // Theme logic
+      isDark: true,
+      toggleTheme: () => set((state) => ({ isDark: !state.isDark })),
     }),
     {
       name: 'ai-analyst-storage-v2',

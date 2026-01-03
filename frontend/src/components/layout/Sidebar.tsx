@@ -15,10 +15,8 @@ import Logo from '@/components/Logo';
 import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
-  { path: '/overview', icon: LayoutDashboard, label: 'Overview' },
   { path: '/data-hub', icon: Database, label: 'Data Hub' },
   { path: '/chat', icon: MessageSquare, label: 'Chat' },
-  { path: '/dashboards', icon: BarChart3, label: 'Dashboards' },
   { path: '/reports', icon: FileText, label: 'Reports' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];

@@ -1,13 +1,11 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useState, useCallback } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { AuthProvider } from './contexts/AuthContext';
 import SplashScreen from './components/SplashScreen';
 import Landing from './pages/Landing';
-import Overview from './pages/Overview';
 import DataHub from './pages/DataHub';
 import AnalystChat from './pages/AnalystChat';
-import Dashboards from './pages/Dashboards';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import NotificationSettings from './pages/NotificationSettings';
@@ -18,6 +16,12 @@ import AuthCallback from './pages/AuthCallback';
 import EmailConfirm from './pages/EmailConfirm';
 import AppLayout from './components/layout/AppLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+// 🏆 Autonomous Dashboard - Power BI-like AI-generated dashboards
+import AutonomousDashboard from './pages/AutonomousDashboard';
+// 🤖 AutoML - ML Results Visualization
+import AutoML from './pages/AutoML';
+// 🧠 ML Predictions - Real ML Charts & Predictions
+import MLPredictions from './pages/MLPredictions';
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
@@ -56,15 +60,18 @@ function App() {
     }
   }, []);
 
+  const handleSplashComplete = useCallback(() => {
+    setShowSplash(false);
+  }, []);
+
   return (
     <>
       {/* Splash Screen */}
       <AnimatePresence>
         {showSplash && (
-          <SplashScreen onComplete={() => setShowSplash(false)} />
+          <SplashScreen onComplete={handleSplashComplete} />
         )}
       </AnimatePresence>
-
       <BrowserRouter>
         <AuthProvider>
           <Routes>
@@ -75,6 +82,9 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/auth/confirm" element={<EmailConfirm />} />
+
+            {/* Redirect /overview to /chat - Overview page removed */}
+            <Route path="/overview" element={<Navigate to="/chat" replace />} />
 
             {/* Chat - Full screen without main navigation */}
             <Route path="/chat" element={
@@ -89,12 +99,17 @@ function App() {
                 <AppLayout />
               </ProtectedRoute>
             }>
-              <Route path="/overview" element={<Overview />} />
               <Route path="/data-hub" element={<DataHub />} />
-              <Route path="/dashboards" element={<Dashboards />} />
+              <Route path="/datahub" element={<DataHub />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/notifications" element={<NotificationSettings />} />
+              {/* 🏆 Autonomous Dashboard - Power BI-like AI-generated */}
+              <Route path="/dashboard" element={<AutonomousDashboard />} />
+              {/* 🤖 AutoML - ML Results Page */}
+              <Route path="/automl" element={<AutoML />} />
+              {/* 🧠 ML Predictions - Real ML Charts */}
+              <Route path="/ml-predictions" element={<MLPredictions />} />
             </Route>
           </Routes>
         </AuthProvider>

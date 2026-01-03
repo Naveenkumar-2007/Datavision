@@ -20,6 +20,8 @@ class ChartSelector:
     """
     Intelligently selects chart types for insights.
     Uses scoring system (not hardcoded rules).
+    
+    NEW: Also detects user intent from natural language queries.
     """
     
     # 30+ Chart Types Available
@@ -39,8 +41,118 @@ class ChartSelector:
         "ridge", "stream", "hexbin", "voronoi", "chord"
     ]
     
+    # Chart Intent Detection from User Query
+    CHART_INTENT_MAP = {
+        # Explicit chart mentions
+        "pie chart": ["pie"],
+        "pie": ["pie"],
+        "donut": ["donut"],
+        "bar chart": ["bar"],
+        "bar graph": ["bar"],
+        "line chart": ["line"],
+        "line graph": ["line"],
+        "scatter": ["scatter"],
+        "scatter plot": ["scatter"],
+        "bubble": ["bubble"],
+        "heatmap": ["heatmap"],
+        "heat map": ["heatmap"],
+        "treemap": ["treemap"],
+        "tree map": ["treemap"],
+        "sunburst": ["sunburst"],
+        "histogram": ["histogram"],
+        "box plot": ["box_plot"],
+        "violin": ["violin"],
+        "funnel": ["funnel"],
+        "waterfall": ["waterfall"],
+        "sankey": ["sankey"],
+        "radar": ["radar"],
+        "area chart": ["area"],
+        
+        # Semantic intents
+        "trend": ["line", "area"],
+        "trends": ["line", "area"],
+        "over time": ["line", "area"],
+        "time series": ["line", "area"],
+        "growth": ["line", "area"],
+        "compare": ["bar", "grouped_bar"],
+        "comparison": ["bar", "grouped_bar"],
+        "vs": ["bar", "grouped_bar"],
+        "versus": ["bar", "grouped_bar"],
+        "breakdown": ["pie", "donut", "treemap", "sunburst"],
+        "distribution": ["histogram", "box_plot", "violin"],
+        "spread": ["histogram", "box_plot"],
+        "outliers": ["box_plot", "scatter"],
+        "anomalies": ["box_plot", "scatter"],
+        "relationship": ["scatter", "bubble", "heatmap"],
+        "correlation": ["scatter", "heatmap"],
+        "flow": ["sankey"],
+        "hierarchy": ["treemap", "sunburst"],
+        "composition": ["pie", "donut", "stacked_bar"],
+        "proportion": ["pie", "donut"],
+        "percentage": ["pie", "donut"],
+        "geographic": ["choropleth"],
+        "map": ["choropleth"],
+        "location": ["choropleth"],
+        "top": ["bar", "horizontal_bar"],
+        "bottom": ["bar", "horizontal_bar"],
+        "ranking": ["bar", "horizontal_bar"],
+    }
+    
+    # Dynamic Color Palettes for Variety
+    COLOR_PALETTES = [
+        # Teal/Cyan (Default)
+        ['#14b8a6', '#0d9488', '#0f766e', '#06b6d4', '#0891b2', '#22d3ee'],
+        # Purple/Violet
+        ['#8b5cf6', '#7c3aed', '#6d28d9', '#a855f7', '#9333ea', '#c084fc'],
+        # Orange/Amber
+        ['#f97316', '#ea580c', '#fb923c', '#f59e0b', '#fbbf24', '#fcd34d'],
+        # Pink/Rose
+        ['#ec4899', '#db2777', '#f472b6', '#f43f5e', '#fb7185', '#fda4af'],
+        # Blue/Indigo
+        ['#3b82f6', '#2563eb', '#1d4ed8', '#6366f1', '#4f46e5', '#818cf8'],
+        # Green/Emerald
+        ['#10b981', '#059669', '#047857', '#22c55e', '#16a34a', '#4ade80'],
+    ]
+    
     def __init__(self):
-        pass
+        self._color_index = 0  # Rotate colors
+    
+    def detect_chart_intent(self, query: str) -> list:
+        """
+        Detect what chart type(s) the user wants from their query.
+        
+        Args:
+            query: Natural language query from user
+            
+        Returns:
+            List of chart types (empty if no specific intent detected)
+        """
+        query_lower = query.lower()
+        detected_charts = []
+        
+        # Check each intent pattern
+        for pattern, charts in self.CHART_INTENT_MAP.items():
+            if pattern in query_lower:
+                for chart in charts:
+                    if chart not in detected_charts:
+                        detected_charts.append(chart)
+        
+        return detected_charts
+    
+    def get_dynamic_colors(self, seed: str = None) -> list:
+        """
+        Get a color palette. Rotates automatically for variety.
+        If seed provided, uses deterministic selection based on seed.
+        """
+        if seed:
+            # Deterministic based on seed (e.g., query hash)
+            idx = hash(seed) % len(self.COLOR_PALETTES)
+        else:
+            # Rotate through palettes
+            idx = self._color_index
+            self._color_index = (self._color_index + 1) % len(self.COLOR_PALETTES)
+        
+        return self.COLOR_PALETTES[idx]
     
     def select_charts(self, insights: List[Dict], column_info: Dict, target_count: int) -> List[Dict]:
         """

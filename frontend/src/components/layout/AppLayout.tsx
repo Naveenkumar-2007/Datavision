@@ -20,48 +20,43 @@ import {
   Home,
   Sparkles,
   LogOut,
+  Brain,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUserStore } from '@/store/userStore';
 
 const AppLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isDark, setIsDark] = useState(true);
+  const { isDark, toggleTheme } = useUserStore();
 
   useEffect(() => {
-    const saved = localStorage.getItem('theme');
-    const prefersDark = saved !== 'light';
-    setIsDark(prefersDark);
-    if (!prefersDark) {
+    // Sync class with store state
+    if (!isDark) {
       document.documentElement.classList.add('light-theme');
+    } else {
+      document.documentElement.classList.remove('light-theme');
     }
-  }, []);
+  }, [isDark]);
 
   // Close mobile menu on route change
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
-  const toggleTheme = () => {
-    const newIsDark = !isDark;
-    setIsDark(newIsDark);
-    if (newIsDark) {
-      document.documentElement.classList.remove('light-theme');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.add('light-theme');
-      localStorage.setItem('theme', 'light');
-    }
-  };
+
+
+  // Check if ML results exist
+  const hasMLResults = typeof window !== 'undefined' && localStorage.getItem('hasMLResults') === 'true';
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
-    { path: '/overview', label: 'Overview', icon: LayoutDashboard },
     { path: '/data-hub', label: 'Data Hub', icon: Database },
-    { path: '/dashboards', label: 'Dashboards', icon: BarChart3 },
+    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }, // 🏆 AI Dashboard
     { path: '/reports', label: 'Reports', icon: FileText },
+    ...(hasMLResults ? [{ path: '/ml-predictions', label: 'ML Predictions', icon: Brain }] : []),
     { path: '/chat', label: 'AI Analyst', icon: MessageSquare },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];

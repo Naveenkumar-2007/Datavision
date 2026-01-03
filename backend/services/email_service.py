@@ -29,7 +29,7 @@ async def send_insight_email(
     html_content = render_insight_email_template(title, body, chart_payload, workspace_id)
     
     if not RESEND_API_KEY:
-        error_msg = "RESEND_API_KEY not configured, skipping email send"
+        error_msg = "Email service not configured. Please add RESEND_API_KEY to your .env file to enable email functionality."
         logger.warning(error_msg)
         raise Exception(error_msg)
     
@@ -40,9 +40,9 @@ async def send_insight_email(
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             payload = {
-                "from": f"AI Business Analyst <{FROM_EMAIL}>",
+                "from": f"DataVision <{FROM_EMAIL}>",
                 "to": [to_email],
-                "subject": f"🤖 AI Insight: {title}",
+                "subject": f"📊 DataVision: {title}",
                 "html": html_content,
                 "text": render_plain_text_email(title, body),
             }
@@ -83,17 +83,20 @@ def render_insight_email_template(
     chart_payload: Optional[dict],
     workspace_id: str
 ) -> str:
-    """Render premium HTML email template for insight notification"""
+    """Render premium HTML email template for insight notification (DataVision Dark Theme)"""
     
     # Build action button based on chart availability
     action_button = ""
+    # DataVision Gradient: Teal to Amber
+    button_gradient = "linear-gradient(135deg, #0d9488 0%, #d97706 100%)" 
+    
     if chart_payload:
         action_button = f'''
         <table cellpadding="0" cellspacing="0" style="margin: 25px 0;">
             <tr>
-                <td style="border-radius: 8px; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);">
+                <td style="border-radius: 12px; background: {button_gradient}; box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);">
                     <a href="{APP_URL}/chat" 
-                       style="display: inline-block; padding: 14px 32px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px;">
+                       style="display: inline-block; padding: 16px 36px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px; letter-spacing: 0.5px;">
                         View Insights in Dashboard →
                     </a>
                 </td>
@@ -104,9 +107,9 @@ def render_insight_email_template(
         action_button = f'''
         <table cellpadding="0" cellspacing="0" style="margin: 25px 0;">
             <tr>
-                <td style="border-radius: 8px; background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);">
+                <td style="border-radius: 12px; background: {button_gradient}; box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);">
                     <a href="{APP_URL}/chat" 
-                       style="display: inline-block; padding: 14px 32px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px;">
+                       style="display: inline-block; padding: 16px 36px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px; letter-spacing: 0.5px;">
                         Discuss with AI Analyst →
                     </a>
                 </td>
@@ -120,27 +123,27 @@ def render_insight_email_template(
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Business Intelligence Alert</title>
+        <title>DataVision Intelligence Alert</title>
     </head>
-    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 40px 20px;">
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0b; color: #e2e8f0;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0a0a0b; padding: 40px 20px;">
             <tr>
                 <td align="center">
-                    <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.08);">
+                    <table width="600" cellpadding="0" cellspacing="0" style="background-color: #141414; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid #262626;">
                         <!-- Professional Header with Gradient -->
                         <tr>
-                            <td style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 40px 30px; text-align: center;">
+                            <td style="background: linear-gradient(180deg, #111827 0%, #141414 100%); padding: 40px 30px; text-align: center; border-bottom: 1px solid #262626;">
                                 <table width="100%" cellpadding="0" cellspacing="0">
                                     <tr>
                                         <td style="text-align: center;">
-                                            <div style="display: inline-block; background: rgba(249, 115, 22, 0.15); padding: 12px 24px; border-radius: 50px; margin-bottom: 16px;">
-                                                <span style="color: #f97316; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">Business Intelligence</span>
+                                            <div style="display: inline-block; background: rgba(20, 184, 166, 0.1); padding: 8px 16px; border-radius: 50px; margin-bottom: 20px; border: 1px solid rgba(20, 184, 166, 0.2);">
+                                                <span style="color: #2dd4bf; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;">Business Intelligence</span>
                                             </div>
-                                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; line-height: 1.3;">
-                                                AI Business Analyst
+                                            <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: 800; line-height: 1.2; letter-spacing: -0.5px; background: linear-gradient(to right, #2dd4bf, #f59e0b); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+                                                DataVision
                                             </h1>
-                                            <p style="margin: 12px 0 0 0; color: #cbd5e1; font-size: 15px;">
-                                                Enterprise Analytics Platform
+                                            <p style="margin: 12px 0 0 0; color: #94a3b8; font-size: 15px;">
+                                                Universal Data Intelligence Platform
                                             </p>
                                         </td>
                                     </tr>
@@ -152,17 +155,17 @@ def render_insight_email_template(
                         <tr>
                             <td style="padding: 40px 30px;">
                                 <!-- Insight Badge -->
-                                <div style="display: inline-block; background: #fef3c7; color: #92400e; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; margin-bottom: 20px;">
+                                <div style="display: inline-block; background: rgba(245, 158, 11, 0.1); color: #fbbf24; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; margin-bottom: 24px; border: 1px solid rgba(245, 158, 11, 0.2);">
                                     📊 New Insight Available
                                 </div>
                                 
                                 <!-- Title -->
-                                <h2 style="margin: 0 0 16px 0; color: #0f172a; font-size: 22px; font-weight: 700; line-height: 1.4;">
+                                <h2 style="margin: 0 0 20px 0; color: #f8fafc; font-size: 24px; font-weight: 700; line-height: 1.4;">
                                     {title}
                                 </h2>
                                 
                                 <!-- Body Content -->
-                                <p style="margin: 0 0 24px 0; color: #475569; line-height: 1.7; font-size: 15px;">
+                                <p style="margin: 0 0 24px 0; color: #cbd5e1; line-height: 1.8; font-size: 16px;">
                                     {body}
                                 </p>
                                 
@@ -170,35 +173,35 @@ def render_insight_email_template(
                                 {action_button}
                                 
                                 <!-- Divider -->
-                                <div style="height: 1px; background: linear-gradient(to right, transparent, #e2e8f0, transparent); margin: 30px 0;"></div>
+                                <div style="height: 1px; background: #262626; margin: 30px 0;"></div>
                                 
                                 <!-- Additional Info -->
                                 <p style="margin: 0; color: #64748b; font-size: 13px; line-height: 1.6;">
                                     💡 This insight was generated by our AI analytics engine based on your latest business data. 
-                                    <a href="{APP_URL}/chat" style="color: #f97316; text-decoration: none; font-weight: 600;">Ask questions</a> or 
-                                    <a href="{APP_URL}" style="color: #f97316; text-decoration: none; font-weight: 600;">view your dashboard</a> for more details.
+                                    <a href="{APP_URL}/chat" style="color: #2dd4bf; text-decoration: none; font-weight: 600;">Ask questions</a> or 
+                                    <a href="{APP_URL}" style="color: #2dd4bf; text-decoration: none; font-weight: 600;">view your dashboard</a> for more details.
                                 </p>
                             </td>
                         </tr>
                         
                         <!-- Footer -->
                         <tr>
-                            <td style="padding: 30px; background: #f8fafc; border-top: 1px solid #e2e8f0;">
+                            <td style="padding: 30px; background: #111111; border-top: 1px solid #262626;">
                                 <table width="100%" cellpadding="0" cellspacing="0">
                                     <tr>
                                         <td style="text-align: center;">
-                                            <p style="margin: 0 0 12px 0; color: #0f172a; font-size: 14px; font-weight: 600;">
-                                                AI Business Analyst Enterprise
+                                            <p style="margin: 0 0 12px 0; color: #e2e8f0; font-size: 14px; font-weight: 600;">
+                                                DataVision
                                             </p>
                                             <p style="margin: 0 0 16px 0; color: #64748b; font-size: 13px;">
-                                                Advanced Analytics • Predictive Insights • Business Intelligence
+                                                Universal Data Intelligence • Predictive Analytics • AI Insights
                                             </p>
                                             <p style="margin: 0; font-size: 12px;">
-                                                <a href="{APP_URL}" style="color: #f97316; text-decoration: none; margin: 0 10px;">Dashboard</a>
-                                                <span style="color: #cbd5e1;">|</span>
-                                                <a href="{APP_URL}/settings/notifications" style="color: #64748b; text-decoration: none; margin: 0 10px;">Notification Settings</a>
-                                                <span style="color: #cbd5e1;">|</span>
-                                                <a href="{APP_URL}/help" style="color: #64748b; text-decoration: none; margin: 0 10px;">Help Center</a>
+                                                <a href="{APP_URL}" style="color: #2dd4bf; text-decoration: none; margin: 0 10px;">Dashboard</a>
+                                                <span style="color: #475569;">|</span>
+                                                <a href="{APP_URL}/settings/notifications" style="color: #94a3b8; text-decoration: none; margin: 0 10px;">Notification Settings</a>
+                                                <span style="color: #475569;">|</span>
+                                                <a href="{APP_URL}/help" style="color: #94a3b8; text-decoration: none; margin: 0 10px;">Help Center</a>
                                             </p>
                                         </td>
                                     </tr>
@@ -208,10 +211,10 @@ def render_insight_email_template(
                     </table>
                     
                     <!-- Email Footer Text -->
-                    <table width="600" cellpadding="0" cellspacing="0" style="margin-top: 20px;">
+                    <table width="600" cellpadding="0" cellspacing="0" style="margin-top: 24px;">
                         <tr>
                             <td style="text-align: center; padding: 0 30px;">
-                                <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.6;">
+                                <p style="margin: 0; color: #64748b; font-size: 12px; line-height: 1.6;">
                                     You're receiving this email because you have notifications enabled for AI-generated insights.
                                 </p>
                             </td>
@@ -239,6 +242,6 @@ AI INSIGHT DETECTED
 View in dashboard: {APP_URL}/dashboard
 
 ---
-AI Business Analyst Enterprise
+DataVision - Universal Data Intelligence
 Manage your notification preferences: {APP_URL}/settings/notifications
 """

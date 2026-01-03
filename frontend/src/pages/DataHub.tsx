@@ -1,10 +1,5 @@
-/**
- * Data Hub - File Upload and Management
- * Supports dark/light theme matching Landing page design
- */
-
 import React, { useState, useCallback, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import {
@@ -24,6 +19,8 @@ import {
   Table,
   Link2,
   ExternalLink,
+  Brain,
+  Sparkles,
 } from 'lucide-react';
 import apiService from '@/services/api';
 
@@ -55,8 +52,10 @@ const DataHub: React.FC = () => {
     borderColor: '#334155',
   };
 
+  const navigate = useNavigate();
   const [files, setFiles] = useState<FileItem[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [automlRunning, setAutomlRunning] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sheetUrl, setSheetUrl] = useState('');
   const [importingSheet, setImportingSheet] = useState(false);
@@ -80,7 +79,7 @@ const DataHub: React.FC = () => {
     try {
       const response = await apiService.uploadFiles(acceptedFiles);
       if (response.data.success) {
-        alert(`✅ ${response.data.files.length} file(s) uploaded and trained successfully!`);
+        alert(`✅ ${response.data.files.length} file(s) uploaded successfully!`);
         await loadFiles();
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
@@ -91,6 +90,61 @@ const DataHub: React.FC = () => {
       setUploading(false);
     }
   }, []);
+
+  // Run AutoML Training
+  const handleRunAutoML = async () => {
+    // Find CSV/Excel files
+    const dataFiles = files.filter(f =>
+      f.name.endsWith('.csv') || f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+    );
+
+    if (dataFiles.length === 0) {
+      alert('❌ No data files found. Please upload a CSV or Excel file first.');
+      return;
+    }
+
+    setAutomlRunning(true);
+    try {
+      // Get the file from server and send to AutoML
+      const userId = localStorage.getItem('userId') || 'default';
+      const fileResponse = await fetch(`http://localhost:8000/api/v1/files/${userId}/${dataFiles[0].name}/download`);
+
+      if (!fileResponse.ok) throw new Error('Failed to get file');
+
+      const fileBlob = await fileResponse.blob();
+      const formData = new FormData();
+      formData.append('file', fileBlob, dataFiles[0].name);
+      formData.append('user_id', userId);
+
+      const automlResponse = await fetch('http://localhost:8000/api/v2/automl/train', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const automlResult = await automlResponse.json();
+
+      if (automlResult.success) {
+        // Save to localStorage for persistence
+        localStorage.setItem('mlResults', JSON.stringify(automlResult));
+        localStorage.setItem('hasMLResults', 'true');
+
+        // Navigate to ML Predictions page
+        navigate('/ml-predictions', { state: { automlResult } });
+      } else {
+        alert(`❌ AutoML failed: ${automlResult.detail || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      console.error('AutoML error:', error);
+      alert(`❌ AutoML error: ${error.message}`);
+    } finally {
+      setAutomlRunning(false);
+    }
+  };
+
+  // Check if data files exist
+  const hasDataFiles = files.some(f =>
+    f.name.endsWith('.csv') || f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -232,6 +286,29 @@ const DataHub: React.FC = () => {
           <p className="text-sm" style={{ color: theme.textMuted }}>Upload and manage your business data</p>
         </div>
         <div className="flex gap-3">
+          {/* 🤖 ML Train Button - Shows when data files exist */}
+          {hasDataFiles && (
+            <button
+              onClick={handleRunAutoML}
+              disabled={automlRunning}
+              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${automlRunning
+                ? 'bg-teal-500/30 text-teal-300 cursor-wait'
+                : 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white hover:opacity-90 shadow-lg shadow-teal-500/25'
+                }`}
+            >
+              {automlRunning ? (
+                <>
+                  <Loader className="w-5 h-5 animate-spin" />
+                  <span>Training ML Models...</span>
+                </>
+              ) : (
+                <>
+                  <Brain className="w-5 h-5" />
+                  <span>🤖 Auto ML Train</span>
+                </>
+              )}
+            </button>
+          )}
           <button
             onClick={handleRebuild}
             className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-400 font-medium hover:bg-emerald-500/20 transition-colors flex items-center gap-2"

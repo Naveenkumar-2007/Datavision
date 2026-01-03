@@ -27,6 +27,7 @@ import {
   RefreshCw,
   Square,
   Zap,
+  Bot,
 } from 'lucide-react';
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
@@ -152,6 +153,58 @@ const PlotlyChartBlock: React.FC<{ data: any[]; layout: any }> = ({ data, layout
         <PlotlyChart data={data} layout={layout} />
       </div>
     </React.Suspense>
+  );
+};
+
+// MLChartBlock - Renders matplotlib/seaborn charts from Predict mode (base64 PNG)
+const MLChartBlock: React.FC<{
+  chart: { type: string; image: string; title?: string }
+}> = ({ chart }) => {
+  const typeIcons: Record<string, string> = {
+    'ml_forecast': '📈',
+    'ml_importance': '🔑',
+    'ml_correlation': '🔗',
+    'ml_distribution': '📊',
+    'ml_residual': '📉',
+    'ml_summary': '🤖'
+  };
+
+  const icon = typeIcons[chart.type] || '📊';
+
+  if (!chart.image) return null;
+
+  return (
+    <div className="my-4 p-4 bg-gradient-to-br from-dark-surface to-dark-bg rounded-xl border border-dark-border shadow-lg">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">{icon}</span>
+        <span className="text-sm font-medium text-teal-400">
+          {chart.title || 'ML Visualization'}
+        </span>
+        <span className="text-xs text-gray-500 ml-auto">
+          Powered by scikit-learn + matplotlib
+        </span>
+      </div>
+      <ChartImage src={chart.image} alt={chart.title || 'ML Chart'} />
+    </div>
+  );
+};
+
+// MLChartsContainer - Renders multiple ML charts from response
+const MLChartsContainer: React.FC<{
+  charts: Array<{ type: string; image: string; title?: string }>
+}> = ({ charts }) => {
+  if (!charts || charts.length === 0) return null;
+
+  return (
+    <div className="space-y-4 mt-4">
+      <div className="flex items-center gap-2 text-sm text-teal-400">
+        <Zap className="w-4 h-4" />
+        <span>ML Visualizations • Real scikit-learn analysis</span>
+      </div>
+      {charts.map((chart, index) => (
+        <MLChartBlock key={index} chart={chart} />
+      ))}
+    </div>
   );
 };
 
@@ -596,16 +649,14 @@ const AnimatedBotIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
   </div>
 );
 
-// Mode-specific thinking messages for ChatGPT-like experience
+// Mode-specific thinking messages for ChatGPT-like experience (5 POWERFUL MODES)
 const getModeThinkingText = (modeId: string): string => {
   const thinkingTexts: Record<string, string> = {
-    'rag': 'Searching documents...',
-    'graphrag': 'Building knowledge graph...',
-    'hybrid': 'Combining RAG + Graph...',
-    'agentic': 'Planning with AI agent...',
-    'multirag': 'Searching multiple sources...',
-    'vision': 'Analyzing image...',
-    'prediction': 'Generating forecast...',
+    'analyst': 'Analyzing your data...',
+    'deep': 'Deep thinking...',
+    'vision': 'Processing image...',
+    'predict': 'Generating forecast...',
+    'agent': 'Planning actions...',
   };
   return thinkingTexts[modeId] || 'Thinking...';
 };
@@ -715,7 +766,7 @@ const AnalystChat: React.FC = () => {
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [mode, setMode] = useState<string>('rag');
+  const [mode, setMode] = useState<string>('analyst');
   const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -729,17 +780,16 @@ const AnalystChat: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mcpDropdownOpen, setMcpDropdownOpen] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false); // Plus menu state
+  // 🏆 8 Powerful MCPs - all enabled by default
   const [enabledMcps, setEnabledMcps] = useState<Record<string, boolean>>({
-    'data_cleaner': true,
-    'vectorizer': true,
-    'graph_builder': true,
-    'sql_executor': true,
-    'vision_ocr': true,
-    'data_transformer': true,
-    'data_validator': true,
-    'alert_engine': true,
-    'insight_engine': true,
-    'forecast_engine': true,
+    'data_analyzer': true,
+    'pattern_finder': true,
+    'forecaster': true,          // NEW: ML predictions
+    'anomaly_detector': true,    // NEW: Outlier detection
+    'chart_executor': true,      // NEW: Auto-visualization
+    'report_generator': true,
+    'insight_extractor': true,
+    'comparison_engine': true,
   });
 
   // MCP execution state for Claude-style animations
@@ -800,30 +850,146 @@ const AnalystChat: React.FC = () => {
     console.log(`Feedback ${type} for message ${messageId}`);
   };
 
-  // MCP server definitions - Enhanced with new tools
+  // 🏆 5 POWERFUL MCPs - Competition-Winning Tools
+  // Each MCP is a unique powerhouse that works autonomously
   const mcpServers = [
-    { id: 'data_cleaner', name: 'Data Cleaner', icon: '🧹', description: 'Clean, deduplicate, normalize data', category: 'processing' },
-    { id: 'data_transformer', name: 'Data Transformer', icon: '🔄', description: 'Pivot, aggregate, format conversion', category: 'processing' },
-    { id: 'data_validator', name: 'Data Validator', icon: '✅', description: 'Schema validation, quality scoring', category: 'processing' },
-    { id: 'vectorizer', name: 'Vectorizer', icon: '📊', description: 'Text embeddings, similarity search', category: 'search' },
-    { id: 'graph_builder', name: 'Graph Builder', icon: '🔗', description: 'Entity relationships, knowledge graph', category: 'search' },
-    { id: 'sql_executor', name: 'SQL Executor', icon: '🗃️', description: 'Database queries, data retrieval', category: 'search' },
-    { id: 'insight_engine', name: 'Insight Engine', icon: '💡', description: 'Trend detection, anomaly alerts', category: 'analysis' },
-    { id: 'forecast_engine', name: 'Forecast Engine', icon: '📈', description: 'Time-series predictions, trends', category: 'analysis' },
-    { id: 'alert_engine', name: 'Alert Engine', icon: '🔔', description: 'Threshold monitoring, notifications', category: 'analysis' },
-    { id: 'vision_ocr', name: 'Vision OCR', icon: '👁️', description: 'Image analysis, table extraction', category: 'vision' },
+    {
+      id: 'data_analyzer',
+      name: '📊 Data Analyzer',
+      icon: '📊',
+      description: 'Deep data exploration • Schema analysis • Quality checks',
+      power: 'Explores any dataset structure autonomously'
+    },
+    {
+      id: 'pattern_finder',
+      name: '🔎 Pattern Finder',
+      icon: '🔎',
+      description: 'Anomaly detection • Trends • Correlations',
+      power: 'Discovers hidden patterns you never noticed'
+    },
+    {
+      id: 'forecaster',
+      name: '🔮 Forecaster',
+      icon: '🔮',
+      description: 'ML predictions • Confidence intervals • Trend projection',
+      power: 'Predicts future with scikit-learn algorithms'
+    },
+    {
+      id: 'anomaly_detector',
+      name: '⚠️ Anomaly Detector',
+      icon: '⚠️',
+      description: 'Outlier detection • Z-score analysis • Risk alerts',
+      power: 'Finds statistical anomalies automatically'
+    },
+    {
+      id: 'chart_executor',
+      name: '📈 Chart Generator',
+      icon: '📈',
+      description: 'Auto-visualization • Intent detection • Dynamic colors',
+      power: 'Creates perfect charts from natural language'
+    },
+    {
+      id: 'report_generator',
+      name: '📄 Report Generator',
+      icon: '📄',
+      description: 'Executive summaries • Key metrics • Recommendations',
+      power: 'Creates professional reports in seconds'
+    },
+    {
+      id: 'insight_extractor',
+      name: '💡 Insight Extractor',
+      icon: '💡',
+      description: 'Business opportunities • Pareto analysis • Growth potential',
+      power: 'Mines the most valuable insights from your data'
+    },
+    {
+      id: 'comparison_engine',
+      name: '⚖️ Comparison Engine',
+      icon: '⚖️',
+      description: 'Category comparison • Segment analysis • Benchmarks',
+      power: 'Compares data across any dimension'
+    },
   ];
 
-  // Mode definitions - ALL modes support BOTH text AND charts/images
+  // Mode definitions - 5 UNIQUE POWERFUL MODES (Like OpenAI's Model Lineup)
+  // Each mode is a DISTINCT POWERHOUSE with unique capabilities
   const modes = [
-    // RAG Modes - All support text + charts
-    { id: 'rag', label: 'RAG', icon: FileText, description: 'Text + Charts from documents', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
-    { id: 'graphrag', label: 'GraphRAG', icon: Network, description: 'Text + Relationship graphs', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
-    { id: 'hybrid', label: 'Hybrid', icon: Layers, description: 'Text + Charts combined', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
-    { id: 'agentic', label: 'Agentic RAG', icon: Sparkles, description: 'AI Agent + Tools + Charts', badge: 'Pro', isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
-    { id: 'multirag', label: 'Multi-RAG', icon: Layers, description: 'Multi-source + RRF fusion', badge: 'Pro', isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
-    { id: 'vision', label: 'Vision', icon: Eye, description: 'Image analysis + Charts', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true, supportsImages: true },
-    { id: 'prediction', label: 'Prediction', icon: TrendingUp, description: 'Forecasts + Trend charts', badge: null, isAI: false, category: 'rag', supportsText: true, supportsCharts: true },
+    // 📊 ANALYST - Default mode, smart data analysis with Query Intent Detection
+    {
+      id: 'analyst',
+      label: 'Analyst',
+      icon: FileText,
+      description: 'Query intent detection • Auto-visualization • Fast answers',
+      fullDescription: 'Intelligent data analysis with automatic chart selection based on your question',
+      features: ['Query Intent Detection', 'Auto-Visualization', 'RAG Router'],
+      badge: null,
+      isAI: false,
+      category: 'core',
+      supportsText: true,
+      supportsCharts: true,
+      color: 'from-blue-500 to-cyan-500'
+    },
+    // 🧠 DEEP THINK - Complex reasoning with Fact Verification
+    {
+      id: 'deep',
+      label: 'Deep Think',
+      icon: Sparkles,
+      description: 'Fact verification • Evidence extraction • Chain-of-thought',
+      fullDescription: 'Multi-step reasoning with data citations and verification ✅/❌',
+      features: ['Fact Verification', 'Evidence Citations', 'Confidence Scoring'],
+      badge: 'Pro',
+      isAI: true,
+      category: 'core',
+      supportsText: true,
+      supportsCharts: true,
+      color: 'from-purple-500 to-pink-500'
+    },
+    // 🔭 VISION - Image analysis with specialized extraction modes
+    {
+      id: 'vision',
+      label: 'Vision',
+      icon: Eye,
+      description: 'Chart extraction • Table OCR • Document reading',
+      fullDescription: 'Specialized modes for charts, tables, documents, and diagrams',
+      features: ['Chart Mode', 'Table Mode', 'Document Mode', 'Diagram Mode'],
+      badge: null,
+      isAI: false,
+      category: 'core',
+      supportsText: true,
+      supportsCharts: true,
+      supportsImages: true,
+      color: 'from-green-500 to-emerald-500'
+    },
+    // 🔮 PREDICT - ML-Powered forecasting with scikit-learn
+    {
+      id: 'predict',
+      label: 'Predict',
+      icon: TrendingUp,
+      description: 'ML algorithms • 95% confidence • Feature importance',
+      fullDescription: 'Real scikit-learn predictions with confidence intervals and matplotlib charts',
+      features: ['Linear/Forest/Gradient', '95% Confidence', 'Matplotlib Charts'],
+      badge: 'ML',
+      isAI: true,
+      category: 'core',
+      supportsText: true,
+      supportsCharts: true,
+      color: 'from-amber-500 to-orange-500'
+    },
+    // 🤖 AGENT - Autonomous AI with tool orchestration
+    {
+      id: 'agent',
+      label: 'Agent',
+      icon: Bot,
+      description: 'Tool orchestration • Error recovery • Web research',
+      fullDescription: 'Full autonomous agent with 8 tools, planning, and error recovery',
+      features: ['8 Tools', 'Error Recovery', 'Web Research'],
+      badge: 'Pro',
+      isAI: true,
+      category: 'core',
+      supportsText: true,
+      supportsCharts: true,
+      color: 'from-red-500 to-rose-500'
+    },
   ];
 
   const currentConversation = getCurrentConversation();
@@ -1065,24 +1231,24 @@ const AnalystChat: React.FC = () => {
         const queryLower = messageText.toLowerCase();
         const potentialTools: Array<{ name: string; icon: string; status: 'pending' | 'running' | 'success'; description: string }> = [];
 
-        // Helper function for partial keyword matching (handles plurals like anomaly/anomalies)
+        // Helper function for partial keyword matching
         const matchesAny = (keywords: string[]) => keywords.some(kw => queryLower.includes(kw));
 
-        // DETECT TOOLS (Data Validator, Alert Engine, Insight Engine, Forecast Engine, Data Transformer)
-        if (enabledMcps.data_validator && matchesAny(['quality', 'validat', 'check', 'clean', 'issue', 'error', 'problem', 'missing', 'null', 'empty', 'duplicate', 'correct', 'accurate', 'verify', 'schema', 'format', 'consistent'])) {
-          potentialTools.push({ name: 'Data Validator', icon: '✅', status: 'pending', description: 'Check data quality and validate schema' });
+        // 🏆 DETECT 5 POWERFUL MCPs based on query
+        if (enabledMcps.data_analyzer && matchesAny(['analyz', 'explore', 'schema', 'structure', 'columns', 'data type', 'overview', 'describe', 'what data', 'statistics', 'stats'])) {
+          potentialTools.push({ name: '🔍 Data Analyzer', icon: '🔍', status: 'pending', description: 'Deep data exploration & schema analysis' });
         }
-        if (enabledMcps.alert_engine && matchesAny(['anomal', 'alert', 'unusual', 'spike', 'drop', 'warning', 'outlier', 'abnormal', 'unexpected', 'strange', 'weird', 'concern', 'risk', 'critical', 'threshold', 'monitor', 'detect'])) {
-          potentialTools.push({ name: 'Alert Engine', icon: '🔔', status: 'pending', description: 'Detect anomalies and threshold breaches' });
+        if (enabledMcps.pattern_finder && matchesAny(['pattern', 'anomal', 'outlier', 'trend', 'unusual', 'spike', 'drop', 'correlation', 'detect', 'discover', 'hidden'])) {
+          potentialTools.push({ name: '🔎 Pattern Finder', icon: '🔎', status: 'pending', description: 'Finds patterns, anomalies & correlations' });
         }
-        if (enabledMcps.insight_engine && matchesAny(['insight', 'trend', 'pattern', 'analyz', 'discover', 'find', 'show', 'summary', 'overview', 'key', 'important', 'significant', 'notable', 'growth', 'decline', 'performance', 'metric', 'kpi', 'business'])) {
-          potentialTools.push({ name: 'Insight Engine', icon: '💡', status: 'pending', description: 'Generate business insights and trends' });
+        if (enabledMcps.report_generator && matchesAny(['report', 'summary', 'executive', 'document', 'presentation', 'findings', 'conclusion', 'recommend'])) {
+          potentialTools.push({ name: '📄 Report Generator', icon: '📄', status: 'pending', description: 'Creates professional reports' });
         }
-        if (enabledMcps.forecast_engine && matchesAny(['predict', 'forecast', 'future', 'next month', 'projection', 'estimate', 'expect', 'anticipat', 'plan', 'budget', 'target', 'goal', 'quarterly', 'yearly', 'what if', 'scenario'])) {
-          potentialTools.push({ name: 'Forecast Engine', icon: '📈', status: 'pending', description: 'Predict future trends and metrics' });
+        if (enabledMcps.insight_extractor && matchesAny(['insight', 'key', 'important', 'valuable', 'business', 'opportunit', 'risk', 'growth', 'potential', 'learn'])) {
+          potentialTools.push({ name: '💡 Insight Extractor', icon: '💡', status: 'pending', description: 'Mines valuable insights from data' });
         }
-        if (enabledMcps.data_transformer && matchesAny(['pivot', 'aggregat', 'group', 'transform', 'convert', 'reshape', 'merge', 'combine', 'split', 'filter', 'sort', 'calculate', 'total', 'sum', 'average', 'count', 'by region', 'by category', 'breakdown'])) {
-          potentialTools.push({ name: 'Data Transformer', icon: '🔄', status: 'pending', description: 'Transform and aggregate data' });
+        if (enabledMcps.comparison_engine && matchesAny(['compare', 'versus', 'vs', 'difference', 'between', 'segment', 'category', 'breakdown', 'by', 'top', 'bottom', 'best', 'worst'])) {
+          potentialTools.push({ name: '⚖️ Comparison Engine', icon: '⚖️', status: 'pending', description: 'Compares across dimensions' });
         }
 
         // Show permission dialog if tools detected
@@ -1162,6 +1328,8 @@ const AnalystChat: React.FC = () => {
 
         const responseContent = response.data?.message || response.data?.answer || 'No response received';
         const responseSources = response.data?.sources || [];
+        const responseSuggestions = response.data?.suggestions || [];
+        const responseConfidence = response.data?.confidence;
 
         const assistantMessage = {
           id: (Date.now() + 1).toString(),
@@ -1169,6 +1337,10 @@ const AnalystChat: React.FC = () => {
           content: String(responseContent),
           timestamp: new Date().toISOString(),
           sources: Array.isArray(responseSources) ? responseSources.map(s => String(s)) : [],
+          // 🏆 Competition-winning features
+          suggestions: responseSuggestions,
+          confidence: responseConfidence,
+          mode: mode,
         };
 
         addMessageToConversation(convId, assistantMessage);
@@ -1411,7 +1583,7 @@ const AnalystChat: React.FC = () => {
     return date.toLocaleDateString();
   };
 
-  const currentMode = modes.find(m => m.id === mode)!;
+  const currentMode = modes.find(m => m.id === mode) || modes[0]; // Safe fallback to analyst
 
   return (
     <div className="flex h-screen bg-dark-bg overflow-hidden" {...getRootProps()}>
@@ -1506,7 +1678,7 @@ const AnalystChat: React.FC = () => {
             Settings
           </button>
           <button
-            onClick={() => navigate('/overview')}
+            onClick={() => navigate('/dashboard')}
             className="flex items-center gap-2 w-full p-2 rounded-lg hover:bg-dark-hover text-gray-400 hover:text-gray-200 transition-colors text-sm"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -1694,6 +1866,80 @@ const AnalystChat: React.FC = () => {
                               <RefreshCw className="w-4 h-4" />
                             </button>
                           </div>
+
+                          {/* 🏆 Dynamic Follow-up Suggestions - Competition Winner Feature */}
+                          {message.suggestions && message.suggestions.length > 0 && (
+                            <div className="mt-4 pt-3 border-t border-dark-border/50 animate-fadeIn">
+                              <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
+                                <Sparkles className="w-3 h-3 text-teal-400" /> Follow-up questions
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                {message.suggestions.map((suggestion: string, i: number) => (
+                                  <button
+                                    key={i}
+                                    onClick={() => {
+                                      setInput(suggestion);
+                                      const inputEl = document.querySelector('textarea');
+                                      inputEl?.focus();
+                                    }}
+                                    className="px-3 py-1.5 bg-gradient-to-r from-teal-500/10 to-indigo-500/10 hover:from-teal-500/20 hover:to-indigo-500/20 border border-teal-500/30 hover:border-teal-400/50 rounded-full text-xs text-teal-300 hover:text-teal-200 transition-all duration-200 hover:scale-105"
+                                  >
+                                    {suggestion}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 🏆 Confidence Indicator - Shows data grounding quality */}
+                          {message.confidence !== undefined && (
+                            <div className="mt-3 flex items-center gap-2 text-xs">
+                              <span className="text-gray-500">Data Confidence:</span>
+                              <div className="flex items-center gap-1">
+                                <div className={`w-2 h-2 rounded-full ${message.confidence > 0.8 ? 'bg-green-500' :
+                                  message.confidence > 0.5 ? 'bg-yellow-500' : 'bg-red-500'
+                                  }`} />
+                                <span className={`${message.confidence > 0.8 ? 'text-green-400' :
+                                  message.confidence > 0.5 ? 'text-yellow-400' : 'text-red-400'
+                                  }`}>
+                                  {message.confidence > 0.8 ? 'High - grounded in data' :
+                                    message.confidence > 0.5 ? 'Medium' : 'Low - limited data'}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* 🤖 ML Charts - Matplotlib/Seaborn Visualizations from Predict Mode */}
+                          {message.mlCharts && Array.isArray(message.mlCharts) && message.mlCharts.length > 0 && (
+                            <div className="mt-4 space-y-4">
+                              <div className="flex items-center gap-2 text-sm text-teal-400 border-t border-dark-border pt-3">
+                                <Zap className="w-4 h-4" />
+                                <span>ML Visualizations • Real scikit-learn analysis</span>
+                              </div>
+                              {message.mlCharts.map((chart: { type: string; image: string; title?: string }, i: number) => (
+                                chart.image && (
+                                  <div key={i} className="p-4 bg-gradient-to-br from-dark-surface to-dark-bg rounded-xl border border-dark-border shadow-lg">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <span className="text-lg">
+                                        {chart.type === 'ml_forecast' ? '📈' :
+                                          chart.type === 'ml_importance' ? '🔑' :
+                                            chart.type === 'ml_correlation' ? '🔗' :
+                                              chart.type === 'ml_distribution' ? '📊' :
+                                                chart.type === 'ml_summary' ? '🤖' : '📊'}
+                                      </span>
+                                      <span className="text-sm font-medium text-teal-400">
+                                        {chart.title || 'ML Visualization'}
+                                      </span>
+                                      <span className="text-xs text-gray-500 ml-auto">
+                                        scikit-learn + matplotlib
+                                      </span>
+                                    </div>
+                                    <ChartImage src={chart.image} alt={chart.title || 'ML Chart'} />
+                                  </div>
+                                )
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}

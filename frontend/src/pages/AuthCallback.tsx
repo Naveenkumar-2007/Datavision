@@ -47,10 +47,10 @@ export default function AuthCallback() {
 
                 // If email confirmation, show success briefly then redirect to overview
                 if (isEmailConfirm) {
-                    setTimeout(() => navigate('/overview', { replace: true }), 1500);
+                    setTimeout(() => navigate('/chat', { replace: true }), 1500);
                 } else {
                     // OAuth login - go directly to overview
-                    navigate('/overview', { replace: true });
+                    navigate('/chat', { replace: true });
                 }
             } else if (attempts < 20) {
                 // Keep polling (10 seconds max)

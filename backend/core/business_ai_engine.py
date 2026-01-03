@@ -1,488 +1,365 @@
-# Production-Grade Business AI Engine
-# Architected using ChatGPT/Claude core principles
 """
-This is the ORCHESTRATION LAYER - not a model.
+Universal AI Engine - DataVision's Core Intelligence
+======================================================
 
-Components:
-1. Memory Systems (3 layers)
-2. Query Understanding Pipeline (7 steps)
-3. Data Governance Engine
-4. Visualization Engine
-5. Self-Audit System
+The brain of DataVision. Works with ANY data type:
+- Business data (sales, revenue, customers)
+- HR data (employees, salaries, departments)
+- Scientific data (experiments, measurements)
+- IoT data (sensors, devices, metrics)
+- Healthcare data (patients, treatments)
+- Financial data (stocks, transactions)
+- And ANY other structured data!
+
+Features:
+1. 7-Step Query Pipeline
+2. Three-Layer Memory System
+3. Self-Audit for quality
+4. Universal Intent Classification
 """
 
-import json
-import hashlib
-from datetime import datetime
-from typing import Dict, List, Any, Optional, Tuple
+import logging
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
-# =============================================================================
-# 1️⃣ FOUNDATIONAL TRUTH RULE
-# =============================================================================
-
-class TruthSource(Enum):
-    """All valid sources of truth"""
-    UPLOADED_DATA = "uploaded_data"
-    CONVERSATION_MEMORY = "conversation_memory"
-    VERIFIED_TOOL_OUTPUT = "verified_tool_output"
-    USER_INPUT = "user_input"
-    NONE = "none"  # No valid source - REFUSE to answer
-
-
-@dataclass
-class GroundedClaim:
-    """Every claim must be grounded in a source"""
-    claim: str
-    source: TruthSource
-    evidence: str  # Exact data/quote supporting the claim
-    confidence: float  # 0-1
-    traceable_to: Optional[str] = None  # File/row/column path
-
-
-# =============================================================================
-# 2️⃣ STATEFUL MEMORY SYSTEM (WHY CHATGPT WORKS)
-# =============================================================================
-
-@dataclass
-class ConversationTurn:
-    """Single conversation turn"""
-    role: str  # "user" or "assistant"
-    content: str
-    timestamp: datetime
-    topic: Optional[str] = None
-    result_type: Optional[str] = None  # "text", "chart", "table"
-    chart_type: Optional[str] = None
-    data_shown: Optional[Dict] = None
-    metrics_computed: Dict[str, float] = field(default_factory=dict)
+class QueryIntent(Enum):
+    """Universal query intents - works for any domain"""
+    GREETING = "greeting"
+    AGGREGATION = "aggregation"     # Sum, count, average
+    RANKING = "ranking"             # Top N, bottom N
+    COMPARISON = "comparison"       # Compare X vs Y
+    TREND = "trend"                 # Over time analysis
+    PREDICTION = "prediction"       # Forecasting
+    LISTING = "listing"             # List all X
+    EXPLANATION = "explanation"     # Explain, why
+    FOLLOWUP = "followup"           # Follow-up question
+    DISTRIBUTION = "distribution"   # Breakdown, percentage
+    CORRELATION = "correlation"     # Relationship between variables
+    ANOMALY = "anomaly"             # Outliers, unusual
+    GENERAL = "general"
 
 
 @dataclass
-class AnalyticalState:
-    """State of previous computations"""
-    last_computation: Optional[str] = None
-    computed_metrics: Dict[str, float] = field(default_factory=dict)
-    generated_charts: List[Dict] = field(default_factory=list)
-    derived_insights: List[str] = field(default_factory=list)
-    data_schema: Optional[Dict] = None
+class PipelineResult:
+    """Result from the query pipeline"""
+    intent: QueryIntent
+    entities: List[str] = field(default_factory=list)
+    confidence: float = 0.8
+    should_refuse: bool = False
+    refuse_reason: Optional[str] = None
+    context_used: List[str] = field(default_factory=list)
+    suggested_visualization: Optional[str] = None
+    detected_domain: str = "general"  # business, hr, scientific, etc.
+
+
+@dataclass
+class AuditResult:
+    """Result from self-audit"""
+    passed: bool
+    issues: List[str] = field(default_factory=list)
+    claims_verified: int = 0
+    confidence_score: float = 0.8
 
 
 class ThreeLayerMemory:
     """
-    Synchronized 3-layer memory system.
-    
-    Layer 1: Conversation Memory - All turns, references
-    Layer 2: Persistent Knowledge - Files, schemas, metrics
-    Layer 3: Analytical State - Computations, charts, insights
+    ChatGPT-style three-layer memory system.
+    Works with any data domain.
     """
     
     def __init__(self, session_id: str):
         self.session_id = session_id
-        
-        # Layer 1: Conversation
-        self.conversation: List[ConversationTurn] = []
-        
-        # Layer 2: Persistent Knowledge
-        self.uploaded_files: Dict[str, Dict] = {}  # filename -> schema
-        self.learned_schemas: Dict[str, Dict] = {}
-        self.known_metrics: Dict[str, float] = {}
-        
-        # Layer 3: Analytical State
-        self.analytical_state = AnalyticalState()
+        self.immediate: List[Dict] = []  # Last 5 turns
+        self.session: List[Dict] = []     # Full session
+        self.persistent: Dict = {}         # User facts
+        self.topics_discussed: List[str] = []
+        self.metrics_mentioned: Dict[str, float] = {}
+        self.detected_domain: str = "general"
     
-    def add_turn(
-        self, 
-        role: str, 
-        content: str,
-        topic: str = None,
-        result_type: str = None,
-        chart_type: str = None,
-        data_shown: Dict = None,
-        metrics: Dict[str, float] = None
-    ):
+    def add_turn(self, role: str, content: str, **metadata):
         """Add a conversation turn"""
-        turn = ConversationTurn(
-            role=role,
-            content=content,
-            timestamp=datetime.now(),
-            topic=topic,
-            result_type=result_type,
-            chart_type=chart_type,
-            data_shown=data_shown,
-            metrics_computed=metrics or {}
-        )
-        self.conversation.append(turn)
+        turn = {
+            "role": role,
+            "content": content,
+            "timestamp": datetime.now().isoformat(),
+            **metadata
+        }
         
-        # Update analytical state
-        if metrics:
-            self.analytical_state.computed_metrics.update(metrics)
-            self.known_metrics.update(metrics)
+        self.immediate.append(turn)
+        self.session.append(turn)
         
-        if chart_type:
-            self.analytical_state.generated_charts.append({
-                "type": chart_type,
-                "topic": topic,
-                "timestamp": datetime.now().isoformat()
-            })
+        # Keep immediate to last 5
+        if len(self.immediate) > 5:
+            self.immediate = self.immediate[-5:]
+        
+        # Track topics
+        if metadata.get("topic"):
+            if metadata["topic"] not in self.topics_discussed:
+                self.topics_discussed.append(metadata["topic"])
+        
+        # Track metrics
+        if metadata.get("metrics"):
+            self.metrics_mentioned.update(metadata["metrics"])
     
-    def resolve_reference(self, reference: str) -> Tuple[str, Dict]:
-        """
-        Resolve references like "above", "that chart", "earlier result".
+    def get_context(self, max_turns: int = 10) -> str:
+        """Get memory context for LLM"""
+        parts = []
         
-        Returns: (resolved_content, metadata)
-        """
-        ref_lower = reference.lower()
+        # Add persistent facts
+        if self.persistent:
+            parts.append("Known facts: " + ", ".join(
+                f"{k}: {v}" for k, v in self.persistent.items()
+            ))
         
-        # Get recent assistant turns
-        recent_assistant = [
-            t for t in reversed(self.conversation[-10:]) 
-            if t.role == "assistant"
-        ]
+        # Add recent topics
+        if self.topics_discussed:
+            parts.append(f"Topics discussed: {', '.join(self.topics_discussed[-5:])}")
         
-        if not recent_assistant:
-            return reference, {"resolved": False, "reason": "No previous context"}
+        # Add detected domain
+        if self.detected_domain != "general":
+            parts.append(f"Data domain: {self.detected_domain}")
         
-        last = recent_assistant[0]
+        # Add recent turns
+        parts.append("\nRecent conversation:")
+        for turn in self.session[-max_turns:]:
+            role = "User" if turn["role"] == "user" else "AI"
+            content = turn["content"][:300]
+            parts.append(f"{role}: {content}")
         
-        # Reference patterns
-        if any(r in ref_lower for r in ["above", "that", "this", "previous", "earlier"]):
-            # Determine what was shown
-            if last.chart_type:
-                resolved = f"the {last.chart_type} chart showing {last.topic or 'data'}"
-            elif last.result_type == "table":
-                resolved = f"the table showing {last.topic or 'data'}"
-            elif last.metrics_computed:
-                metrics_desc = ", ".join(f"{k}={v}" for k, v in last.metrics_computed.items())
-                resolved = f"the analysis showing {metrics_desc}"
-            else:
-                resolved = f"the previous response about {last.topic or 'your query'}"
-            
-            return resolved, {
-                "resolved": True,
-                "original_reference": reference,
-                "resolved_to": resolved,
-                "last_topic": last.topic,
-                "last_result_type": last.result_type,
-                "last_chart_type": last.chart_type,
-                "last_content": last.content[:500]
-            }
-        
-        return reference, {"resolved": False}
+        return "\n".join(parts)
     
-    def get_context_for_llm(self, limit: int = 10) -> List[Dict]:
-        """Get conversation history formatted for LLM"""
-        messages = []
-        for turn in self.conversation[-limit:]:
-            messages.append({
-                "role": turn.role,
-                "content": turn.content[:800] if len(turn.content) > 800 else turn.content
-            })
-        return messages
-    
-    def get_known_metrics(self) -> Dict[str, float]:
-        """Get all computed metrics for validation"""
-        return self.known_metrics
-    
-    def get_data_schema(self, filename: str = None) -> Optional[Dict]:
-        """Get schema for a file or all files"""
-        if filename:
-            return self.uploaded_files.get(filename)
-        return self.learned_schemas
+    def get_last_answer(self) -> Optional[str]:
+        """Get last assistant answer"""
+        for turn in reversed(self.session):
+            if turn["role"] == "assistant":
+                return turn["content"]
+        return None
 
 
 # Global memory store
 _memory_store: Dict[str, ThreeLayerMemory] = {}
 
 
-def get_memory(session_id: str) -> ThreeLayerMemory:
-    """Get or create memory for session"""
+def get_ai_memory(session_id: str) -> ThreeLayerMemory:
+    """Get or create memory for a session"""
     if session_id not in _memory_store:
         _memory_store[session_id] = ThreeLayerMemory(session_id)
     return _memory_store[session_id]
 
 
-# =============================================================================
-# 3️⃣ DATA-FIRST OPERATING MODEL
-# =============================================================================
-
-@dataclass
-class DataAvailability:
-    """Result of data availability check"""
-    is_available: bool
-    available_columns: List[str]
-    missing_requirements: List[str]
-    suggested_action: str
-    data_source: Optional[str] = None
-
-
-def check_data_availability(
-    query: str,
-    memory: ThreeLayerMemory
-) -> DataAvailability:
+def detect_data_domain(query: str, columns: List[str] = None) -> str:
     """
-    Check if required data is available before answering.
+    Detect what domain the data belongs to.
     
-    FIXED: Now checks actual file storage, not just memory!
+    Domains: business, hr, scientific, healthcare, financial, iot, general
     """
-    session_id = memory.session_id
-    has_data = False
-    data_source = None
+    query_lower = query.lower()
+    columns_str = " ".join(columns or []).lower()
+    combined = query_lower + " " + columns_str
     
-    # ==========================================================================
-    # FIX: Check ACTUAL file storage, not just memory
-    # ==========================================================================
-    try:
-        from utils.paths import get_user_paths
-        
-        paths = get_user_paths(session_id)
-        data_path = paths.get("data")
-        
-        if data_path and data_path.exists():
-            # Check for any data files
-            data_files = list(data_path.glob("*.csv")) + \
-                        list(data_path.glob("*.xlsx")) + \
-                        list(data_path.glob("*.xls")) + \
-                        list(data_path.glob("*.parquet"))
-            
-            if data_files:
-                has_data = True
-                data_source = data_files[0].name
-                
-                # Update memory with file info
-                for f in data_files:
-                    memory.uploaded_files[f.name] = {
-                        "path": str(f),
-                        "detected_columns": {}  # Will be populated on load
-                    }
-                
-                print(f"[DATA-CHECK] Found {len(data_files)} data files: {data_source}")
-                
-    except Exception as e:
-        print(f"[DATA-CHECK] Path check error: {e}")
+    # HR domain
+    hr_keywords = ['employee', 'salary', 'department', 'hire', 'performance', 'leave', 'hr', 'staff']
+    if any(kw in combined for kw in hr_keywords):
+        return "hr"
     
-    # Also check for vector DB / indexed data
-    if not has_data:
-        try:
-            from utils.paths import get_user_paths
-            
-            paths = get_user_paths(session_id)
-            vector_path = paths.get("vectors", paths.get("data"))
-            
-            if vector_path and vector_path.exists():
-                # Check for index files
-                index_files = list(vector_path.glob("*.faiss")) + \
-                             list(vector_path.glob("*.pkl")) + \
-                             list(vector_path.glob("*.index"))
-                
-                if index_files:
-                    has_data = True
-                    data_source = "indexed_data"
-                    print(f"[DATA-CHECK] Found indexed data")
-                    
-        except Exception as e:
-            print(f"[DATA-CHECK] Index check error: {e}")
+    # Healthcare domain
+    health_keywords = ['patient', 'diagnosis', 'treatment', 'hospital', 'doctor', 'medical', 'health']
+    if any(kw in combined for kw in health_keywords):
+        return "healthcare"
     
-    # If still no data, check memory as fallback
-    if not has_data:
-        schemas = memory.get_data_schema()
-        if schemas or memory.uploaded_files:
-            has_data = True
-            data_source = list(memory.uploaded_files.keys())[0] if memory.uploaded_files else "memory"
+    # Financial domain
+    finance_keywords = ['stock', 'portfolio', 'investment', 'trading', 'market', 'ticker', 'dividend']
+    if any(kw in combined for kw in finance_keywords):
+        return "financial"
     
-    # ==========================================================================
-    # NO DATA FOUND
-    # ==========================================================================
-    if not has_data:
-        return DataAvailability(
-            is_available=False,
-            available_columns=[],
-            missing_requirements=["No data uploaded"],
-            suggested_action="Please upload a data file first (CSV, Excel, etc.)"
-        )
+    # IoT domain
+    iot_keywords = ['sensor', 'device', 'temperature', 'humidity', 'reading', 'iot', 'mqtt']
+    if any(kw in combined for kw in iot_keywords):
+        return "iot"
     
-    # ==========================================================================
-    # DATA FOUND - Don't refuse, let the query proceed
-    # ==========================================================================
-    # For now, assume data is available if files exist
-    # The RAG system will handle column detection
+    # Scientific domain
+    science_keywords = ['experiment', 'sample', 'measurement', 'hypothesis', 'variable', 'control']
+    if any(kw in combined for kw in science_keywords):
+        return "scientific"
     
-    return DataAvailability(
-        is_available=True,
-        available_columns=["auto_detected"],  # Will be detected during query
-        missing_requirements=[],
-        suggested_action="Data available, proceeding with analysis",
-        data_source=data_source
-    )
-
-
-# =============================================================================
-# 4️⃣ QUERY UNDERSTANDING PIPELINE (7 STEPS)
-# =============================================================================
-
-class QueryIntent(Enum):
-    """What is the user asking for?"""
-    EXPLANATION = "explanation"
-    COMPARISON = "comparison"
-    TREND = "trend"
-    AGGREGATION = "aggregation"
-    RANKING = "ranking"
-    VISUALIZATION = "visualization"
-    VALIDATION = "validation"
-    CLARIFICATION = "clarification"
-    GENERAL = "general"
-
-
-@dataclass
-class PipelineResult:
-    """Result of the 7-step pipeline"""
-    # Step 1: Intent
-    intent: QueryIntent
-    intent_confidence: float
+    # Business domain (default for common terms)
+    business_keywords = ['customer', 'revenue', 'sales', 'product', 'order', 'invoice', 'profit']
+    if any(kw in combined for kw in business_keywords):
+        return "business"
     
-    # Step 2: Context
-    context_resolved: bool
-    resolved_references: Dict
-    
-    # Step 3: Data Check
-    data_available: DataAvailability
-    
-    # Step 4: Reasoning Plan
-    computation_required: List[str]
-    tools_needed: List[str]
-    
-    # Step 5: Execution
-    execution_status: str = "pending"
-    
-    # Step 6: Validation
-    validated: bool = False
-    validation_issues: List[str] = field(default_factory=list)
-    
-    # Step 7: Response
-    should_respond: bool = True
-    refuse_reason: Optional[str] = None
+    return "general"
 
 
 def execute_query_pipeline(
     query: str,
     session_id: str,
-    memory: ThreeLayerMemory
+    memory: ThreeLayerMemory = None,
+    columns: List[str] = None
 ) -> PipelineResult:
     """
-    Execute the 7-step query understanding pipeline.
-    
-    NEVER skip steps - skipping is a system error.
+    Execute the 7-step query processing pipeline.
+    Works with any data type!
     """
+    query_lower = query.lower()
     
-    # STEP 1: Intent Resolution
-    intent, confidence = _resolve_intent(query)
-    print(f"[PIPELINE] Step 1 - Intent: {intent.value} (conf: {confidence:.2f})")
+    # Step 1: Intent Classification
+    intent = _classify_intent(query_lower)
     
-    # STEP 2: Context Resolution
-    resolved_query, resolution_meta = memory.resolve_reference(query)
-    context_resolved = resolution_meta.get("resolved", False)
-    print(f"[PIPELINE] Step 2 - Context: resolved={context_resolved}")
+    # Step 2: Entity Extraction
+    entities = _extract_entities(query)
     
-    # STEP 3: Data Feasibility Check
-    data_check = check_data_availability(resolved_query, memory)
-    print(f"[PIPELINE] Step 3 - Data: available={data_check.is_available}")
+    # Step 3: Domain Detection
+    domain = detect_data_domain(query, columns)
+    if memory:
+        memory.detected_domain = domain
     
-    if not data_check.is_available:
-        return PipelineResult(
-            intent=intent,
-            intent_confidence=confidence,
-            context_resolved=context_resolved,
-            resolved_references=resolution_meta,
-            data_available=data_check,
-            computation_required=[],
-            tools_needed=[],
-            should_respond=True,
-            refuse_reason=data_check.suggested_action
-        )
+    # Step 4: Context Gathering
+    context_used = []
+    if memory:
+        if memory.get_last_answer():
+            context_used.append("previous_answer")
+        if memory.topics_discussed:
+            context_used.append("topic_history")
     
-    # STEP 4: Reasoning Plan
-    computations, tools = _plan_reasoning(query, intent)
-    print(f"[PIPELINE] Step 4 - Plan: {computations}")
+    # Step 5: Visualization Detection
+    suggested_viz = _detect_visualization(query_lower, intent)
     
-    # STEP 5-6-7 happen during actual execution
+    # Step 6: Confidence Scoring
+    confidence = _calculate_confidence(intent, len(entities))
     
     return PipelineResult(
         intent=intent,
-        intent_confidence=confidence,
-        context_resolved=context_resolved,
-        resolved_references=resolution_meta,
-        data_available=data_check,
-        computation_required=computations,
-        tools_needed=tools,
-        should_respond=True
+        entities=entities,
+        confidence=confidence,
+        should_refuse=False,
+        context_used=context_used,
+        suggested_visualization=suggested_viz,
+        detected_domain=domain
     )
 
 
-def _resolve_intent(query: str) -> Tuple[QueryIntent, float]:
-    """Determine user intent from query"""
-    q_lower = query.lower()
+def _classify_intent(query_lower: str) -> QueryIntent:
+    """Classify query intent - works for any domain"""
     
-    # Explanation patterns
-    if any(w in q_lower for w in ["explain", "why", "what does", "how come", "tell me about"]):
-        return QueryIntent.EXPLANATION, 0.9
+    # Greeting
+    if query_lower.strip() in ['hi', 'hello', 'hey', 'start']:
+        return QueryIntent.GREETING
+    if query_lower.startswith(('hi ', 'hello ', 'hey ')):
+        return QueryIntent.GREETING
     
-    # Comparison patterns
-    if any(w in q_lower for w in ["compare", "versus", "vs", "difference", "better"]):
-        return QueryIntent.COMPARISON, 0.9
+    # Follow-up
+    if any(w in query_lower for w in ['explain', 'what about', 'tell me more', 'elaborate', 'above', 'that']):
+        return QueryIntent.FOLLOWUP
     
-    # Trend patterns
-    if any(w in q_lower for w in ["trend", "over time", "growth", "change", "month"]):
-        return QueryIntent.TREND, 0.85
+    # Distribution
+    if any(w in query_lower for w in ['distribution', 'breakdown', 'percentage', 'share', 'portion']):
+        return QueryIntent.DISTRIBUTION
     
-    # Aggregation patterns
-    if any(w in q_lower for w in ["total", "sum", "average", "count", "how much", "how many"]):
-        return QueryIntent.AGGREGATION, 0.9
+    # Correlation
+    if any(w in query_lower for w in ['correlation', 'relationship', 'affect', 'impact on']):
+        return QueryIntent.CORRELATION
     
-    # Ranking patterns
-    if any(w in q_lower for w in ["top", "bottom", "best", "worst", "highest", "lowest", "rank"]):
-        return QueryIntent.RANKING, 0.9
+    # Anomaly
+    if any(w in query_lower for w in ['anomaly', 'outlier', 'unusual', 'abnormal', 'exception']):
+        return QueryIntent.ANOMALY
     
-    # Visualization patterns
-    if any(w in q_lower for w in ["show", "chart", "graph", "visualize", "plot", "display"]):
-        return QueryIntent.VISUALIZATION, 0.85
+    # Aggregation
+    if any(w in query_lower for w in ['total', 'sum', 'count', 'how many', 'how much', 'average', 'mean']):
+        return QueryIntent.AGGREGATION
     
-    return QueryIntent.GENERAL, 0.7
+    # Ranking
+    if any(w in query_lower for w in ['top', 'best', 'highest', 'lowest', 'worst', 'bottom', 'rank']):
+        return QueryIntent.RANKING
+    
+    # Comparison
+    if any(w in query_lower for w in ['compare', 'vs', 'versus', 'difference', 'between']):
+        return QueryIntent.COMPARISON
+    
+    # Trend
+    if any(w in query_lower for w in ['trend', 'over time', 'growth', 'monthly', 'weekly', 'change']):
+        return QueryIntent.TREND
+    
+    # Prediction
+    if any(w in query_lower for w in ['predict', 'forecast', 'will', 'future', 'next', 'estimate']):
+        return QueryIntent.PREDICTION
+    
+    # Listing
+    if any(w in query_lower for w in ['list', 'show all', 'give me all', 'all the', 'every']):
+        return QueryIntent.LISTING
+    
+    return QueryIntent.GENERAL
 
 
-def _plan_reasoning(query: str, intent: QueryIntent) -> Tuple[List[str], List[str]]:
-    """Plan what computations and tools are needed"""
-    computations = []
-    tools = []
+def _detect_visualization(query_lower: str, intent: QueryIntent) -> Optional[str]:
+    """Detect if visualization is needed and suggest type"""
     
-    if intent == QueryIntent.AGGREGATION:
-        computations.append("sum_or_average")
-    elif intent == QueryIntent.RANKING:
-        computations.append("sort_and_rank")
-    elif intent == QueryIntent.TREND:
-        computations.append("time_series_analysis")
-    elif intent == QueryIntent.COMPARISON:
-        computations.append("comparative_analysis")
+    # Explicit requests
+    if 'pie' in query_lower:
+        return 'pie'
+    if 'line' in query_lower or 'trend' in query_lower:
+        return 'line'
+    if 'bar' in query_lower:
+        return 'bar'
+    if 'scatter' in query_lower:
+        return 'scatter'
+    if 'heatmap' in query_lower:
+        return 'heatmap'
     
-    if "chart" in query.lower() or intent == QueryIntent.VISUALIZATION:
-        tools.append("visualization_engine")
+    # Chart keyword
+    if any(w in query_lower for w in ['chart', 'graph', 'plot', 'visualize', 'show me']):
+        # Infer from intent
+        if intent == QueryIntent.DISTRIBUTION:
+            return 'pie'
+        if intent == QueryIntent.TREND:
+            return 'line'
+        if intent in [QueryIntent.RANKING, QueryIntent.COMPARISON]:
+            return 'bar'
+        return 'auto'
     
-    return computations, tools
+    return None
 
 
-# =============================================================================
-# 9️⃣ SELF-AUDIT SYSTEM
-# =============================================================================
+def _calculate_confidence(intent: QueryIntent, num_entities: int) -> float:
+    """Calculate confidence based on intent and entities"""
+    base = 0.75
+    
+    # Higher confidence for structured queries
+    if intent in [QueryIntent.AGGREGATION, QueryIntent.RANKING, QueryIntent.LISTING]:
+        base = 0.9
+    elif intent == QueryIntent.PREDICTION:
+        base = 0.7
+    
+    # Entities add confidence
+    if num_entities > 0:
+        base += 0.05 * min(num_entities, 3)
+    
+    return min(0.95, base)
 
-@dataclass
-class AuditResult:
-    """Result of self-audit before responding"""
-    passed: bool
-    claims_verified: int
-    claims_unverified: int
-    issues: List[str]
-    recommendation: str
+
+def _extract_entities(query: str) -> List[str]:
+    """Extract entities from query"""
+    import re
+    
+    entities = []
+    
+    # Quoted entities
+    quoted = re.findall(r'"([^"]+)"', query)
+    entities.extend(quoted)
+    
+    # Capitalized entities
+    caps = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', query)
+    skip_words = ['What', 'Who', 'When', 'Where', 'Which', 'How', 'Why', 
+                  'Show', 'List', 'Find', 'Get', 'Give', 'Tell', 'The', 'Total', 'All']
+    for cap in caps:
+        if cap not in skip_words:
+            entities.append(cap)
+    
+    return list(set(entities))
 
 
 def self_audit(
@@ -490,166 +367,36 @@ def self_audit(
     memory: ThreeLayerMemory,
     pipeline_result: PipelineResult
 ) -> AuditResult:
-    """
-    Self-audit before every response.
-    
-    Verify:
-    1. Is every claim supported?
-    2. Can every number be traced?
-    3. Does this answer the exact question?
-    """
+    """Self-audit the response for quality"""
     issues = []
     claims_verified = 0
-    claims_unverified = 0
     
-    # Check 1: Data grounding
-    if not pipeline_result.data_available.is_available:
-        if "no data" not in response.lower() and "upload" not in response.lower():
-            issues.append("Response doesn't acknowledge missing data")
+    # Check not empty
+    if len(response.strip()) < 20:
+        issues.append("Response too short")
     
-    # Check 2: Number verification
-    import re
-    numbers = re.findall(r'[\$₹€£]?[\d,]+\.?\d*', response)
-    known_metrics = memory.get_known_metrics()
+    # Check intent addressed
+    if pipeline_result.intent == QueryIntent.AGGREGATION:
+        if any(c.isdigit() for c in response):
+            claims_verified += 1
+        else:
+            issues.append("Aggregation query but no numbers")
     
-    for num_str in numbers:
-        # Clean and convert
-        num_clean = num_str.replace(',', '').replace('$', '').replace('₹', '').replace('€', '').replace('£', '')
-        try:
-            num = float(num_clean)
-            # Check if this number exists in known metrics or data
-            if any(abs(v - num) < 0.01 for v in known_metrics.values()):
-                claims_verified += 1
-            else:
-                claims_unverified += 1
-        except ValueError:
-            pass
+    if pipeline_result.intent == QueryIntent.RANKING:
+        if any(w in response.lower() for w in ['1.', '2.', 'top', 'first', 'highest']):
+            claims_verified += 1
     
-    # Check 3: Intent alignment
-    if pipeline_result.intent == QueryIntent.EXPLANATION:
-        if len(response) < 50:
-            issues.append("Explanation response too short")
-    
-    passed = len(issues) == 0 and claims_unverified == 0
-    
-    recommendation = "Response approved" if passed else "Consider revising or refusing"
+    confidence = 0.9 - (len(issues) * 0.1)
+    confidence = max(0.3, min(1.0, confidence))
     
     return AuditResult(
-        passed=passed,
-        claims_verified=claims_verified,
-        claims_unverified=claims_unverified,
+        passed=len(issues) == 0,
         issues=issues,
-        recommendation=recommendation
+        claims_verified=claims_verified,
+        confidence_score=confidence
     )
 
 
-# =============================================================================
-# 🔟 FAILURE CONDITIONS (SYSTEM MUST REFUSE)
-# =============================================================================
-
-def should_refuse(pipeline_result: PipelineResult) -> Tuple[bool, str]:
-    """
-    Determine if system should refuse to answer.
-    
-    Refusal with explanation is CORRECT behavior.
-    """
-    # Refuse if data is insufficient
-    if not pipeline_result.data_available.is_available:
-        return True, pipeline_result.data_available.suggested_action
-    
-    # Refuse if intent is ambiguous
-    if pipeline_result.intent_confidence < 0.5:
-        return True, (
-            "I'm not entirely sure what you're asking. Could you clarify:\n"
-            "- Are you looking for a specific number?\n"
-            "- Do you want to see a chart?\n"
-            "- Are you asking about a specific time period?"
-        )
-    
-    # Refuse if required context is missing
-    if pipeline_result.intent == QueryIntent.EXPLANATION:
-        if not pipeline_result.context_resolved:
-            if any(w in pipeline_result.resolved_references.get("original_reference", "").lower() 
-                   for w in ["above", "that", "this"]):
-                return True, (
-                    "I'm not sure what 'that' or 'above' refers to. "
-                    "Could you specify what you'd like me to explain?"
-                )
-    
-    return False, ""
-
-
-# =============================================================================
-# MASTER SYSTEM PROMPT (FINAL)
-# =============================================================================
-
-def get_production_system_prompt(
-    memory: ThreeLayerMemory,
-    pipeline_result: PipelineResult,
-    currency_symbol: str = "$"
-) -> str:
-    """Generate the production-grade system prompt"""
-    
-    # Build context section
-    context_section = ""
-    if pipeline_result.context_resolved:
-        ref = pipeline_result.resolved_references
-        context_section = f"""
-CONVERSATION CONTEXT:
-- Referring to: {ref.get('resolved_to', 'previous response')}
-- Topic: {ref.get('last_topic', 'unknown')}
-- Result type: {ref.get('last_result_type', 'text')}
-- Previous content: {ref.get('last_content', '')[:200]}...
-"""
-    
-    # Build data section
-    data_section = ""
-    if pipeline_result.data_available.is_available:
-        data_section = f"""
-DATA AVAILABLE:
-- Source: {pipeline_result.data_available.data_source}
-- Columns: {', '.join(pipeline_result.data_available.available_columns)}
-"""
-    
-    # Build known metrics
-    metrics = memory.get_known_metrics()
-    metrics_section = ""
-    if metrics:
-        metrics_section = "COMPUTED METRICS:\n"
-        for k, v in metrics.items():
-            metrics_section += f"- {k}: {currency_symbol}{v:,.2f}\n"
-    
-    return f"""═══════════════════════════════════════════════════════════════════════════
-                    PRODUCTION-GRADE BUSINESS AI ENGINE
-                    (ChatGPT/Claude Architecture)
-═══════════════════════════════════════════════════════════════════════════
-
-🚨 FOUNDATIONAL TRUTH RULE
-Every claim must be grounded in data. Never fabricate.
-If data is missing, say: "I cannot answer this accurately."
-
-{context_section}
-
-{data_section}
-
-{metrics_section}
-
-📊 CURRENT QUERY ANALYSIS:
-- Intent: {pipeline_result.intent.value}
-- Confidence: {pipeline_result.intent_confidence:.0%}
-- Computations needed: {', '.join(pipeline_result.computation_required) or 'none'}
-
-✅ RESPONSE RULES:
-1. Use ONLY data from context provided
-2. Use {currency_symbol} for currency formatting
-3. Be direct and confident (no "As an AI...")
-4. If showing numbers, they MUST exist in data
-5. If user says "above/that/this" - refer to CONVERSATION CONTEXT above
-
-🛑 BEFORE RESPONDING:
-- Verify every claim is supported
-- Verify every number is traceable
-- If uncertain, ASK instead of guessing
-
-═══════════════════════════════════════════════════════════════════════════
-"""
+def should_refuse(pipeline_result: PipelineResult) -> Tuple[bool, Optional[str]]:
+    """Check if we should refuse to answer"""
+    return pipeline_result.should_refuse, pipeline_result.refuse_reason

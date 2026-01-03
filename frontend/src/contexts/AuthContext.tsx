@@ -3,7 +3,7 @@
  * Provides auth state throughout the app
  */
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, useMemo } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase, auth } from '../lib/supabase';
 
@@ -146,16 +146,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.location.href = '/';
     };
 
+    const value = useMemo(() => ({
+        ...state,
+        signUp,
+        signIn,
+        signInWithMagicLink,
+        signInWithGoogle,
+        signInWithGithub,
+        signOut
+    }), [state]);
+
     return (
-        <AuthContext.Provider value={{
-            ...state,
-            signUp,
-            signIn,
-            signInWithMagicLink,
-            signInWithGoogle,
-            signInWithGithub,
-            signOut
-        }}>
+        <AuthContext.Provider value={value}>
             {children}
         </AuthContext.Provider>
     );

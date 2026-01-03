@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   User,
   Shield,
@@ -19,24 +18,10 @@ import { useUserStore } from '@/store/userStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 
-interface ThemeContext {
-  isDark: boolean;
-  bgColor: string;
-  cardBg: string;
-  textPrimary: string;
-  textMuted: string;
-  borderColor: string;
-}
+
 
 const Settings: React.FC = () => {
-  const theme = useOutletContext<ThemeContext>() || {
-    isDark: true,
-    bgColor: '#0a0a0b',
-    cardBg: '#141414',
-    textPrimary: '#F8FAFC',
-    textMuted: '#9CA3AF',
-    borderColor: '#262626',
-  };
+
 
   const { user: authUser } = useAuth();
   const setStoreUser = useUserStore((state) => state.setUser);
@@ -82,7 +67,7 @@ const Settings: React.FC = () => {
         avatar: profile.avatar,
       });
     }
-  }, [profile, authUser, setStoreUser]);
+  }, [profile.email, profile.name, profile.role, profile.company, profile.avatar, authUser?.id, setStoreUser]);
 
 
   // Email Report Preferences (daily/weekly scheduling)
@@ -98,13 +83,22 @@ const Settings: React.FC = () => {
   });
   const [emailPrefsLoading, setEmailPrefsLoading] = useState(false);
   const [testEmailSending, setTestEmailSending] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
+
+  // Auto-hide status message after 5 seconds
+  useEffect(() => {
+    if (statusMessage) {
+      const timer = setTimeout(() => setStatusMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [statusMessage]);
 
   // Load email preferences from backend
   useEffect(() => {
     const loadEmailPrefs = async () => {
       try {
         const userId = authUser?.id || localStorage.getItem('userId') || 'default';
-        const response = await fetch(`/api/v1/settings/email-prefs`, {
+        const response = await fetch(`http://localhost:8000/api/v1/settings/email-prefs`, {
           headers: { 'X-User-ID': userId }
         });
         if (response.ok) {
@@ -118,14 +112,16 @@ const Settings: React.FC = () => {
       }
     };
     loadEmailPrefs();
-  }, [authUser]);
+  }, [authUser?.id]);
 
   // Save email preferences to backend
   const saveEmailPrefs = async () => {
     setEmailPrefsLoading(true);
+    setStatusMessage(null);
     try {
       const userId = authUser?.id || localStorage.getItem('userId') || 'default';
-      const response = await fetch(`/api/v1/settings/email-prefs`, {
+      console.log('Saving email prefs:', emailPrefs);
+      const response = await fetch(`http://localhost:8000/api/v1/settings/email-prefs`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -133,14 +129,22 @@ const Settings: React.FC = () => {
         },
         body: JSON.stringify(emailPrefs)
       });
+      const data = await response.json();
+      console.log('Save response:', data);
       if (response.ok) {
-        alert('✅ Email report preferences saved!');
+        setStatusMessage({
+          type: 'success',
+          text: 'Email preferences saved successfully. DataVision will send automated reports according to your schedule.'
+        });
       } else {
-        throw new Error('Failed to save');
+        throw new Error(data.detail || 'Failed to save');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save email preferences:', error);
-      alert('❌ Failed to save email preferences');
+      setStatusMessage({
+        type: 'error',
+        text: 'Unable to save email preferences: ' + (error.message || 'Please check your connection.')
+      });
     } finally {
       setEmailPrefsLoading(false);
     }
@@ -149,25 +153,36 @@ const Settings: React.FC = () => {
   // Send test email
   const sendTestEmail = async () => {
     if (!emailPrefs.email_address) {
-      alert('Please enter your email address first');
+      setStatusMessage({ type: 'error', text: 'Please enter your email address first' });
       return;
     }
     setTestEmailSending(true);
+    setStatusMessage(null);
     try {
       const userId = authUser?.id || localStorage.getItem('userId') || 'default';
-      const response = await fetch(`/api/v1/settings/email-prefs/test`, {
+      const response = await fetch(`http://localhost:8000/api/v1/settings/email-prefs/test`, {
         method: 'POST',
-        headers: { 'X-User-ID': userId }
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': userId
+        },
+        body: JSON.stringify({ email_address: emailPrefs.email_address })
       });
       if (response.ok) {
-        alert('✅ Test email sent! Check your inbox.');
+        setStatusMessage({
+          type: 'success',
+          text: 'Test email sent successfully! Please check your inbox for a message from DataVision.'
+        });
       } else {
         const data = await response.json();
         throw new Error(data.detail || 'Failed to send');
       }
     } catch (error: any) {
       console.error('Failed to send test email:', error);
-      alert('❌ ' + (error.message || 'Failed to send test email'));
+      setStatusMessage({
+        type: 'error',
+        text: 'Unable to send test email: ' + (error.message || 'Please verify your email address and try again.')
+      });
     } finally {
       setTestEmailSending(false);
     }
@@ -179,25 +194,36 @@ const Settings: React.FC = () => {
   // Send daily report NOW (bypasses scheduler for testing)
   const sendDailyReportNow = async () => {
     if (!emailPrefs.email_address) {
-      alert('Please enter your email address first and save preferences');
+      setStatusMessage({ type: 'error', text: 'Please enter your email address first and save preferences' });
       return;
     }
     setDailyReportSending(true);
+    setStatusMessage(null);
     try {
       const userId = authUser?.id || localStorage.getItem('userId') || 'default';
-      const response = await fetch(`/api/v1/settings/email-prefs/send-daily-report`, {
+      const response = await fetch(`http://localhost:8000/api/v1/settings/email-prefs/send-daily-report`, {
         method: 'POST',
-        headers: { 'X-User-ID': userId }
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': userId
+        },
+        body: JSON.stringify({ email_address: emailPrefs.email_address })
       });
       const data = await response.json();
       if (response.ok && data.success) {
-        alert('✅ Daily report sent! Check your inbox for the full business summary.');
+        setStatusMessage({
+          type: 'success',
+          text: 'Daily Data Report sent successfully! Check your inbox for comprehensive insights from DataVision.'
+        });
       } else {
         throw new Error(data.detail || data.error?.message || 'Failed to send daily report');
       }
     } catch (error: any) {
       console.error('Failed to send daily report:', error);
-      alert('❌ ' + (error.message || 'Failed to send daily report'));
+      setStatusMessage({
+        type: 'error',
+        text: 'Unable to send daily report: ' + (error.message || 'Please ensure you have data uploaded and try again.')
+      });
     } finally {
       setDailyReportSending(false);
     }
@@ -234,7 +260,7 @@ const Settings: React.FC = () => {
     };
   });
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const userId = authUser?.id || localStorage.getItem('userId') || 'default';
 
     // Save profile per user
@@ -245,6 +271,14 @@ const Settings: React.FC = () => {
 
     // Also save to global userPreferences for other components to read
     localStorage.setItem('userPreferences', JSON.stringify({ preferences }));
+
+    // Save Email Preferences to Backend
+    if (emailPrefs.email_address) {
+      // We don't want the individual success message from saveEmailPrefs to be overwritten immediately
+      // so we call the API fetch directly or handle it here. 
+      // Reusing saveEmailPrefs is easiest but we need to manage the UI feedback.
+      await saveEmailPrefs();
+    }
 
     // Apply theme immediately
     if (preferences.theme === 'light') {
@@ -257,8 +291,11 @@ const Settings: React.FC = () => {
       document.body.classList.remove('light-theme');
     }
 
-    alert('✅ Settings saved successfully! The page will now reload to apply all theme changes.');
-    window.location.reload();
+    // Small delay to let the user see the "Email preferences saved" message if it appeared
+    setTimeout(() => {
+      alert('Settings saved successfully. DataVision will apply your preferences.');
+      window.location.reload();
+    }, 1000);
   };
 
   const handleExportData = async () => {
@@ -425,7 +462,34 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 max-w-5xl">
+    <div className="space-y-8 max-w-5xl mx-auto p-6" style={{ minHeight: '100vh' }}>
+      {/* Status Message Toast */}
+      <AnimatePresence>
+        {statusMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: 'auto' }}
+            exit={{ opacity: 0, y: -20, height: 0 }}
+            className={`fixed top-4 right-4 z-50 px-6 py-4 rounded-xl shadow-2xl backdrop-blur-md border flex items-center gap-3 ${statusMessage.type === 'success'
+              ? 'bg-emerald-900/90 border-emerald-500/50 text-emerald-100'
+              : statusMessage.type === 'error'
+                ? 'bg-rose-900/90 border-rose-500/50 text-rose-100'
+                : 'bg-blue-900/90 border-blue-500/50 text-blue-100'
+              }`}
+          >
+            {statusMessage.type === 'success' && <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />}
+            {statusMessage.type === 'error' && <div className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" />}
+            <span className="font-medium">{statusMessage.text}</span>
+            <button
+              onClick={() => setStatusMessage(null)}
+              className="ml-4 opacity-70 hover:opacity-100"
+            >
+              ×
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -703,7 +767,7 @@ const Settings: React.FC = () => {
                 <Clock className="w-5 h-5 text-teal-400" />
                 <div>
                   <div className="text-white font-medium">Daily Reports</div>
-                  <div className="text-sm text-gray-400">Receive daily business summary</div>
+                  <div className="text-sm text-gray-400">Receive daily data insights from DataVision</div>
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -755,7 +819,7 @@ const Settings: React.FC = () => {
                 <Calendar className="w-5 h-5 text-teal-400" />
                 <div>
                   <div className="text-white font-medium">Weekly Reports</div>
-                  <div className="text-sm text-gray-400">Comprehensive weekly analysis with graphs</div>
+                  <div className="text-sm text-gray-400">Comprehensive weekly analysis from DataVision</div>
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">

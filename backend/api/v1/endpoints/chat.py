@@ -56,6 +56,19 @@ except ImportError as e:
     AGENTIC_RAG = False
     print(f"⚠️ Agentic RAG not available: {e}")
 
+# Import 5 Unique Mode Engines (Silicon Valley Powerhouses)
+try:
+    from core.mode_engines.analyst_engine import analyst_response_sync
+    from core.mode_engines.deepthink_engine import deepthink_response_sync
+    from core.mode_engines.vision_engine import vision_response_sync
+    from core.mode_engines.predict_engine import predict_response_sync
+    from core.mode_engines.agent_engine import agent_response_sync
+    MODE_ENGINES_AVAILABLE = True
+    print("✅ 5 Unique Mode Engines loaded: Analyst, DeepThink, Vision, Predict, Agent")
+except ImportError as e:
+    MODE_ENGINES_AVAILABLE = False
+    print(f"⚠️ Mode Engines not fully loaded: {e}")
+
 # Import chart generation for Plotly visualizations
 try:
     from api.v1.endpoints.charts import (
@@ -97,6 +110,20 @@ except ImportError:
     async def get_current_user_optional(authorization: Optional[str] = Header(None, alias="Authorization")):
         return None
 
+# 🏆 Import Smart Suggestions for Competition-Winning Features
+try:
+    from core.smart_suggestions import generate_smart_suggestions, calculate_confidence
+    SMART_SUGGESTIONS_AVAILABLE = True
+    print("✅ Smart Suggestions loaded: Dynamic follow-ups and confidence scoring")
+except ImportError as e:
+    SMART_SUGGESTIONS_AVAILABLE = False
+    print(f"⚠️ Smart Suggestions not available: {e}")
+    # Fallback functions
+    def generate_smart_suggestions(query, response, columns=None, max_suggestions=3):
+        return []
+    def calculate_confidence(response, data_context, columns=None):
+        return 0.75
+
 router = APIRouter()
 
 # ============================================================================
@@ -110,7 +137,7 @@ def append_chart_if_needed(response: str, query: str, user_id: str) -> str:
     if not CHARTS_AVAILABLE:
         return response
         
-    viz_keywords = ['chart', 'graph', 'visualize', 'show', 'display', 'pie', 'bar', 'line', 'trend', 'top', 'breakdown', 'compare', 'distribution', 'performance', 'forecast', 'predict', 'projection', 'versus', 'vs']
+    viz_keywords = ['chart', 'graph', 'visualize', 'show', 'display', 'pie', 'bar', 'line', 'trend', 'top', 'breakdown', 'compare', 'distribution', 'performance', 'forecast', 'predict', 'projection', 'versus', 'vs', 'image', 'generate image', 'create chart']
     wants_viz = any(kw in query.lower() for kw in viz_keywords)
     has_chart = '```plotly_chart' in response
     
@@ -118,27 +145,44 @@ def append_chart_if_needed(response: str, query: str, user_id: str) -> str:
         try:
             df = get_user_data(user_id)
             if df is not None and not df.empty:
-                chart_json = generate_query_aware_chart(df, query)
-                if chart_json and 'error' not in chart_json:
-                    import json as json_lib
-                    import math
-                    
-                    # Clean NaN/Infinity values before serialization
-                    def clean_for_json(obj):
-                        if isinstance(obj, dict):
-                            return {k: clean_for_json(v) for k, v in obj.items()}
-                        elif isinstance(obj, list):
-                            return [clean_for_json(item) for item in obj]
-                        elif isinstance(obj, float):
-                            if math.isnan(obj) or math.isinf(obj):
-                                return 0
+                # 🏆 Use PURE LLM smart chart generation - 100% autonomous
+                try:
+                    from agents.smart_chart import generate_smart_chart
+                    chart_result = generate_smart_chart(query, df)
+                    if chart_result and '```plotly_chart' in chart_result:
+                        response += chart_result
+                        print(f"✅ [VIZ] Generated SMART chart for: {query[:50]}...")
+                        return response
+                except ImportError as ie:
+                    print(f"⚠️ [VIZ] smart_chart import failed: {ie}")
+                except Exception as se:
+                    print(f"⚠️ [VIZ] smart_chart failed: {se}")
+                
+                # Fallback to generate_query_aware_chart if smart_chart fails
+                try:
+                    chart_json = generate_query_aware_chart(df, query)
+                    if chart_json and 'error' not in chart_json:
+                        import json as json_lib
+                        import math
+                        
+                        # Clean NaN/Infinity values before serialization
+                        def clean_for_json(obj):
+                            if isinstance(obj, dict):
+                                return {k: clean_for_json(v) for k, v in obj.items()}
+                            elif isinstance(obj, list):
+                                return [clean_for_json(item) for item in obj]
+                            elif isinstance(obj, float):
+                                if math.isnan(obj) or math.isinf(obj):
+                                    return 0
+                                return obj
                             return obj
-                        return obj
-                    
-                    cleaned_chart = clean_for_json(chart_json)
-                    chart_block = f"\n\n```plotly_chart\n{json_lib.dumps(cleaned_chart, ensure_ascii=False)}\n```"
-                    response += chart_block
-                    print(f"✅ [VIZ] Generated chart for query: {query[:50]}...")
+                        
+                        cleaned_chart = clean_for_json(chart_json)
+                        chart_block = f"\n\n```plotly_chart\n{json_lib.dumps(cleaned_chart, ensure_ascii=False)}\n```"
+                        response += chart_block
+                        print(f"✅ [VIZ] Generated fallback chart for: {query[:50]}...")
+                except Exception as fallback_err:
+                    print(f"⚠️ [VIZ] Fallback chart failed: {fallback_err}")
         except Exception as chart_err:
             import traceback
             print(f"⚠️ [VIZ] Chart generation failed: {chart_err}")
@@ -626,6 +670,9 @@ class ChatResponse(BaseModel):
     sources: Optional[List[str]] = None
     conversationId: str
     timestamp: str
+    # 🏆 Competition-winning features
+    suggestions: Optional[List[str]] = None  # Dynamic follow-up suggestions
+    confidence: Optional[float] = None       # Data grounding confidence (0-1)
 
 # Streaming response support
 from fastapi.responses import StreamingResponse
@@ -2140,6 +2187,89 @@ Please upload a data file first, then ask me any question about your data.
         is_data_query = any(kw in query_lower for kw in data_query_keywords)
         
         # ========================================
+        # NEW 5 UNIQUE MODE ENGINES (Silicon Valley Powerhouses)
+        # Each mode has its OWN power - like OpenAI's model lineup
+        # ========================================
+        
+        # Check if we should use the new mode engines
+        NEW_MODE_ENGINES = ['analyst', 'deep', 'predict', 'agent']  # vision is handled separately
+        
+        if mode in NEW_MODE_ENGINES and MODE_ENGINES_AVAILABLE:
+            print(f"🚀 USING NEW MODE ENGINE: {mode}")
+            
+            # Get context from RAG
+            try:
+                from core.rag import rag_search
+                context, rag_sources = rag_search(user_id, query, k=10)
+            except Exception as e:
+                print(f"⚠️ RAG Search execution failed: {e}")
+                import traceback
+                traceback.print_exc()
+                context = ""
+                rag_sources = []
+            
+            try:
+                if mode == 'analyst':
+                    # 📊 ANALYST - Smart data analysis with auto RAG routing
+                    response = analyst_response_sync(user_id, query, context)
+                    sources = ["Analyst Engine"] + rag_sources
+                    print(f"📊 ANALYST ENGINE returned: {len(response)} chars")
+                    
+                elif mode == 'deep':
+                    # 🧠 DEEP THINK - Chain of thought reasoning
+                    response = deepthink_response_sync(user_id, query, context)
+                    sources = ["Deep Think Engine", "Chain of Thought"]
+                    print(f"🧠 DEEP THINK ENGINE returned: {len(response)} chars")
+                    
+                elif mode == 'predict':
+                    # 🔮 PREDICT - 3-tier forecasting
+                    response = predict_response_sync(user_id, query, context)
+                    sources = ["Predict Engine", "3-Tier Forecasting"]
+                    print(f"🔮 PREDICT ENGINE returned: {len(response)} chars")
+                    
+                elif mode == 'agent':
+                    # 🤖 AGENT - Full autonomous with web search
+                    response = agent_response_sync(user_id, query, context)
+                    sources = ["Agent Engine", "Web Search", "Multi-Tool"]
+                    print(f"🤖 AGENT ENGINE returned: {len(response)} chars")
+                
+                # Add chart if visualization requested
+                response = append_chart_if_needed(response, query, user_id)
+                
+                # Save and return
+                history.append(Message(role="user", content=query, timestamp=datetime.now().isoformat()))
+                history.append(Message(role="assistant", content=response, timestamp=datetime.now().isoformat(), sources=sources))
+                save_conversation(user_id, conversation_id, history)
+                
+                return ChatResponse(
+                    message=response,
+                    mode=mode,
+                    sources=sources,
+                    conversationId=conversation_id,
+                    timestamp=datetime.now().isoformat()
+                )
+                
+            except Exception as engine_error:
+                print(f"⚠️ Mode engine error: {engine_error}")
+                import traceback
+                traceback.print_exc()
+                # Fall through to legacy handling
+        
+        # Legacy mode mapping for backward compatibility
+        MODE_MAPPING = {
+            'analyst': 'rag',         # Fallback if engine fails
+            'deep': 'agentic',        # Fallback
+            'predict': 'prediction',  # Fallback
+            'agent': 'agentic',       # Fallback
+        }
+        
+        # Apply legacy mode mapping if needed
+        original_mode = mode
+        if mode in MODE_MAPPING and not MODE_ENGINES_AVAILABLE:
+            mode = MODE_MAPPING[mode]
+            print(f"🔄 LEGACY MODE MAPPING: '{original_mode}' → '{mode}'")
+        
+        # ========================================
         # MODE ROUTING - PRIORITY ORDER IS CRITICAL
         # ========================================
         
@@ -2730,17 +2860,50 @@ Rules:
         
         save_conversation(user_id, conversation_id, history)
         
+        # 🏆 COMPETITION FEATURE: Generate smart follow-up suggestions
+        try:
+            # Get column names for context
+            data_columns = []
+            try:
+                # Try to get columns from sources or response
+                import re
+                col_match = re.search(r'Columns?:\s*\[([^\]]+)\]', str(response))
+                if col_match:
+                    data_columns = [c.strip().strip("'\"") for c in col_match.group(1).split(',')]
+            except:
+                pass
+            
+            suggestions = generate_smart_suggestions(
+                query=query,
+                response=response[:1000],  # Limit context size
+                columns=data_columns if data_columns else sources,
+                max_suggestions=3
+            )
+            confidence = calculate_confidence(
+                response=response,
+                data_context=response[:500],  # Use response as context
+                columns=data_columns
+            )
+            print(f"💡 Generated {len(suggestions)} follow-up suggestions, confidence: {confidence:.2f}")
+        except Exception as e:
+            print(f"⚠️ Suggestion generation failed: {e}")
+            suggestions = []
+            confidence = 0.75
+        
         return ChatResponse(
             message=response,
             mode=mode,
             sources=sources if sources else None,
             conversationId=conversation_id,
-            timestamp=datetime.now().isoformat()
+            timestamp=datetime.now().isoformat(),
+            suggestions=suggestions if suggestions else None,
+            confidence=confidence
         )
         
     except Exception as e:
         print(f"❌ Chat endpoint error: {e}")
-        traceback.print_exc()
+        import traceback as tb
+        tb.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/history/{user_id}")

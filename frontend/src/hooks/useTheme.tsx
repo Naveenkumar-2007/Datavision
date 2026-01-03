@@ -68,9 +68,10 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const colors = isDark ? darkColors : lightColors;
 
     return (
-        <ThemeContext.Provider value={{ ...colors, toggleTheme }}>
-            {children}
-        </ThemeContext.Provider>
+        <ThemeContext.Provider value= {{ ...colors, toggleTheme }
+}>
+    { children }
+    </ThemeContext.Provider>
     );
 };
 

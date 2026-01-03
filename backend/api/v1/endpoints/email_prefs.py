@@ -133,37 +133,53 @@ async def update_email_preferences(
         raise HTTPException(500, f"Failed to save preferences: {str(e)}")
 
 
+class TestEmailRequest(BaseModel):
+    """Request body for test email"""
+    email_address: str
+
+
 @router.post("/email-prefs/test")
 async def test_email_report(
+    request: TestEmailRequest = None,
     x_user_id: str = Header(None, alias="X-User-ID")
 ):
     """Send a test email report to verify configuration"""
     from services.email_service import send_insight_email
     
     user_id = x_user_id or "default_user"
-    prefs = load_user_prefs(user_id)
     
-    if not prefs.email_address:
-        raise HTTPException(400, "No email address configured. Please set your email in preferences.")
+    # Get email from request body OR from saved preferences
+    email_to_use = None
+    if request and request.email_address:
+        email_to_use = request.email_address
+    else:
+        prefs = load_user_prefs(user_id)
+        email_to_use = prefs.email_address
+    
+    if not email_to_use:
+        raise HTTPException(400, "No email address provided. Please enter your email address.")
     
     try:
+        print(f"📧 Sending test email to: {email_to_use}")
         await send_insight_email(
-            to_email=prefs.email_address,
-            title="Test Report - Your Email Configuration Works!",
-            body="This is a test email to verify your AI Business Analyst email reports are configured correctly. You will receive daily and weekly reports based on your settings.",
+            to_email=email_to_use,
+            title="DataVision - Test Email | Configuration Verified",
+            body="This is a test email from DataVision. Your email configuration is working correctly. You will receive automated data insights based on your preferences.",
             workspace_id=user_id
         )
         
         return {
             "success": True,
-            "message": f"Test email sent to {prefs.email_address}"
+            "message": f"Test email sent to {email_to_use}"
         }
     except Exception as e:
+        print(f"❌ Email send failed: {e}")
         raise HTTPException(500, f"Failed to send test email: {str(e)}")
 
 
 @router.post("/email-prefs/send-daily-report")
 async def send_daily_report_now(
+    request: TestEmailRequest = None,
     x_user_id: str = Header(None, alias="X-User-ID")
 ):
     """Manually trigger a daily report - for testing scheduled reports"""
@@ -172,10 +188,17 @@ async def send_daily_report_now(
     from datetime import datetime
     
     user_id = x_user_id or "default_user"
-    prefs = load_user_prefs(user_id)
     
-    if not prefs.email_address:
-        raise HTTPException(400, "No email address configured. Please set your email in preferences.")
+    # Get email from request body OR from saved preferences
+    email_to_use = None
+    if request and request.email_address:
+        email_to_use = request.email_address
+    else:
+        prefs = load_user_prefs(user_id)
+        email_to_use = prefs.email_address
+    
+    if not email_to_use:
+        raise HTTPException(400, "No email address provided. Please enter your email address.")
     
     try:
         # Generate the daily report
@@ -186,15 +209,15 @@ async def send_daily_report_now(
         
         # Send the report with Data Vision branding
         await send_insight_email(
-            to_email=prefs.email_address,
-            title=f"Data Vision - Daily Report | {datetime.now().strftime('%B %d, %Y')}",
+            to_email=email_to_use,
+            title=f"DataVision - Daily Report | {datetime.now().strftime('%B %d, %Y')}",
             body=report_html,
             workspace_id=user_id
         )
         
         return {
             "success": True,
-            "message": f"Data Vision Daily Report sent to {prefs.email_address}"
+            "message": f"Data Vision Daily Report sent to {email_to_use}"
         }
     except HTTPException:
         raise

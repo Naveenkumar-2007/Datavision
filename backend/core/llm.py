@@ -212,7 +212,27 @@ def chat(
         logger.error(f"Groq model failed: {e}")
         
         # =====================================================================
-        # 🦙 OLLAMA FALLBACK - Try local model if Groq fails
+        # 🌟 GEMINI FALLBACK - Try Google Gemini if Groq fails (FREE tier!)
+        # =====================================================================
+        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+            try:
+                # Correct LiteLLM format for Gemini (Google AI Studio)
+                # Provider prefix 'gemini/' is required for API keys
+                gemini_model = "gemini/gemini-pro"  
+                logger.info(f"🌟 Falling back to Gemini: {gemini_model}")
+                response = litellm.completion(
+                    model=gemini_model,
+                    messages=final_messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+                logger.info(f"✅ Gemini fallback success!")
+                return response.choices[0].message.content
+            except Exception as gemini_error:
+                logger.error(f"🌟 Gemini fallback also failed: {gemini_error}")
+        
+        # =====================================================================
+        # 🦙 OLLAMA FALLBACK - Try local model if cloud APIs fail
         # =====================================================================
         if _check_ollama_available():
             try:
@@ -230,7 +250,7 @@ def chat(
             except Exception as ollama_error:
                 logger.error(f"🦙 Ollama fallback also failed: {ollama_error}")
         
-        # Return user-friendly error if both fail
+        # Return user-friendly error if all fail
         if 'rate_limit' in error_str or 'rate limit' in error_str:
             return (
                 "**Rate limit reached.** Please wait a moment and try again.\n\n"
@@ -239,13 +259,15 @@ def chat(
         elif 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str:
             return (
                 "**API Key Error**\n\n"
-                "Please check your GROQ_API_KEY in the .env file.\n\n"
-                "💡 **Tip:** Make sure Ollama is running as backup with `ollama serve`"
+                "Please check your GROQ_API_KEY or GEMINI_API_KEY in the .env file.\n\n"
+                "💡 **Get FREE keys:**\n"
+                "- Groq: https://console.groq.com/keys\n"
+                "- Gemini: https://aistudio.google.com/apikey"
             )
         elif 'timeout' in error_str or 'connection' in error_str:
             return (
                 "**Connection Error**\n\n"
-                "Unable to reach Groq API. Check your internet or run Ollama locally."
+                "Unable to reach AI service. Check your internet connection."
             )
         elif 'context' in error_str or 'too large' in error_str or 'token' in error_str:
             return (

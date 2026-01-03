@@ -2,6 +2,50 @@
 Settings configuration for the application
 """
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+# Load .env file from the PROJECT ROOT (parent of backend)
+# The .env file is in ai_business_analyst/.env, not backend/.env
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # backend/../.. = project root
+ENV_PATH = PROJECT_ROOT / ".env"
+
+# Try loading from root first, then fallback to backend folder
+if ENV_PATH.exists():
+    load_dotenv(ENV_PATH)
+    print(f"✅ Loaded .env from: {ENV_PATH}")
+else:
+    # Fallback: try backend folder
+    BACKEND_ENV = Path(__file__).resolve().parent.parent / ".env"
+    if BACKEND_ENV.exists():
+        load_dotenv(BACKEND_ENV)
+        print(f"✅ Loaded .env from: {BACKEND_ENV}")
+    else:
+        load_dotenv()  # Try default locations
+        print("⚠️ .env file not found, using system environment")
+
+# Verify API keys are loaded
+# Handle case where GROQ_API_KEY on first line might have encoding issues
+groq_key = os.environ.get("GROQ_API_KEY")
+if not groq_key:
+    # Try fallback keys (GROQ_KEY_1, GROQ_KEY_2, GROQ_KEY_3)
+    for fallback in ["GROQ_KEY_1", "GROQ_KEY_2", "GROQ_KEY_3"]:
+        if os.environ.get(fallback):
+            groq_key = os.environ.get(fallback)
+            os.environ["GROQ_API_KEY"] = groq_key  # Set the main key
+            print(f"✅ Using {fallback} as GROQ_API_KEY")
+            break
+
+if groq_key:
+    print("✅ GROQ_API_KEY loaded successfully")
+else:
+    print("⚠️ WARNING: No GROQ API key found!")
+    print("   Get your FREE key at: https://console.groq.com/keys")
+
+if os.environ.get("GEMINI_API_KEY"):
+    print("✅ GEMINI_API_KEY loaded successfully")
+    # Also set GOOGLE_API_KEY for LiteLLM
+    os.environ["GOOGLE_API_KEY"] = os.environ.get("GEMINI_API_KEY")
 
 class Settings:
     """Application settings"""

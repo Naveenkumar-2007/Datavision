@@ -31,9 +31,19 @@ import {
   Legend,
   BarChart as BarChartComponent,
   Bar,
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis,
+  Funnel,
+  FunnelChart,
+  LabelList,
+  ScatterChart,
+  Scatter,
 } from 'recharts';
 import { apiService } from '@/services/api';
-import { formatCurrency, getCurrencySymbol, getUserPreferredCurrency } from '@/utils/currency';
+import { getCurrencySymbol, getUserPreferredCurrency } from '@/utils/currency';
 import { exportToPDF } from '@/utils/pdfExport';
 
 interface ThemeContext {
@@ -144,10 +154,12 @@ const Reports: React.FC = () => {
   };
 
   const reportTypes = [
-    { value: 'metrics', label: 'Metrics Analysis', description: 'Analyze numeric data', icon: TrendingUp },
-    { value: 'breakdown', label: 'Data Breakdown', description: 'Category distributions', icon: PieChartIcon },
-    { value: 'summary', label: 'Data Summary', description: 'Complete overview', icon: BarChart3 },
-    { value: 'executive', label: 'Executive Summary', description: 'High-level insights', icon: FileText },
+    { value: 'metrics', label: 'Metrics Analysis', description: 'Analyze numeric data with trends', icon: TrendingUp, color: '#14B8A6' },
+    { value: 'breakdown', label: 'Data Breakdown', description: 'Category distributions & segments', icon: PieChartIcon, color: '#8B5CF6' },
+    { value: 'summary', label: 'Data Summary', description: 'Complete overview of all data', icon: BarChart3, color: '#3B82F6' },
+    { value: 'executive', label: 'Executive Summary', description: 'High-level insights for leaders', icon: FileText, color: '#22C55E' },
+    { value: 'predictive', label: '🔮 Predictive Report', description: 'ML forecasts & predictions', icon: TrendingUp, color: '#F59E0B', badge: 'AI' },
+    { value: 'anomaly', label: '⚠️ Anomaly Report', description: 'Outliers & unusual patterns', icon: AlertCircle, color: '#EF4444', badge: 'AI' },
   ];
 
   return (
@@ -302,18 +314,62 @@ const Reports: React.FC = () => {
       >
         <h2 className="text-lg font-semibold mb-6" style={{ color: theme.textPrimary }}>Generate New Report</h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {reportTypes.map((type) => (
-            <button
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          {reportTypes.map((type, idx) => (
+            <motion.button
               key={type.value}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.05 }}
               onClick={() => setSelectedType(type.value)}
-              className={`p-4 rounded-xl transition-all text-left border ${selectedType === type.value ? 'border-teal-500 bg-teal-500/10' : 'hover:border-teal-500/50'}`}
-              style={{ backgroundColor: selectedType === type.value ? 'rgba(20, 184, 166, 0.1)' : theme.cardBg, borderColor: selectedType === type.value ? '#14B8A6' : theme.borderColor }}
+              className={`p-5 rounded-xl transition-all text-left border relative overflow-hidden group ${selectedType === type.value
+                ? 'ring-2 ring-offset-2 ring-offset-transparent'
+                : 'hover:scale-[1.02]'
+                }`}
+              style={{
+                backgroundColor: selectedType === type.value ? `${type.color}15` : theme.cardBg,
+                borderColor: selectedType === type.value ? type.color : theme.borderColor,
+                // @ts-ignore
+                '--tw-ring-color': type.color
+              }}
             >
-              <type.icon className={`w-6 h-6 mb-2`} style={{ color: selectedType === type.value ? '#14B8A6' : theme.textMuted }} />
-              <div className="font-semibold" style={{ color: theme.textPrimary }}>{type.label}</div>
-              <div className="text-sm" style={{ color: theme.textMuted }}>{type.description}</div>
-            </button>
+              {/* Gradient accent */}
+              <div
+                className="absolute top-0 right-0 w-20 h-20 rounded-full blur-2xl opacity-20 group-hover:opacity-40 transition-opacity"
+                style={{ background: `radial-gradient(circle, ${type.color} 0%, transparent 70%)` }}
+              />
+
+              {/* AI Badge */}
+              {type.badge && (
+                <div
+                  className="absolute top-3 right-3 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                  style={{ backgroundColor: `${type.color}20`, color: type.color }}
+                >
+                  {type.badge}
+                </div>
+              )}
+
+              <div className="relative z-10">
+                <type.icon
+                  className="w-8 h-8 mb-3"
+                  style={{ color: selectedType === type.value ? type.color : theme.textMuted }}
+                />
+                <div className="font-semibold text-base mb-1" style={{ color: theme.textPrimary }}>
+                  {type.label}
+                </div>
+                <div className="text-sm" style={{ color: theme.textMuted }}>
+                  {type.description}
+                </div>
+              </div>
+
+              {/* Selection indicator */}
+              {selectedType === type.value && (
+                <div
+                  className="absolute bottom-0 left-0 right-0 h-1 rounded-b-xl"
+                  style={{ backgroundColor: type.color }}
+                />
+              )}
+            </motion.button>
           ))}
         </div>
 
@@ -384,6 +440,69 @@ const Reports: React.FC = () => {
               <p className="text-sm mt-1" style={{ color: theme.textMuted }}>Generated: {new Date(report.generatedAt).toLocaleString()} | Source: {report.dataSource}</p>
             </div>
 
+            {/* AI Key Findings Section - Fully Autonomous */}
+            {report.sections && report.sections.length > 0 && (() => {
+              // Extract insights dynamically from report sections
+              const firstSection = report.sections[0];
+              const topInsight = firstSection?.content?.split('\n').filter((l: string) => l.trim())[0] || 'Data analysis complete';
+
+              // Find action/recommendation section
+              const actionSection = report.sections.find((s: any) =>
+                s.title?.toLowerCase().includes('recommend') ||
+                s.title?.toLowerCase().includes('action') ||
+                s.title?.toLowerCase().includes('next')
+              );
+              const actionText = actionSection?.content?.split('\n').filter((l: string) => l.trim())[0]?.replace(/^\d+\.\s*/, '')?.replace(/^\*\s*/, '') ||
+                (report.sections[1]?.content?.split('\n')[0] || 'Review data for opportunities');
+
+              // Calculate confidence based on data richness
+              const dataPoints = report.sections.reduce((acc: number, s: any) => {
+                if (s.data && Array.isArray(s.data)) return acc + s.data.length;
+                if (s.data && typeof s.data === 'object') return acc + Object.keys(s.data).length;
+                return acc + 1;
+              }, 0);
+              const confidence = dataPoints > 20 ? 'Very High' : dataPoints > 10 ? 'High' : dataPoints > 5 ? 'Medium' : 'Standard';
+
+              return (
+                <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-teal-500/10 to-indigo-500/10 border border-teal-500/30">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-lg">🤖</span>
+                    <h3 className="font-semibold" style={{ color: theme.textPrimary }}>AI Key Findings</h3>
+                    <span className="px-2 py-0.5 bg-teal-500/20 text-teal-400 text-[10px] font-bold rounded-full">AUTO-GENERATED</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-green-400">📈</span>
+                        <span className="text-xs font-bold text-green-400">TOP INSIGHT</span>
+                      </div>
+                      <p className="text-sm" style={{ color: theme.textMuted }}>
+                        {topInsight.slice(0, 100)}{topInsight.length > 100 ? '...' : ''}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-amber-400">⚡</span>
+                        <span className="text-xs font-bold text-amber-400">ACTION ITEM</span>
+                      </div>
+                      <p className="text-sm" style={{ color: theme.textMuted }}>
+                        {actionText.slice(0, 100)}{actionText.length > 100 ? '...' : ''}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-blue-400">🎯</span>
+                        <span className="text-xs font-bold text-blue-400">CONFIDENCE</span>
+                      </div>
+                      <p className="text-sm" style={{ color: theme.textMuted }}>
+                        {confidence} confidence • {report.sections.length} sections • {dataPoints} data points
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {report.error ? (
               <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20">
                 <div className="text-red-400 font-semibold">{report.error}</div>
@@ -404,74 +523,231 @@ const Reports: React.FC = () => {
                       {/* Chart visualization if available */}
                       {hasChartData && (
                         <div className="mt-4 p-4 rounded-xl border" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', borderColor: theme.borderColor }}>
-                          <ResponsiveContainer width="100%" height={200}>
-                            {section.chartType === 'pie' ? (
-                              <PieChart>
-                                <Pie
-                                  data={section.data}
-                                  dataKey="value"
-                                  nameKey="name"
-                                  cx="50%"
-                                  cy="50%"
-                                  innerRadius={40}
-                                  outerRadius={70}
-                                  paddingAngle={3}
-                                >
-                                  {section.data.map((item: any, index: number) => (
-                                    <Cell key={`cell-${index}`} fill={item.color || CHART_COLORS[index % CHART_COLORS.length]} />
-                                  ))}
-                                </Pie>
-                                <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
-                                <Legend />
-                              </PieChart>
-                            ) : section.chartType === 'line' ? (
-                              <AreaChart data={section.data}>
-                                <defs>
-                                  <linearGradient id={`gradient-${i}`} x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#14B8A6" stopOpacity={0.4} />
-                                    <stop offset="95%" stopColor="#14B8A6" stopOpacity={0} />
-                                  </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} vertical={false} />
-                                <XAxis dataKey="period" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
-                                <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
-                                <Area type="monotone" dataKey="value" stroke="#14B8A6" strokeWidth={2} fill={`url(#gradient-${i})`} />
-                              </AreaChart>
-                            ) : section.chartType === 'bar' ? (
-                              /* Actual BAR chart for breakdown/executive reports */
-                              <BarChartComponent data={section.data} layout="vertical">
-                                <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} horizontal={true} vertical={false} />
-                                <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
-                                <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} width={80} />
-                                <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
-                                <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                                  {section.data.map((item: any, index: number) => (
-                                    <Cell key={`bar-${index}`} fill={item.color || CHART_COLORS[index % CHART_COLORS.length]} />
-                                  ))}
-                                </Bar>
-                              </BarChartComponent>
-                            ) : (
-                              /* Fallback to PIE chart */
-                              <PieChart>
-                                <Pie
-                                  data={section.data.slice(0, 8)}
-                                  dataKey="value"
-                                  nameKey="name"
-                                  cx="50%"
-                                  cy="50%"
-                                  innerRadius={40}
-                                  outerRadius={70}
-                                  paddingAngle={3}
-                                >
-                                  {section.data.slice(0, 8).map((item: any, index: number) => (
-                                    <Cell key={`cell-${index}`} fill={item.color || CHART_COLORS[index % CHART_COLORS.length]} />
-                                  ))}
-                                </Pie>
-                                <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
-                                <Legend />
-                              </PieChart>
-                            )}
+                          <ResponsiveContainer width="100%" height={250}>
+                            {(() => {
+                              // AUTONOMOUS CHART SELECTOR - decides best chart based on data
+                              const chartType = section.chartType || 'bar';
+                              const data = section.data || [];
+                              const dataCount = data.length;
+
+                              // Autonomous chart selection based on data characteristics
+                              const getAutonomousChartType = () => {
+                                if (chartType) return chartType; // Use backend suggestion if available
+
+                                // Analyze data to choose best chart
+                                const hasPercentage = data.some((d: any) => d.percentage !== undefined);
+                                const hasNegativeValues = data.some((d: any) => d.value < 0);
+                                const hasTimeSeries = data.some((d: any) => d.period || d.date || d.time);
+
+                                if (hasTimeSeries) return 'area';
+                                if (hasNegativeValues) return 'bar';
+                                if (hasPercentage && dataCount <= 6) return 'donut';
+                                if (dataCount > 10) return 'horizontal_bar';
+                                if (dataCount <= 5) return 'pie';
+                                return 'bar';
+                              };
+
+                              const selectedChart = getAutonomousChartType();
+
+                              // DONUT CHART - for summary distributions
+                              if (selectedChart === 'donut') {
+                                return (
+                                  <PieChart>
+                                    <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3}>
+                                      {data.map((item: any, idx: number) => (
+                                        <Cell key={`donut-${idx}`} fill={item.color || CHART_COLORS[idx % CHART_COLORS.length]} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                    <Legend />
+                                  </PieChart>
+                                );
+                              }
+
+                              // PIE CHART - for distributions
+                              if (selectedChart === 'pie') {
+                                return (
+                                  <PieChart>
+                                    <Pie data={data.slice(0, 8)} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={30} outerRadius={70} paddingAngle={3}>
+                                      {data.slice(0, 8).map((item: any, idx: number) => (
+                                        <Cell key={`pie-${idx}`} fill={item.color || CHART_COLORS[idx % CHART_COLORS.length]} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                    <Legend />
+                                  </PieChart>
+                                );
+                              }
+
+                              // HORIZONTAL BAR - for category comparisons
+                              if (selectedChart === 'horizontal_bar') {
+                                return (
+                                  <BarChartComponent data={data} layout="vertical" margin={{ left: 20, right: 30 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} horizontal={true} vertical={false} />
+                                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} width={100} />
+                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                    <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                      {data.map((item: any, idx: number) => (
+                                        <Cell key={`hbar-${idx}`} fill={item.color || CHART_COLORS[idx % CHART_COLORS.length]} />
+                                      ))}
+                                    </Bar>
+                                  </BarChartComponent>
+                                );
+                              }
+
+                              // AREA CHART - for trends and forecasts
+                              if (selectedChart === 'area' || selectedChart === 'line') {
+                                return (
+                                  <AreaChart data={data} margin={{ left: 10, right: 30, top: 10, bottom: 10 }}>
+                                    <defs>
+                                      <linearGradient id={`areaGrad-${i}`} x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0.4} />
+                                        <stop offset="95%" stopColor={CHART_COLORS[i % CHART_COLORS.length]} stopOpacity={0} />
+                                      </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} vertical={false} />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+
+                                    {/* Confidence Interval Band (Upper - Lower) */}
+                                    {section.dataKeys && section.dataKeys.includes('upper') && (
+                                      <Area
+                                        type="monotone"
+                                        dataKey="upper"
+                                        stroke="none"
+                                        fill={CHART_COLORS[i % CHART_COLORS.length]}
+                                        fillOpacity={0.1}
+                                        isAnimationActive={false}
+                                      />
+                                    )}
+                                    {section.dataKeys && section.dataKeys.includes('lower') && (
+                                      <Area
+                                        type="monotone"
+                                        dataKey="lower"
+                                        stroke="none"
+                                        fill={theme.cardBg}
+                                        fillOpacity={1}
+                                        isAnimationActive={false}
+                                      />
+                                    )}
+
+                                    {/* Main Value Line/Area */}
+                                    <Area
+                                      type="monotone"
+                                      dataKey="value"
+                                      stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                                      strokeWidth={2}
+                                      fill={`url(#areaGrad-${i})`}
+                                    />
+                                  </AreaChart>
+                                );
+                              }
+
+                              // SCATTER CHART - for correlations and predictions
+                              if (selectedChart === 'scatter') {
+                                return (
+                                  <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} />
+                                    <XAxis type="number" dataKey="x" name={section.xLabel || "X"} axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <YAxis type="number" dataKey="y" name={section.yLabel || "Y"} axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                    <Scatter name={section.title} data={data} fill={CHART_COLORS[0]}>
+                                      {data.map((entry: any, index: number) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color || CHART_COLORS[index % CHART_COLORS.length]} />
+                                      ))}
+                                    </Scatter>
+                                  </ScatterChart>
+                                );
+                              }
+
+                              // BOX CHART (simulated) - for anomaly/outlier detection
+                              if (selectedChart === 'box') {
+                                return (
+                                  <BarChartComponent data={data} margin={{ left: 10, right: 30 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} vertical={false} />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                    <Bar dataKey="value" radius={[4, 4, 4, 4]}>
+                                      {data.map((item: any, idx: number) => (
+                                        <Cell key={`box-${idx}`} fill={item.color || (item.percentage > 5 ? '#EF4444' : item.percentage > 2 ? '#F59E0B' : '#22C55E')} />
+                                      ))}
+                                    </Bar>
+                                  </BarChartComponent>
+                                );
+                              }
+
+                              // GAUGE (simulated with radial) - for KPIs
+                              if (selectedChart === 'gauge') {
+                                return (
+                                  <PieChart>
+                                    <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" startAngle={180} endAngle={0} innerRadius={60} outerRadius={80}>
+                                      {data.map((item: any, idx: number) => (
+                                        <Cell key={`gauge-${idx}`} fill={item.color || CHART_COLORS[idx % CHART_COLORS.length]} />
+                                      ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                    <Legend />
+                                  </PieChart>
+                                );
+                              }
+
+                              // RADAR CHART - for multi-metric comparison
+                              if (selectedChart === 'radar') {
+                                return (
+                                  <RadarChart cx="50%" cy="50%" outerRadius="80%" data={data}>
+                                    <PolarGrid stroke={theme.borderColor} />
+                                    <PolarAngleAxis dataKey="subject" tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    {section.keys && section.keys.map((key: string, idx: number) => (
+                                      <Radar
+                                        key={key}
+                                        name={key}
+                                        dataKey={key}
+                                        stroke={CHART_COLORS[idx % CHART_COLORS.length]}
+                                        fill={CHART_COLORS[idx % CHART_COLORS.length]}
+                                        fillOpacity={0.3}
+                                      />
+                                    ))}
+                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                    <Legend />
+                                  </RadarChart>
+                                );
+                              }
+
+                              // FUNNEL CHART - for process stages
+                              if (selectedChart === 'funnel') {
+                                return (
+                                  <FunnelChart>
+                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                    <Funnel
+                                      dataKey="value"
+                                      data={data}
+                                      isAnimationActive
+                                    >
+                                      <LabelList position="right" fill={theme.textPrimary} stroke="none" dataKey="name" />
+                                    </Funnel>
+                                  </FunnelChart>
+                                );
+                              }
+
+                              // DEFAULT: VERTICAL BAR CHART
+                              return (
+                                <BarChartComponent data={data} layout="vertical" margin={{ left: 20, right: 30 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} horizontal={true} vertical={false} />
+                                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                  <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} width={80} />
+                                  <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                                    {data.map((item: any, idx: number) => (
+                                      <Cell key={`bar-${idx}`} fill={item.color || CHART_COLORS[idx % CHART_COLORS.length]} />
+                                    ))}
+                                  </Bar>
+                                </BarChartComponent>
+                              );
+                            })()}
                           </ResponsiveContainer>
                         </div>
                       )}
