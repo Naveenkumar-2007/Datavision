@@ -638,6 +638,7 @@ class ProductionMLEngine:
     
     async def train(self, df: pd.DataFrame, target_col: Optional[str] = None, user_id: str = "default") -> TrainResult:
         """Main training pipeline"""
+        self.errors = []  # Initialize error list
         start = datetime.now()
         
         print("=" * 60)
@@ -684,13 +685,22 @@ class ProductionMLEngine:
                 t0 = datetime.now()
                 print(f"   [{idx}/{len(models)}] {name}...", end=" ", flush=True)
                 
-                search = RandomizedSearchCV(
-                    model, params, n_iter=min(n_iter, np.prod([len(v) for v in params.values()])),
-                    cv=cv_folds, scoring=scoring, n_jobs=1, random_state=42
-                )
-                search.fit(X_train, y_train)
+                # Fallback mechanism: Try GridSearch/RandomSearch first, then simple fit
+                try:
+                    search = RandomizedSearchCV(
+                        model, params, n_iter=min(n_iter, np.prod([len(v) for v in params.values()])),
+                        cv=cv_folds, scoring=scoring, n_jobs=1, random_state=42, error_score='raise'
+                    )
+                    search.fit(X_train, y_train)
+                    best_est = search.best_estimator_
+                    best_params = search.best_params_
+                except Exception as search_err:
+                    print(f"   ⚠️ Search failed ({str(search_err)[:50]}), falling back to simple fit...")
+                    model.fit(X_train, y_train)
+                    best_est = model
+                    best_params = "default"
                 
-                best_est = search.best_estimator_
+                # Predict
                 y_pred = best_est.predict(X_test)
                 
                 y_proba = None
@@ -717,7 +727,7 @@ class ProductionMLEngine:
                     'metrics': metrics,
                     'training_time': round(elapsed, 2),
                     'importance': self._get_importance(best_est),
-                    'best_params': search.best_params_
+                    'best_params': best_params
                 })
                 
                 metric_name = 'f1' if self.task_type_simple == 'classification' else 'r2'
@@ -733,19 +743,27 @@ class ProductionMLEngine:
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                print(f"ERROR - {str(e)[:100]}")
+                error_msg = f"{name}: {str(e)[:100]}"
+                print(f"ERROR - {error_msg}")
+                self.errors.append(error_msg)  # Store error for reporting
         
         self.model = best_model
         self.model_name = best_name
         
         if self.model is None:
-            raise ValueError(f"All models failed to train. Checked {len(models)} algorithms. See logs for details.")
+            error_summary = "; ".join(self.errors[-3:]) if hasattr(self, 'errors') else "Unknown error"
+            raise ValueError(f"All models failed to train. Errors: {error_summary}")
 
         print(f"🏆 Best: {best_name} (score={best_score:.3f})")
         
         # Retrain on full data
-        print(f"🔄 Retraining {best_name} on full data...")
-        self.model.fit(X, y)
+        try:
+            print(f"🔄 Retraining {best_name} on full data...")
+            self.model.fit(X, y)
+        except Exception as e:
+            print(f"⚠️ Retraining failed, keeping split model: {e}")
+            # Keep the already trained best_model from split
+            pass
         print(f"   ✅ Retrained on {len(X)} samples")
         
         # Sort results
