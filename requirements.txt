@@ -1,12 +1,11 @@
 # =============================================================================
-# DataVision AI Business Analyst - Complete Dependencies
+# DataVision AI Business Analyst - HuggingFace Deployment (Lightweight)
 # =============================================================================
 
 # Core Framework
 python-dotenv
 fastapi
 uvicorn[standard]
-streamlit
 python-multipart
 pydantic>=2.5.3
 pydantic-settings>=2.1.0
@@ -23,21 +22,19 @@ pandas
 numpy
 openpyxl
 
-# Machine Learning - Core
+# Machine Learning - Core (lightweight)
 scikit-learn>=1.3.0
 
-# Machine Learning - Advanced
+# Machine Learning - Advanced (lightweight alternatives)
 xgboost>=2.0.0
 lightgbm>=4.2.0
-# catboost>=1.2.0  # Commented out - sklearn 1.6 compatibility issues
 
 # Statistical Forecasting
 prophet>=1.1.0
 statsmodels>=0.14.0
 
-# Vector Store & Embeddings
+# Vector Store (lightweight - no torch required)
 faiss-cpu
-sentence-transformers
 
 # Visualization
 matplotlib>=3.8.0

@@ -1,41 +1,44 @@
-FROM python:3.11-slim
+# ==========================================
+# Stage 1: Build Frontend
+# ==========================================
+FROM node:20-slim AS frontend-builder
 
-# Force rebuild with optimized build order - 2026-01-03
-WORKDIR /app
-
-# Install Node.js for frontend build FIRST (before heavy Python deps)
-RUN apt-get update && apt-get install -y \
-    curl \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Build frontend FIRST (before Python deps to avoid OOM)
-COPY frontend/package*.json frontend/
 WORKDIR /app/frontend
-RUN npm ci
 
-# Copy frontend source and build with memory limit
+# Copy package files and install dependencies
+COPY frontend/package*.json ./
+RUN npm ci --legacy-peer-deps
+
+# Copy frontend source and build
 COPY frontend/ .
-ENV NODE_OPTIONS="--max-old-space-size=2048"
+
+# Build with increased memory limit
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
-# Now install Python dependencies (after frontend build is done)
+# ==========================================
+# Stage 2: Production Runtime
+# ==========================================
+FROM python:3.11-slim
+
+# Force rebuild - 2026-01-03-v3-multistage
 WORKDIR /app
+
+# Install Python dependencies first
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy ALL backend source files
+# Copy built frontend from builder stage
+COPY --from=frontend-builder /app/frontend/dist /app/static
+
+# Copy backend source files
 COPY backend/ backend/
 
-# Create directory for serving frontend
-RUN mkdir -p /app/static && cp -r /app/frontend/dist/* /app/static/
-
-# Set Python path to include backend directory
+# Set Python path
 ENV PYTHONPATH=/app/backend:/app
 
 # Expose HuggingFace default port
 EXPOSE 7860
 
-# Start FastAPI server (running from /app, so use backend.main)
+# Start FastAPI server
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "7860"]
