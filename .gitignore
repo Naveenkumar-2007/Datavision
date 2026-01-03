@@ -49,8 +49,7 @@ logs/
 .mypy_cache/
 .ruff_cache/
 
-# Build
-frontend/dist/
+# Build (frontend/dist/ now tracked for HuggingFace deployment)
 
 # Temporary
 *.tmp
