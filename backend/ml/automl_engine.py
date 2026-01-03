@@ -686,7 +686,7 @@ class ProductionMLEngine:
                 
                 search = RandomizedSearchCV(
                     model, params, n_iter=min(n_iter, np.prod([len(v) for v in params.values()])),
-                    cv=cv_folds, scoring=scoring, n_jobs=-1, random_state=42
+                    cv=cv_folds, scoring=scoring, n_jobs=1, random_state=42
                 )
                 search.fit(X_train, y_train)
                 
@@ -731,11 +731,16 @@ class ProductionMLEngine:
                     best_proba = y_proba
                     
             except Exception as e:
-                print(f"ERROR - {str(e)[:50]}")
+                import traceback
+                traceback.print_exc()
+                print(f"ERROR - {str(e)[:100]}")
         
         self.model = best_model
         self.model_name = best_name
         
+        if self.model is None:
+            raise ValueError(f"All models failed to train. Checked {len(models)} algorithms. See logs for details.")
+
         print(f"🏆 Best: {best_name} (score={best_score:.3f})")
         
         # Retrain on full data
