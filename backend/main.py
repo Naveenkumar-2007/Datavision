@@ -32,21 +32,11 @@ from api.v1.endpoints import (
 )
 
 # Import Autonomous Dashboard API
-try:
-    from api.v1.endpoints import dashboard_api
-    DASHBOARD_API_AVAILABLE = True
-except ImportError:
-    DASHBOARD_API_AVAILABLE = False
-    print("⚠️ Dashboard API not available")
+from api.v1.endpoints import dashboard_api
 
 # 🧠 Import Autonomous Brain API
-try:
-    from api.v1.endpoints import brain
-    BRAIN_API_AVAILABLE = True
-    print("✅ Autonomous Brain API loaded")
-except ImportError as e:
-    BRAIN_API_AVAILABLE = False
-    print(f"⚠️ Brain API not available: {e}")
+from api.v1.endpoints import brain
+print("✅ Autonomous Brain API loaded")
 
 # Initialize App
 app = FastAPI(
@@ -76,28 +66,20 @@ app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(email_prefs.router, prefix="/api/v1/settings", tags=["Settings"])
 
 # 🏆 Autonomous Dashboard API
-if DASHBOARD_API_AVAILABLE:
-    app.include_router(dashboard_api.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
+app.include_router(dashboard_api.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 
 # 🧠 Autonomous Brain API
-if BRAIN_API_AVAILABLE:
-    app.include_router(brain.router, prefix="/api/v1/brain", tags=["Brain"])
+app.include_router(brain.router, prefix="/api/v1/brain", tags=["Brain"])
 
 # 🚀 DataVision API v2 (All Features)
-try:
-    from api.v1.endpoints import datavision_api
-    app.include_router(datavision_api.router, prefix="/api/v2", tags=["DataVision v2"])
-    print("✅ DataVision API v2 loaded")
-except ImportError as e:
-    print(f"⚠️ DataVision API v2 not available: {e}")
+from api.v1.endpoints import datavision_api
+app.include_router(datavision_api.router, prefix="/api/v2", tags=["DataVision v2"])
+print("✅ DataVision API v2 loaded")
 
 # 🤖 AutoML API (Production ML)
-try:
-    from api.v1.endpoints import automl_api
-    app.include_router(automl_api.router, prefix="/api/v2/automl", tags=["AutoML"])
-    print("✅ AutoML API loaded")
-except ImportError as e:
-    print(f"⚠️ AutoML API not available: {e}")
+from api.v1.endpoints import automl_api
+app.include_router(automl_api.router, prefix="/api/v2/automl", tags=["AutoML"])
+print("✅ AutoML API loaded")
 
 from fastapi.responses import FileResponse
 
