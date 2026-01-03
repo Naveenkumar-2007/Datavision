@@ -185,8 +185,8 @@ async def startup_event():
     print("⚡ Advanced MCPs: LOADED")
     print("🏢 Enterprise Features: ENABLED")
     print("=" * 50)
-    print("📡 API v2 available at: http://localhost:8000/api/v2")
-    print("📚 Docs at: http://localhost:8000/docs")
+    print("📡 API v2 available at: /api/v2")
+    print("📚 Docs at: /docs")
     print("=" * 50)
     
 @app.on_event("shutdown")

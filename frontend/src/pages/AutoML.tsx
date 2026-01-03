@@ -669,7 +669,7 @@ const AutoML: React.FC = () => {
                                     <button
                                         className="px-4 py-3 bg-emerald-500 rounded-xl text-white font-medium hover:bg-emerald-600 transition-colors"
                                         onClick={() => {
-                                            navigator.clipboard.writeText(`http://localhost:8000${result.api_endpoint}`);
+                                            navigator.clipboard.writeText(`${window.location.origin}${result.api_endpoint}`);
                                             alert('Copied to clipboard!');
                                         }}
                                     >
