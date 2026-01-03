@@ -9,6 +9,8 @@ WORKDIR /app
 # Install system dependencies required by ML libraries
 RUN apt-get update && apt-get install -y \
     libgomp1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -20,6 +22,10 @@ COPY frontend/dist /app/static
 
 # Copy backend source files
 COPY backend/ backend/
+
+# Set permissions for HuggingFace (runs as user 1000)
+# Critical for SQLite, uploads, and model saving
+RUN chmod -R 777 /app
 
 # Set Python path
 ENV PYTHONPATH=/app/backend:/app
