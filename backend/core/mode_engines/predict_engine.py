@@ -46,6 +46,7 @@ class QueryType(Enum):
     METRICS = "metrics"                 # Show model performance
     FEATURE_IMPORTANCE = "importance"   # What features matter most
     DATA_ANALYSIS = "data_analysis"     # Analyze data distribution
+    FEATURE_SPECIFIC = "feature_specific" # Specific feature analysis
     MODEL_INFO = "model_info"           # Info about trained model
     COMPARISON = "comparison"           # Compare values or scenarios
     GENERAL_ML = "general_ml"           # General ML/AI questions
@@ -59,6 +60,21 @@ def detect_query_type(query: str) -> Tuple[QueryType, float]:
     """
     q = query.lower().strip()
     
+    # specific feature patterns - Check first!
+    if AUTOML_AVAILABLE:
+        try:
+            features = automl_engine.feature_columns
+            for feat in features:
+                feat_clean = feat.lower().replace('_', ' ')
+                # Check for exact feature name matching or cleaned version
+                if re.search(r'\b' + re.escape(feat.lower()) + r'\b', q) or \
+                   re.search(r'\b' + re.escape(feat_clean) + r'\b', q):
+                    # If asking about how it works, analysis, distribution
+                    if any(x in q for x in ['work', 'how', 'explain', 'analyze', 'what is', 'distribution', 'stats', 'mean']):
+                        return QueryType.FEATURE_SPECIFIC, 0.98
+        except:
+            pass
+            
     # Prediction patterns
     prediction_patterns = [
         r'predict\s+(for|if|when|what)',
@@ -79,6 +95,7 @@ def detect_query_type(query: str) -> Tuple[QueryType, float]:
         r'how\s+(good|accurate|well)\s+(is|does)',
         r'model\s+(metrics|performance|score)',
         r'show\s+.*(accuracy|metrics|performance)',
+        r'(actual\s+vs\s+predicted|roc|curve|residuals|plot\s+prediction)',
     ]
     for pattern in metrics_patterns:
         if re.search(pattern, q):
@@ -193,6 +210,7 @@ def predict_response_sync(user_id: str, query: str, context: str = "", df=None) 
             QueryType.METRICS: _handle_metrics,
             QueryType.FEATURE_IMPORTANCE: _handle_feature_importance,
             QueryType.DATA_ANALYSIS: _handle_data_analysis,
+            QueryType.FEATURE_SPECIFIC: _handle_feature_specific,
             QueryType.MODEL_INFO: _handle_model_info,
             QueryType.COMPARISON: _handle_comparison,
             QueryType.GENERAL_ML: _handle_general_ml,
@@ -200,7 +218,11 @@ def predict_response_sync(user_id: str, query: str, context: str = "", df=None) 
         }
         
         handler = handlers.get(query_type, _handle_general_ml)
-        result = handler(query, df)
+        
+        if handler == _handle_general_ml:
+            result = handler(query, df, context)
+        else:
+            result = handler(query, df)
     
     # Add execution time
     exec_time = (datetime.now() - start_time).total_seconds()
@@ -404,9 +426,72 @@ def _handle_metrics(query: str, df=None) -> Dict[str, Any]:
         interpretation = _interpret_metrics(metrics, task)
         response += f"\n---\n\n### 💡 Interpretation\n\n{interpretation}\n"
     else:
-        response += """
+        # Try live evaluation if data available
+        evaluated = False
+        if df is not None and target in df.columns:
+            try:
+                from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+                import numpy as np
+                import pandas as pd
+                
+                # Limit rows for performance
+                eval_df = df.head(1000)
+                y_true = eval_df[target]
+                
+                # Preprocess all rows
+                X_list = []
+                valid_indices = []
+                
+                for idx, row in eval_df.iterrows():
+                    try:
+                        row_dict = row.to_dict()
+                        # _preprocess_single returns (1, n_features) array
+                        X_list.append(automl_engine._preprocess_single(row_dict))
+                        valid_indices.append(idx)
+                    except:
+                        continue
+                
+                if X_list and len(X_list) > 10:
+                    X_eval = np.vstack(X_list)
+                    y_pred = automl_engine.model.predict(X_eval)
+                    
+                    # Convert y_true to numeric if needed
+                    y_true_subset = y_true.loc[valid_indices]
+                    
+                    if hasattr(automl_engine, 'target_encoder') and automl_engine.target_encoder:
+                         # Transform y_true using the same encoder
+                         try:
+                             y_true_enc = automl_engine.target_encoder.transform(y_true_subset.astype(str).str.strip())
+                         except:
+                             # Fallback to numeric if encoding fails
+                             y_true_enc = pd.to_numeric(y_true_subset, errors='coerce').fillna(0)
+                    else:
+                         y_true_enc = pd.to_numeric(y_true_subset, errors='coerce').fillna(0)
+                    
+                    # Compute metrics
+                    acc = accuracy_score(y_true_enc, y_pred) * 100
+                    f1 = f1_score(y_true_enc, y_pred, average='weighted', zero_division=0) * 100
+                    cm = confusion_matrix(y_true_enc, y_pred).tolist()
+                    
+                    acc_emoji = "🟢" if acc > 80 else "🟡" if acc > 60 else "🔴"
+                    
+                    response += f"### ⚡ Live Evaluation Status\n"
+                    response += f"*Metrics calculated on {len(X_list)} rows from current data*\n\n"
+                    response += f"- **Accuracy**: {acc_emoji} {acc:.1f}%\n"
+                    response += f"- **F1 Score**: {f1:.1f}%\n"
+                    
+                    evaluated = True
+                    # IMPORTANT: Set metrics dictionary for interpretation if needed, though specific interpretation checks dict keys
+                    metrics['accuracy'] = acc / 100
+                    metrics['f1'] = f1 / 100
+                    
+            except Exception as e:
+                logger.error(f"Live eval failed: {e}")
+        
+        if not evaluated:
+            response += """
 > ⚠️ **Detailed metrics not available**
-> 
+
 > This model was trained before metrics storage was enabled.
 > **Retrain the model** to get accuracy, F1, confusion matrix, etc.
 """
@@ -444,6 +529,86 @@ def _handle_metrics(query: str, df=None) -> Dict[str, Any]:
             response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
         except Exception as e:
             logger.error(f"Confusion matrix chart error: {e}")
+            
+    # 📈 Actual vs Predicted / Deep Analysis Chart
+    # Determine data source (Live vs Stored)
+    plot_actuals = None
+    plot_preds = None
+    
+    if locals().get('evaluated', False):
+        try:
+            plot_actuals = locals().get('y_true_enc').tolist()
+            plot_preds = locals().get('y_pred').tolist()
+        except: pass
+    elif metrics_data.get('y_test') is not None:
+        plot_actuals = metrics_data.get('y_test')
+        plot_preds = metrics_data.get('y_pred')
+        
+    if plot_actuals and plot_preds:
+        try:
+            is_classification = 'classification' in str(task).lower()
+            
+            if is_classification:
+                # Grouped Bar: Actual vs Predicted Counts
+                import pandas as pd
+                df_res = pd.DataFrame({'Actual': plot_actuals, 'Predicted': plot_preds})
+                
+                # Get counts
+                act_counts = df_res['Actual'].value_counts().sort_index()
+                pred_counts = df_res['Predicted'].value_counts().sort_index()
+                
+                # Labels
+                labels = [str(i) for i in act_counts.index]
+                if 'death' in str(target).lower() and len(labels) <= 2:
+                    labels = ['Survived', 'Death']
+                elif len(labels) > 10: # Limit labels
+                     labels = labels[:10]
+                
+                chart_ap = {
+                    "data": [
+                        {"type": "bar", "name": "Actual", "x": labels, "y": act_counts.values.tolist(), "marker": {"color": "#94a3b8"}},
+                        {"type": "bar", "name": "Predicted", "x": labels, "y": pred_counts.values.tolist(), "marker": {"color": "#3b82f6"}}
+                    ],
+                    "layout": {
+                        "title": {"text": "📊 Actual vs Predicted Distribution", "font": {"size": 16}},
+                        "barmode": "group",
+                        "xaxis": {"title": "Class"},
+                        "yaxis": {"title": "Count"},
+                        "paper_bgcolor": "#f8fafc",
+                         "margin": {"l": 50, "r": 20, "t": 40, "b": 40}
+                    }
+                }
+            else:
+                # Regression Scatter
+                chart_ap = {
+                    "data": [{
+                        "type": "scatter",
+                        "mode": "markers",
+                        "x": plot_actuals,
+                        "y": plot_preds,
+                        "marker": {"color": "#3b82f6", "opacity": 0.6, "size": 8},
+                        "name": "Data"
+                    }, {
+                        "type": "scatter",
+                        "mode": "lines",
+                        "x": [min(plot_actuals), max(plot_actuals)],
+                        "y": [min(plot_actuals), max(plot_actuals)],
+                        "line": {"color": "#ef4444", "dash": "dash"},
+                        "name": "Ideal"
+                    }],
+                    "layout": {
+                        "title": {"text": "Actual vs Predicted", "font": {"size": 16}},
+                        "xaxis": {"title": "Actual Values"},
+                        "yaxis": {"title": "Predicted Values"},
+                        "paper_bgcolor": "#f8fafc",
+                        "showlegend": True
+                    }
+                }
+
+            response += f"\n\n```plotly_chart\n{json.dumps(chart_ap)}\n```"
+            
+        except Exception as e:
+            logger.error(f"AvP chart error: {e}")
     
     result["answer"] = response
     return result
@@ -585,6 +750,135 @@ def _handle_data_analysis(query: str, df=None) -> Dict[str, Any]:
         }
         response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
     
+    result["answer"] = response
+    return result
+
+
+def _handle_feature_specific(query: str, df=None) -> Dict[str, Any]:
+    """Handle deep dive analysis for a specific feature"""
+    result = {
+        "answer": "",
+        "mode": "predict",
+        "confidence": 0.95,
+        "sources": ["Feature Analysis", automl_engine.model_name],
+        "ml_used": True
+    }
+    
+    # Identify feature
+    target_feat = None
+    q = query.lower()
+    features = automl_engine.feature_columns
+    metadata = {m['name']: m for m in automl_engine.feature_metadata}
+    
+    for feat in features:
+        feat_clean = feat.lower().replace('_', ' ')
+        # Check for exact feature name matching or cleaned version
+        if re.search(r'\b' + re.escape(feat.lower()) + r'\b', q) or \
+           re.search(r'\b' + re.escape(feat_clean) + r'\b', q):
+            target_feat = feat
+            break
+            
+    if not target_feat:
+        result["answer"] = "I couldn't identify which feature you want to analyze. Please specify a valid feature name found in your model."
+        return result
+        
+    meta = metadata.get(target_feat, {})
+    ftype = meta.get('type', 'unknown')
+    target = automl_engine.target_column
+    
+    response = f"""## 🔍 Feature Analysis: **{target_feat}**
+
+"""
+    
+    # Stats
+    if ftype == 'numeric':
+        min_v = meta.get('min', 0)
+        max_v = meta.get('max', 0)
+        mean_v = meta.get('mean', 0)
+        response += f"### 📊 Statistics (Numeric)\n"
+        response += f"- **Range**: {min_v:,.1f} to {max_v:,.1f}\n"
+        response += f"- **Average**: {mean_v:,.1f}\n"
+        response += f"- **Default**: {meta.get('default', 0):,.1f}\n"
+    else:
+        options = meta.get('options', [])
+        response += f"### 📊 Statistics (Categorical)\n"
+        response += f"- **Unique Values**: {len(options)}\n"
+        response += f"- **Options**: {', '.join(str(o) for o in options[:6])}\n"
+
+    # Importance
+    importance = _get_feature_importance()
+    feat_imp = next((f for f in importance if f['feature'] == target_feat), None)
+    if feat_imp:
+        rank = importance.index(feat_imp) + 1
+        imp_pct = feat_imp['importance'] * 100
+        imp_bar = "█" * int(imp_pct / 5) + "░" * (20 - int(imp_pct / 5))
+        response += f"\n### 🔑 Importance\n"
+        response += f"- **Rank**: #{rank} of {len(features)}\n"
+        response += f"- **Impact**: {imp_pct:.1f}%\n"
+        response += f"`{imp_bar}`\n"
+
+    # LLM Explanation for relationship
+    if LLM_AVAILABLE:
+        prompt = f"""Explain how the feature '{target_feat}' typically affects '{target}' in a machine learning context. 
+        Domain: General Business/Healthcare. 
+        Feature Stats: {meta}
+        Target: {target}
+        
+        Provide 2-3 concise sentences on the relationship."""
+        try:
+            explanation = llm_chat(prompt, temperature=0.3, max_tokens=150)
+            response += f"\n### 💡 Relationship to {target}\n\n{explanation}\n"
+        except:
+            response += f"\n### 💡 Relationship to {target}\nThis feature is used by the model to discriminate between {target} outcomes based on the patterns found in training data.\n"
+    
+    # Charts - Gauge for numeric, Bar for importance
+    if ftype == 'numeric':
+        min_v = meta.get('min', 0)
+        max_v = meta.get('max', 100)
+        mean_v = meta.get('mean', 50)
+        
+        chart = {
+            "data": [{
+                "type": "indicator",
+                "mode": "gauge+number",
+                "value": mean_v,
+                "title": {"text": f"Average {target_feat}", "font": {"size": 14}},
+                "gauge": {
+                    "axis": {"range": [min_v, max_v]}, 
+                    "bar": {"color": "#8b5cf6"},
+                    "steps": [
+                        {"range": [min_v, mean_v], "color": "#f3e8ff"},
+                        {"range": [mean_v, max_v], "color": "#ffffff"}
+                    ]
+                }
+            }],
+            "layout": {
+                "height": 250, 
+                "paper_bgcolor": "#f8fafc",
+                "margin": {"t": 40, "b": 10, "l": 40, "r": 40}
+            }
+        }
+    else:
+        # Show relative importance compared to top feature
+        top_imp = importance[0]['importance'] if importance else 1
+        my_imp = feat_imp['importance'] if feat_imp else 0
+        
+        chart = {
+            "data": [{
+                "type": "bar",
+                "x": ["Top Feature", target_feat],
+                "y": [top_imp*100, my_imp*100],
+                "marker": {"color": ["#94a3b8", "#3b82f6"]}
+            }],
+            "layout": {
+                "title": {"text": "Relative Importance %", "font": {"size": 14}}, 
+                "yaxis": {"title": "Importance %"},
+                "paper_bgcolor": "#f8fafc",
+                "height": 250
+            }
+        }
+
+    response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
     result["answer"] = response
     return result
 
@@ -735,10 +1029,9 @@ def _handle_comparison(query: str, df=None) -> Dict[str, Any]:
     return result
 
 
-def _handle_general_ml(query: str, df=None) -> Dict[str, Any]:
+def _handle_general_ml(query: str, df=None, context: str = "") -> Dict[str, Any]:
     """
-    Handle general ML questions with CONCISE, DATA-DRIVEN answers + charts.
-    Uses model data directly - no verbose LLM responses.
+    Handle general ML questions with LLM + Full Context + Dynamic Charts.
     """
     result = {
         "answer": "",
@@ -748,157 +1041,60 @@ def _handle_general_ml(query: str, df=None) -> Dict[str, Any]:
         "ml_used": True
     }
     
-    # Get model info
-    model = automl_engine.model_name
-    task = automl_engine.task_type
-    target = automl_engine.target_column
-    features = automl_engine.feature_columns
-    n_classes = automl_engine.n_classes
-    is_classification = 'classification' in task
-    
+    # 1. Check for specific patterns first (Fast Path)
     q = query.lower().strip()
+    direct_response = ""
     
-    # Direct answer patterns - no LLM needed!
+    # Task type simple check
+    if any(p in q for p in ['classification', 'regression', 'type']) and 'task' in q:
+        is_class = 'classification' in automl_engine.task_type
+        direct_response = f"**Task**: {automl_engine.task_type.replace('_', ' ').title()}"
+
+    # 2. Build Rich Context
+    model_context = _build_full_context(df)
     
-    # Task type question
-    if any(p in q for p in ['classification', 'regression', 'type', 'task']):
-        task_answer = "**Classification**" if is_classification else "**Regression**"
-        response = f"""## 🎯 Model Task Type
-
-{task_answer}
-
-| Property | Value |
-|----------|-------|
-| **Model** | {model} |
-| **Task** | {task.replace('_', ' ').title()} |
-| **Target** | {target} |
-| **Classes** | {n_classes if is_classification else 'N/A (continuous)'} |
-| **Features** | {len(features)} |
-"""
-        result["answer"] = response
-        return result
-    
-    # "What prediction" / general prediction question
-    if any(p in q for p in ['what predict', 'prediction', 'predicting']):
-        response = f"""## 🎯 Prediction Summary
-
-**Model**: {model}
-**Predicting**: `{target}`
-**Using**: {len(features)} features
-
----
-
-### 📋 To make a prediction, provide values:
-
-"""
-        # Show example features
-        for meta in automl_engine.feature_metadata[:6]:
-            name = meta.get('name', 'feature')
-            if meta.get('type') == 'numeric':
-                val = meta.get('default', 50)
-                response += f"- `{name}={val:.0f}`\n"
-        
-        response += f"""
-### 💡 Example Query:
-```
-Predict for age=60, ejection_fraction=40, time=100
-```
-"""
-        # Add a simple chart showing feature stats
-        chart = _generate_model_overview_chart()
-        response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
-        
-        result["answer"] = response
-        return result
-    
-    # Feature question
-    if any(p in q for p in ['feature', 'variable', 'column', 'input']):
-        response = f"""## 📊 Model Features
-
-**{len(features)} features** used to predict `{target}`:
-
-"""
-        for i, feat in enumerate(features[:12], 1):
-            response += f"{i}. `{feat}`\n"
-        
-        if len(features) > 12:
-            response += f"\n*+ {len(features) - 12} more*\n"
-        
-        # Feature importance chart if available
-        importance = _get_feature_importance()
-        if importance:
-            feats = [f['feature'][:12] for f in importance[:6]]
-            vals = [f['importance'] * 100 for f in importance[:6]]
-            chart = {
-                "data": [{"type": "bar", "y": feats[::-1], "x": vals[::-1], "orientation": "h", "marker": {"color": "#3b82f6"}}],
-                "layout": {"title": {"text": "Feature Importance"}, "xaxis": {"title": "%"}, "paper_bgcolor": "#f8fafc", "margin": {"l": 100}}
-            }
-            response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
-        
-        result["answer"] = response
-        return result
-    
-    # Model question
-    if any(p in q for p in ['model', 'algorithm', 'trained']):
-        response = f"""## 🤖 Trained Model
-
-| Property | Value |
-|----------|-------|
-| **Algorithm** | {model} |
-| **Task** | {task.replace('_', ' ').title()} |
-| **Target** | {target} |
-| **Features** | {len(features)} |
-
----
-
-### 💡 Try asking:
-- "Predict for age=60"
-- "What affects {target}?"
-- "Show accuracy"
-"""
-        chart = _generate_model_overview_chart()
-        response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
-        
-        result["answer"] = response
-        return result
-    
-    # For any other question - give concise LLM answer with chart
+    # 3. LLM Query
     if LLM_AVAILABLE:
-        context = f"Model: {model}, Task: {task}, Target: {target}. Answer in 2-3 SHORT sentences only."
+        prompt = f"""You are an intelligent ML Assistant specialized on this specific model.
+        
+PREVIOUS CONVERSATION:
+{context}
+
+{model_context}
+
+USER QUERY: {query}
+
+INSTRUCTIONS:
+1. Answer strictly based on the Model Context provided.
+2. Be concise (2-3 paragraphs max).
+3. If users ask for a chart, describe what chart would be best (I will generate it).
+4. Use markdown formatting.
+5. If the query is about specific feature values, reference the stats provided.
+
+Answer:"""
         try:
-            llm_response = llm_chat(f"{context}\n\nQuestion: {query}", temperature=0.3, max_tokens=150)
-            response = f"""## 💡 Answer
-
-{llm_response}
-
----
-
-**Model**: {model} | **Target**: {target}
-"""
-        except:
-            response = f"""## 💡 About Your Model
-
-- **Model**: {model}
-- **Predicting**: {target}
-- **Features**: {len(features)}
-
-Ask me: "Predict for age=60" or "Show accuracy"
-"""
+            llm_response = llm_chat(prompt, temperature=0.3, max_tokens=300)
+            result["answer"] = f"## 💡 ML Assistant\n\n{llm_response}\n"
+        except Exception as e:
+            result["answer"] = f"## 💡 ML Assistant\n\nI couldn't process the robust context. Here is a summary:\n\n{direct_response or 'Model: ' + automl_engine.model_name}\n"
     else:
-        response = f"""## 💡 About Your Model
+        # Fallback if no LLM
+        result["answer"] = f"## 💡 ML Assistant\n\n**Model**: {automl_engine.model_name}\n**Target**: {automl_engine.target_column}\n\nI can help you analyze this model. Try asking specific questions like 'Predict for X' or 'Show accuracy'."
 
-- **Model**: {model}
-- **Predicting**: {target}
-- **Features**: {len(features)}
+    # 4. Dynamic Chart Generation
+    chart = _determine_dynamic_chart(query, df)
+    
+    # Fallback to Model Overview if no specific chart identified but requested
+    if not chart and any(x in q for x in ['chart', 'graph', 'plot', 'visualize']):
+        chart = _generate_model_overview_chart()
+        
+    if chart:
+        result["answer"] += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
+    elif not chart and not direct_response and "chart" not in q:
+        # Always helpful to show something visual for general queries
+        chart = _generate_model_overview_chart()
+        result["answer"] += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
 
-Ask me: "Predict for age=60" or "Show accuracy"
-"""
-    
-    # Always add a chart
-    chart = _generate_model_overview_chart()
-    response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
-    
-    result["answer"] = response
     return result
 
 
@@ -1097,16 +1293,89 @@ def _extract_features(query: str, df=None) -> Dict[str, Any]:
     return values
 
 
-def _get_default_features() -> Dict[str, Any]:
-    """Get default feature values from metadata"""
-    values = {}
-    for meta in automl_engine.feature_metadata:
-        name = meta.get('name')
-        if meta.get('type') == 'numeric':
-            values[name] = meta.get('default', meta.get('mean', 0))
-        else:
-            values[name] = 0
-    return values
+def _build_full_context(df=None) -> str:
+    """Build comprehensive model and data context for LLM"""
+    model = automl_engine.model_name
+    task = automl_engine.task_type.replace('_', ' ').title()
+    target = automl_engine.target_column
+    features = automl_engine.feature_columns
+    
+    # Model Specs
+    context = f"""
+MODEL CONTEXT:
+- Model: {model}
+- Task: {task}
+- Target Variable: {target}
+- Input Features ({len(features)}): {', '.join(features)}
+"""
+
+    # Feature Importance
+    importance = _get_feature_importance()
+    if importance:
+        top_5 = [f"{f['feature']} ({f['importance']*100:.1f}%)" for f in importance[:5]]
+        context += f"- Top Predictive Features: {', '.join(top_5)}\n"
+        
+    # Dataset Stats (if available)
+    if df is not None:
+        context += f"\nCURRENT DATASET stats:\n"
+        context += f"- Rows: {len(df)}\n"
+        context += f"- Columns: {len(df.columns)}\n"
+        
+        # Add summary of numeric columns
+        numerics = df.select_dtypes(include=['number'])
+        if not numerics.empty:
+            stats = numerics.agg(['mean', 'min', 'max']).to_string()
+            context += f"- Data Distribution:\n{stats}\n"
+    
+    return context
+
+
+def _determine_dynamic_chart(query: str, df=None) -> Optional[Dict]:
+    """Determine and generate appropriate chart based on query"""
+    q = query.lower()
+    
+    # Distribution / Histogram
+    if any(x in q for x in ['distribution', 'hist', 'spread', 'range']):
+        if df is not None:
+            # Find mentioned feature
+            for col in df.columns:
+                if col.lower() in q:
+                    import plotly.express as px
+                    fig = px.histogram(df, x=col, title=f"Distribution of {col}", template="plotly_white")
+                    fig.update_layout(paper_bgcolor="#f8fafc", margin=dict(l=20, r=20, t=40, b=20), height=300)
+                    return json.loads(fig.to_json())
+                    
+    # Comparison / Box / Bar
+    if any(x in q for x in ['compare', 'vs', 'difference']):
+        if df is not None and automl_engine.target_column in df.columns:
+            target = automl_engine.target_column
+            # Find feature to compare against target
+            for col in df.columns:
+                if col.lower() in q and col != target:
+                    import plotly.express as px
+                    if df[target].dtype == 'object' or len(df[target].unique()) < 10:
+                        # Categorical target: Box plot or Histogram
+                        fig = px.histogram(df, x=col, color=target, barmode="group", title=f"{col} by {target}")
+                    else:
+                        # Numeric target: Scatter
+                        fig = px.scatter(df, x=col, y=target, title=f"{col} vs {target}")
+                    
+                    fig.update_layout(paper_bgcolor="#f8fafc", margin=dict(l=20, r=20, t=40, b=20), height=350)
+                    return json.loads(fig.to_json())
+    
+    # Trend / Line
+    if any(x in q for x in ['trend', 'time', 'over time']):
+        if df is not None:
+            # Find date/time column
+            time_col = next((c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()), None)
+            target = automl_engine.target_column
+            if time_col and target in df.columns:
+                import plotly.express as px
+                fig = px.line(df, x=time_col, y=target, title=f"{target} over Time")
+                fig.update_layout(paper_bgcolor="#f8fafc", margin=dict(l=20, r=20, t=40, b=20), height=300)
+                return json.loads(fig.to_json())
+
+    return None
 
 
 def _get_feature_importance() -> List[Dict]:

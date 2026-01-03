@@ -12,6 +12,7 @@ import json
 from services.email_service import send_insight_email, RESEND_API_KEY, APP_URL
 from agents.reports import generate_weekly_report, generate_monthly_report
 from graph.query import revenue_dataframe, get_user_currency
+from ml.automl_engine import ProductionMLEngine
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,95 @@ def get_user_email(user_id: str):
     return None
 
 
+
+def _generate_model_summary_html(user_id: str, df=None) -> str:
+    """Generate HTML summary for the user's active model"""
+    try:
+        engine = ProductionMLEngine()
+        if not engine.load(user_id):
+            return ""
+        
+        # Extract stats
+        model_name = engine.model_name
+        target = engine.target_column
+        metrics = getattr(engine, 'metrics', {})
+        acc = metrics.get('accuracy', 0) * 100
+        features = engine.feature_columns
+        
+        # ⚡ LIVE EVALUATION FALLBACK
+        # If metrics missing (old model) and we have data, calculate on-fly
+        if acc == 0 and df is not None and target in df.columns:
+            try:
+                from sklearn.metrics import accuracy_score
+                import numpy as np
+                import pandas as pd
+                
+                # Use a sample for speed
+                eval_df = df.head(500)
+                y_true = eval_df[target]
+                
+                # Preprocess
+                X_list = []
+                valid_indices = []
+                for idx, row in eval_df.iterrows():
+                    try:
+                        row_dict = row.to_dict()
+                        X_list.append(engine._preprocess_single(row_dict))
+                        valid_indices.append(idx)
+                    except: continue
+                
+                if X_list:
+                    X_eval = np.vstack(X_list)
+                    y_pred = engine.model.predict(X_eval)
+                    
+                    # Align y_true
+                    y_true_subset = y_true.loc[valid_indices]
+                    
+                    # Handle encoding
+                    if hasattr(engine, 'target_encoder') and engine.target_encoder:
+                        try:
+                            y_true_enc = engine.target_encoder.transform(y_true_subset.astype(str).str.strip())
+                        except:
+                            y_true_enc = pd.to_numeric(y_true_subset, errors='coerce').fillna(0)
+                    else:
+                        y_true_enc = pd.to_numeric(y_true_subset, errors='coerce').fillna(0)
+                        
+                    acc = accuracy_score(y_true_enc, y_pred) * 100
+                    
+            except Exception as e:
+                logger.error(f"Email report live eval failed: {e}")
+
+        # Build HTML
+        html = f"""
+        <div style="background: #e0f2fe; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #bae6fd;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="color: #0369a1; margin: 0; font-size: 18px;">🤖 AI Business Insight</h3>
+                <span style="background: #0ea5e9; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold;">Active Model</span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div style="background: white; padding: 12px; border-radius: 8px;">
+                     <div style="color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Active Model</div>
+                     <div style="color: #0f172a; font-weight: bold; font-size: 14px;">{model_name}</div>
+                </div>
+                <div style="background: white; padding: 12px; border-radius: 8px;">
+                     <div style="color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Performance</div>
+                     <div style="color: #22c55e; font-size: 18px; font-weight: bold;">{acc:.1f}% Accuracy</div>
+                </div>
+            </div>
+            
+            <p style="margin: 15px 0 0 0; font-size: 13px; color: #334155; line-height: 1.5;">
+                🎯 Your AI is currently predicting <strong>{target}</strong> using <strong>{len(features)} key indicators</strong>.
+                <a href="{APP_URL}/chat" style="color: #0284c7; text-decoration: none; font-weight: 600; margin-left: 5px;">View detailed analysis →</a>
+            </p>
+        </div>
+        """
+        return html
+    except Exception as e:
+        logger.error(f"Error generating model summary for {user_id}: {e}")
+        return ""
+
+
 async def generate_daily_report_html(user_id: str) -> str:
     """Generate daily summary report HTML - works with ANY data type"""
     try:
@@ -295,6 +385,9 @@ async def generate_daily_report_html(user_id: str) -> str:
                 </tr>
             '''
         
+        # Generate Model Summary
+        model_summary_html = _generate_model_summary_html(user_id, df)
+        
         html = f"""
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <!-- Header with Data Vision branding -->
@@ -305,6 +398,9 @@ async def generate_daily_report_html(user_id: str) -> str:
             
             <!-- Main Content -->
             <div style="background: #ffffff; padding: 25px; border: 1px solid #e5e7eb; border-top: none;">
+                
+                {model_summary_html}
+                
                 <h2 style="color: #1e293b; margin-top: 0; font-size: 18px;">📈 Key Metrics Summary</h2>
                 
                 <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 15px 0;">
