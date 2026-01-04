@@ -16,14 +16,16 @@ import {
     Shield, RefreshCw, Layers, GitBranch, Zap, Clock,
     PieChart, Activity, Users, Loader2, LayoutDashboard, BrainCircuit, Target
 } from 'lucide-react';
+import AnimatedLogo from '../components/AnimatedLogo';
 
 const Landing: React.FC = () => {
     const navigate = useNavigate();
     const [isDark, setIsDark] = useState(true);
-    const [scene, setScene] = useState(0);
+    const [scene, setScene] = useState(1); // Start at Dashboard
     const [cursorPos, setCursorPos] = useState({ x: 300, y: 250 });
     const [cursorClick, setCursorClick] = useState(false);
     const [hoveredPage, setHoveredPage] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState('Overview'); // For ML Predictions
     const [typing, setTyping] = useState('');
     const [responseText, setResponseText] = useState('');
     const [showMCPPanel, setShowMCPPanel] = useState(false);
@@ -75,7 +77,8 @@ const Landing: React.FC = () => {
 
         const runDemo = () => {
             // Reset all states
-            setScene(0);
+            setScene(1);
+            setActiveTab('Overview');
             setTyping('');
             setResponseText('');
             setShowMCPPanel(false);
@@ -84,29 +87,15 @@ const Landing: React.FC = () => {
             setUploadProgress(0);
             setAutomlProgress(0);
             setReportGenerating(false);
-            setCursorPos({ x: 300, y: 250 });
+            setCursorPos({ x: 80, y: 160 }); // Start at Dashboard sidebar
 
-            // Scene 0: Data Hub - File upload (0-4s)
-            timers.push(setTimeout(() => setCursorPos({ x: 380, y: 180 }), 500));
-            timers.push(setTimeout(() => {
-                triggerClick();
-                let progress = 0;
-                const uploadInterval = setInterval(() => {
-                    progress += 10;
-                    setUploadProgress(progress);
-                    if (progress >= 100) clearInterval(uploadInterval);
-                }, 150);
-            }, 1000));
+            // Scene 1: Dashboard (0-5s)
+            // Interact with dashboard
+            timers.push(setTimeout(() => setCursorPos({ x: 500, y: 300 }), 1500)); // Hover over chart
+            timers.push(setTimeout(() => setCursorPos({ x: 200, y: 250 }), 3000)); // Hover over KPI
 
-            // Scene 1: Go to Dashboard (4-8s)
-            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 160 }), 4000)); // Dashboard position
-            timers.push(setTimeout(() => {
-                triggerClick();
-                setScene(1);
-            }, 4500));
-
-            // Scene 2: Go to AutoML (8-14s)
-            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 200 }), 8000)); // AutoML position
+            // Scene 2: Go to AutoML (5-11s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 200 }), 5000)); // AutoML sidebar
             timers.push(setTimeout(() => {
                 triggerClick();
                 setScene(2); // Show AutoML Training
@@ -117,66 +106,99 @@ const Landing: React.FC = () => {
                     setAutomlProgress(p);
                     if (p >= 100) clearInterval(progressInterval);
                 }, 100);
-            }, 8500));
+            }, 5500));
 
-            // Scene 3: Go to Predictions (14-18s)
-            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 240 }), 14000)); // Predictions position
+            // Scene 3: Go to Predictions (11-20s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 240 }), 11000)); // Predictions sidebar
             timers.push(setTimeout(() => {
                 triggerClick();
                 setScene(3);
-                // Simulate filling form
+                setActiveTab('Overview');
+            }, 11500));
+
+            // Switch to ML Charts tab
+            timers.push(setTimeout(() => setCursorPos({ x: 350, y: 200 }), 14000)); // Move to ML Charts tab
+            timers.push(setTimeout(() => {
+                triggerClick();
+                setActiveTab('ML Charts');
             }, 14500));
 
-            // Scene 4: Go to AI Analyst (18-22s)
-            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 320 }), 18000)); // Chat position
+            // Switch to Features tab
+            timers.push(setTimeout(() => setCursorPos({ x: 450, y: 200 }), 17000)); // Move to Features tab
+            timers.push(setTimeout(() => {
+                triggerClick();
+                setActiveTab('Features');
+            }, 17500));
+
+            // Switch to Make Prediction tab
+            timers.push(setTimeout(() => setCursorPos({ x: 550, y: 200 }), 20000)); // Move to Make Prediction tab
+            timers.push(setTimeout(() => {
+                triggerClick();
+                setActiveTab('Make Prediction');
+            }, 20500));
+
+            // Scene 4: Go to AI Analyst (23-34s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 280 }), 23000)); // Chat sidebar
             timers.push(setTimeout(() => {
                 triggerClick();
                 setScene(4);
-            }, 18500));
+                // setTypeIndex(0); // This variable doesn't exist in the original code, removing.
+                setTyping('');
+                setShowPermission(false);
+                setShowRunningMCP(false);
+                setResponseText('');
+                setShowMCPPanel(false);
+            }, 23500));
 
-            // Chat interactions (22-35s) - Simplified
-            timers.push(setTimeout(() => {
-                setCursorPos({ x: 400, y: 450 }); // Input box
-            }, 20000));
-            timers.push(setTimeout(() => {
-                triggerClick();
+            // Type message
+            timers.push(setTimeout(() => setCursorPos({ x: 400, y: 500 }), 24500)); // Input field
+            const typeMessage = () => {
+                const msg = "Analyze the sentiment trends in this dataset";
                 let i = 0;
-                const typeInterval = setInterval(() => {
-                    if (i <= question.length) {
-                        setTyping(question.slice(0, i));
-                        i++;
-                    } else {
-                        clearInterval(typeInterval);
-                    }
+                const interval = setInterval(() => {
+                    setTyping(msg.substring(0, i + 1));
+                    i++;
+                    if (i > msg.length) clearInterval(interval);
                 }, 50);
-            }, 20500));
+            };
+            timers.push(setTimeout(typeMessage, 25000));
+
             // Send button
-            timers.push(setTimeout(() => setCursorPos({ x: 560, y: 450 }), 23000));
+            timers.push(setTimeout(() => setCursorPos({ x: 560, y: 450 }), 27500));
             timers.push(setTimeout(() => {
                 triggerClick();
                 typeResponse();
-            }, 23500));
+            }, 28000));
 
-            // Scene 5: Go to Reports (35-40s)
-            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 280 }), 35000)); // Reports position
+            // Scene 5: Go to Reports (37-45s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 320 }), 37000)); // Reports sidebar
             timers.push(setTimeout(() => {
                 triggerClick();
                 setScene(5);
-            }, 35500));
+            }, 37500));
 
             // Generate report
-            timers.push(setTimeout(() => setCursorPos({ x: 400, y: 285 }), 37500));
+            timers.push(setTimeout(() => setCursorPos({ x: 400, y: 285 }), 39500));
             timers.push(setTimeout(() => {
                 triggerClick();
                 setReportGenerating(true);
-            }, 38000));
+            }, 40000));
             timers.push(setTimeout(() => {
                 setReportGenerating(false);
                 setScene(6); // Show Result
-            }, 40000));
+            }, 42000));
 
-            // Loop (45s)
-            timers.push(setTimeout(() => runDemo(), 45000));
+            // Scene 6: Go to Settings (45-50s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 360 }), 45000)); // Settings sidebar
+            timers.push(setTimeout(() => {
+                triggerClick();
+                setScene(7);
+            }, 45500));
+            timers.push(setTimeout(() => setCursorPos({ x: 600, y: 350 }), 47000)); // Hover toggle
+            timers.push(setTimeout(() => triggerClick(), 47500));
+
+            // Loop (55s)
+            timers.push(setTimeout(() => runDemo(), 55000));
         };
 
         runDemo();
@@ -214,14 +236,13 @@ const Landing: React.FC = () => {
 
     // Get active page
     const getActivePage = () => {
-        if (hoveredPage) return hoveredPage;
-        if (scene === 0) return 'data-hub';
-        if (scene === 1) return 'dashboard';
+        if (scene === 1) return 'dashboard'; // Default start
         if (scene === 2) return 'automl';
         if (scene === 3) return 'ml-predictions';
         if (scene === 4) return 'chat';
         if (scene === 5 || scene === 6) return 'reports';
-        return 'data-hub';
+        if (scene === 7) return 'settings';
+        return 'dashboard';
     };
 
     const activePage = getActivePage();
@@ -233,8 +254,7 @@ const Landing: React.FC = () => {
                 <div className="max-w-6xl mx-auto px-6">
                     <div className="h-16 flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                            <img src="/logo.png" alt="DataVision" className="w-8 h-8 object-contain" />
-                            <span className="text-lg font-semibold">DataVision</span>
+                            <AnimatedLogo size="sm" showText={true} isDark={isDark} />
                         </div>
                         <div className="flex items-center gap-4">
                             <button onClick={toggleTheme} className="p-2 rounded-lg transition-colors" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
@@ -298,10 +318,9 @@ const Landing: React.FC = () => {
                         <button
                             onClick={() => navigate('/data-hub')}
                             className="flex items-center gap-2 text-sm font-semibold px-8 py-4 rounded-xl text-white mx-auto transition-all hover:scale-105"
-                            style={{ backgroundColor: accent, boxShadow: `0 4px 20px ${accent}40` }}
+                            style={{ backgroundColor: accent, boxShadow: `0 8px 30px -10px ${accent}` }}
                         >
-                            Start with your data
-                            <ArrowRight className="w-4 h-4" />
+                            Start with your data <ArrowRight className="w-4 h-4" />
                         </button>
                     </motion.div>
                 </div>
@@ -369,7 +388,7 @@ const Landing: React.FC = () => {
                             <div className="w-40 flex-shrink-0 border-r flex flex-col" style={{ backgroundColor: demoSidebar, borderColor: demoBorder }}>
                                 <div className="p-3 border-b" style={{ borderColor: demoBorder }}>
                                     <div className="flex items-center gap-2">
-                                        <img src="/logo.png" alt="" className="w-5 h-5" />
+                                        <img src="/logo.png" alt="" className="w-5 h-5 rounded-sm" />
                                         <span className="text-sm font-semibold" style={{ color: demoText }}>DataVision</span>
                                     </div>
                                 </div>
@@ -413,89 +432,153 @@ const Landing: React.FC = () => {
                             {/* Main Content */}
                             <div className="flex-1 overflow-hidden relative">
                                 <AnimatePresence mode="wait">
-                                    {/* Data Hub */}
-                                    {activePage === 'data-hub' && (
-                                        <motion.div key="datahub" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-5 overflow-auto">
-                                            <div className="flex items-center justify-between mb-4">
-                                                <div>
-                                                    <h2 className="text-base font-semibold" style={{ color: demoText }}>Data Hub</h2>
-                                                    <p className="text-xs" style={{ color: accent }}>Upload and manage your business data</p>
-                                                </div>
-                                            </div>
-                                            <motion.div animate={{ borderColor: uploadProgress > 0 && uploadProgress < 100 ? accent : demoBorder }} className="border-2 border-dashed rounded-xl p-8 text-center mb-4">
-                                                <Upload className="w-8 h-8 mx-auto mb-2" style={{ color: demoMuted }} />
-                                                <p className="text-sm mb-1" style={{ color: demoText }}>Drag & drop files here</p>
-                                                <p className="text-xs mb-3" style={{ color: demoMuted }}>or click to browse</p>
-                                                <div className="flex justify-center gap-2 mb-3">
-                                                    {['PDF', 'Excel', 'CSV', 'Images'].map((format, i) => (
-                                                        <span key={format} className="text-[10px] px-2 py-1 rounded text-white" style={{ backgroundColor: ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b'][i] }}>
-                                                            {format}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </motion.div>
-                                            <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-4" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                <Search className="w-4 h-4" style={{ color: demoMuted }} />
-                                                <span className="text-xs" style={{ color: demoMuted }}>Search files...</span>
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-medium mb-2" style={{ color: demoMuted }}>Uploaded Files (1)</p>
-                                                <div className="flex items-center gap-3 p-3 rounded-xl" style={{ backgroundColor: demoCard }}>
-                                                    <FileText className="w-5 h-5" style={{ color: demoMuted }} />
-                                                    <div className="flex-1">
-                                                        <p className="text-sm" style={{ color: demoText }}>test_data_sales_comprehensive.csv</p>
-                                                        <p className="text-[10px]" style={{ color: demoMuted }}>10.9 KB · 12/26/2025</p>
-                                                    </div>
-                                                    <div className="flex items-center gap-1 text-xs" style={{ color: accent }}>
-                                                        <Check className="w-3 h-3" />
-                                                        {uploadProgress >= 100 ? 'Indexed' : `${uploadProgress}%`}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </motion.div>
-                                    )}
-
-                                    {/* Dashboard (Autonomous) */}
+                                    {/* Data Hub - REMOVED */}{/* Dashboard (Autonomous) */}
                                     {activePage === 'dashboard' && (
                                         <motion.div key="dashboard" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
                                             <div className="flex items-center justify-between mb-4">
                                                 <div>
-                                                    <h2 className="text-base font-semibold" style={{ color: demoText }}>Autonomous Dashboard</h2>
-                                                    <p className="text-xs" style={{ color: accent }}>AI-generated insights from your data</p>
+                                                    <h2 className="text-base font-semibold" style={{ color: demoText }}>Social Media Insights</h2>
+                                                    <p className="text-[10px]" style={{ color: demoMuted }}>732 rows x 17 columns • general Domain</p>
                                                 </div>
-                                                <button className="text-[10px] px-3 py-1.5 rounded-lg text-white" style={{ backgroundColor: accent }}>Regenerate</button>
+                                                <div className="flex gap-2">
+                                                    <div className="px-2 py-1 rounded border text-[10px]" style={{ borderColor: demoBorder, color: demoText }}>732 rows</div>
+                                                    <div className="px-2 py-1 rounded border text-[10px]" style={{ borderColor: demoBorder, color: demoText }}>17 columns</div>
+                                                </div>
                                             </div>
 
-                                            {/* KPIs */}
-                                            <div className="grid grid-cols-4 gap-2 mb-4">
+                                            {/* KPI Cards - EXACT MATCH */}
+                                            <div className="grid grid-cols-6 gap-2 mb-4">
                                                 {[
-                                                    { label: 'Revenues', value: '₹1.4M', color: '#10b981' },
-                                                    { label: 'Customers', value: '1,240', color: '#3b82f6' },
-                                                    { label: 'Orders', value: '3,850', color: '#f59e0b' },
-                                                    { label: 'Growth', value: '+14%', color: '#8b5cf6' },
+                                                    { label: 'Total Records', value: '732', sub: '16 dimensions', color: '#10b981' },
+                                                    { label: 'Avg Unnamed: 0.1', value: '366', sub: '+199.6% vs past avg', color: '#3b82f6' },
+                                                    { label: 'Avg Unnamed: 0', value: '370', sub: '+197.8% vs past avg', color: '#f59e0b' },
+                                                    { label: 'Avg Retweets', value: '22', sub: '-37.0% vs past avg', color: '#0ea5e9' },
+                                                    { label: 'Avg Likes', value: '43', sub: '+36.2% vs past avg', color: '#ef4444' },
+                                                    { label: 'Avg Year', value: '2.0K', sub: '0.0% vs past avg', color: '#8b5cf6' },
                                                 ].map((kpi, i) => (
-                                                    <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                        <p className="text-lg font-bold" style={{ color: demoText }}>{kpi.value}</p>
-                                                        <p className="text-[9px]" style={{ color: demoMuted }}>{kpi.label}</p>
+                                                    <div key={i} className="p-2 rounded-lg border-t-2" style={{ backgroundColor: demoCard, borderColor: demoBorder, borderTopColor: kpi.color }}>
+                                                        <p className="text-[9px]" style={{ color: kpi.color }}>{kpi.label}</p>
+                                                        <p className="text-sm font-bold my-0.5" style={{ color: demoText }}>{kpi.value}</p>
+                                                        <p className="text-[8px]" style={{ color: demoMuted }}>{kpi.sub}</p>
                                                     </div>
                                                 ))}
                                             </div>
 
-                                            {/* Charts */}
-                                            <div className="grid grid-cols-2 gap-3 h-48">
-                                                <div className="p-3 rounded-xl flex flex-col" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-[10px] font-medium mb-auto" style={{ color: demoText }}>Revenue Trend</p>
-                                                    <div className="h-32 flex items-end gap-1">
-                                                        {[30, 45, 35, 60, 50, 70, 65, 80, 75, 90].map((h, i) => (
-                                                            <div key={i} className="flex-1 rounded-t" style={{ height: `${h}%`, backgroundColor: accent, opacity: 0.6 + (i * 0.04) }} />
+                                            {/* Charts Grid - EXACT MATCH rows */}
+                                            <div className="grid grid-cols-3 gap-3 h-32 mb-3">
+                                                {/* Text Sunburst */}
+                                                <div className="p-2 rounded-lg border relative" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <p className="text-[9px]" style={{ color: accent }}>Text Sunburst</p>
+                                                        <span className="text-[8px] text-muted-foreground">sunburst</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-center h-full pb-4">
+                                                        <PieChart className="w-16 h-16 opacity-70 text-blue-500" />
+                                                    </div>
+                                                </div>
+                                                {/* Stacked Bar */}
+                                                <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <p className="text-[9px]" style={{ color: accent }}>Unnamed: 0.1 by Text</p>
+                                                        <span className="text-[8px] text-muted-foreground">stacked_bar</span>
+                                                    </div>
+                                                    <div className="flex items-end gap-1 h-20 mt-1">
+                                                        {[40, 60, 80, 50, 65, 55].map((h, i) => <div key={i} className="flex-1 bg-cyan-500 rounded-t opacity-80" style={{ height: `${h}%` }} />)}
+                                                    </div>
+                                                </div>
+                                                {/* Scatter */}
+                                                <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <p className="text-[9px]" style={{ color: accent }}>Retweets vs Unnamed: 0</p>
+                                                        <span className="text-[8px] text-muted-foreground">scatter</span>
+                                                    </div>
+                                                    <div className="relative h-20 mt-1 bg-black/20 rounded">
+                                                        {[...Array(30)].map((_, i) => (
+                                                            <div key={i} className="absolute w-1 h-1 rounded-full bg-emerald-400" style={{ left: `${Math.random() * 100}%`, top: `${Math.random() * 100}%` }} />
                                                         ))}
                                                     </div>
                                                 </div>
-                                                <div className="p-3 rounded-xl flex flex-col" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-[10px] font-medium mb-auto" style={{ color: demoText }}>Sales by Region</p>
-                                                    <div className="flex-1 flex items-center justify-center relative">
-                                                        <div className="w-24 h-24 rounded-full border-8" style={{ borderColor: '#3b82f6' }} />
-                                                        <div className="absolute w-24 h-24 rounded-full border-8 border-transparent" style={{ borderColor: '#10b981', transform: 'rotate(45deg)', clipPath: 'polygon(50% 50%, 100% 0, 100% 100%, 0 100%, 0 0)' }} />
+                                            </div>
+
+                                            <div className="grid grid-cols-3 gap-3 h-32 mb-3">
+                                                {/* Bubble/Scatter */}
+                                                <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <p className="text-[9px]" style={{ color: accent }}>Year vs Unnamed: 0</p>
+                                                        <span className="text-[8px] text-muted-foreground">bubble</span>
+                                                    </div>
+                                                    <div className="relative h-20 mt-1">
+                                                        <div className="absolute top-1/2 left-0 right-0 h-4 bg-purple-500/30 rounded-full"></div>
+                                                        <div className="absolute top-1/2 left-[80%] w-4 h-4 bg-purple-500 rounded-full"></div>
+                                                        <div className="absolute top-1/2 left-[85%] w-6 h-6 bg-purple-500/60 rounded-full"></div>
+                                                    </div>
+                                                </div>
+                                                {/* Trend + Forecast */}
+                                                <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <p className="text-[9px]" style={{ color: accent }}>Unnamed: 0 Trend</p>
+                                                        <span className="text-[8px] text-muted-foreground">line</span>
+                                                    </div>
+                                                    <div className="flex items-end gap-0.5 h-20 mt-1">
+                                                        {[...Array(20)].map((_, i) => (
+                                                            <div key={i} className="w-full bg-teal-400" style={{ height: `${i * 5}%` }} />
+                                                        ))}
+                                                        <div className="w-full bg-teal-400/50 border-t border-dashed border-white" style={{ height: '30%' }} />
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-1 justify-center">
+                                                        <span className="w-2 h-0.5 bg-teal-400"></span><span className="text-[6px] text-muted-foreground">Actual</span>
+                                                        <span className="w-2 h-0.5 border-t border-dashed border-teal-400"></span><span className="text-[6px] text-muted-foreground">Forecast</span>
+                                                    </div>
+                                                </div>
+                                                {/* Area */}
+                                                <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <p className="text-[9px]" style={{ color: accent }}>Unnamed: 0.1 Over Time</p>
+                                                        <span className="text-[8px] text-muted-foreground">area</span>
+                                                    </div>
+                                                    <svg viewBox="0 0 100 40" className="w-full h-full">
+                                                        <path d="M0 40 L100 0 V40 H0 Z" fill="#14b8a6" fillOpacity="0.3" />
+                                                        <path d="M0 40 L100 0" stroke="#14b8a6" strokeWidth="2" fill="none" />
+                                                    </svg>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-3 gap-3 h-32">
+                                                {/* Stacked Bar 2 */}
+                                                <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <p className="text-[9px]" style={{ color: accent }}>Unnamed: 0.1 by Text</p>
+                                                        <span className="text-[8px] text-muted-foreground">stacked_bar</span>
+                                                    </div>
+                                                    <div className="flex items-end gap-1 h-20 mt-1">
+                                                        <div className="w-4 bg-blue-500 h-[20%]"></div>
+                                                        <div className="w-4 bg-yellow-500 h-[40%]"></div>
+                                                    </div>
+                                                </div>
+                                                {/* Distribution Analysis */}
+                                                <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <p className="text-[9px]" style={{ color: accent }}>Distribution Analysis</p>
+                                                        <span className="text-[8px] text-muted-foreground">box</span>
+                                                    </div>
+                                                    <div className="relative h-20 mt-1 flex items-center justify-center">
+                                                        <div className="w-3/4 h-8 border border-teal-500 relative">
+                                                            <div className="absolute left-[40%] h-full w-0.5 bg-teal-500"></div>
+                                                        </div>
+                                                        <div className="absolute w-full h-0.5 bg-teal-500/50 top-1/2"></div>
+                                                    </div>
+                                                    <div className="text-[6px] text-muted-foreground mt-1">200</div>
+                                                </div>
+                                                {/* Correlation Matrix */}
+                                                <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <p className="text-[9px]" style={{ color: accent }}>Correlation Matrix</p>
+                                                        <span className="text-[8px] text-muted-foreground">heatmap</span>
+                                                    </div>
+                                                    <div className="grid grid-cols-4 gap-0.5 h-full opacity-80">
+                                                        {[...Array(16)].map((_, i) => (
+                                                            <div key={i} style={{ backgroundColor: i % 5 === 0 ? '#14b8a6' : '#14b8a640' }} />
+                                                        ))}
                                                     </div>
                                                 </div>
                                             </div>
@@ -553,36 +636,296 @@ const Landing: React.FC = () => {
                                     {/* ML Predictions */}
                                     {activePage === 'ml-predictions' && (
                                         <motion.div key="predictions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
-                                            <h2 className="text-base font-semibold mb-1" style={{ color: demoText }}>Make Prediction</h2>
-                                            <p className="text-xs mb-4" style={{ color: accent }}>Active Model: XGBoost Classifier</p>
-
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div className="space-y-3">
-                                                    {[
-                                                        { label: 'Customer Age', val: '32' },
-                                                        { label: 'Purchase Amount', val: '12500' },
-                                                        { label: 'Tenure (Months)', val: '14' },
-                                                        { label: 'Support Calls', val: '2' },
-                                                    ].map((field, i) => (
-                                                        <div key={i}>
-                                                            <label className="text-[9px] block mb-1" style={{ color: demoMuted }}>{field.label}</label>
-                                                            <div className="w-full p-1.5 rounded border text-[10px]" style={{ borderColor: demoBorder, backgroundColor: demoBg, color: demoText }}>
-                                                                {field.val}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                    <button className="w-full py-2 mt-2 rounded-lg text-xs text-white" style={{ backgroundColor: accent }}>Predict Churn</button>
+                                            <div className="flex items-center gap-2 mb-4">
+                                                <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${accent}20` }}>
+                                                    <BrainCircuit className="w-4 h-4" style={{ color: accent }} />
                                                 </div>
+                                                <div>
+                                                    <h2 className="text-sm font-semibold" style={{ color: demoText }}>ML Predictions</h2>
+                                                    <p className="text-[10px]" style={{ color: demoMuted }}>Target: Sentiment • Task: multiclass_classification • 213.4s</p>
+                                                </div>
+                                                <button className="ml-auto text-[10px] px-3 py-1.5 rounded border" style={{ borderColor: demoBorder, color: demoText }}>New Training</button>
+                                            </div>
 
-                                                <div className="flex flex-col items-center justify-center p-4 rounded-xl text-center" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-[10px] mb-2" style={{ color: demoMuted }}>Prediction Result</p>
-                                                    <div className="text-2xl font-bold mb-1" style={{ color: '#10b981' }}>Low Risk</div>
-                                                    <div className="text-[10px] mb-1" style={{ color: demoText }}>Probability: 12%</div>
-                                                    <div className="w-full bg-gray-700 h-1 rounded-full mt-2">
-                                                        <div className="h-full w-[12%] bg-green-500 rounded-full" />
+                                            {/* Top Cards */}
+                                            <div className="grid grid-cols-4 gap-3 mb-4">
+                                                <div className="p-3 rounded-xl border relative overflow-hidden" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="w-1 h-3 rounded-full" style={{ backgroundColor: accent }} />
+                                                        <span className="text-[10px]" style={{ color: demoMuted }}>Best Model</span>
                                                     </div>
+                                                    <p className="text-lg font-bold" style={{ color: accent }}>LightGBM</p>
+                                                </div>
+                                                <div className="p-3 rounded-xl border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="p-1 rounded bg-blue-500/10"><Activity className="w-3 h-3 text-blue-500" /></div>
+                                                        <span className="text-[10px]" style={{ color: demoMuted }}>F1 Score</span>
+                                                    </div>
+                                                    <p className="text-lg font-bold text-[#ef4444]">28.5%</p>
+                                                </div>
+                                                <div className="p-3 rounded-xl border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="p-1 rounded bg-green-500/10"><Layers className="w-3 h-3 text-green-500" /></div>
+                                                        <span className="text-[10px]" style={{ color: demoMuted }}>Models Trained</span>
+                                                    </div>
+                                                    <p className="text-lg font-bold text-green-500">4</p>
+                                                </div>
+                                                <div className="p-3 rounded-xl border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="p-1 rounded bg-amber-500/10"><Zap className="w-3 h-3 text-amber-500" /></div>
+                                                        <span className="text-[10px]" style={{ color: demoMuted }}>Features</span>
+                                                    </div>
+                                                    <p className="text-lg font-bold text-amber-500">15</p>
                                                 </div>
                                             </div>
+
+                                            {/* Tabs */}
+                                            <div className="flex gap-1 mb-4 border-b" style={{ borderColor: demoBorder }}>
+                                                {['Overview', 'ML Charts', 'Features', 'Make Prediction'].map(tab => (
+                                                    <button
+                                                        key={tab}
+                                                        className={`px-4 py-2 text-[10px] font-medium border-b-2 transition-colors ${activeTab === tab ? '' : 'border-transparent'}`}
+                                                        style={{
+                                                            borderColor: activeTab === tab ? accent : 'transparent',
+                                                            color: activeTab === tab ? accent : demoMuted,
+                                                            backgroundColor: activeTab === tab ? `${accent}15` : 'transparent'
+                                                        }}
+                                                    >
+                                                        {tab}
+                                                    </button>
+                                                ))}
+                                            </div>
+
+                                            {/* Overview Tab Content (Image 2) */}
+                                            {activeTab === 'Overview' && (
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    {/* All Models Performance */}
+                                                    <div className="p-3 rounded-xl border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                        <p className="text-[10px] font-medium mb-3" style={{ color: demoText }}>All Models Performance</p>
+                                                        <div className="space-y-3">
+                                                            {[
+                                                                { name: 'LightGBM', val: 28.5, color: '#10b981', best: true },
+                                                                { name: 'RandomForest', val: 26.8, color: '#3b82f6', best: false },
+                                                                { name: 'HistGradientBoosting', val: 26.4, color: '#3b82f6', best: false },
+                                                                { name: 'LogisticRegression', val: 14.8, color: '#3b82f6', best: false },
+                                                            ].map((m, i) => (
+                                                                <div key={i}>
+                                                                    <div className="flex justify-between text-[9px] mb-1" style={{ color: demoMuted }}>
+                                                                        <span>{m.name}</span>
+                                                                        <span className="font-bold" style={{ color: demoText }}>{m.val}%</span>
+                                                                    </div>
+                                                                    <div className="h-1.5 w-full rounded-full overflow-hidden flex items-center" style={{ backgroundColor: `${demoBorder}` }}>
+                                                                        <div className="h-full rounded-full" style={{ width: `${m.val * 3}%`, backgroundColor: m.color }} />
+                                                                        {m.best && <span className="ml-2 text-[8px] px-1 rounded" style={{ backgroundColor: `${accent}20`, color: accent }}>BEST</span>}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* AI Insights Card */}
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <Zap className="w-3 h-3 text-amber-500" />
+                                                            <span className="text-[10px] font-medium" style={{ color: demoText }}>AI Insights</span>
+                                                        </div>
+                                                        <div className="p-2 rounded border flex items-center gap-2" style={{ backgroundColor: `${demoBg}`, borderColor: demoBorder }}>
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                                                            <span className="text-[9px]" style={{ color: demoMuted }}>Best model: LightGBM</span>
+                                                        </div>
+                                                        <div className="p-2 rounded border flex items-center gap-2" style={{ backgroundColor: `${demoBg}`, borderColor: demoBorder }}>
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                                            <span className="text-[9px]" style={{ color: demoMuted }}>Trained on 732 samples with 10 features</span>
+                                                        </div>
+                                                        <div className="p-2 rounded border flex items-center gap-2" style={{ backgroundColor: `${demoBg}`, borderColor: demoBorder }}>
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                                            <span className="text-[9px]" style={{ color: demoMuted }}>Task type: multiclass_classification</span>
+                                                        </div>
+                                                        <div className="p-2 rounded border flex items-center gap-2" style={{ backgroundColor: `${demoBg}`, borderColor: demoBorder }}>
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+                                                            <span className="text-[9px]" style={{ color: demoMuted }}>Found 2 natural clusters in your data</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* ML Charts Tab Content (Image 3) */}
+                                            {activeTab === 'ML Charts' && (
+                                                <div className="grid grid-cols-2 gap-4 h-64">
+                                                    {/* Model Comparison Chart */}
+                                                    <div className="p-2 rounded-xl border flex flex-col" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                        <span className="text-[9px] mb-1" style={{ color: demoText }}>Model Comparison</span>
+                                                        <div className="flex-1 flex flex-col justify-center gap-1">
+                                                            {[
+                                                                { w: 80, c: '#10b981' },
+                                                                { w: 75, c: '#3b82f6' },
+                                                                { w: 74, c: '#3b82f6' },
+                                                                { w: 40, c: '#3b82f6' }
+                                                            ].map((item, i) => (
+                                                                <div key={i} className="h-4 rounded opacity-90 transition-all duration-500" style={{ width: `${item.w}%`, backgroundColor: item.c }} />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    {/* Training Time Chart */}
+                                                    <div className="p-2 rounded-xl border flex flex-col" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                        <span className="text-[9px] mb-1" style={{ color: demoText }}>Training Time</span>
+                                                        <div className="flex-1 flex items-end justify-between gap-1 px-2">
+                                                            {[42.1, 10.8, 148.2, 2.6].map((val, i) => (
+                                                                <div key={i} className="flex-1 flex flex-col justify-end items-center group">
+                                                                    <div className="text-[8px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: demoMuted }}>{val}s</div>
+                                                                    <div className="w-full rounded-t transition-all duration-500" style={{ height: `${(val / 150) * 100}%`, backgroundColor: '#0ea5e9', minHeight: '4px' }} />
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="flex justify-between mt-1 text-[8px]" style={{ color: demoMuted }}>
+                                                            <span>LGBM</span>
+                                                            <span>RF</span>
+                                                            <span>HGB</span>
+                                                            <span>LR</span>
+                                                        </div>
+                                                    </div>
+                                                    {/* Feature Importance */}
+                                                    <div className="p-2 rounded-xl border flex flex-col" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                        <span className="text-[9px] mb-1" style={{ color: demoText }}>Feature Importance</span>
+                                                        <div className="flex-1 flex flex-col justify-center gap-1">
+                                                            {[
+                                                                { w: 90, l: 'Sentiment' },
+                                                                { w: 45, l: 'Length' },
+                                                                { w: 30, l: 'Time' }
+                                                            ].map((item, i) => (
+                                                                <div key={i} className="flex items-center gap-2">
+                                                                    <div className="h-3 rounded bg-indigo-500 opacity-80" style={{ width: `${item.w}%` }} />
+                                                                    <span className="text-[8px]" style={{ color: demoMuted }}>{item.l}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    {/* Confusion Matrix */}
+                                                    <div className="p-2 rounded-xl border flex flex-col" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                        <span className="text-[9px] mb-1" style={{ color: demoText }}>Confusion Matrix</span>
+                                                        <div className="flex-1 grid grid-cols-4 gap-0.5 p-2">
+                                                            {[10, 2, 0, 1, 3, 15, 1, 0, 0, 2, 12, 1, 1, 0, 3, 18].map((val, i) => (
+                                                                <div key={i} className="rounded-sm flex items-center justify-center text-[8px]" style={{ backgroundColor: `rgba(16, 185, 129, ${val / 20})`, color: val > 10 ? '#fff' : demoMuted }}>
+                                                                    {val > 0 && val}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Features Tab Content (Image 2) */}
+                                            {activeTab === 'Features' && (
+                                                <div className="h-64 overflow-auto">
+                                                    <h3 className="text-[10px] font-semibold mb-2" style={{ color: demoText }}>Feature Importance Ranking</h3>
+                                                    <div className="space-y-2">
+                                                        {[
+                                                            { id: 1, name: 'Feature_0', val: 29.4 },
+                                                            { id: 2, name: 'Feature_7', val: 14.4 },
+                                                            { id: 3, name: 'Feature_6', val: 14.1 },
+                                                            { id: 4, name: 'Feature_2', val: 10.8 },
+                                                            { id: 5, name: 'Feature_5', val: 10.1 },
+                                                            { id: 6, name: 'Feature_4', val: 8.0 },
+                                                            { id: 7, name: 'Feature_3', val: 3.5 },
+                                                            { id: 8, name: 'Feature_8', val: 3.3 },
+                                                            { id: 9, name: 'Feature_45', val: 1.5 },
+                                                        ].map((feat) => (
+                                                            <div key={feat.id} className="flex items-center gap-2">
+                                                                <div className="w-5 h-5 rounded flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{ backgroundColor: accent }}>
+                                                                    {feat.id}
+                                                                </div>
+                                                                <div className="flex-1">
+                                                                    <div className="flex justify-between items-center mb-0.5">
+                                                                        <span className="text-[9px] font-medium" style={{ color: demoText }}>{feat.name}</span>
+                                                                        <span className="text-[9px] font-bold" style={{ color: accent }}>{feat.val}%</span>
+                                                                    </div>
+                                                                    <div className="h-1.5 w-full bg-gray-700/50 rounded-full overflow-hidden">
+                                                                        <div className="h-full rounded-full" style={{ width: `${feat.val}%`, backgroundColor: accent }} />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Make Prediction Tab Content (Image 3) */}
+                                            {activeTab === 'Make Prediction' && (
+                                                <div className="h-64 overflow-auto">
+                                                    <h3 className="text-[10px] font-semibold mb-3" style={{ color: demoText }}>Make a Prediction with LightGBM</h3>
+                                                    <div className="grid grid-cols-3 gap-3 mb-4">
+                                                        {[
+                                                            { label: 'Unnamed: 0.1 (numeric)', placeholder: 'e.g. 366.5' },
+                                                            { label: 'Unnamed: 0 (numeric)', placeholder: 'e.g. 369.7' },
+                                                            { label: 'Retweets (numeric)', placeholder: 'e.g. 21.5' },
+                                                            { label: 'Likes (numeric)', placeholder: 'e.g. 42.9' },
+                                                            { label: 'Year (numeric)', placeholder: 'e.g. 2020.5' },
+                                                            { label: 'Month (numeric)', placeholder: 'e.g. 6.1' },
+                                                            { label: 'Day (numeric)', placeholder: 'e.g. 15.5' },
+                                                            { label: 'Hour (numeric)', placeholder: 'e.g. 15.5' },
+                                                        ].map((input, i) => (
+                                                            <div key={i}>
+                                                                <label className="text-[8px] mb-1 block" style={{ color: demoMuted }}>{input.label}</label>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder={input.placeholder}
+                                                                    className="w-full px-2 py-1.5 rounded text-[9px] bg-transparent border outline-none"
+                                                                    style={{ borderColor: demoBorder, color: demoText }}
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                        <div>
+                                                            <label className="text-[8px] mb-1 block" style={{ color: demoMuted }}>Platform (select)</label>
+                                                            <div className="w-full px-2 py-1.5 rounded text-[9px] border flex justify-between items-center" style={{ borderColor: demoBorder, color: demoText }}>
+                                                                Select Platform <ChevronDown className="w-3 h-3" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <button className="px-4 py-2 rounded-lg text-[10px] font-semibold text-white flex items-center gap-2" style={{ backgroundColor: accent }}>
+                                                        <Zap className="w-3 h-3" /> Get Prediction
+                                                    </button>
+                                                </div>
+                                            )}
+                                            {false && (
+                                                <div className="grid grid-cols-2 gap-4 h-64">
+                                                    {/* Model Comparison Chart */}
+                                                    <div className="p-2 rounded-xl border flex flex-col" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                        <span className="text-[9px] mb-1" style={{ color: demoText }}>Model Comparison</span>
+                                                        <div className="flex-1 flex flex-col justify-center gap-1">
+                                                            {[80, 75, 74, 40].map((w, i) => (
+                                                                <div key={i} className="h-4 rounded bg-orange-500 opacity-90" style={{ width: `${w}%` }} />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    {/* Training Time Chart */}
+                                                    <div className="p-2 rounded-xl border flex flex-col" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                        <span className="text-[9px] mb-1" style={{ color: demoText }}>Training Time</span>
+                                                        <div className="flex-1 flex items-end justify-between gap-1 px-2">
+                                                            {[30, 20, 90, 10].map((h, i) => (
+                                                                <div key={i} className="flex-1 bg-cyan-600 rounded-t" style={{ height: `${h}%` }} />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    {/* Feature Importance */}
+                                                    <div className="p-2 rounded-xl border flex flex-col" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                        <span className="text-[9px] mb-1" style={{ color: demoText }}>Feature Importance</span>
+                                                        <div className="flex-1 flex flex-col justify-center gap-1">
+                                                            {[90, 45, 30].map((w, i) => (
+                                                                <div key={i} className="h-3 rounded bg-indigo-500 opacity-80" style={{ width: `${w}%` }} />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    {/* Confusion Matrix */}
+                                                    <div className="p-2 rounded-xl border flex flex-col" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                        <span className="text-[9px] mb-1" style={{ color: demoText }}>Confusion Matrix</span>
+                                                        <div className="flex-1 grid grid-cols-4 gap-0.5 p-2">
+                                                            {[...Array(16)].map((_, i) => (
+                                                                <div key={i} className="bg-gray-700 rounded-sm" style={{ opacity: Math.random() }} />
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </motion.div>
                                     )}
 
@@ -629,7 +972,7 @@ const Landing: React.FC = () => {
                                                 {/* Welcome */}
                                                 <div className="flex gap-3 mb-4">
                                                     <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${accent}20` }}>
-                                                        <img src="/logo.png" alt="" className="w-4 h-4" />
+                                                        <img src="/logo.png" alt="" className="w-4 h-4 rounded-sm" />
                                                     </div>
                                                     <p className="text-sm" style={{ color: demoText }}>
                                                         Hello! I'm your AI Data Analyst. Upload any data file and I'll help you analyze it.
@@ -691,7 +1034,7 @@ const Landing: React.FC = () => {
                                                         {/* Searching documents... */}
                                                         <div className="flex gap-3">
                                                             <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${accent}20` }}>
-                                                                <img src="/logo.png" alt="" className="w-4 h-4" />
+                                                                <img src="/logo.png" alt="" className="w-4 h-4 rounded-sm" />
                                                             </div>
                                                             <div className="flex items-center gap-2">
                                                                 <motion.span
@@ -722,7 +1065,7 @@ const Landing: React.FC = () => {
                                                 {responseText && (
                                                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
                                                         <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${accent}20` }}>
-                                                            <img src="/logo.png" alt="" className="w-4 h-4" />
+                                                            <img src="/logo.png" alt="" className="w-4 h-4 rounded-sm" />
                                                         </div>
                                                         <div className="flex-1 text-sm" style={{ color: demoText }}>
                                                             {responseText.split('\n').map((line, i) => (
@@ -820,6 +1163,72 @@ const Landing: React.FC = () => {
                                                     </div>
                                                 </motion.div>
                                             )}
+
+                                        </motion.div>
+                                    )}
+
+                                    {/* Settings */}
+                                    {activePage === 'settings' && (
+                                        <motion.div key="settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-6 overflow-auto">
+                                            <h2 className="text-lg font-semibold mb-6" style={{ color: demoText }}>Settings</h2>
+
+                                            {/* Preferences */}
+                                            <div className="mb-8">
+                                                <div className="flex items-center gap-2 mb-4">
+                                                    <Shield className="w-4 h-4" style={{ color: accent }} />
+                                                    <h3 className="text-sm font-medium" style={{ color: demoText }}>Preferences</h3>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="text-xs mb-1.5 block" style={{ color: demoMuted }}>Theme</label>
+                                                        <div className="p-2 rounded-lg border text-sm flex justify-between items-center" style={{ backgroundColor: demoBg, borderColor: demoBorder, color: demoText }}>
+                                                            Dark <ChevronDown className="w-3 h-3" />
+                                                        </div>
+                                                        <p className="text-[10px] mt-1 cursor-pointer" style={{ color: accent }}>Reset to Dark Mode</p>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs mb-1.5 block" style={{ color: demoMuted }}>Language</label>
+                                                        <div className="p-2 rounded-lg border text-sm flex justify-between items-center" style={{ backgroundColor: demoBg, borderColor: demoBorder, color: demoMuted }}>
+                                                            English (Only)
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Email Reports */}
+                                            <div className="p-4 rounded-xl border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
+                                                <div className="flex items-center gap-2 mb-4">
+                                                    <MessageSquare className="w-4 h-4" style={{ color: accent }} />
+                                                    <h3 className="text-sm font-medium" style={{ color: demoText }}>Email Reports</h3>
+                                                </div>
+
+                                                <div className="mb-4">
+                                                    <label className="text-xs mb-1.5 block" style={{ color: demoMuted }}>Email Address for Reports</label>
+                                                    <input type="text" value="naveenkumarchapala686@gmail.com" className="w-full p-2 rounded-lg border text-sm" style={{ backgroundColor: demoBg, borderColor: demoBorder, color: demoText }} readOnly />
+                                                    <p className="text-[10px] mt-1" style={{ color: demoMuted }}>Leave blank to use your account email</p>
+                                                </div>
+
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <Clock className="w-3 h-3 text-teal-500" />
+                                                            <p className="text-sm font-medium" style={{ color: demoText }}>Daily Reports</p>
+                                                        </div>
+                                                        <p className="text-[10px]" style={{ color: demoMuted }}>Receive daily data insights from DataVision</p>
+                                                    </div>
+                                                    <div className="w-8 h-4 rounded-full relative transition-colors" style={{ backgroundColor: accent }}>
+                                                        <div className="absolute right-0.5 top-0.5 w-3 h-3 bg-white rounded-full shadow-sm" />
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-2 mt-6">
+                                                    <button className="px-3 py-2 rounded-lg text-[10px] font-medium text-white shadow-lg" style={{ backgroundColor: accent, boxShadow: `0 4px 10px ${accent}40` }}>Save Email Preferences</button>
+                                                    <button className="px-3 py-2 rounded-lg text-[10px] font-medium border" style={{ borderColor: demoBorder, color: demoText }}>Send Test Email</button>
+                                                    <button className="px-3 py-2 rounded-lg text-[10px] font-medium text-white flex items-center gap-2" style={{ backgroundColor: '#10b981' }}>
+                                                        <MessageSquare className="w-3 h-3" /> Send Daily Report Now
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
@@ -905,8 +1314,7 @@ const Landing: React.FC = () => {
             <footer className="py-8 px-6 border-t" style={{ borderColor: border }}>
                 <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
-                        <img src="/logo.png" alt="DataVision" className="w-6 h-6 object-contain" />
-                        <span className="text-sm font-medium">DataVision</span>
+                        <AnimatedLogo size="sm" showText={true} isDark={isDark} />
                     </div>
                     <p className="text-xs text-center" style={{ color: textMuted }}>
                         © 2025 DataVision. The future of autonomous data intelligence.

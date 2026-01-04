@@ -11,12 +11,14 @@ interface AnimatedLogoProps {
     size?: 'sm' | 'md' | 'lg' | 'xl';
     showText?: boolean;
     animate?: boolean;
+    isDark?: boolean;
 }
 
 const AnimatedLogo: React.FC<AnimatedLogoProps> = ({
     size = 'md',
     showText = false,
-    animate = true
+    animate = true,
+    isDark = true
 }) => {
     const sizes = {
         sm: { logo: 32, text: 'text-sm' },
@@ -69,7 +71,8 @@ const AnimatedLogo: React.FC<AnimatedLogoProps> = ({
                     alt="DataVision"
                     className="relative z-10 w-full h-full object-contain"
                     style={{
-                        filter: 'drop-shadow(0 0 8px rgba(45, 212, 191, 0.3))',
+                        filter: isDark ? 'drop-shadow(0 0 8px rgba(45, 212, 191, 0.3))' : 'none',
+                        mixBlendMode: isDark ? 'normal' : 'multiply'
                     }}
                 />
             </motion.div>
@@ -81,9 +84,7 @@ const AnimatedLogo: React.FC<AnimatedLogoProps> = ({
                     transition={{ delay: 0.2, duration: 0.5 }}
                     className={`font-bold tracking-tight ${currentSize.text}`}
                     style={{
-                        background: 'linear-gradient(135deg, #f8fafc 0%, #2dd4bf 100%)',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
+                        color: isDark ? '#ffffff' : '#0f172a', // Solid text color for perfect visibility
                     }}
                 >
                     DataVision
