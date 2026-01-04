@@ -14,7 +14,7 @@ import {
     Home, BarChart2, Database, FileText, MessageSquare, Settings,
     ChevronRight, ChevronDown, TrendingUp, Search, Mic, Download,
     Shield, RefreshCw, Layers, GitBranch, Zap, Clock,
-    PieChart, Activity, Users, Loader2
+    PieChart, Activity, Users, Loader2, LayoutDashboard, BrainCircuit, Target
 } from 'lucide-react';
 
 const Landing: React.FC = () => {
@@ -31,6 +31,7 @@ const Landing: React.FC = () => {
     const [showRunningMCP, setShowRunningMCP] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [reportGenerating, setReportGenerating] = useState(false);
+    const [automlProgress, setAutomlProgress] = useState(0);
 
     const question = 'Check my data quality...';
     const fullResponse = `I've checked your data quality, and it appears to be in good condition. The data is comprehensive, with 100 records across various categories.
@@ -39,12 +40,8 @@ const Landing: React.FC = () => {
 • 20 unique customers
 • 100 unique products  
 • Total revenue: ₹13,85,149
-• Average order value: ₹13,851.49
-• Top customer: TechGiant (16% of revenue)
 
-**Data Quality Score: 100/100** - No issues found
-
-The data provides valuable insights into customer spending habits, product sales, and revenue trends.`;
+**Data Quality Score: 100/100** - No issues found`;
 
     useEffect(() => {
         const saved = localStorage.getItem('theme');
@@ -85,11 +82,12 @@ The data provides valuable insights into customer spending habits, product sales
             setShowPermission(false);
             setShowRunningMCP(false);
             setUploadProgress(0);
+            setAutomlProgress(0);
             setReportGenerating(false);
             setCursorPos({ x: 300, y: 250 });
 
-            // Scene 0: Data Hub - File upload (0-5s)
-            timers.push(setTimeout(() => setCursorPos({ x: 380, y: 180 }), 1000));
+            // Scene 0: Data Hub - File upload (0-4s)
+            timers.push(setTimeout(() => setCursorPos({ x: 380, y: 180 }), 500));
             timers.push(setTimeout(() => {
                 triggerClick();
                 let progress = 0;
@@ -97,43 +95,49 @@ The data provides valuable insights into customer spending habits, product sales
                     progress += 10;
                     setUploadProgress(progress);
                     if (progress >= 100) clearInterval(uploadInterval);
-                }, 200);
-            }, 1500));
+                }, 150);
+            }, 1000));
 
-            // Scene 1: Go to Overview (5-8s)
-            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 135 }), 5000));
+            // Scene 1: Go to Dashboard (4-8s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 160 }), 4000)); // Dashboard position
             timers.push(setTimeout(() => {
                 triggerClick();
                 setScene(1);
-            }, 5500));
+            }, 4500));
 
-            // Scene 2: Go to Dashboards (8-12s)
-            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 188 }), 8500));
+            // Scene 2: Go to AutoML (8-14s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 200 }), 8000)); // AutoML position
             timers.push(setTimeout(() => {
                 triggerClick();
-                setScene(2);
-            }, 9000));
+                setScene(2); // Show AutoML Training
+                // Simulate AutoML Training Progress
+                let p = 0;
+                const progressInterval = setInterval(() => {
+                    p += 5;
+                    setAutomlProgress(p);
+                    if (p >= 100) clearInterval(progressInterval);
+                }, 100);
+            }, 8500));
 
-            // Scene 3: Go to AI Analyst (12-15s)
-            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 268 }), 12000));
+            // Scene 3: Go to Predictions (14-18s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 240 }), 14000)); // Predictions position
             timers.push(setTimeout(() => {
                 triggerClick();
                 setScene(3);
-            }, 12500));
+                // Simulate filling form
+            }, 14500));
 
-            // Show MCP panel (15-18s)
+            // Scene 4: Go to AI Analyst (18-22s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 320 }), 18000)); // Chat position
             timers.push(setTimeout(() => {
-                setCursorPos({ x: 180, y: 380 });
                 triggerClick();
-                setShowMCPPanel(true);
-            }, 15000));
+                setScene(4);
+            }, 18500));
 
-            // Close MCP, type query (18-24s)
+            // Chat interactions (22-35s) - Simplified
             timers.push(setTimeout(() => {
-                setShowMCPPanel(false);
-                setCursorPos({ x: 400, y: 420 });
-            }, 18000));
-
+                setCursorPos({ x: 400, y: 450 }); // Input box
+            }, 20000));
             timers.push(setTimeout(() => {
                 triggerClick();
                 let i = 0;
@@ -144,53 +148,35 @@ The data provides valuable insights into customer spending habits, product sales
                     } else {
                         clearInterval(typeInterval);
                     }
-                }, 80);
-            }, 18500));
-
-            // Send, show permission (24-28s)
-            timers.push(setTimeout(() => setCursorPos({ x: 560, y: 420 }), 23000));
+                }, 50);
+            }, 20500));
+            // Send button
+            timers.push(setTimeout(() => setCursorPos({ x: 560, y: 450 }), 23000));
             timers.push(setTimeout(() => {
                 triggerClick();
-                setShowPermission(true);
+                typeResponse();
             }, 23500));
 
-            // Click Allow, show Running MCP (26-28s)
-            timers.push(setTimeout(() => setCursorPos({ x: 540, y: 320 }), 26000));
-            timers.push(setTimeout(() => {
-                triggerClick();
-                setShowPermission(false);
-                setShowRunningMCP(true);
-                setScene(4);
-            }, 26500));
-
-            // Hide Running MCP, show response (30-38s)
-            timers.push(setTimeout(() => {
-                setShowRunningMCP(false);
-                typeResponse();
-            }, 30000));
-
-            // Scene 5: Go to Reports (40-44s)
-            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 215 }), 40000));
+            // Scene 5: Go to Reports (35-40s)
+            timers.push(setTimeout(() => setCursorPos({ x: 80, y: 280 }), 35000)); // Reports position
             timers.push(setTimeout(() => {
                 triggerClick();
                 setScene(5);
-            }, 40500));
+            }, 35500));
 
-            // Click Generate Report (44-48s)
-            timers.push(setTimeout(() => setCursorPos({ x: 400, y: 285 }), 44000));
+            // Generate report
+            timers.push(setTimeout(() => setCursorPos({ x: 400, y: 285 }), 37500));
             timers.push(setTimeout(() => {
                 triggerClick();
                 setReportGenerating(true);
-            }, 44500));
-
-            // Show generated report (48s)
+            }, 38000));
             timers.push(setTimeout(() => {
                 setReportGenerating(false);
-                setScene(6);
-            }, 48000));
+                setScene(6); // Show Result
+            }, 40000));
 
-            // Loop (54s)
-            timers.push(setTimeout(() => runDemo(), 54000));
+            // Loop (45s)
+            timers.push(setTimeout(() => runDemo(), 45000));
         };
 
         runDemo();
@@ -230,9 +216,10 @@ The data provides valuable insights into customer spending habits, product sales
     const getActivePage = () => {
         if (hoveredPage) return hoveredPage;
         if (scene === 0) return 'data-hub';
-        if (scene === 1) return 'overview';
-        if (scene === 2) return 'dashboards';
-        if (scene === 3 || scene === 4) return 'chat';
+        if (scene === 1) return 'dashboard';
+        if (scene === 2) return 'automl';
+        if (scene === 3) return 'ml-predictions';
+        if (scene === 4) return 'chat';
         if (scene === 5 || scene === 6) return 'reports';
         return 'data-hub';
     };
@@ -390,9 +377,10 @@ The data provides valuable insights into customer spending habits, product sales
                                 <div className="flex-1 py-2">
                                     {[
                                         { icon: Home, label: 'Home', path: 'home' },
-                                        { icon: BarChart2, label: 'Overview', path: 'overview' },
                                         { icon: Database, label: 'Data Hub', path: 'data-hub' },
-                                        { icon: PieChart, label: 'Dashboards', path: 'dashboards' },
+                                        { icon: LayoutDashboard, label: 'Dashboard', path: 'dashboard' },
+                                        { icon: BrainCircuit, label: 'AutoML', path: 'automl' },
+                                        { icon: Target, label: 'Predictions', path: 'ml-predictions' },
                                         { icon: FileText, label: 'Reports', path: 'reports' },
                                         { icon: MessageSquare, label: 'AI Analyst', path: 'chat' },
                                         { icon: Settings, label: 'Settings', path: 'settings' },
@@ -467,267 +455,131 @@ The data provides valuable insights into customer spending habits, product sales
                                         </motion.div>
                                     )}
 
-                                    {/* Overview - Exact Screenshot Match */}
-                                    {activePage === 'overview' && (
-                                        <motion.div key="overview" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
-                                            <h2 className="text-base font-semibold mb-3" style={{ color: demoText }}>Overview</h2>
+                                    {/* Dashboard (Autonomous) */}
+                                    {activePage === 'dashboard' && (
+                                        <motion.div key="dashboard" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
+                                            <div className="flex items-center justify-between mb-4">
+                                                <div>
+                                                    <h2 className="text-base font-semibold" style={{ color: demoText }}>Autonomous Dashboard</h2>
+                                                    <p className="text-xs" style={{ color: accent }}>AI-generated insights from your data</p>
+                                                </div>
+                                                <button className="text-[10px] px-3 py-1.5 rounded-lg text-white" style={{ backgroundColor: accent }}>Regenerate</button>
+                                            </div>
 
-                                            {/* KPI Row */}
-                                            <div className="grid grid-cols-4 gap-2 mb-3">
+                                            {/* KPIs */}
+                                            <div className="grid grid-cols-4 gap-2 mb-4">
                                                 {[
-                                                    { label: 'TOTAL RECORDS', value: '100', change: '+18.5%', color: '#8B5CF6' },
-                                                    { label: 'UNIQUE CUSTOMER SEGMENTS', value: '3', change: '+10.9%', color: '#F59E0B' },
-                                                    { label: 'UNIQUE PRODUCT CATEGORIES', value: '3', change: '+18.1%', color: '#3B82F6' },
-                                                    { label: 'UNIQUE SALES CHANNELS', value: '4', change: '+8.0%', color: '#22C55E' },
+                                                    { label: 'Revenues', value: '₹1.4M', color: '#10b981' },
+                                                    { label: 'Customers', value: '1,240', color: '#3b82f6' },
+                                                    { label: 'Orders', value: '3,850', color: '#f59e0b' },
+                                                    { label: 'Growth', value: '+14%', color: '#8b5cf6' },
                                                 ].map((kpi, i) => (
-                                                    <div key={i} className="p-2 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                        <p className="text-[8px] font-medium mb-0.5" style={{ color: demoMuted }}>{kpi.label}</p>
-                                                        <p className="text-xl font-bold" style={{ color: demoText }}>{kpi.value}</p>
-                                                        <p className="text-[9px]" style={{ color: kpi.color }}>{kpi.change} vs last period</p>
+                                                    <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
+                                                        <p className="text-lg font-bold" style={{ color: demoText }}>{kpi.value}</p>
+                                                        <p className="text-[9px]" style={{ color: demoMuted }}>{kpi.label}</p>
                                                     </div>
                                                 ))}
                                             </div>
 
-                                            {/* Charts Row */}
-                                            <div className="grid grid-cols-2 gap-2 mb-3">
-                                                {/* Total Amount Trend */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <div className="flex justify-between items-center mb-2">
-                                                        <p className="text-xs font-medium" style={{ color: demoText }}>Total Amount Trend</p>
-                                                        <span className="text-[9px]" style={{ color: '#22C55E' }}>↗ +58.7%</span>
-                                                    </div>
-                                                    <div className="h-14 flex items-end">
-                                                        <svg viewBox="0 0 200 50" className="w-full h-full">
-                                                            <path d="M0 45 L30 40 L60 42 L90 35 L120 30 L150 20 L180 15 L200 10" fill="none" stroke="#EF4444" strokeWidth="2" />
-                                                        </svg>
-                                                    </div>
-                                                </div>
-
-                                                {/* Customer Segment Funnel */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-xs font-medium mb-2" style={{ color: demoText }}>Customer Segment Funnel</p>
-                                                    <div className="space-y-1">
-                                                        {[
-                                                            { label: 'Enterprise', value: '1.3M', width: '100%', color: '#22C55E' },
-                                                            { label: 'SMB', value: '62K', width: '45%', color: '#F59E0B' },
-                                                            { label: 'Small Business', value: '40K', width: '35%', color: '#3B82F6' },
-                                                        ].map((item, i) => (
-                                                            <div key={i} className="flex items-center gap-2">
-                                                                <span className="text-[8px] w-16" style={{ color: demoMuted }}>{item.label}</span>
-                                                                <div className="flex-1 h-3 rounded" style={{ backgroundColor: item.color, width: item.width }} />
-                                                                <span className="text-[8px] w-8 text-right" style={{ color: demoText }}>{item.value}</span>
-                                                            </div>
+                                            {/* Charts */}
+                                            <div className="grid grid-cols-2 gap-3 h-48">
+                                                <div className="p-3 rounded-xl flex flex-col" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
+                                                    <p className="text-[10px] font-medium mb-auto" style={{ color: demoText }}>Revenue Trend</p>
+                                                    <div className="h-32 flex items-end gap-1">
+                                                        {[30, 45, 35, 60, 50, 70, 65, 80, 75, 90].map((h, i) => (
+                                                            <div key={i} className="flex-1 rounded-t" style={{ height: `${h}%`, backgroundColor: accent, opacity: 0.6 + (i * 0.04) }} />
                                                         ))}
                                                     </div>
                                                 </div>
-                                            </div>
-
-                                            {/* Bottom Row */}
-                                            <div className="grid grid-cols-3 gap-2 mb-3">
-                                                {/* Key Metrics */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-xs font-medium mb-2" style={{ color: demoText }}>Key Metrics</p>
-                                                    <div className="grid grid-cols-2 gap-1.5">
-                                                        {[
-                                                            { label: 'Total Amount', value: '1.4M', color: accent },
-                                                            { label: 'Unit Price', value: '156K', color: accent },
-                                                            { label: 'Shipping Cost', value: '6K', color: accent },
-                                                            { label: 'Quantity', value: '2K', color: accent },
-                                                        ].map((m, i) => (
-                                                            <div key={i} className="text-center p-1.5 rounded" style={{ backgroundColor: demoBg }}>
-                                                                <p className="text-sm font-bold" style={{ color: m.color }}>{m.value}</p>
-                                                                <p className="text-[7px]" style={{ color: demoMuted }}>{m.label}</p>
-                                                            </div>
-                                                        ))}
+                                                <div className="p-3 rounded-xl flex flex-col" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
+                                                    <p className="text-[10px] font-medium mb-auto" style={{ color: demoText }}>Sales by Region</p>
+                                                    <div className="flex-1 flex items-center justify-center relative">
+                                                        <div className="w-24 h-24 rounded-full border-8" style={{ borderColor: '#3b82f6' }} />
+                                                        <div className="absolute w-24 h-24 rounded-full border-8 border-transparent" style={{ borderColor: '#10b981', transform: 'rotate(45deg)', clipPath: 'polygon(50% 50%, 100% 0, 100% 100%, 0 100%, 0 0)' }} />
                                                     </div>
-                                                </div>
-
-                                                {/* Data Quality */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-xs font-medium mb-2" style={{ color: demoText }}>Data Quality</p>
-                                                    {['Customer Name', 'Customer Segment', 'Product Category', 'Region'].map((field, i) => (
-                                                        <div key={i} className="flex items-center justify-between py-0.5">
-                                                            <div className="flex items-center gap-1">
-                                                                <Check className="w-2.5 h-2.5" style={{ color: accent }} />
-                                                                <span className="text-[8px]" style={{ color: demoMuted }}>{field}</span>
-                                                            </div>
-                                                            <span className="text-[8px]" style={{ color: accent }}>100%</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-
-                                                {/* Avg Total Amount */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-xs font-medium mb-2" style={{ color: demoText }}>Avg Total Amount</p>
-                                                    <div className="flex items-center justify-center">
-                                                        <div className="relative w-14 h-14">
-                                                            <svg className="w-full h-full transform -rotate-90">
-                                                                <circle cx="28" cy="28" r="24" fill="none" stroke={demoBorder} strokeWidth="5" />
-                                                                <circle cx="28" cy="28" r="24" fill="none" stroke={accent} strokeWidth="5" strokeDasharray="150" strokeDashoffset="30" />
-                                                            </svg>
-                                                            <div className="absolute inset-0 flex items-center justify-center">
-                                                                <span className="text-xs font-bold" style={{ color: demoText }}>14K</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Data Summary & AI Insight */}
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-xs font-medium mb-2" style={{ color: demoText }}>Data Summary</p>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {[
-                                                            { label: 'RECORDS', value: '100', icon: FileText },
-                                                            { label: 'COLUMNS', value: '13', icon: BarChart2 },
-                                                            { label: 'METRICS', value: '7', icon: Activity },
-                                                            { label: 'DIMENSIONS', value: '3', icon: PieChart },
-                                                        ].map((s, i) => (
-                                                            <div key={i} className="text-center">
-                                                                <p className="text-lg font-bold" style={{ color: demoText }}>{s.value}</p>
-                                                                <p className="text-[7px]" style={{ color: demoMuted }}>{s.label}</p>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <div className="flex items-center gap-1 mb-2">
-                                                        <Zap className="w-3 h-3" style={{ color: '#F59E0B' }} />
-                                                        <p className="text-xs font-medium" style={{ color: demoText }}>AI Insight</p>
-                                                    </div>
-                                                    <p className="text-[9px] mb-2" style={{ color: demoMuted }}>
-                                                        Showing 100 records, 3 unique Customer Segments, Total Amount totals 1.4M.
-                                                    </p>
-                                                    <button className="w-full py-1.5 rounded-lg text-[10px] font-medium text-white" style={{ backgroundColor: accent }}>
-                                                        View Full Dashboard →
-                                                    </button>
                                                 </div>
                                             </div>
                                         </motion.div>
                                     )}
 
-                                    {/* Dashboards - Exact Screenshot Match */}
-                                    {activePage === 'dashboards' && (
-                                        <motion.div key="dashboards" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
-                                            {/* Header */}
-                                            <div className="flex items-center justify-between mb-3">
-                                                <div className="flex items-center gap-2">
-                                                    <Activity className="w-4 h-4" style={{ color: accent }} />
-                                                    <span className="text-sm font-semibold" style={{ color: demoText }}>Analytics Dashboard</span>
+                                    {/* AutoML */}
+                                    {activePage === 'automl' && (
+                                        <motion.div key="automl" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
+                                            <div className="flex items-center justify-between mb-4">
+                                                <div>
+                                                    <h2 className="text-base font-semibold" style={{ color: demoText }}>AutoML Training</h2>
+                                                    <p className="text-xs" style={{ color: accent }}>Automated model selection & training</p>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-[10px]" style={{ color: demoMuted }}>100 Records | All Data</span>
-                                                    <button className="px-2 py-1 rounded text-[9px]" style={{ backgroundColor: accent, color: 'white' }}>Overview</button>
+                                                {automlProgress < 100 && (
+                                                    <span className="text-[10px] text-white px-2 py-0.5 rounded bg-blue-500">Training... {automlProgress}%</span>
+                                                )}
+                                            </div>
+
+                                            {/* Progress / Status */}
+                                            <div className="mb-4">
+                                                <div className="flex justify-between text-[10px] mb-1" style={{ color: demoMuted }}>
+                                                    <span>Data Preprocessing</span>
+                                                    <span>Model Selection</span>
+                                                    <span>Training</span>
+                                                    <span>Evaluation</span>
+                                                </div>
+                                                <div className="h-1.5 w-full bg-gray-700 rounded-full overflow-hidden">
+                                                    <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${automlProgress}%` }} />
                                                 </div>
                                             </div>
 
-                                            {/* Filters */}
-                                            <div className="flex gap-2 mb-3">
-                                                {['CUSTOMER SEGMENT', 'PRODUCT CATEGORY', 'SALES CHANNEL'].map(f => (
-                                                    <div key={f} className="flex items-center gap-1 px-2 py-1 rounded text-[9px]" style={{ backgroundColor: demoCard, color: demoMuted, border: `1px solid ${demoBorder}` }}>
-                                                        {f} All <ChevronDown className="w-3 h-3" />
-                                                    </div>
-                                                ))}
-                                                <div className="px-2 py-1 rounded text-[9px] text-white flex items-center gap-1" style={{ backgroundColor: accent }}>
-                                                    <Check className="w-3 h-3" /> Apply Filters
+                                            {/* Leaderboard */}
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-[10px] font-medium px-2" style={{ color: demoMuted }}>
+                                                    <span>Model</span>
+                                                    <span>Accuracy</span>
+                                                    <span>Status</span>
                                                 </div>
-                                            </div>
-
-                                            {/* KPIs */}
-                                            <div className="grid grid-cols-4 gap-2 mb-3">
                                                 {[
-                                                    { label: 'TOTAL RECORDS', value: '100', icon: '📊' },
-                                                    { label: 'UNIQUE CUSTOMER SEGMENTS', value: '3', icon: '👥' },
-                                                    { label: 'UNIQUE PRODUCT CATEGORIES', value: '3', icon: '📦' },
-                                                    { label: 'UNIQUE SALES CHANNELS', value: '4', icon: '🏪' },
-                                                ].map((kpi, i) => (
-                                                    <div key={i} className="p-2 rounded-lg flex items-center gap-2" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                        <div>
-                                                            <p className="text-[8px]" style={{ color: demoMuted }}>{kpi.label}</p>
-                                                            <p className="text-lg font-bold" style={{ color: demoText }}>{kpi.value}</p>
-                                                            <p className="text-[8px]" style={{ color: '#22C55E' }}>vs last period</p>
-                                                        </div>
+                                                    { name: 'XGBoost Classifier', acc: '98.5%', status: 'Best Model', color: '#10b981' },
+                                                    { name: 'Random Forest', acc: '97.2%', status: 'Completed', color: demoMuted },
+                                                    { name: 'Logistic Regression', acc: '89.0%', status: 'Completed', color: demoMuted },
+                                                ].map((m, i) => (
+                                                    <div key={i} className="flex items-center justify-between p-2 rounded-lg" style={{ backgroundColor: demoCard, border: i === 0 ? `1px solid ${accent}` : `1px solid ${demoBorder}` }}>
+                                                        <span className="text-[10px]" style={{ color: demoText }}>{m.name}</span>
+                                                        <span className="text-[10px] font-bold" style={{ color: demoText }}>{m.acc}</span>
+                                                        <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ backgroundColor: m.color === '#10b981' ? '#10b98120' : 'transparent', color: m.color }}>{m.status}</span>
                                                     </div>
                                                 ))}
                                             </div>
+                                        </motion.div>
+                                    )}
 
-                                            {/* Charts Row 1 */}
-                                            <div className="grid grid-cols-3 gap-2 mb-3">
-                                                {/* Scatter */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-[10px] font-medium mb-2" style={{ color: demoText }}>Total Amount vs Unit Price</p>
-                                                    <div className="h-16 relative">
-                                                        {[...Array(12)].map((_, i) => (
-                                                            <div key={i} className="absolute w-2 h-2 rounded-full" style={{
-                                                                backgroundColor: accent,
-                                                                left: `${10 + Math.random() * 80}%`,
-                                                                top: `${10 + Math.random() * 80}%`
-                                                            }} />
-                                                        ))}
-                                                    </div>
-                                                </div>
+                                    {/* ML Predictions */}
+                                    {activePage === 'ml-predictions' && (
+                                        <motion.div key="predictions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
+                                            <h2 className="text-base font-semibold mb-1" style={{ color: demoText }}>Make Prediction</h2>
+                                            <p className="text-xs mb-4" style={{ color: accent }}>Active Model: XGBoost Classifier</p>
 
-                                                {/* Bar Trend */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-[10px] font-medium mb-2" style={{ color: demoText }}>Total Amount Trend</p>
-                                                    <div className="h-16 flex items-end gap-1">
-                                                        {[40, 25, 55, 45, 65, 30, 50].map((h, i) => (
-                                                            <div key={i} className="flex-1 rounded-t" style={{ height: `${h}%`, backgroundColor: ['#22C55E', '#F59E0B'][i % 2] }} />
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                {/* Category Flow */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-[10px] font-medium mb-2" style={{ color: demoText }}>Customer Segment → Product Category Flow</p>
-                                                    <div className="space-y-0.5">
-                                                        {['Electronics', 'First Order', 'Office Supplies'].map((cat, i) => (
-                                                            <div key={cat} className="h-3 rounded" style={{ backgroundColor: ['#EF4444', '#22C55E', '#3B82F6'][i], width: `${100 - i * 20}%` }} />
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Charts Row 2 */}
-                                            <div className="grid grid-cols-3 gap-2">
-                                                {/* Correlations */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-[10px] font-medium mb-2" style={{ color: demoText }}>Metric Correlations</p>
-                                                    <div className="grid grid-cols-4 gap-0.5">
-                                                        {['1.0', '0.9', '0.2', '0.4', '0.9', '1.0', '0.1', '0.3', '0.6', '0.4', '1.0', '0.8', '0.3', '0.5', '0.8', '1.0'].map((v, i) => (
-                                                            <div key={i} className="w-5 h-5 rounded text-[6px] flex items-center justify-center" style={{ backgroundColor: parseFloat(v) > 0.5 ? '#22C55E' : '#3B82F6', color: 'white' }}>
-                                                                {v}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-3">
+                                                    {[
+                                                        { label: 'Customer Age', val: '32' },
+                                                        { label: 'Purchase Amount', val: '12500' },
+                                                        { label: 'Tenure (Months)', val: '14' },
+                                                        { label: 'Support Calls', val: '2' },
+                                                    ].map((field, i) => (
+                                                        <div key={i}>
+                                                            <label className="text-[9px] block mb-1" style={{ color: demoMuted }}>{field.label}</label>
+                                                            <div className="w-full p-1.5 rounded border text-[10px]" style={{ borderColor: demoBorder, backgroundColor: demoBg, color: demoText }}>
+                                                                {field.val}
                                                             </div>
-                                                        ))}
-                                                    </div>
+                                                        </div>
+                                                    ))}
+                                                    <button className="w-full py-2 mt-2 rounded-lg text-xs text-white" style={{ backgroundColor: accent }}>Predict Churn</button>
                                                 </div>
 
-                                                {/* Data Summary */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-[10px] font-medium mb-2" style={{ color: demoText }}>Data Summary</p>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {[
-                                                            { value: '100', label: 'Records' },
-                                                            { value: '13', label: 'Columns' },
-                                                            { value: '7', label: 'Metrics' },
-                                                            { value: '3', label: 'Dimensions' },
-                                                        ].map((s, i) => (
-                                                            <div key={i} className="text-center">
-                                                                <p className="text-sm font-bold" style={{ color: demoText }}>{s.value}</p>
-                                                                <p className="text-[7px]" style={{ color: demoMuted }}>{s.label}</p>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                {/* Product Category */}
-                                                <div className="p-3 rounded-lg" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
-                                                    <p className="text-[10px] font-medium mb-2" style={{ color: demoText }}>Total Amount by Product Category</p>
-                                                    <div className="h-12 flex items-end gap-2">
-                                                        {[85, 40, 65].map((h, i) => (
-                                                            <div key={i} className="flex-1 rounded-t" style={{ height: `${h}%`, backgroundColor: ['#8B5CF6', '#F59E0B', '#3B82F6'][i] }} />
-                                                        ))}
+                                                <div className="flex flex-col items-center justify-center p-4 rounded-xl text-center" style={{ backgroundColor: demoCard, border: `1px solid ${demoBorder}` }}>
+                                                    <p className="text-[10px] mb-2" style={{ color: demoMuted }}>Prediction Result</p>
+                                                    <div className="text-2xl font-bold mb-1" style={{ color: '#10b981' }}>Low Risk</div>
+                                                    <div className="text-[10px] mb-1" style={{ color: demoText }}>Probability: 12%</div>
+                                                    <div className="w-full bg-gray-700 h-1 rounded-full mt-2">
+                                                        <div className="h-full w-[12%] bg-green-500 rounded-full" />
                                                     </div>
                                                 </div>
                                             </div>
