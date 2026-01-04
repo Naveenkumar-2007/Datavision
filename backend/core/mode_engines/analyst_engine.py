@@ -171,43 +171,41 @@ YOUR DATA-DRIVEN ANALYSIS:"""
         return chart_map.get(intent, "bar")
     
     async def _auto_visualize(self, query: str, df, intent: Dict) -> tuple:
-        """Automatically generate the most relevant visualization"""
-        import pandas as pd
-        import numpy as np
+        """
+        Automatically generate the most relevant visualization.
+        Uses UniversalVisualizer for dynamic, data-driven charts.
+        """
+        import json
         
         chart = None
         ml_charts = []
         
         try:
-            # Try smart_chart first
-            from agents.smart_chart import smart_chart
-            chart = smart_chart(query, df)
-        except Exception as e:
-            logger.warning(f"Smart chart error: {e}")
-        
-        # Generate ML visualizations for complex intents
-        if intent['type'] in ['correlation', 'distribution', 'prediction']:
+            # Use Universal Visualizer for dynamic charts
+            from core.mode_engines.universal_visualizer import UniversalVisualizer, get_chart_for_intent
+            
+            # Generate chart based on intent
+            intent_type = intent.get('type', 'general')
+            chart = get_chart_for_intent(df, intent_type)
+            
+            if chart:
+                logger.info(f"✅ Generated {intent_type} chart from UniversalVisualizer")
+            
+            # Add correlation heatmap for correlation intent
+            if intent_type == 'correlation':
+                heatmap = UniversalVisualizer.correlation_heatmap(df)
+                if heatmap:
+                    ml_charts.append({"chart": heatmap, "type": "correlation"})
+                    
+        except ImportError:
+            logger.warning("UniversalVisualizer not available, trying smart_chart")
             try:
-                from core.ml_visualizer import MLVisualizer
-                viz = MLVisualizer()
-                
-                if intent['type'] == 'correlation':
-                    corr_chart = viz.create_correlation_heatmap(df, "Data Correlations")
-                    if corr_chart.get('image'):
-                        ml_charts.append(corr_chart)
-                
-                elif intent['type'] == 'distribution':
-                    numeric_cols = df.select_dtypes(include=[np.number]).columns
-                    if len(numeric_cols) > 0:
-                        dist_chart = viz.create_distribution_plot(
-                            df[numeric_cols[0]].dropna().tolist(),
-                            column_name=numeric_cols[0]
-                        )
-                        if dist_chart.get('image'):
-                            ml_charts.append(dist_chart)
-                            
+                from agents.smart_chart import smart_chart
+                chart = smart_chart(query, df)
             except Exception as e:
-                logger.warning(f"ML visualization error: {e}")
+                logger.warning(f"Smart chart error: {e}")
+        except Exception as e:
+            logger.error(f"Visualization error: {e}")
         
         return chart, ml_charts
 

@@ -390,9 +390,18 @@ async def agent_response(
 def agent_response_sync(
     user_id: str,
     query: str,
-    context: str = ""
+    context: str = "",
+    df = None
 ) -> str:
-    """Synchronous agent response"""
+    """
+    Synchronous agent response with dynamic visualization.
+    
+    Features:
+    - Autonomous task execution
+    - Multi-tool orchestration
+    - Dynamic chart generation
+    """
+    import json
     
     # Check if web explicitly requested
     needs_web = any(kw in query.lower() for kw in ['search online', 'latest news', 'look up'])
@@ -423,6 +432,20 @@ YOUR RESPONSE:"""
 
     try:
         response = chat(prompt, temperature=0.3, max_tokens=2000)
-        return f"🤖 **Agent Mode**\n\n{response}"
+        result = f"🤖 **Agent Mode**\n\n{response}"
+        
+        # Add dynamic visualization if DataFrame provided
+        if df is not None:
+            try:
+                from core.mode_engines.universal_visualizer import auto_visualize
+                chart = auto_visualize(df, query)
+                if chart:
+                    result += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
+                    logger.info("✅ Added dynamic chart to agent response")
+            except Exception as chart_err:
+                logger.warning(f"Chart generation skipped: {chart_err}")
+        
+        return result
     except Exception as e:
         return f"Agent error: {str(e)}"
+

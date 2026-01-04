@@ -39,6 +39,11 @@ from sklearn.ensemble import (
 from sklearn.linear_model import LogisticRegression, Ridge, ElasticNet, Lasso
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 
+# Unsupervised Learning
+from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+from sklearn.decomposition import PCA
+from sklearn.metrics import silhouette_score
+
 try:
     import xgboost as xgb
     HAS_XGB = True
@@ -1032,6 +1037,217 @@ class ProductionMLEngine:
     
     def get_feature_metadata(self) -> List[Dict]:
         return self.feature_metadata
+    
+    # =========================================================================
+    # UNSUPERVISED LEARNING - CLUSTERING
+    # =========================================================================
+    
+    def run_clustering(
+        self, 
+        df: pd.DataFrame, 
+        n_clusters: int = None,
+        algorithm: str = 'kmeans'
+    ) -> Dict[str, Any]:
+        """
+        Run unsupervised clustering on the data.
+        
+        Args:
+            df: DataFrame with numeric features
+            n_clusters: Number of clusters (auto-detected if None)
+            algorithm: 'kmeans', 'dbscan', or 'hierarchical'
+        
+        Returns:
+            Dict with cluster labels, metrics, and visualization data
+        """
+        logger.info(f"🔮 Running {algorithm} clustering...")
+        
+        result = {
+            'success': False,
+            'algorithm': algorithm,
+            'n_clusters': 0,
+            'labels': [],
+            'metrics': {},
+            'pca_2d': None,
+            'charts': {}
+        }
+        
+        try:
+            # Prepare numeric data
+            numeric_df = df.select_dtypes(include=[np.number]).dropna()
+            
+            if numeric_df.empty or len(numeric_df) < 10:
+                result['error'] = "Not enough numeric data for clustering"
+                return result
+            
+            # Scale the data
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(numeric_df)
+            
+            # Auto-detect optimal clusters if not specified
+            if n_clusters is None and algorithm != 'dbscan':
+                n_clusters = self._find_optimal_clusters(X_scaled)
+            
+            # Run clustering
+            if algorithm == 'kmeans':
+                model = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+                labels = model.fit_predict(X_scaled)
+            elif algorithm == 'dbscan':
+                model = DBSCAN(eps=0.5, min_samples=5)
+                labels = model.fit_predict(X_scaled)
+                n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+            elif algorithm == 'hierarchical':
+                model = AgglomerativeClustering(n_clusters=n_clusters)
+                labels = model.fit_predict(X_scaled)
+            else:
+                result['error'] = f"Unknown algorithm: {algorithm}"
+                return result
+            
+            # Calculate metrics
+            if len(set(labels)) > 1 and -1 not in labels:
+                silhouette = silhouette_score(X_scaled, labels)
+            else:
+                silhouette = 0.0
+            
+            # PCA for visualization
+            pca = PCA(n_components=2)
+            X_2d = pca.fit_transform(X_scaled)
+            
+            # Store results
+            result['success'] = True
+            result['n_clusters'] = n_clusters
+            result['labels'] = labels.tolist()
+            result['metrics'] = {
+                'silhouette_score': float(silhouette),
+                'n_samples': len(labels),
+                'pca_variance_explained': float(sum(pca.explained_variance_ratio_))
+            }
+            result['pca_2d'] = X_2d.tolist()
+            
+            # Generate cluster scatter chart (base64 image)
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            import io
+            import base64
+            
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # Color palette
+            colors = ['#2563eb', '#16a34a', '#dc2626', '#ea580c', '#9333ea', 
+                      '#0891b2', '#db2777', '#d97706', '#0d9488', '#4f46e5']
+            
+            unique_labels = sorted(set(labels))
+            for i, label in enumerate(unique_labels):
+                mask = labels == label
+                color = colors[i % len(colors)] if label >= 0 else '#6b7280'
+                label_name = f'Cluster {label}' if label >= 0 else 'Noise'
+                ax.scatter(X_2d[mask, 0], X_2d[mask, 1], 
+                          c=color, label=label_name, alpha=0.7, s=50,
+                          edgecolors='white', linewidth=0.5)
+            
+            ax.set_xlabel('PCA Component 1', fontweight='bold', fontsize=12)
+            ax.set_ylabel('PCA Component 2', fontweight='bold', fontsize=12)
+            ax.set_title(f'🔮 {algorithm.title()} Clustering (Silhouette: {silhouette:.3f})', 
+                        fontweight='bold', pad=15, fontsize=14)
+            ax.legend(loc='best', fontsize=10)
+            ax.grid(alpha=0.3)
+            ax.set_facecolor('#ffffff')
+            fig.set_facecolor('#f8f9fa')
+            
+            # Convert to base64
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=150, bbox_inches='tight',
+                       facecolor='#f8f9fa', edgecolor='none')
+            buf.seek(0)
+            cluster_chart = f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode('utf-8')}"
+            plt.close(fig)
+            
+            result['charts']['cluster_scatter'] = cluster_chart
+            
+            # Add cluster distribution
+            unique, counts = np.unique(labels, return_counts=True)
+            result['cluster_distribution'] = {
+                f"Cluster {k}" if k >= 0 else "Noise": int(v) 
+                for k, v in zip(unique, counts)
+            }
+            
+            logger.info(f"✅ Clustering complete: {n_clusters} clusters, silhouette={silhouette:.3f}")
+            
+        except Exception as e:
+            logger.error(f"Clustering error: {e}")
+            result['error'] = str(e)
+        
+        return result
+    
+    def _find_optimal_clusters(self, X: np.ndarray, max_k: int = 10) -> int:
+        """Find optimal number of clusters using elbow method + silhouette"""
+        logger.info("🔍 Finding optimal number of clusters...")
+        
+        max_k = min(max_k, len(X) - 1)
+        k_range = range(2, max_k + 1)
+        
+        inertias = []
+        silhouettes = []
+        
+        for k in k_range:
+            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(X)
+            inertias.append(kmeans.inertia_)
+            silhouettes.append(silhouette_score(X, labels))
+        
+        # Best k by silhouette score
+        best_k = list(k_range)[np.argmax(silhouettes)]
+        logger.info(f"   Optimal K = {best_k} (silhouette = {max(silhouettes):.3f})")
+        
+        return best_k
+    
+    def get_all_ml_charts(self) -> Dict[str, Any]:
+        """Get all ML charts for the trained model"""
+        charts = {}
+        
+        try:
+            from ml.ml_chart_generator import MLChartGenerator
+            
+            y_test = getattr(self, '_y_test', None)
+            y_pred = getattr(self, '_y_pred', None)
+            y_proba = getattr(self, '_y_pred_proba', None)
+            
+            if y_test is None or y_pred is None:
+                return {'error': 'No model trained yet'}
+            
+            is_classification = 'classification' in self.task_type
+            
+            if is_classification:
+                # Classification charts
+                charts['confusion_matrix'] = MLChartGenerator.confusion_matrix_chart(y_test, y_pred)
+                
+                if y_proba is not None:
+                    charts['roc_curve'] = MLChartGenerator.roc_curve_chart(y_test, y_proba)
+                    charts['precision_recall'] = MLChartGenerator.precision_recall_chart(y_test, y_proba)
+            else:
+                # Regression charts
+                charts['actual_vs_predicted'] = MLChartGenerator.actual_vs_predicted_chart(
+                    y_test, y_pred, f"{self.target_column} Predictions"
+                )
+                charts['residuals'] = MLChartGenerator.residuals_chart(y_test, y_pred)
+            
+            # Feature importance
+            if self.feature_columns:
+                importance = self._get_importance(self.model) or []
+                features = [f['feature'] for f in importance]
+                values = [f['importance'] for f in importance]
+                if features:
+                    charts['feature_importance'] = MLChartGenerator.feature_importance_chart(
+                        features, values, f"Feature Importance for {self.target_column}"
+                    )
+            
+            logger.info(f"✅ Generated {len(charts)} ML charts")
+            
+        except Exception as e:
+            logger.error(f"Chart generation error: {e}")
+            charts['error'] = str(e)
+        
+        return charts
 
 
 # Global instance

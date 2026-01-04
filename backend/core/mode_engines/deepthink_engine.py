@@ -268,9 +268,18 @@ async def deepthink_response(
 def deepthink_response_sync(
     user_id: str,
     query: str,
-    context: str = ""
+    context: str = "",
+    df = None
 ) -> str:
-    """Synchronous deep think response"""
+    """
+    Synchronous deep think response with optional visualization.
+    
+    Features:
+    - Chain of thought reasoning
+    - Data citation and verification
+    - Dynamic chart generation when df is provided
+    """
+    import json
     
     prompt = f"""You are DataVision Deep Think. Use step-by-step reasoning.
 
@@ -301,6 +310,20 @@ Begin:"""
 
     try:
         response = chat(prompt, temperature=0.2, max_tokens=2000)
-        return f"🧠 **Deep Think Analysis**\n\n{response}"
+        result = f"🧠 **Deep Think Analysis**\n\n{response}"
+        
+        # Add dynamic visualization if DataFrame provided
+        if df is not None:
+            try:
+                from core.mode_engines.universal_visualizer import auto_visualize
+                chart = auto_visualize(df, query)
+                if chart:
+                    result += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
+                    logger.info("✅ Added dynamic chart to deep think response")
+            except Exception as chart_err:
+                logger.warning(f"Chart generation skipped: {chart_err}")
+        
+        return result
     except Exception as e:
         return f"Deep think error: {str(e)}"
+

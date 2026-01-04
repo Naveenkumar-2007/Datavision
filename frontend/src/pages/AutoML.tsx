@@ -74,6 +74,22 @@ interface BiasReport {
     corrected: boolean;
 }
 
+interface ClusteringResult {
+    algorithm: string;
+    n_clusters: number;
+    silhouette_score: number;
+    cluster_distribution: Record<string, number>;
+}
+
+interface FeatureMetadata {
+    name: string;
+    type: 'numeric' | 'categorical' | 'text';
+    sample_values?: (string | number)[];
+    min?: number;
+    max?: number;
+    mean?: number;
+}
+
 interface AutoMLResult {
     success: boolean;
     task_type: string;
@@ -84,6 +100,8 @@ interface AutoMLResult {
     };
     all_models: ModelResult[];
     feature_importance: FeatureImportance[];
+    feature_columns: string[];
+    feature_metadata?: Record<string, FeatureMetadata>;
     bias_reports: BiasReport[];
     insights: string[];
     recommendations: string[];
@@ -95,6 +113,8 @@ interface AutoMLResult {
     };
     processing_time_seconds: number;
     api_endpoint: string | null;
+    charts?: Record<string, any>;
+    clustering?: ClusteringResult;
 }
 
 const AutoML: React.FC = () => {
@@ -111,7 +131,18 @@ const AutoML: React.FC = () => {
     const location = useLocation();
 
     const [result, setResult] = useState<AutoMLResult | null>(null);
-    const [activeTab, setActiveTab] = useState<'overview' | 'models' | 'features' | 'insights'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'models' | 'charts' | 'features' | 'clustering' | 'predictions' | 'insights'>('overview');
+
+    // Prediction state
+    const [predictionInputs, setPredictionInputs] = useState<Record<string, string>>({});
+    const [predictionResult, setPredictionResult] = useState<{
+        prediction: number | string;
+        probability?: number;
+        confidence?: number;
+        model?: string;
+    } | null>(null);
+    const [isPredicting, setIsPredicting] = useState(false);
+    const [predictionError, setPredictionError] = useState<string | null>(null);
 
     // Load result from location state or localStorage
     useEffect(() => {
@@ -148,6 +179,70 @@ const AutoML: React.FC = () => {
         if (value >= 0.9) return '#10b981';
         if (value >= 0.7) return '#f59e0b';
         return '#ef4444';
+    };
+
+    // Handle prediction API call
+    const handlePredict = async () => {
+        if (!result) return;
+
+        setIsPredicting(true);
+        setPredictionError(null);
+        setPredictionResult(null);
+
+        try {
+            // Convert string inputs to appropriate types
+            const dataPayload: Record<string, any> = {};
+
+            for (const [key, value] of Object.entries(predictionInputs)) {
+                if (value === '' || value === undefined) continue;
+
+                // Try to convert to number if it looks numeric
+                const numValue = parseFloat(value);
+                if (!isNaN(numValue)) {
+                    dataPayload[key] = numValue;
+                } else {
+                    dataPayload[key] = value;
+                }
+            }
+
+            console.log('🔮 Making prediction with:', dataPayload);
+
+            const response = await fetch('/api/v2/automl/predict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: 'default',
+                    model_name: result.best_model.name,
+                    data: dataPayload
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                setPredictionResult({
+                    prediction: data.prediction,
+                    probability: data.probability,
+                    confidence: data.confidence,
+                    model: data.model
+                });
+            } else {
+                setPredictionError(data.detail || 'Prediction failed');
+            }
+        } catch (error) {
+            setPredictionError('Failed to connect to prediction API');
+            console.error('Prediction error:', error);
+        } finally {
+            setIsPredicting(false);
+        }
+    };
+
+    // Update input value
+    const handleInputChange = (feature: string, value: string) => {
+        setPredictionInputs(prev => ({
+            ...prev,
+            [feature]: value
+        }));
     };
 
     // Model comparison chart data
@@ -411,11 +506,14 @@ const AutoML: React.FC = () => {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 p-1 rounded-xl" style={{ backgroundColor: theme.cardBg }}>
+            <div className="flex gap-2 p-1 rounded-xl overflow-x-auto" style={{ backgroundColor: theme.cardBg }}>
                 {[
                     { id: 'overview', label: 'Overview', icon: PieChart },
                     { id: 'models', label: 'Model Comparison', icon: BarChart3 },
+                    { id: 'charts', label: 'ML Charts', icon: Activity },
                     { id: 'features', label: 'Feature Importance', icon: TrendingUp },
+                    { id: 'clustering', label: 'Clustering', icon: Layers },
+                    { id: 'predictions', label: 'Predictions', icon: Target },
                     { id: 'insights', label: 'AI Insights', icon: Sparkles },
                 ].map((tab) => (
                     <button
@@ -563,6 +661,94 @@ const AutoML: React.FC = () => {
                     </div>
                 )}
 
+                {/* ML Charts Tab - Production Visualizations */}
+                {activeTab === 'charts' && (
+                    <div className="space-y-6">
+                        <div className="flex items-center justify-between">
+                            <h3 className="text-lg font-semibold flex items-center gap-2" style={{ color: theme.textPrimary }}>
+                                <Activity className="w-5 h-5 text-blue-400" />
+                                Production ML Visualizations
+                                <span className="ml-2 px-2 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs">
+                                    {result.charts ? Object.keys(result.charts).length : 0} Charts
+                                </span>
+                            </h3>
+                            <span className="px-3 py-1 rounded-full text-sm font-medium" style={{
+                                backgroundColor: result.task_type.includes('classification') ? 'rgba(139, 92, 246, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                                color: result.task_type.includes('classification') ? '#a78bfa' : '#22c55e'
+                            }}>
+                                {result.task_type.includes('classification') ? '📊 Classification' : '📈 Regression'}
+                            </span>
+                        </div>
+
+                        {result.charts && Object.keys(result.charts).length > 0 ? (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Render all charts as images */}
+                                {Object.entries(result.charts).map(([chartKey, chartData]) => {
+                                    // Skip if no data or not a valid base64 string
+                                    if (!chartData || typeof chartData !== 'string') return null;
+
+                                    // Get nice title for chart
+                                    const chartTitles: Record<string, string> = {
+                                        'confusion_matrix': '📊 Confusion Matrix',
+                                        'class_distribution': '📈 Class Distribution',
+                                        'classification_metrics': '📋 Classification Metrics',
+                                        'prediction_accuracy_pie': '✅ Prediction Accuracy',
+                                        'roc_curve': '📈 ROC Curve',
+                                        'probability_histogram': '🎲 Confidence Distribution',
+                                        'confidence_gauge': '🎯 Confidence Level',
+                                        'actual_vs_predicted': '📉 Actual vs Predicted',
+                                        'residual_plot': '📊 Residual Analysis',
+                                        'error_histogram': '📊 Error Distribution',
+                                        'prediction_error': '🎯 Prediction Error',
+                                        'qq_plot': '📐 Q-Q Plot',
+                                        'regression_metrics': '📋 Regression Metrics',
+                                        'error_boxplot': '📦 Error Box Plot',
+                                        'feature_importance': '🔑 Feature Importance',
+                                        'model_comparison': '🏆 Model Comparison',
+                                        'training_time': '⏱️ Training Time',
+                                        'cluster_scatter': '🔮 Cluster Analysis',
+                                    };
+
+                                    const title = chartTitles[chartKey] || chartKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+                                    return (
+                                        <motion.div
+                                            key={chartKey}
+                                            initial={{ opacity: 0, scale: 0.95 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            className="p-4 rounded-2xl border overflow-hidden"
+                                            style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                                        >
+                                            <h4 className="text-sm font-semibold mb-3" style={{ color: theme.textPrimary }}>
+                                                {title}
+                                            </h4>
+                                            <img
+                                                src={chartData}
+                                                alt={title}
+                                                className="w-full h-auto rounded-lg"
+                                                style={{ maxHeight: '350px', objectFit: 'contain' }}
+                                            />
+                                        </motion.div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div
+                                className="p-12 rounded-2xl border text-center"
+                                style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                            >
+                                <Activity className="w-16 h-16 mx-auto mb-4 text-gray-500" />
+                                <h4 className="text-lg font-semibold mb-2" style={{ color: theme.textPrimary }}>
+                                    No Charts Available
+                                </h4>
+                                <p style={{ color: theme.textMuted }}>
+                                    Charts will appear here after training completes
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {activeTab === 'features' && featureImportance && (
                     <div
                         className="p-6 rounded-2xl border"
@@ -598,6 +784,262 @@ const AutoML: React.FC = () => {
                                         <span className="font-bold text-emerald-400">{(f.importance * 100).toFixed(1)}%</span>
                                     </div>
                                 ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Clustering Tab - Unsupervised Learning */}
+                {activeTab === 'clustering' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div
+                            className="p-6 rounded-2xl border bg-gradient-to-br from-purple-500/10 to-blue-500/10"
+                            style={{ borderColor: theme.borderColor }}
+                        >
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
+                                <Layers className="w-5 h-5 text-purple-400" />
+                                Unsupervised Learning
+                                {result.clustering && (
+                                    <span className="ml-auto px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs">✓ Complete</span>
+                                )}
+                            </h3>
+                            <div className="space-y-4">
+                                <div className="p-4 rounded-xl" style={{ backgroundColor: theme.cardBg }}>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium" style={{ color: theme.textMuted }}>Algorithm</span>
+                                        <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-400 text-sm font-medium">
+                                            {result.clustering?.algorithm?.toUpperCase() || 'K-Means'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium" style={{ color: theme.textMuted }}>Clusters Found</span>
+                                        <span className="text-emerald-400 font-bold text-xl">
+                                            {result.clustering?.n_clusters || 'N/A'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium" style={{ color: theme.textMuted }}>Silhouette Score</span>
+                                        <span className="text-blue-400 font-bold">
+                                            {result.clustering?.silhouette_score?.toFixed(3) || 'N/A'}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Cluster Distribution */}
+                                {result.clustering?.cluster_distribution && (
+                                    <div className="p-4 rounded-xl" style={{ backgroundColor: theme.cardBg }}>
+                                        <h4 className="text-sm font-medium mb-3" style={{ color: theme.textPrimary }}>Cluster Distribution</h4>
+                                        <div className="space-y-2">
+                                            {Object.entries(result.clustering.cluster_distribution).map(([cluster, count]) => (
+                                                <div key={cluster} className="flex items-center gap-3">
+                                                    <span className="text-sm" style={{ color: theme.textMuted }}>{cluster}</span>
+                                                    <div className="flex-1 bg-gray-700 rounded-full h-2">
+                                                        <div
+                                                            className="h-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500"
+                                                            style={{ width: `${(count as number / result.data_summary.rows) * 100}%` }}
+                                                        />
+                                                    </div>
+                                                    <span className="text-sm font-medium text-purple-400">{count as number}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <p className="text-sm" style={{ color: theme.textMuted }}>
+                                    {result.clustering
+                                        ? `✅ Automatically identified ${result.clustering.n_clusters} distinct segments in your data.`
+                                        : 'Clustering analysis groups similar data points together.'}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div
+                            className="p-6 rounded-2xl border"
+                            style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                        >
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
+                                <Activity className="w-5 h-5 text-blue-400" />
+                                Cluster Visualization
+                            </h3>
+                            {result.charts?.cluster_scatter ? (
+                                <Plot
+                                    data={result.charts.cluster_scatter.data}
+                                    layout={{
+                                        ...result.charts.cluster_scatter.layout,
+                                        paper_bgcolor: 'rgba(0,0,0,0)',
+                                        plot_bgcolor: 'rgba(0,0,0,0)',
+                                    } as any}
+                                    config={{ displayModeBar: false, responsive: true }}
+                                    style={{ width: '100%', height: '300px' }}
+                                />
+                            ) : (
+                                <div className="h-64 flex items-center justify-center rounded-xl" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                    <div className="text-center">
+                                        <Layers className="w-12 h-12 mx-auto mb-3 text-gray-500" />
+                                        <p style={{ color: theme.textMuted }}>Cluster visualization will appear here</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Predictions Tab - Production-Level Interactive Prediction */}
+                {activeTab === 'predictions' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Prediction Form */}
+                        <div
+                            className="p-6 rounded-2xl border bg-gradient-to-br from-emerald-500/10 to-teal-500/10"
+                            style={{ borderColor: theme.borderColor }}
+                        >
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
+                                <Target className="w-5 h-5 text-emerald-400" />
+                                Make Prediction
+                                <span className="ml-auto px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs">
+                                    {result.best_model.name}
+                                </span>
+                            </h3>
+                            <div className="space-y-4">
+                                <p className="text-sm" style={{ color: theme.textMuted }}>
+                                    Enter feature values to predict <span className="text-emerald-400 font-medium">{result.target_column}</span>
+                                </p>
+
+                                {/* Feature Inputs - Use feature_columns for ALL features */}
+                                <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                                    {(result.feature_columns || result.feature_importance.map(f => f.feature)).map((feature, i) => {
+                                        const importance = result.feature_importance.find(f => f.feature === feature);
+                                        const isImportant = importance && importance.rank <= 3;
+
+                                        return (
+                                            <div key={i}>
+                                                <label className="text-sm font-medium mb-1 flex items-center gap-2" style={{ color: theme.textMuted }}>
+                                                    {feature}
+                                                    {isImportant && (
+                                                        <span className="px-1.5 py-0.5 text-xs rounded bg-amber-500/20 text-amber-400">
+                                                            Top Feature
+                                                        </span>
+                                                    )}
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={predictionInputs[feature] || ''}
+                                                    onChange={(e) => handleInputChange(feature, e.target.value)}
+                                                    placeholder={`Enter ${feature}...`}
+                                                    className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition"
+                                                    style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Prediction Error */}
+                                {predictionError && (
+                                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                                        ⚠️ {predictionError}
+                                    </div>
+                                )}
+
+                                {/* Predict Button */}
+                                <button
+                                    onClick={handlePredict}
+                                    disabled={isPredicting || Object.keys(predictionInputs).length === 0}
+                                    className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isPredicting ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                            Predicting...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Zap className="w-4 h-4" />
+                                            Generate Prediction
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Prediction Result Panel */}
+                        <div
+                            className="p-6 rounded-2xl border"
+                            style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                        >
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
+                                <Activity className="w-5 h-5 text-blue-400" />
+                                Prediction Result
+                            </h3>
+
+                            {predictionResult ? (
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    className="space-y-6"
+                                >
+                                    {/* Main Prediction */}
+                                    <div className="p-6 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-center">
+                                        <p className="text-sm mb-2" style={{ color: theme.textMuted }}>
+                                            Predicted {result.target_column}
+                                        </p>
+                                        <p className="text-4xl font-bold text-emerald-400">
+                                            {typeof predictionResult.prediction === 'number'
+                                                ? predictionResult.prediction.toFixed(2)
+                                                : predictionResult.prediction}
+                                        </p>
+                                    </div>
+
+                                    {/* Confidence/Probability */}
+                                    {predictionResult.probability !== undefined && (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-sm" style={{ color: theme.textMuted }}>Confidence</span>
+                                                <span className="font-bold" style={{ color: getMetricColor(predictionResult.probability) }}>
+                                                    {(predictionResult.probability * 100).toFixed(1)}%
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-gray-700 rounded-full h-3">
+                                                <motion.div
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${predictionResult.probability * 100}%` }}
+                                                    className="h-3 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Model Info */}
+                                    <div className="p-3 rounded-xl" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                        <p className="text-xs" style={{ color: theme.textMuted }}>
+                                            Model: <span className="text-blue-400">{predictionResult.model || result.best_model.name}</span>
+                                        </p>
+                                    </div>
+                                </motion.div>
+                            ) : (
+                                <div className="h-64 flex items-center justify-center rounded-xl" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                    <div className="text-center">
+                                        <Target className="w-12 h-12 mx-auto mb-3 text-gray-500" />
+                                        <p style={{ color: theme.textMuted }}>Enter values and click predict</p>
+                                        <p className="text-sm mt-1" style={{ color: theme.textMuted }}>to see the result here</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Quick Stats */}
+                            <div className="mt-6 grid grid-cols-2 gap-3">
+                                <div className="p-3 rounded-xl text-center" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                    <p className="text-xs" style={{ color: theme.textMuted }}>Task Type</p>
+                                    <p className="font-semibold text-sm mt-1" style={{ color: theme.textPrimary }}>
+                                        {result.task_type.includes('classification') ? '📊 Classification' : '📈 Regression'}
+                                    </p>
+                                </div>
+                                <div className="p-3 rounded-xl text-center" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                    <p className="text-xs" style={{ color: theme.textMuted }}>Model Score</p>
+                                    <p className="font-semibold text-sm mt-1" style={{ color: getMetricColor(getBestMetric().value) }}>
+                                        {(getBestMetric().value * 100).toFixed(1)}%
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     </div>

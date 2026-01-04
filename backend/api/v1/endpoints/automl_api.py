@@ -26,7 +26,11 @@ async def train_automl(
     target_column: Optional[str] = Form(None),
     user_id: str = Form("default")
 ):
-    """Full AutoML training pipeline"""
+    """
+    Full AutoML training pipeline with BOTH:
+    - Supervised Learning (Classification/Regression)
+    - Unsupervised Learning (Clustering)
+    """
     try:
         print("🚀 [AUTOML] Training request received")
         
@@ -47,14 +51,22 @@ async def train_automl(
         if len(df) == 0:
             raise HTTPException(status_code=400, detail="Empty dataset")
         
-        # Train
+        # =========================================
+        # SUPERVISED LEARNING
+        # =========================================
         from ml.automl_engine import automl_engine
         result = await automl_engine.train(df, target_column, user_id)
         
-        # Generate charts
+        # =========================================
+        # GENERATE PRODUCTION ML CHARTS (Base64 Images)
+        # =========================================
         charts = {}
         try:
             from ml.chart_generator import chart_generator
+            
+            print(f"📊 Generating charts for {result.task_type}...")
+            
+            # Generate ALL charts using the proven chart_generator
             charts = chart_generator.generate_all_charts(
                 task_type=result.task_type,
                 y_test=result.y_test,
@@ -63,15 +75,45 @@ async def train_automl(
                 feature_importance=result.feature_importance,
                 leaderboard=result.leaderboard
             )
-            print(f"📊 [AUTOML] Generated {len(charts)} charts")
+            
+            print(f"   ✅ Generated {len(charts)} charts")
         except Exception as e:
             print(f"⚠️ Chart error: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # =========================================
+        # UNSUPERVISED LEARNING (AUTO CLUSTERING)
+        # =========================================
+        clustering_result = None
+        try:
+            print("🔮 [AUTOML] Running automatic clustering...")
+            clustering_result = automl_engine.run_clustering(df, n_clusters=None, algorithm='kmeans')
+            
+            if clustering_result.get('success'):
+                print(f"   ✅ Clustering: {clustering_result.get('n_clusters')} clusters found")
+                print(f"   📊 Silhouette Score: {clustering_result.get('metrics', {}).get('silhouette_score', 0):.3f}")
+                
+                # Add clustering charts
+                if clustering_result.get('charts'):
+                    charts.update(clustering_result['charts'])
+            else:
+                print(f"   ⚠️ Clustering skipped: {clustering_result.get('error', 'Unknown error')}")
+        except Exception as e:
+            print(f"⚠️ Clustering error: {e}")
         
         # Helper to make values JSON-safe (NaN/inf -> None)
         def json_safe(obj):
             import math
+            import numpy as np
             if obj is None:
                 return None
+            if isinstance(obj, (np.integer, np.int64, np.int32)):
+                return int(obj)
+            if isinstance(obj, (np.floating, np.float64, np.float32)):
+                if math.isnan(obj) or math.isinf(obj):
+                    return None
+                return float(obj)
             if isinstance(obj, float):
                 if math.isnan(obj) or math.isinf(obj):
                     return None
@@ -80,8 +122,11 @@ async def train_automl(
                 return {k: json_safe(v) for k, v in obj.items()}
             if isinstance(obj, list):
                 return [json_safe(v) for v in obj]
+            if isinstance(obj, np.ndarray):
+                return json_safe(obj.tolist())
             return obj
         
+        # Build response
         response = {
             "success": True,
             "task_type": result.task_type,
@@ -89,6 +134,7 @@ async def train_automl(
             "data_summary": {
                 "rows": result.n_rows,
                 "columns": result.n_cols,
+                "features_engineered": len(result.feature_columns)
             },
             "best_model": {
                 "name": result.best_model_name,
@@ -98,15 +144,29 @@ async def train_automl(
             "feature_importance": json_safe(result.feature_importance),
             "feature_metadata": json_safe(result.feature_metadata),
             "feature_columns": result.feature_columns,
-            "charts": charts,
+            "charts": json_safe(charts),
             "processing_time_seconds": json_safe(result.processing_time),
             "bias_reports": [],
             "insights": [
-                f"Best model: {result.best_model_name}",
-                f"Trained on {result.n_rows} samples"
+                f"🏆 Best model: {result.best_model_name}",
+                f"📊 Trained on {result.n_rows} samples with {len(result.feature_columns)} features",
+                f"⚡ Task type: {result.task_type}"
             ],
-            "recommendations": []
+            "recommendations": [
+                "Use the 'Predictions' tab to make real-time predictions",
+                "View 'Clustering' tab for customer segmentation insights"
+            ]
         }
+        
+        # Add clustering results if available
+        if clustering_result and clustering_result.get('success'):
+            response['clustering'] = {
+                'algorithm': clustering_result.get('algorithm'),
+                'n_clusters': clustering_result.get('n_clusters'),
+                'silhouette_score': json_safe(clustering_result.get('metrics', {}).get('silhouette_score')),
+                'cluster_distribution': json_safe(clustering_result.get('cluster_distribution'))
+            }
+            response['insights'].append(f"🔮 Found {clustering_result.get('n_clusters')} natural clusters in your data")
         
         return json_safe(response)
         

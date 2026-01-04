@@ -48,7 +48,7 @@ INTENT_TO_MCP: Dict[QueryIntent, List[str]] = {
     
     # Time-series - need forecast
     QueryIntent.TREND: ["sql_executor", "forecast_engine"],
-    QueryIntent.PREDICTION: ["forecast_engine", "prediction_engine"],
+    QueryIntent.PREDICTION: ["ml_prediction_mcp", "forecast_engine", "prediction_engine"],
     
     # Advanced analysis
     QueryIntent.SIMULATION: ["simulation_engine"],
