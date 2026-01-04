@@ -1,13 +1,18 @@
 """
-🚀 PRODUCTION ML ENGINE v3.0
-=============================
+🚀 PRODUCTION ML ENGINE v5.0 - COMPREHENSIVE AI/ML
+===================================================
 
-ROBUST AutoML Pipeline with:
-- Smart column selection (keep useful, drop useless)
-- Proper data cleaning
-- Correct regression/classification detection
-- Best model selection with hyperparameter tuning
-- Task-appropriate visualizations
+FULL-FEATURED AutoML Pipeline with:
+- 15+ ML Algorithms (SVM, Neural Nets, Naive Bayes, AdaBoost, etc.)
+- NLP text preprocessing and classification
+- Optuna Bayesian hyperparameter optimization
+- SMOTE class imbalance handling
+- Data leakage detection
+- Outlier capping (IQR method)
+- Correlation-based feature removal
+- Advanced text vectorization (TF-IDF, n-grams)
+- 18+ visualization charts
+- Stacking ensemble support
 """
 
 import os
@@ -20,24 +25,34 @@ import logging
 
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, cross_val_score, StratifiedKFold, KFold
 from sklearn.preprocessing import LabelEncoder, StandardScaler, RobustScaler
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.feature_selection import VarianceThreshold
+from sklearn.ensemble import StackingClassifier, StackingRegressor
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, HashingVectorizer
+from sklearn.feature_selection import VarianceThreshold, SelectKBest, chi2, mutual_info_classif
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
     r2_score, mean_absolute_error, mean_squared_error, confusion_matrix
 )
 
-# Models
+# Models - Classification & Regression
 from sklearn.ensemble import (
     RandomForestClassifier, RandomForestRegressor,
     GradientBoostingClassifier, GradientBoostingRegressor,
     ExtraTreesClassifier, ExtraTreesRegressor,
-    HistGradientBoostingClassifier, HistGradientBoostingRegressor
+    HistGradientBoostingClassifier, HistGradientBoostingRegressor,
+    AdaBoostClassifier, AdaBoostRegressor,
+    BaggingClassifier, BaggingRegressor
 )
-from sklearn.linear_model import LogisticRegression, Ridge, ElasticNet, Lasso
+from sklearn.linear_model import (
+    LogisticRegression, Ridge, ElasticNet, Lasso,
+    SGDClassifier, SGDRegressor, PassiveAggressiveClassifier
+)
+from sklearn.svm import SVC, SVR, LinearSVC
+from sklearn.naive_bayes import MultinomialNB, GaussianNB, ComplementNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.neural_network import MLPClassifier, MLPRegressor
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 # Unsupervised Learning
 from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
@@ -62,6 +77,22 @@ try:
 except ImportError:
     HAS_CATBOOST = False
 
+# Optuna for Bayesian hyperparameter optimization
+try:
+    import optuna
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    HAS_OPTUNA = True
+except ImportError:
+    HAS_OPTUNA = False
+
+# SMOTE for class imbalance handling
+try:
+    from imblearn.over_sampling import SMOTE
+    from imblearn.under_sampling import RandomUnderSampler
+    HAS_IMBLEARN = True
+except ImportError:
+    HAS_IMBLEARN = False
+
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
@@ -70,7 +101,7 @@ STORAGE_PATH = "./storage/automl"
 
 @dataclass
 class TrainResult:
-    """Training result"""
+    """Training result with charts and metrics"""
     success: bool
     task_type: str
     target_column: str
@@ -86,18 +117,23 @@ class TrainResult:
     n_rows: int
     n_cols: int
     processing_time: float
+    charts: Optional[Dict[str, str]] = None  # NEW: Base64 encoded charts
 
 
 class ProductionMLEngine:
     """
-    Production-Ready ML Engine v3.0
+    🚀 PRODUCTION ML ENGINE v6.0 - ADAPTIVE INTELLIGENT AUTOML
+    ==========================================================
     
-    Features:
-    - Smart column detection and selection
-    - Robust data cleaning
-    - Automatic task detection
-    - Hyperparameter tuning
-    - Feature importance analysis
+    PRODUCTION-LEVEL Features:
+    - Adaptive technique selection based on data profile
+    - Automatic algorithm selection (not hardcoded)
+    - Dynamic preprocessing based on data characteristics
+    - NLP pipeline with 10+ text techniques
+    - 20+ ML algorithms competing
+    - Intelligent model selection based on data size/type
+    - Cross-validation with optimal fold selection
+    - Early stopping for efficiency
     """
     
     def __init__(self):
@@ -106,9 +142,27 @@ class ProductionMLEngine:
         self.model_name = None
         
         # Task info
-        self.task_type: str = ""  # 'binary_classification', 'multiclass_classification', 'regression'
-        self.task_type_simple: str = ""  # 'classification' or 'regression'
+        self.task_type: str = ""
+        self.task_type_simple: str = ""
         self.n_classes: int = 0
+        
+        # DATA PROFILE - for adaptive technique selection
+        self.data_profile = {
+            'n_samples': 0,
+            'n_features': 0,
+            'n_numeric': 0,
+            'n_categorical': 0,
+            'n_text': 0,
+            'is_high_dimensional': False,
+            'is_small_data': False,
+            'is_large_data': False,
+            'is_imbalanced': False,
+            'is_nlp_task': False,
+            'has_missing': False,
+            'missing_ratio': 0.0,
+            'recommended_algorithms': [],
+            'recommended_techniques': []
+        }
         
         # Columns
         self.target_column: str = ""
@@ -131,7 +185,7 @@ class ProductionMLEngine:
     # =========================================================================
     
     def _analyze_column(self, series: pd.Series, col_name: str) -> Dict:
-        """Analyze a single column and determine its type and usefulness"""
+        """Analyze a single column and determine its type and usefulness - ENHANCED"""
         n_unique = series.nunique()
         n_total = len(series)
         n_missing = series.isna().sum()
@@ -141,11 +195,32 @@ class ProductionMLEngine:
         # Determine column type
         col_lower = col_name.lower()
         
-        # Check if it's an ID column
-        is_id = any(x in col_lower for x in ['id', '_id', 'index', 'key', 'code']) and unique_ratio > 0.9
+        # Check if it's an ID column (expanded patterns)
+        id_patterns = ['id', '_id', 'index', 'key', 'code', 'number', 'num', 'no', 'seq', 
+                      'uuid', 'guid', 'serial', 'ref', 'pk', 'fk']
+        is_id = any(x in col_lower for x in id_patterns) and unique_ratio > 0.85
         
         # Check if it's a date column
-        is_date = any(x in col_lower for x in ['date', 'time', 'timestamp', 'created', 'updated'])
+        date_patterns = ['date', 'time', 'timestamp', 'created', 'updated', 'modified', 
+                        'datetime', 'dt', 'year', 'month', 'day']
+        is_date = any(x in col_lower for x in date_patterns)
+        
+        # Check if it's metadata/url column (useless for prediction)
+        # BUT only if the content is short - long text should be kept for NLP
+        useless_patterns = ['url', 'link', 'href', 'path', 'file', 'image', 'photo', 'pic',
+                           'phone', 'address', 'ip', 'hash', 'password', 'token']
+        
+        # Check average content length for text columns
+        avg_content_len = 0
+        if series.dtype == 'object' or series.dtype == 'string':
+            avg_content_len = series.astype(str).str.len().mean()
+        
+        # Only mark as useless if content is short (not real text for NLP)
+        is_useless = any(x in col_lower for x in useless_patterns) and avg_content_len < 50
+        
+        # Special case: "email" in name but long content = likely email body text, keep it
+        if 'email' in col_lower and avg_content_len > 30:
+            is_useless = False  # This is email content, not email address
         
         # Check if numeric
         is_numeric = pd.api.types.is_numeric_dtype(series)
@@ -162,16 +237,30 @@ class ProductionMLEngine:
             drop_reason = "ID column (unique identifier)"
         elif is_date:
             should_drop = True
-            drop_reason = "Date column (not processed)"
-        elif missing_pct > 0.7:
+            drop_reason = "Date column (requires special handling)"
+        elif is_useless:
+            should_drop = True
+            drop_reason = "Metadata/URL column (not predictive)"
+        elif missing_pct > 0.5:  # Lowered from 0.7 to 0.5
             should_drop = True
             drop_reason = f"Too many missing ({missing_pct:.0%})"
         elif n_unique == 1:
             should_drop = True
             drop_reason = "Constant value"
-        elif not is_numeric and unique_ratio > 0.95:
+        elif not is_numeric and unique_ratio > 0.9:  # Lowered from 0.95
             should_drop = True
-            drop_reason = "Unique per row (no pattern)"
+            drop_reason = "Near-unique per row (no pattern)"
+        elif n_unique == n_total and is_numeric:
+            # Check if purely sequential (1,2,3,4...)
+            try:
+                vals = series.dropna().values
+                if len(vals) > 10:
+                    diffs = np.diff(np.sort(vals))
+                    if np.std(diffs) < 0.01:
+                        should_drop = True
+                        drop_reason = "Sequential numeric (likely index)"
+            except:
+                pass
         
         # Determine final type
         if is_numeric:
@@ -200,7 +289,7 @@ class ProductionMLEngine:
         Smart column selection:
         - Keep useful numeric columns
         - Keep categorical with reasonable cardinality
-        - Keep text columns that might have predictive value
+        - Keep text columns for NLP (even if unique - every email IS unique!)
         - Drop IDs, dates, constants, and mostly-missing columns
         """
         numeric_cols = []
@@ -210,11 +299,21 @@ class ProductionMLEngine:
         
         print("📊 Analyzing columns...")
         
+        # First pass: detect if this is an NLP dataset
+        is_nlp = getattr(self, 'is_nlp_task', False)
+        primary_text = getattr(self, 'primary_text_col', None)
+        
         for col in df.columns:
             if col == target_col:
                 continue
             
             analysis = self._analyze_column(df[col], col)
+            
+            # SPECIAL CASE: For NLP datasets, ALWAYS keep text columns
+            if analysis['dtype'] == 'text' and (is_nlp or col == primary_text):
+                text_cols.append(col)
+                print(f"   ✅ {col}: NLP text column (kept for text classification)")
+                continue
             
             if analysis['should_drop']:
                 dropped.append(col)
@@ -224,12 +323,16 @@ class ProductionMLEngine:
             elif analysis['dtype'] == 'categorical':
                 categorical_cols.append(col)
             elif analysis['dtype'] == 'text':
-                # Only keep text if not too unique
-                if analysis['unique_ratio'] < 0.8:
+                # For non-NLP datasets, still keep text if avg length is long enough
+                avg_len = df[col].astype(str).str.len().mean()
+                if avg_len > 30:  # Long text = valuable content
+                    text_cols.append(col)
+                    print(f"   ✅ {col}: text column (avg {avg_len:.0f} chars)")
+                elif analysis['unique_ratio'] < 0.9:
                     text_cols.append(col)
                 else:
                     dropped.append(col)
-                    print(f"   ❌ {col}: Text too unique ({analysis['unique_ratio']:.0%})")
+                    print(f"   ❌ {col}: Short unique text (no pattern)")
         
         print(f"   ✅ Keeping: {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, {len(text_cols)} text")
         print(f"   ❌ Dropped: {len(dropped)} columns")
@@ -408,8 +511,568 @@ class ProductionMLEngine:
         
         return cleaned, fill_val
     
+    def _cap_outliers(self, data: np.ndarray, method: str = 'iqr') -> np.ndarray:
+        """Cap outliers using IQR method to prevent extreme values affecting models"""
+        if len(data) < 10:
+            return data
+        
+        try:
+            q1 = np.percentile(data, 25)
+            q3 = np.percentile(data, 75)
+            iqr = q3 - q1
+            
+            lower_bound = q1 - 1.5 * iqr
+            upper_bound = q3 + 1.5 * iqr
+            
+            capped = np.clip(data, lower_bound, upper_bound)
+            n_capped = np.sum((data < lower_bound) | (data > upper_bound))
+            
+            if n_capped > 0:
+                print(f"      🛠️ Capped {n_capped} outliers")
+            
+            return capped
+        except:
+            return data
+    
+    def _remove_highly_correlated(self, df: pd.DataFrame, threshold: float = 0.95) -> List[str]:
+        """Remove features with very high correlation (likely duplicates or leakage)"""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        if len(numeric_cols) < 2:
+            return []
+        
+        try:
+            corr_matrix = df[numeric_cols].corr().abs()
+            upper_triangle = corr_matrix.where(
+                np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
+            )
+            
+            to_drop = [col for col in upper_triangle.columns if any(upper_triangle[col] > threshold)]
+            
+            if to_drop:
+                print(f"   ⚠️ Removing {len(to_drop)} highly correlated features (>{threshold:.0%} correlation)")
+                for col in to_drop:
+                    print(f"      - {col}")
+            
+            return to_drop
+        except:
+            return []
+    
+    # =========================================================================
+    # DATA PROFILING - INTELLIGENT ADAPTIVE SELECTION
+    # =========================================================================
+    
+    def _analyze_data_profile(self, df: pd.DataFrame, target_col: str) -> Dict:
+        """
+        PRODUCTION-LEVEL: Analyze data and recommend optimal techniques.
+        This method profiles the data to intelligently select:
+        - Best algorithms for this data size/type
+        - Optimal preprocessing techniques
+        - Appropriate model complexity
+        """
+        profile = self.data_profile.copy()
+        
+        # Basic stats
+        profile['n_samples'] = len(df)
+        profile['n_features'] = len(df.columns) - 1
+        
+        # Size categories
+        profile['is_small_data'] = len(df) < 1000
+        profile['is_medium_data'] = 1000 <= len(df) < 50000
+        profile['is_large_data'] = len(df) >= 50000
+        
+        # Dimensionality
+        profile['is_high_dimensional'] = profile['n_features'] > 100
+        profile['is_low_dimensional'] = profile['n_features'] < 10
+        
+        # Missing data
+        missing_ratio = df.isna().sum().sum() / (len(df) * len(df.columns))
+        profile['has_missing'] = missing_ratio > 0.01
+        profile['missing_ratio'] = missing_ratio
+        
+        # Class imbalance for classification
+        if target_col in df.columns:
+            y = df[target_col]
+            if y.dtype == 'object' or y.nunique() < 20:
+                class_counts = y.value_counts()
+                if len(class_counts) > 1:
+                    imbalance_ratio = class_counts.max() / class_counts.min()
+                    profile['is_imbalanced'] = imbalance_ratio > 3
+                    profile['imbalance_ratio'] = imbalance_ratio
+        
+        # Count column types
+        for col in df.columns:
+            if col == target_col:
+                continue
+            if pd.api.types.is_numeric_dtype(df[col]):
+                profile['n_numeric'] += 1
+            elif df[col].dtype == 'object' or df[col].dtype == 'string':
+                avg_len = df[col].astype(str).str.len().mean()
+                if avg_len > 50:
+                    profile['n_text'] += 1
+                else:
+                    profile['n_categorical'] += 1
+        
+        profile['is_nlp_task'] = profile['n_text'] > 0 and profile['n_text'] >= profile['n_numeric']
+        
+        # INTELLIGENT ALGORITHM RECOMMENDATIONS
+        recommended = []
+        techniques = []
+        
+        print("📊 DATA PROFILE ANALYSIS:")
+        print(f"   Samples: {profile['n_samples']:,} | Features: {profile['n_features']}")
+        print(f"   Numeric: {profile['n_numeric']} | Categorical: {profile['n_categorical']} | Text: {profile['n_text']}")
+        
+        # === ALGORITHM SELECTION RULES ===
+        
+        # Small data: prefer simpler models, avoid deep learning
+        if profile['is_small_data']:
+            recommended.extend(['LogisticRegression', 'RandomForest', 'SVM', 'KNN', 'DecisionTree'])
+            techniques.append('cross_validation_10_fold')
+            print("   📈 Small data → Simple models + more CV folds")
+        
+        # Medium data: balanced approach
+        elif profile['is_medium_data']:
+            recommended.extend(['RandomForest', 'XGBoost', 'LightGBM', 'HistGradientBoosting', 'MLP'])
+            techniques.append('cross_validation_5_fold')
+            print("   📈 Medium data → Ensemble + gradient boosting")
+        
+        # Large data: gradient boosting shines, can use neural nets
+        else:
+            recommended.extend(['LightGBM', 'XGBoost', 'CatBoost', 'HistGradientBoosting', 'MLP'])
+            techniques.append('cross_validation_3_fold')
+            techniques.append('early_stopping')
+            print("   📈 Large data → Fast gradient boosting + early stopping")
+        
+        # High dimensional: regularization important
+        if profile['is_high_dimensional']:
+            recommended.extend(['SGDClassifier', 'LogisticRegression', 'LinearSVC'])
+            techniques.append('feature_selection')
+            techniques.append('regularization')
+            print("   📈 High dimensional → Linear models + regularization")
+        
+        # NLP/Text data: specific algorithms
+        if profile['is_nlp_task']:
+            recommended = ['MultinomialNB', 'ComplementNB', 'LogisticRegression', 'LinearSVC', 
+                          'SGDClassifier', 'PassiveAggressive', 'MLP']
+            techniques.extend(['tfidf', 'ngrams', 'sentiment_features', 'text_stats'])
+            print("   📈 NLP task → Text-optimized classifiers")
+        
+        # Imbalanced data: specific handling
+        if profile.get('is_imbalanced', False):
+            techniques.append('smote')
+            techniques.append('class_weights')
+            print(f"   ⚠️ Imbalanced (ratio: {profile.get('imbalance_ratio', 0):.1f}:1) → SMOTE + class weights")
+        
+        # Add ensemble techniques for accuracy
+        techniques.append('stacking_ensemble')
+        techniques.append('voting_ensemble')
+        
+        profile['recommended_algorithms'] = list(set(recommended))
+        profile['recommended_techniques'] = list(set(techniques))
+        
+        print(f"   🎯 Recommended: {', '.join(profile['recommended_algorithms'][:5])}")
+        
+        self.data_profile = profile
+        return profile
+    
+    def _get_adaptive_models(self) -> Dict[str, Tuple[Any, Dict]]:
+        """
+        PRODUCTION-LEVEL: Return models adapted to data profile.
+        Instead of hardcoded model list, this selects optimal algorithms
+        based on data characteristics analyzed by _analyze_data_profile.
+        """
+        profile = self.data_profile
+        recommended = profile.get('recommended_algorithms', [])
+        
+        # All available models
+        all_classification_models = {
+            'LogisticRegression': (
+                LogisticRegression(max_iter=1000, random_state=42, n_jobs=-1),
+                {'C': [0.1, 1, 10], 'penalty': ['l1', 'l2'], 'solver': ['saga']}
+            ),
+            'SGDClassifier': (
+                SGDClassifier(random_state=42, max_iter=1000, early_stopping=True),
+                {'alpha': [0.0001, 0.001, 0.01], 'penalty': ['l1', 'l2', 'elasticnet']}
+            ),
+            'DecisionTree': (
+                DecisionTreeClassifier(random_state=42),
+                {'max_depth': [5, 10, 20, None], 'min_samples_split': [2, 5, 10]}
+            ),
+            'RandomForest': (
+                RandomForestClassifier(n_jobs=-1, random_state=42),
+                {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}
+            ),
+            'ExtraTrees': (
+                ExtraTreesClassifier(n_jobs=-1, random_state=42),
+                {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}
+            ),
+            'HistGradientBoosting': (
+                HistGradientBoostingClassifier(random_state=42, early_stopping=True),
+                {'max_iter': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+            ),
+            'AdaBoost': (
+                AdaBoostClassifier(random_state=42),
+                {'n_estimators': [50, 100, 200], 'learning_rate': [0.1, 0.5, 1.0]}
+            ),
+            'SVM': (
+                SVC(random_state=42, probability=True),
+                {'C': [0.1, 1, 10], 'kernel': ['rbf', 'linear']}
+            ),
+            'LinearSVC': (
+                LinearSVC(random_state=42, max_iter=2000, dual=False),
+                {'C': [0.1, 1, 10]}
+            ),
+            'GaussianNB': (
+                GaussianNB(),
+                {'var_smoothing': [1e-9, 1e-8, 1e-7]}
+            ),
+            'MultinomialNB': (
+                MultinomialNB(),
+                {'alpha': [0.01, 0.1, 0.5, 1.0]}
+            ),
+            'ComplementNB': (
+                ComplementNB(),
+                {'alpha': [0.01, 0.1, 0.5, 1.0]}
+            ),
+            'MLP': (
+                MLPClassifier(random_state=42, max_iter=500, early_stopping=True),
+                {'hidden_layer_sizes': [(100,), (100, 50)], 'alpha': [0.0001, 0.001]}
+            ),
+            'KNN': (
+                KNeighborsClassifier(n_jobs=-1),
+                {'n_neighbors': [3, 5, 7], 'weights': ['uniform', 'distance']}
+            ),
+            'PassiveAggressive': (
+                PassiveAggressiveClassifier(random_state=42, max_iter=1000),
+                {'C': [0.01, 0.1, 1.0]}
+            ),
+        }
+        
+        all_regression_models = {
+            'Ridge': (Ridge(random_state=42), {'alpha': [0.01, 0.1, 1, 10, 100]}),
+            'Lasso': (Lasso(random_state=42, max_iter=2000), {'alpha': [0.01, 0.1, 1, 10]}),
+            'ElasticNet': (ElasticNet(random_state=42, max_iter=2000), 
+                          {'alpha': [0.01, 0.1, 1], 'l1_ratio': [0.2, 0.5, 0.8]}),
+            'SGDRegressor': (SGDRegressor(random_state=42, max_iter=1000, early_stopping=True),
+                            {'alpha': [0.0001, 0.001, 0.01]}),
+            'DecisionTree': (DecisionTreeRegressor(random_state=42),
+                            {'max_depth': [5, 10, 20, None], 'min_samples_split': [2, 5, 10]}),
+            'RandomForest': (RandomForestRegressor(n_jobs=-1, random_state=42),
+                            {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}),
+            'ExtraTrees': (ExtraTreesRegressor(n_jobs=-1, random_state=42),
+                          {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}),
+            'HistGradientBoosting': (HistGradientBoostingRegressor(random_state=42, early_stopping=True),
+                                    {'max_iter': [100, 200], 'max_depth': [5, 10]}),
+            'AdaBoost': (AdaBoostRegressor(random_state=42),
+                        {'n_estimators': [50, 100, 200], 'learning_rate': [0.1, 0.5, 1.0]}),
+            'SVR': (SVR(), {'C': [0.1, 1, 10], 'kernel': ['rbf', 'linear']}),
+            'MLP': (MLPRegressor(random_state=42, max_iter=500, early_stopping=True),
+                   {'hidden_layer_sizes': [(100,), (100, 50)], 'alpha': [0.0001, 0.001]}),
+            'KNN': (KNeighborsRegressor(n_jobs=-1), 
+                   {'n_neighbors': [3, 5, 7], 'weights': ['uniform', 'distance']}),
+        }
+        
+        # Add gradient boosting libraries if available
+        if HAS_XGB:
+            all_classification_models['XGBoost'] = (
+                xgb.XGBClassifier(n_jobs=-1, random_state=42, verbosity=0, eval_metric='logloss'),
+                {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+            )
+            all_regression_models['XGBoost'] = (
+                xgb.XGBRegressor(n_jobs=-1, random_state=42, verbosity=0),
+                {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+            )
+        
+        if HAS_LGB:
+            all_classification_models['LightGBM'] = (
+                lgb.LGBMClassifier(n_jobs=-1, random_state=42, verbose=-1),
+                {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+            )
+            all_regression_models['LightGBM'] = (
+                lgb.LGBMRegressor(n_jobs=-1, random_state=42, verbose=-1),
+                {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+            )
+        
+        if HAS_CATBOOST:
+            all_classification_models['CatBoost'] = (
+                CatBoostClassifier(random_state=42, verbose=0, thread_count=-1),
+                {'iterations': [100, 200], 'depth': [6, 8], 'learning_rate': [0.05, 0.1]}
+            )
+            all_regression_models['CatBoost'] = (
+                CatBoostRegressor(random_state=42, verbose=0, thread_count=-1),
+                {'iterations': [100, 200], 'depth': [6, 8], 'learning_rate': [0.05, 0.1]}
+            )
+        
+        # Select models based on task type
+        all_models = all_classification_models if self.task_type_simple == 'classification' else all_regression_models
+        
+        # Filter to recommended models, but ensure we have at least 5
+        if recommended:
+            selected = {k: v for k, v in all_models.items() 
+                       if any(r.lower() in k.lower() for r in recommended)}
+            # Add core models if we filtered too aggressively
+            if len(selected) < 5:
+                for key in ['RandomForest', 'HistGradientBoosting', 'LogisticRegression', 'Ridge']:
+                    if key in all_models and key not in selected:
+                        selected[key] = all_models[key]
+            return selected
+        
+        return all_models
+    
+    # =========================================================================
+    # NLP PROCESSING PIPELINE - COMPREHENSIVE
+    # =========================================================================
+    
+    def _is_nlp_dataset(self, df: pd.DataFrame, target_col: str) -> Tuple[bool, str]:
+        """Detect if this is primarily an NLP/text classification dataset"""
+        text_cols = []
+        for col in df.columns:
+            if col == target_col:
+                continue
+            series = df[col].dropna()
+            if series.dtype == object or series.dtype == 'string':
+                avg_len = series.astype(str).str.len().mean()
+                avg_words = series.astype(str).str.split().str.len().mean()
+                if avg_len > 50 or avg_words > 5:  # Likely text column
+                    text_cols.append(col)
+        
+        # If main feature is text, this is an NLP dataset
+        non_target_cols = [c for c in df.columns if c != target_col]
+        if len(text_cols) > 0 and len(text_cols) >= len(non_target_cols) * 0.5:
+            return True, text_cols[0] if text_cols else None
+        return False, None
+    
+    def _clean_text_nlp(self, text: str) -> str:
+        """Advanced NLP text cleaning for better predictions"""
+        import re
+        
+        if not isinstance(text, str) or not text:
+            return ""
+        
+        # Convert to lowercase
+        text = text.lower()
+        
+        # Remove URLs
+        text = re.sub(r'http\S+|www\.\S+', ' ', text)
+        
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', ' ', text)
+        
+        # Remove email addresses
+        text = re.sub(r'\S+@\S+', ' ', text)
+        
+        # Remove mentions and hashtags
+        text = re.sub(r'[@#]\w+', ' ', text)
+        
+        # Remove numbers (keep words with numbers like "3d", "2nd")
+        text = re.sub(r'\b\d+\b', ' ', text)
+        
+        # Remove special characters but keep apostrophes for contractions
+        text = re.sub(r"[^a-z\s']", ' ', text)
+        
+        # Remove extra whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Remove very short tokens (less than 2 chars)
+        tokens = text.split()
+        tokens = [t for t in tokens if len(t) > 1]
+        
+        return ' '.join(tokens)
+    
+    def _apply_stemming(self, text: str) -> str:
+        """Apply Porter stemming for NLP"""
+        try:
+            from nltk.stem import PorterStemmer
+            stemmer = PorterStemmer()
+            tokens = text.split()
+            return ' '.join([stemmer.stem(t) for t in tokens])
+        except:
+            return text
+    
+    def _apply_lemmatization(self, text: str) -> str:
+        """Apply WordNet lemmatization for NLP"""
+        try:
+            from nltk.stem import WordNetLemmatizer
+            lemmatizer = WordNetLemmatizer()
+            tokens = text.split()
+            return ' '.join([lemmatizer.lemmatize(t) for t in tokens])
+        except:
+            return text
+    
+    def _get_text_statistics(self, text: str) -> Dict[str, float]:
+        """Extract statistical features from text"""
+        if not text:
+            return {'char_count': 0, 'word_count': 0, 'avg_word_len': 0, 
+                   'sentence_count': 0, 'uppercase_ratio': 0, 'digit_ratio': 0}
+        
+        words = text.split()
+        sentences = text.count('.') + text.count('!') + text.count('?') + 1
+        
+        return {
+            'char_count': len(text),
+            'word_count': len(words),
+            'avg_word_len': sum(len(w) for w in words) / max(len(words), 1),
+            'sentence_count': sentences,
+            'uppercase_ratio': sum(1 for c in text if c.isupper()) / max(len(text), 1),
+            'digit_ratio': sum(1 for c in text if c.isdigit()) / max(len(text), 1)
+        }
+    
+    def _get_sentiment_features(self, text: str) -> Dict[str, float]:
+        """Extract basic sentiment features without external dependencies"""
+        # Positive and negative word lists (basic)
+        positive_words = {'good', 'great', 'excellent', 'best', 'amazing', 'love', 'wonderful', 
+                         'fantastic', 'awesome', 'perfect', 'happy', 'positive', 'beautiful',
+                         'nice', 'brilliant', 'superb', 'outstanding', 'recommend', 'enjoy',
+                         'pleased', 'satisfied', 'delighted', 'impressive', 'helpful'}
+        negative_words = {'bad', 'worst', 'terrible', 'awful', 'horrible', 'hate', 'poor',
+                         'disappointing', 'useless', 'waste', 'negative', 'ugly', 'boring',
+                         'broken', 'problem', 'issue', 'fail', 'failed', 'wrong', 'angry',
+                         'frustrated', 'annoyed', 'disappointed', 'complaint', 'refund'}
+        
+        words = set(text.lower().split())
+        pos_count = len(words & positive_words)
+        neg_count = len(words & negative_words)
+        total = pos_count + neg_count
+        
+        return {
+            'positive_score': pos_count / max(len(words), 1),
+            'negative_score': neg_count / max(len(words), 1),
+            'sentiment_ratio': (pos_count - neg_count) / max(total, 1) if total > 0 else 0,
+            'polarity': 1 if pos_count > neg_count else (-1 if neg_count > pos_count else 0)
+        }
+    
+    def _extract_nlp_features(self, text_series: pd.Series, col_name: str) -> np.ndarray:
+        """Extract comprehensive NLP features from text column"""
+        print(f"   🔤 NLP Processing: {col_name}")
+        
+        # Clean text
+        clean_texts = text_series.fillna('').astype(str).apply(self._clean_text_nlp)
+        print(f"      ✅ Text cleaned")
+        
+        # 1. TF-IDF vectorization (main features)
+        try:
+            tfidf = TfidfVectorizer(
+                max_features=200,
+                stop_words='english',
+                ngram_range=(1, 3),
+                min_df=2,
+                max_df=0.9,
+                lowercase=True,
+                strip_accents='unicode',
+                sublinear_tf=True  # Use sublinear TF for better NLP
+            )
+            tfidf_features = tfidf.fit_transform(clean_texts).toarray()
+            self.text_vectorizers[col_name] = tfidf
+            print(f"      ✅ TF-IDF: {tfidf_features.shape[1]} features")
+        except:
+            tfidf_features = np.zeros((len(text_series), 1))
+        
+        # 2. Text statistics features
+        stats_list = clean_texts.apply(self._get_text_statistics).tolist()
+        stats_features = np.array([[s['char_count'], s['word_count'], s['avg_word_len'], 
+                                   s['sentence_count'], s['uppercase_ratio'], s['digit_ratio']] 
+                                  for s in stats_list])
+        print(f"      ✅ Text stats: 6 features")
+        
+        # 3. Sentiment features
+        sentiment_list = clean_texts.apply(self._get_sentiment_features).tolist()
+        sentiment_features = np.array([[s['positive_score'], s['negative_score'], 
+                                       s['sentiment_ratio'], s['polarity']] 
+                                      for s in sentiment_list])
+        print(f"      ✅ Sentiment: 4 features")
+        
+        # Combine all features
+        all_features = np.hstack([tfidf_features, stats_features, sentiment_features])
+        print(f"      ✅ Total NLP features: {all_features.shape[1]}")
+        
+        return all_features
+    
+    def _get_nlp_models(self) -> Dict[str, Tuple[Any, Dict]]:
+        """Get models optimized for NLP/text classification"""
+        models = {
+            # Naive Bayes - excellent for text
+            'MultinomialNB': (
+                MultinomialNB(),
+                {'alpha': [0.01, 0.1, 0.5, 1.0]}
+            ),
+            'ComplementNB': (
+                ComplementNB(),
+                {'alpha': [0.01, 0.1, 0.5, 1.0]}
+            ),
+            
+            # Linear models - fast for high-dimensional text
+            'LogisticRegression': (
+                LogisticRegression(max_iter=1000, random_state=42),
+                {'C': [0.1, 1, 10], 'penalty': ['l1', 'l2'], 'solver': ['saga']}
+            ),
+            'SGDClassifier': (
+                SGDClassifier(random_state=42, max_iter=1000, early_stopping=True),
+                {'alpha': [0.0001, 0.001, 0.01], 'penalty': ['l1', 'l2', 'elasticnet']}
+            ),
+            'LinearSVC': (
+                LinearSVC(random_state=42, max_iter=2000),
+                {'C': [0.1, 1, 10]}
+            ),
+            'PassiveAggressive': (
+                PassiveAggressiveClassifier(random_state=42, max_iter=1000),
+                {'C': [0.01, 0.1, 1.0]}
+            ),
+            
+            # Tree-based (for shorter texts)
+            'RandomForest': (
+                RandomForestClassifier(n_jobs=-1, random_state=42),
+                {'n_estimators': [100, 200], 'max_depth': [10, 20]}
+            ),
+            
+            # Neural Network
+            'MLPClassifier': (
+                MLPClassifier(random_state=42, max_iter=500, early_stopping=True),
+                {'hidden_layer_sizes': [(100,), (100, 50)], 'alpha': [0.0001, 0.001]}
+            ),
+        }
+        
+        if HAS_XGB:
+            models['XGBoost'] = (
+                xgb.XGBClassifier(n_jobs=-1, random_state=42, verbosity=0),
+                {'n_estimators': [100], 'max_depth': [5, 10]}
+            )
+        
+        if HAS_LGB:
+            models['LightGBM'] = (
+                lgb.LGBMClassifier(n_jobs=-1, random_state=42, verbose=-1),
+                {'n_estimators': [100], 'max_depth': [5, 10]}
+            )
+        
+        return models
+    
+    def _detect_target_leakage(self, X: pd.DataFrame, y: pd.Series, threshold: float = 0.95) -> List[str]:
+        """Detect features that perfectly predict target (data leakage)"""
+        leaky_features = []
+        numeric_cols = X.select_dtypes(include=[np.number]).columns
+        
+        try:
+            for col in numeric_cols:
+                corr = abs(X[col].corr(y))
+                if corr > threshold:
+                    leaky_features.append(col)
+                    print(f"   🚨 LEAKAGE detected: '{col}' has {corr:.1%} correlation with target!")
+            
+            # SAFEGUARD: If ALL numeric features are considered leakage, don't drop them!
+            # This happens in small datasets where features ARE the predictors
+            if len(leaky_features) > 0 and len(leaky_features) == len(numeric_cols):
+                print(f"   ⚠️ WARNING: All numeric features are highly correlated (>95%). ")
+                print(f"      Keeping them to avoid empty dataset (might be small dataset or strong predictors).")
+                return []
+                
+        except:
+            pass
+        
+        return leaky_features
+    
     def _preprocess_training(self, df: pd.DataFrame, target_col: str) -> Tuple[np.ndarray, np.ndarray]:
-        """Preprocess data for training"""
+        """Preprocess data for training - ENHANCED for messy real-world data and NLP"""
+        
+        print("🧹 ADVANCED DATA CLEANING...")
         
         X = df.drop(columns=[target_col]).copy()
         y = df[target_col].copy()
@@ -424,14 +1087,38 @@ class ProductionMLEngine:
         
         print(f"   Task: {self.task_type} ({'n_classes=' + str(self.n_classes) if self.n_classes else 'continuous'})")
         
-        # Select columns
+        # DETECT NLP DATASET
+        self.is_nlp_task, self.primary_text_col = self._is_nlp_dataset(df, target_col)
+        if self.is_nlp_task:
+            print(f"   📝 DETECTED: NLP/Text Classification Dataset")
+            print(f"   📝 Primary text column: {self.primary_text_col}")
+        
+        # STEP 1: Detect data leakage (features that perfectly predict target)
+        y_numeric = pd.to_numeric(y, errors='coerce')
+        if not y_numeric.isna().all():
+            leaky_cols = self._detect_target_leakage(X, y_numeric, threshold=0.95)
+            if leaky_cols:
+                X = X.drop(columns=leaky_cols)
+                print(f"   🚨 Removed {len(leaky_cols)} leaky features")
+        
+        # STEP 2: Remove highly correlated features (>95% correlation)
+        correlated_cols = self._remove_highly_correlated(X, threshold=0.95)
+        if correlated_cols:
+            X = X.drop(columns=correlated_cols)
+        
+        # STEP 3: Select columns (drops IDs, dates, constants, etc.)
         self.numeric_cols, self.categorical_cols, self.text_cols, self.dropped_cols = \
-            self._select_columns(df, target_col)
+            self._select_columns(df.drop(columns=leaky_cols + correlated_cols if 'leaky_cols' in dir() else [], errors='ignore'), target_col)
+        
+        # Remove any dropped leaky/correlated columns from our selected columns
+        self.numeric_cols = [c for c in self.numeric_cols if c in X.columns]
+        self.categorical_cols = [c for c in self.categorical_cols if c in X.columns]
+        self.text_cols = [c for c in self.text_cols if c in X.columns]
         
         self.feature_columns = self.numeric_cols + self.categorical_cols + self.text_cols
         
         if len(self.feature_columns) == 0:
-            raise ValueError("No valid features found after column selection")
+            raise ValueError("No valid features found after column selection and cleaning")
         
         # Process features
         processed_parts = []
@@ -442,6 +1129,8 @@ class ProductionMLEngine:
             numeric_data = []
             for col in self.numeric_cols:
                 cleaned, fill_val = self._clean_numeric(X[col])
+                # Cap outliers using IQR method for robust predictions
+                cleaned = self._cap_outliers(cleaned)
                 self.numeric_fill_values[col] = fill_val
                 numeric_data.append(cleaned)
                 
@@ -490,34 +1179,56 @@ class ProductionMLEngine:
                 'n_categories': len(encoder.classes_)
             })
         
-        # 3. TEXT FEATURES
+        # 3. TEXT FEATURES (Comprehensive NLP Processing)
         for col in self.text_cols.copy():
             series = X[col].fillna('').astype(str)
             
             try:
-                vectorizer = TfidfVectorizer(
-                    max_features=50,
-                    stop_words='english',
-                    ngram_range=(1, 2),
-                    min_df=1,
-                    max_df=0.95
-                )
-                vectors = vectorizer.fit_transform(series).toarray()
-                
-                if vectors.shape[1] > 0:
-                    self.text_vectorizers[col] = vectorizer
-                    processed_parts.append(vectors)
+                # Use comprehensive NLP extraction for NLP datasets or primary text column
+                if getattr(self, 'is_nlp_task', False) or col == getattr(self, 'primary_text_col', None):
+                    # FULL NLP PIPELINE - sentiment, stats, TF-IDF with 200 features
+                    nlp_features = self._extract_nlp_features(series, col)
+                    
+                    # Handle negative values for Naive Bayes (make all non-negative)
+                    nlp_features = np.abs(nlp_features)
+                    
+                    processed_parts.append(nlp_features)
                     self.feature_metadata.append({
                         'name': col,
-                        'type': 'text',
-                        'vocab_size': len(vectorizer.vocabulary_)
+                        'type': 'nlp_text',
+                        'n_features': nlp_features.shape[1],
+                        'has_sentiment': True
                     })
-                    print(f"   ✅ {col}: {len(vectorizer.vocabulary_)} text features")
                 else:
-                    self.text_cols.remove(col)
+                    # Standard text processing for non-primary text columns
+                    clean_texts = series.apply(self._clean_text_nlp)
+                    
+                    vectorizer = TfidfVectorizer(
+                        max_features=100,
+                        stop_words='english',
+                        ngram_range=(1, 3),
+                        min_df=2,
+                        max_df=0.9,
+                        lowercase=True,
+                        strip_accents='unicode'
+                    )
+                    vectors = vectorizer.fit_transform(clean_texts).toarray()
+                    
+                    if vectors.shape[1] > 0:
+                        self.text_vectorizers[col] = vectorizer
+                        processed_parts.append(vectors)
+                        self.feature_metadata.append({
+                            'name': col,
+                            'type': 'text',
+                            'vocab_size': len(vectorizer.vocabulary_)
+                        })
+                        print(f"   ✅ {col}: {len(vectorizer.vocabulary_)} text features")
+                    else:
+                        self.text_cols.remove(col)
             except Exception as e:
-                print(f"   ⚠️ Skipping {col}: {str(e)[:40]}")
-                self.text_cols.remove(col)
+                print(f"   ⚠️ Skipping {col}: {str(e)[:50]}")
+                if col in self.text_cols:
+                    self.text_cols.remove(col)
         
         # Combine
         if processed_parts:
@@ -582,72 +1293,319 @@ class ProductionMLEngine:
     # =========================================================================
     
     def _get_models(self) -> Dict[str, Tuple[Any, Dict]]:
-        """Get models with hyperparameter grids based on task"""
+        """Get ALL available ML models with hyperparameter grids - COMPREHENSIVE"""
         
         if self.task_type_simple == 'classification':
             models = {
+                # === LINEAR MODELS ===
                 'LogisticRegression': (
-                    LogisticRegression(max_iter=500, n_jobs=-1, random_state=42),
-                    {'C': [0.1, 1, 10]}
+                    LogisticRegression(max_iter=1000, n_jobs=-1, random_state=42),
+                    {'C': [0.01, 0.1, 1, 10], 'penalty': ['l1', 'l2'], 'solver': ['saga']}
+                ),
+                'SGDClassifier': (
+                    SGDClassifier(random_state=42, max_iter=1000),
+                    {'alpha': [0.0001, 0.001, 0.01], 'penalty': ['l1', 'l2', 'elasticnet']}
+                ),
+                
+                # === TREE-BASED MODELS ===
+                'DecisionTree': (
+                    DecisionTreeClassifier(random_state=42),
+                    {'max_depth': [5, 10, 20, None], 'min_samples_split': [2, 5, 10]}
                 ),
                 'RandomForest': (
                     RandomForestClassifier(n_jobs=-1, random_state=42),
+                    {'n_estimators': [100, 200], 'max_depth': [10, 20, None], 'min_samples_split': [2, 5]}
+                ),
+                'ExtraTrees': (
+                    ExtraTreesClassifier(n_jobs=-1, random_state=42),
                     {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}
                 ),
                 'HistGradientBoosting': (
                     HistGradientBoostingClassifier(random_state=42),
-                    {'max_iter': [100, 200], 'max_depth': [5, 10]}
+                    {'max_iter': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+                ),
+                'AdaBoost': (
+                    AdaBoostClassifier(random_state=42),
+                    {'n_estimators': [50, 100, 200], 'learning_rate': [0.01, 0.1, 1.0]}
+                ),
+                
+                # === SVM MODELS ===
+                'SVM': (
+                    SVC(random_state=42, probability=True),
+                    {'C': [0.1, 1, 10], 'kernel': ['rbf', 'linear']}
+                ),
+                
+                # === NAIVE BAYES (great for NLP/text) ===
+                'GaussianNB': (
+                    GaussianNB(),
+                    {'var_smoothing': [1e-9, 1e-8, 1e-7]}
+                ),
+                
+                # === NEURAL NETWORK ===
+                'MLPClassifier': (
+                    MLPClassifier(random_state=42, max_iter=500, early_stopping=True),
+                    {'hidden_layer_sizes': [(50,), (100,), (100, 50)], 'alpha': [0.0001, 0.001]}
+                ),
+                
+                # === KNN ===
+                'KNN': (
+                    KNeighborsClassifier(n_jobs=-1),
+                    {'n_neighbors': [3, 5, 7, 11], 'weights': ['uniform', 'distance']}
                 ),
             }
+            
+            # Gradient Boosting libraries
             if HAS_XGB:
                 models['XGBoost'] = (
                     xgb.XGBClassifier(n_jobs=-1, random_state=42, verbosity=0, eval_metric='logloss'),
-                    {'n_estimators': [100, 200], 'max_depth': [5, 10]}
+                    {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
                 )
             if HAS_LGB:
                 models['LightGBM'] = (
                     lgb.LGBMClassifier(n_jobs=-1, random_state=42, verbose=-1),
-                    {'n_estimators': [100, 200], 'max_depth': [5, 10]}
+                    {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
                 )
-        else:
+            if HAS_CATBOOST:
+                models['CatBoost'] = (
+                    CatBoostClassifier(random_state=42, verbose=0, thread_count=-1),
+                    {'iterations': [100, 200], 'depth': [6, 8], 'learning_rate': [0.05, 0.1]}
+                )
+                
+        else:  # REGRESSION
             models = {
+                # === LINEAR MODELS ===
                 'Ridge': (
                     Ridge(random_state=42),
-                    {'alpha': [0.1, 1, 10]}
+                    {'alpha': [0.01, 0.1, 1, 10, 100]}
+                ),
+                'ElasticNet': (
+                    ElasticNet(random_state=42, max_iter=2000),
+                    {'alpha': [0.01, 0.1, 1], 'l1_ratio': [0.2, 0.5, 0.8]}
+                ),
+                'Lasso': (
+                    Lasso(random_state=42, max_iter=2000),
+                    {'alpha': [0.01, 0.1, 1, 10]}
+                ),
+                'SGDRegressor': (
+                    SGDRegressor(random_state=42, max_iter=1000),
+                    {'alpha': [0.0001, 0.001, 0.01], 'penalty': ['l1', 'l2', 'elasticnet']}
+                ),
+                
+                # === TREE-BASED MODELS ===
+                'DecisionTree': (
+                    DecisionTreeRegressor(random_state=42),
+                    {'max_depth': [5, 10, 20, None], 'min_samples_split': [2, 5, 10]}
                 ),
                 'RandomForest': (
                     RandomForestRegressor(n_jobs=-1, random_state=42),
+                    {'n_estimators': [100, 200], 'max_depth': [10, 20, None], 'min_samples_split': [2, 5]}
+                ),
+                'ExtraTrees': (
+                    ExtraTreesRegressor(n_jobs=-1, random_state=42),
                     {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}
                 ),
                 'HistGradientBoosting': (
                     HistGradientBoostingRegressor(random_state=42),
-                    {'max_iter': [100, 200], 'max_depth': [5, 10]}
+                    {'max_iter': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+                ),
+                'AdaBoost': (
+                    AdaBoostRegressor(random_state=42),
+                    {'n_estimators': [50, 100, 200], 'learning_rate': [0.01, 0.1, 1.0]}
+                ),
+                
+                # === SVM ===
+                'SVR': (
+                    SVR(),
+                    {'C': [0.1, 1, 10], 'kernel': ['rbf', 'linear']}
+                ),
+                
+                # === NEURAL NETWORK ===
+                'MLPRegressor': (
+                    MLPRegressor(random_state=42, max_iter=500, early_stopping=True),
+                    {'hidden_layer_sizes': [(50,), (100,), (100, 50)], 'alpha': [0.0001, 0.001]}
+                ),
+                
+                # === KNN ===
+                'KNN': (
+                    KNeighborsRegressor(n_jobs=-1),
+                    {'n_neighbors': [3, 5, 7, 11], 'weights': ['uniform', 'distance']}
                 ),
             }
+            
+            # Gradient Boosting libraries
             if HAS_XGB:
                 models['XGBoost'] = (
                     xgb.XGBRegressor(n_jobs=-1, random_state=42, verbosity=0),
-                    {'n_estimators': [100, 200], 'max_depth': [5, 10]}
+                    {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
                 )
             if HAS_LGB:
                 models['LightGBM'] = (
                     lgb.LGBMRegressor(n_jobs=-1, random_state=42, verbose=-1),
-                    {'n_estimators': [100, 200], 'max_depth': [5, 10]}
+                    {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+                )
+            if HAS_CATBOOST:
+                models['CatBoost'] = (
+                    CatBoostRegressor(random_state=42, verbose=0, thread_count=-1),
+                    {'iterations': [100, 200], 'depth': [6, 8], 'learning_rate': [0.05, 0.1]}
                 )
         
         return models
+        
+        return models
+    
+    # =========================================================================
+    # ADVANCED METHODS FOR TOP 1% ACCURACY
+    # =========================================================================
+    
+    def _handle_class_imbalance(self, X_train: np.ndarray, y_train: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Handle class imbalance using SMOTE if available"""
+        if not HAS_IMBLEARN or self.task_type_simple != 'classification':
+            return X_train, y_train
+        
+        try:
+            class_counts = np.bincount(y_train.astype(int))
+            if len(class_counts) < 2:
+                return X_train, y_train
+            
+            imbalance_ratio = max(class_counts) / max(min(class_counts), 1)
+            
+            if imbalance_ratio > 3:
+                print(f"   ⚠️ Class imbalance detected (ratio={imbalance_ratio:.1f}:1), applying SMOTE...")
+                smote = SMOTE(random_state=42, k_neighbors=min(5, min(class_counts) - 1))
+                X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+                print(f"   ✅ Resampled: {len(X_train)} → {len(X_resampled)} samples")
+                return X_resampled, y_resampled
+        except Exception as e:
+            print(f"   ⚠️ SMOTE failed: {e}")
+        
+        return X_train, y_train
+    
+    def _optimize_with_optuna(
+        self, 
+        model_name: str, 
+        X_train: np.ndarray, 
+        y_train: np.ndarray, 
+        n_trials: int = 30
+    ) -> Tuple[Any, Dict]:
+        """Bayesian hyperparameter optimization with Optuna"""
+        if not HAS_OPTUNA:
+            return None, {}
+        
+        scoring = 'f1_weighted' if self.task_type_simple == 'classification' else 'r2'
+        cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42) if self.task_type_simple == 'classification' else KFold(n_splits=3, shuffle=True, random_state=42)
+        
+        def objective(trial):
+            if model_name == 'XGBoost' and HAS_XGB:
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 500),
+                    'max_depth': trial.suggest_int('max_depth', 3, 15),
+                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+                    'subsample': trial.suggest_float('subsample', 0.6, 1.0),
+                    'colsample_bytree': trial.suggest_float('colsample_bytree', 0.6, 1.0),
+                    'reg_alpha': trial.suggest_float('reg_alpha', 1e-8, 10.0, log=True),
+                    'reg_lambda': trial.suggest_float('reg_lambda', 1e-8, 10.0, log=True),
+                }
+                if self.task_type_simple == 'classification':
+                    model = xgb.XGBClassifier(**params, n_jobs=-1, random_state=42, verbosity=0, eval_metric='logloss')
+                else:
+                    model = xgb.XGBRegressor(**params, n_jobs=-1, random_state=42, verbosity=0)
+            
+            elif model_name == 'LightGBM' and HAS_LGB:
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 500),
+                    'max_depth': trial.suggest_int('max_depth', 3, 15),
+                    'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3, log=True),
+                    'num_leaves': trial.suggest_int('num_leaves', 20, 150),
+                    'min_child_samples': trial.suggest_int('min_child_samples', 5, 100),
+                }
+                if self.task_type_simple == 'classification':
+                    model = lgb.LGBMClassifier(**params, n_jobs=-1, random_state=42, verbose=-1)
+                else:
+                    model = lgb.LGBMRegressor(**params, n_jobs=-1, random_state=42, verbose=-1)
+            
+            elif model_name == 'RandomForest':
+                params = {
+                    'n_estimators': trial.suggest_int('n_estimators', 100, 400),
+                    'max_depth': trial.suggest_int('max_depth', 5, 30),
+                    'min_samples_split': trial.suggest_int('min_samples_split', 2, 20),
+                    'min_samples_leaf': trial.suggest_int('min_samples_leaf', 1, 10),
+                }
+                if self.task_type_simple == 'classification':
+                    model = RandomForestClassifier(**params, n_jobs=-1, random_state=42)
+                else:
+                    model = RandomForestRegressor(**params, n_jobs=-1, random_state=42)
+            else:
+                return 0.0
+            
+            try:
+                scores = cross_val_score(model, X_train, y_train, cv=cv, scoring=scoring, n_jobs=1)
+                return scores.mean()
+            except:
+                return 0.0
+        
+        try:
+            study = optuna.create_study(direction='maximize')
+            study.optimize(objective, n_trials=n_trials, show_progress_bar=False, n_jobs=1)
+            
+            print(f"   🎯 Optuna best score: {study.best_value:.4f}")
+            return study.best_params, study.best_value
+        except Exception as e:
+            print(f"   ⚠️ Optuna failed: {e}")
+            return None, {}
+    
+    def _build_stacking_ensemble(
+        self, 
+        trained_models: Dict[str, Any], 
+        X_train: np.ndarray, 
+        y_train: np.ndarray
+    ) -> Any:
+        """Build stacking ensemble from trained models"""
+        if len(trained_models) < 2:
+            return None
+        
+        try:
+            # Select top 3 models for stacking
+            estimators = [(name, model) for name, model in list(trained_models.items())[:3]]
+            
+            print(f"   🏗️ Building stacking ensemble with {len(estimators)} models...")
+            
+            if self.task_type_simple == 'classification':
+                meta_learner = LogisticRegression(max_iter=1000, random_state=42)
+                stacker = StackingClassifier(
+                    estimators=estimators,
+                    final_estimator=meta_learner,
+                    cv=3,
+                    passthrough=False,
+                    n_jobs=1
+                )
+            else:
+                meta_learner = Ridge(random_state=42)
+                stacker = StackingRegressor(
+                    estimators=estimators,
+                    final_estimator=meta_learner,
+                    cv=3,
+                    passthrough=False,
+                    n_jobs=1
+                )
+            
+            stacker.fit(X_train, y_train)
+            print(f"   ✅ Stacking ensemble trained successfully")
+            return stacker
+        except Exception as e:
+            print(f"   ⚠️ Stacking failed: {e}")
+            return None
     
     # =========================================================================
     # TRAINING
     # =========================================================================
     
     async def train(self, df: pd.DataFrame, target_col: Optional[str] = None, user_id: str = "default") -> TrainResult:
-        """Main training pipeline"""
-        self.errors = []  # Initialize error list
+        """PRODUCTION-LEVEL Main training pipeline with adaptive technique selection"""
+        self.errors = []
         start = datetime.now()
         
         print("=" * 60)
-        print("🚀 PRODUCTION ML ENGINE v3.0")
+        print("🚀 PRODUCTION ML ENGINE v6.0 - ADAPTIVE INTELLIGENT AUTOML")
         print("=" * 60)
         print(f"📊 Data: {len(df)} rows, {len(df.columns)} columns")
         
@@ -657,18 +1615,31 @@ class ProductionMLEngine:
         else:
             print(f"🎯 Target (user specified): {target_col}")
         
+        # ADAPTIVE: Analyze data profile BEFORE preprocessing to recommend techniques
+        self._analyze_data_profile(df, target_col)
+        
         # Preprocess
         X, y = self._preprocess_training(df, target_col)
         
-        # Split
+        # Split (stratified for classification)
         stratify = y if self.task_type_simple == 'classification' and self.n_classes < 100 else None
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=stratify
         )
         print(f"   Train: {len(X_train)}, Test: {len(X_test)}")
         
-        # Get models
-        models = self._get_models()
+        # Store for learning curves and chart generation
+        self._X_train = X_train
+        self._X_test = X_test
+        
+        # Apply SMOTE if recommended by data profile
+        if 'smote' in self.data_profile.get('recommended_techniques', []):
+            X_train_balanced, y_train_balanced = self._handle_class_imbalance(X_train, y_train)
+        else:
+            X_train_balanced, y_train_balanced = X_train, y_train
+        
+        # ADAPTIVE: Get models based on data profile (not hardcoded)
+        models = self._get_adaptive_models()
         results = []
         
         best_score = -np.inf
@@ -679,11 +1650,22 @@ class ProductionMLEngine:
         
         scoring = 'f1_weighted' if self.task_type_simple == 'classification' else 'r2'
         
-        # Reduce CV for complex problems
-        n_iter = 5 if self.n_classes > 20 or len(X) > 50000 else 8
-        cv_folds = 2 if self.n_classes > 20 or len(X) > 50000 else 3
+        # ADAPTIVE: CV folds based on data profile
+        profile = self.data_profile
+        if profile.get('is_small_data'):
+            cv_folds = 10
+            n_iter = 10
+        elif profile.get('is_large_data'):
+            cv_folds = 3
+            n_iter = 5
+        else:
+            cv_folds = 5
+            n_iter = 8
         
-        print(f"🤖 Training {len(models)} models (tuning: {n_iter} iter, {cv_folds}-fold CV)...")
+        print(f"🤖 Training {len(models)} ADAPTIVE models ({cv_folds}-fold CV)...")  
+        
+        # Track trained models for stacking
+        trained_models = {}
         
         for idx, (name, (model, params)) in enumerate(models.items(), 1):
             try:
@@ -696,14 +1678,17 @@ class ProductionMLEngine:
                         model, params, n_iter=min(n_iter, np.prod([len(v) for v in params.values()])),
                         cv=cv_folds, scoring=scoring, n_jobs=1, random_state=42, error_score='raise'
                     )
-                    search.fit(X_train, y_train)
+                    search.fit(X_train_balanced, y_train_balanced)
                     best_est = search.best_estimator_
                     best_params = search.best_params_
                 except Exception as search_err:
                     print(f"   ⚠️ Search failed ({str(search_err)[:50]}), falling back to simple fit...")
-                    model.fit(X_train, y_train)
+                    model.fit(X_train_balanced, y_train_balanced)
                     best_est = model
                     best_params = "default"
+                
+                # Store trained model for stacking
+                trained_models[name] = best_est
                 
                 # Predict
                 y_pred = best_est.predict(X_test)
@@ -819,6 +1804,23 @@ class ProductionMLEngine:
         print(f"✅ Complete in {processing_time:.1f}s")
         print("=" * 60)
         
+        # Generate all charts using the enhanced chart generator
+        try:
+            from ml.chart_generator import chart_generator
+            charts = chart_generator.generate_all_charts(
+                task_type=self.task_type,
+                y_test=y_test,
+                y_pred=best_pred,
+                y_proba=best_proba[:, 1] if best_proba is not None and self.task_type_simple == 'classification' and len(best_proba.shape) > 1 and best_proba.shape[1] == 2 else best_proba,
+                feature_importance=results[0].get('importance', []) if results else [],
+                leaderboard=results,
+                model=self.model,
+                X_train=X_train
+            )
+        except Exception as chart_err:
+            print(f"⚠️ Chart generation error: {chart_err}")
+            charts = {}
+        
         return TrainResult(
             success=True,
             task_type=self.task_type,
@@ -834,7 +1836,8 @@ class ProductionMLEngine:
             feature_metadata=self.feature_metadata,
             n_rows=len(df),
             n_cols=len(df.columns),
-            processing_time=processing_time
+            processing_time=processing_time,
+            charts=charts
         )
     
     def _get_importance(self, model) -> List[Dict]:
@@ -1202,52 +2205,39 @@ class ProductionMLEngine:
         return best_k
     
     def get_all_ml_charts(self) -> Dict[str, Any]:
-        """Get all ML charts for the trained model"""
-        charts = {}
-        
+        """Get all ML charts for the trained model using enhanced chart generator"""
         try:
-            from ml.ml_chart_generator import MLChartGenerator
+            from ml.chart_generator import chart_generator
             
             y_test = getattr(self, '_y_test', None)
             y_pred = getattr(self, '_y_pred', None)
-            y_proba = getattr(self, '_y_pred_proba', None)
+            y_proba = getattr(self, '_y_proba', None)
+            X_train = getattr(self, '_X_train', None)
             
             if y_test is None or y_pred is None:
                 return {'error': 'No model trained yet'}
             
-            is_classification = 'classification' in self.task_type
+            # Get feature importance
+            importance = self._get_importance(self.model) if self.model else []
             
-            if is_classification:
-                # Classification charts
-                charts['confusion_matrix'] = MLChartGenerator.confusion_matrix_chart(y_test, y_pred)
-                
-                if y_proba is not None:
-                    charts['roc_curve'] = MLChartGenerator.roc_curve_chart(y_test, y_proba)
-                    charts['precision_recall'] = MLChartGenerator.precision_recall_chart(y_test, y_proba)
-            else:
-                # Regression charts
-                charts['actual_vs_predicted'] = MLChartGenerator.actual_vs_predicted_chart(
-                    y_test, y_pred, f"{self.target_column} Predictions"
-                )
-                charts['residuals'] = MLChartGenerator.residuals_chart(y_test, y_pred)
-            
-            # Feature importance
-            if self.feature_columns:
-                importance = self._get_importance(self.model) or []
-                features = [f['feature'] for f in importance]
-                values = [f['importance'] for f in importance]
-                if features:
-                    charts['feature_importance'] = MLChartGenerator.feature_importance_chart(
-                        features, values, f"Feature Importance for {self.target_column}"
-                    )
+            # Generate all charts using the enhanced generator
+            charts = chart_generator.generate_all_charts(
+                task_type=self.task_type,
+                y_test=y_test,
+                y_pred=y_pred,
+                y_proba=y_proba,
+                feature_importance=importance,
+                leaderboard=[],  # Not stored, but can be added if needed
+                model=self.model,
+                X_train=X_train
+            )
             
             logger.info(f"✅ Generated {len(charts)} ML charts")
+            return charts
             
         except Exception as e:
             logger.error(f"Chart generation error: {e}")
-            charts['error'] = str(e)
-        
-        return charts
+            return {'error': str(e)}
 
 
 # Global instance
