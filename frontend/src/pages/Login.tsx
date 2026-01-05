@@ -29,7 +29,7 @@ export default function Login() {
     }, []);
 
     // Get redirect path from location state
-    const from = (location.state as any)?.from?.pathname || '/chat';
+    const from = (location.state as any)?.from?.pathname || '/data-hub';
 
     // Theme colors matching Landing page
     const bgColor = isDark ? '#0F172A' : '#F8FAFC';

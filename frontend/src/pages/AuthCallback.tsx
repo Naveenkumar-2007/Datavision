@@ -45,12 +45,12 @@ export default function AuthCallback() {
                 // Store userId for API calls (NOT the token - Supabase handles that)
                 localStorage.setItem('userId', session.user.id);
 
-                // If email confirmation, show success briefly then redirect to overview
+                // If email confirmation, show success briefly then redirect to data-hub
                 if (isEmailConfirm) {
-                    setTimeout(() => navigate('/chat', { replace: true }), 1500);
+                    setTimeout(() => navigate('/data-hub', { replace: true }), 1500);
                 } else {
-                    // OAuth login - go directly to overview
-                    navigate('/chat', { replace: true });
+                    // OAuth login - go directly to data-hub
+                    navigate('/data-hub', { replace: true });
                 }
             } else if (attempts < 20) {
                 // Keep polling (10 seconds max)

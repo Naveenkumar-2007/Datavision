@@ -86,7 +86,7 @@ function App() {
               <Route path="/auth/confirm" element={<EmailConfirm />} />
 
               {/* Redirect /overview to /chat - Overview page removed */}
-              <Route path="/overview" element={<Navigate to="/chat" replace />} />
+              <Route path="/overview" element={<Navigate to="/data-hub" replace />} />
 
               {/* Chat - Full screen without main navigation */}
               <Route path="/chat" element={
