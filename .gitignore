@@ -2,7 +2,7 @@
 __pycache__/
 *.py[oc]
 build/
-dist/
+
 wheels/
 *.egg-info
 
@@ -32,15 +32,15 @@ yarn-error.log*
 Thumbs.db
 
 # Storage (keep structure, ignore user data)
-storage/users/*/faiss/
-storage/users/*/graph/
-storage/users/*/memory/
-storage/users/*/files/
+storage/
 backend/storage/
 
 # Logs
 *.log
 logs/
+
+# CatBoost
+catboost_info/
 
 # Cache
 .cache/
@@ -73,4 +73,3 @@ models_list.txt
 # Large files
 *.zip
 *.tar.gz
-

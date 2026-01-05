@@ -1,3 +1,8 @@
+---
+title: AI Business Analyst
+sdk: docker
+app_port: 7860
+---
 
 <div align="center">
   <h1>📊 DataVision AI</h1>
