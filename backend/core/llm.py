@@ -196,108 +196,105 @@ def chat(
     # =========================================================================
     primary_model = model or Settings.MODEL_NAME
     
-    try:
-        logger.info(f"☁️ Using Groq model: {primary_model}")
-        response = litellm.completion(
-            model=primary_model,
-            messages=final_messages,
-            temperature=temperature,
-            max_tokens=max_tokens
+    # 🔑 KEY ROTATION LOGIC
+    # If no keys list found, fallback to single env var (captured in list anyway)
+    keys_to_try = Settings.GROQ_API_KEYS if hasattr(Settings, 'GROQ_API_KEYS') and Settings.GROQ_API_KEYS else [os.environ.get("GROQ_API_KEY")]
+    
+    # Remove None values
+    keys_to_try = [k for k in keys_to_try if k]
+    
+    if not keys_to_try:
+        keys_to_try = ["MISSING_KEY"] # Try once to trigger error handling
+        
+    last_error = None
+    
+    for i, api_key in enumerate(keys_to_try):
+        try:
+            logger.info(f"☁️ Using Groq model: {primary_model} (Key {i+1}/{len(keys_to_try)})")
+            
+            response = litellm.completion(
+                model=primary_model,
+                messages=final_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                api_key=api_key # 🔑 Explicitly pass key
+            )
+            logger.info(f"✅ Success with: {primary_model}")
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            last_error = e
+            error_str = str(e).lower()
+            
+            # Check if we should try next key
+            is_rate_limit = 'rate_limit' in error_str or 'rate limit' in error_str or '429' in error_str
+            is_auth_error = 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str or '401' in error_str
+            
+            if (is_rate_limit or is_auth_error) and i < len(keys_to_try) - 1:
+                logger.warning(f"⚠️ Key {i+1} failed ({'Rate Limit' if is_rate_limit else 'Auth Error'}). Rotating to next key...")
+                continue # Try next key
+            else:
+                logger.error(f"Groq model failed with available keys: {e}")
+                # Don't break, let it fall through to Gemini/Ollama backups
+                break 
+                
+    # If we get here, all Groq keys failed. 'last_error' holds the last exception.
+    # Fall through to Gemini/Ollama logic below...
+    e = last_error 
+        
+    # =====================================================================
+    # 🌟 GEMINI FALLBACK - Try Google Gemini if Groq fails (FREE tier!)
+    # =====================================================================
+    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        try:
+            # Correct LiteLLM format for Gemini (Google AI Studio)
+            # Provider prefix 'gemini/' is required for API keys
+            gemini_model = "gemini/gemini-pro"  
+            logger.info(f"🌟 Falling back to Gemini: {gemini_model}")
+            response = litellm.completion(
+                model=gemini_model,
+                messages=final_messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            logger.info(f"✅ Gemini fallback success!")
+            return response.choices[0].message.content
+        except Exception as gemini_error:
+            logger.error(f"🌟 Gemini fallback also failed: {gemini_error}")
+    
+    # Return user-friendly error if all fail
+    if 'rate_limit' in error_str or 'rate limit' in error_str:
+        return (
+            "**Rate limit reached.** Please wait a moment and try again.\n\n"
+            "The AI service is temporarily busy."
         )
-        logger.info(f"✅ Success with: {primary_model}")
-        return response.choices[0].message.content
-        
-    except Exception as e:
-        error_str = str(e).lower()
-        logger.error(f"Groq model failed: {e}")
-        
-        # =====================================================================
-        # 🌟 GEMINI FALLBACK - Try Google Gemini if Groq fails (FREE tier!)
-        # =====================================================================
-        if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-            try:
-                # Correct LiteLLM format for Gemini (Google AI Studio)
-                # Provider prefix 'gemini/' is required for API keys
-                gemini_model = "gemini/gemini-pro"  
-                logger.info(f"🌟 Falling back to Gemini: {gemini_model}")
-                response = litellm.completion(
-                    model=gemini_model,
-                    messages=final_messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens
-                )
-                logger.info(f"✅ Gemini fallback success!")
-                return response.choices[0].message.content
-            except Exception as gemini_error:
-                logger.error(f"🌟 Gemini fallback also failed: {gemini_error}")
-        
-        # =====================================================================
-        # 🦙 OLLAMA FALLBACK - Try local model if cloud APIs fail
-        # =====================================================================
-        if _check_ollama_available():
-            try:
-                ollama_model = Settings.OLLAMA_MODEL
-                logger.info(f"🦙 Falling back to local Ollama: {ollama_model}")
-                response = litellm.completion(
-                    model=ollama_model,
-                    messages=final_messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    api_base="http://localhost:11434"
-                )
-                logger.info(f"✅ Ollama fallback success with: {ollama_model}")
-                return response.choices[0].message.content
-            except Exception as ollama_error:
-                logger.error(f"🦙 Ollama fallback also failed: {ollama_error}")
-        
-        # Return user-friendly error if all fail
-        if 'rate_limit' in error_str or 'rate limit' in error_str:
-            return (
-                "**Rate limit reached.** Please wait a moment and try again.\n\n"
-                "The AI service is temporarily busy."
-            )
-        elif 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str:
-            return (
-                "**API Key Error**\n\n"
-                "Please check your GROQ_API_KEY or GEMINI_API_KEY in the .env file.\n\n"
-                "💡 **Get FREE keys:**\n"
-                "- Groq: https://console.groq.com/keys\n"
-                "- Gemini: https://aistudio.google.com/apikey"
-            )
-        elif 'timeout' in error_str or 'connection' in error_str:
-            return (
-                "**Connection Error**\n\n"
-                "Unable to reach AI service. Check your internet connection."
-            )
-        elif 'context' in error_str or 'too large' in error_str or 'token' in error_str:
-            return (
-                "**Request too large**\n\n"
-                "Your data or question exceeds the model's capacity. "
-                "Try asking a more specific question."
-            )
-        else:
-            logger.error(f"Full error: {e}")
-            return (
-                f"**Error processing request**\n\n"
-                f"Model: {primary_model}\n"
-                f"Error: {str(e)[:200]}\n\n"
-                "Please try rephrasing your question or contact support."
-            )
-
-
-def _check_ollama_available() -> bool:
-    """Check if a local Ollama server is running."""
-    import socket
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(0.5)
-        result = sock.connect_ex(('localhost', 11434))
-        sock.close()
-        return result == 0
-    except Exception:
-        return False
-
-
+    elif 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str:
+        return (
+            "**API Key Error**\n\n"
+            "Please check your GROQ_API_KEY or GEMINI_API_KEY in the .env file.\n\n"
+            "💡 **Get FREE keys:**\n"
+            "- Groq: https://console.groq.com/keys\n"
+            "- Gemini: https://aistudio.google.com/apikey"
+        )
+    elif 'timeout' in error_str or 'connection' in error_str:
+        return (
+            "**Connection Error**\n\n"
+            "Unable to reach AI service. Check your internet connection."
+        )
+    elif 'context' in error_str or 'too large' in error_str or 'token' in error_str:
+        return (
+            "**Request too large**\n\n"
+            "Your data or question exceeds the model's capacity. "
+            "Try asking a more specific question."
+        )
+    else:
+        logger.error(f"Full error: {e}")
+        return (
+            f"**Error processing request**\n\n"
+            f"Model: {primary_model}\n"
+            f"Error: {str(e)[:200]}\n\n"
+            "Please try rephrasing your question or contact support."
+        )
 
 
 def embed_text(text: str) -> List[float]:

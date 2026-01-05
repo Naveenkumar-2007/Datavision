@@ -82,6 +82,9 @@ interface MLResult {
         features_engineered: number;
     };
     processing_time_seconds: number;
+    is_nlp_task?: boolean;
+    primary_text_col?: string;
+    feature_columns?: string[];
 }
 
 const MLPredictions: React.FC = () => {
@@ -150,7 +153,47 @@ const MLPredictions: React.FC = () => {
         );
     }
 
-    const bestMetric = Object.entries(result.best_model.metrics)[0] || ['accuracy', 0];
+    // Get best metric from metrics object - prioritize accuracy or f1
+    const metrics = result.best_model?.metrics || {};
+    let bestMetric: [string, number] = ['accuracy', 0];
+
+    // Try to get accuracy first, then f1, then any other metric
+    if (metrics.accuracy !== undefined) {
+        bestMetric = ['accuracy', metrics.accuracy];
+    } else if (metrics.f1 !== undefined) {
+        bestMetric = ['f1', metrics.f1];
+    } else if (metrics.r2 !== undefined) {
+        bestMetric = ['r2', metrics.r2];
+    } else {
+        // Fallback to first metric entry
+        const entries = Object.entries(metrics);
+        if (entries.length > 0) {
+            bestMetric = entries[0] as [string, number];
+        }
+    }
+
+    // ROBUST FEATURE LISTS
+    // 1. For Features Tab
+    const rankedFeatures = (result.feature_importance && result.feature_importance.length > 0)
+        ? result.feature_importance
+        : (result.feature_columns || []).map((f, i) => ({
+            feature: f,
+            importance: 1 / (result.feature_columns?.length || 1),
+            rank: i + 1
+        }));
+
+    // 2. For Prediction Tab
+    const inputFeatures = (result.feature_metadata && result.feature_metadata.length > 0)
+        ? result.feature_metadata
+        : rankedFeatures.map(f => ({
+            name: f.feature,
+            type: 'numeric' as const,
+            min: 0,
+            max: 100,
+            mean: 50,
+            options: undefined as string[] | undefined
+        }));
+
 
     return (
         <div className="space-y-6">
@@ -256,7 +299,7 @@ const MLPredictions: React.FC = () => {
                         </div>
                         <span className="text-sm font-medium" style={{ color: theme.textMuted }}>Features</span>
                     </div>
-                    <p className="text-2xl font-bold text-amber-400">{result.feature_importance?.length || 0}</p>
+                    <p className="text-2xl font-bold text-amber-400">{(result.feature_importance?.length > 0 ? result.feature_importance.length : null) || result.data_summary?.features_engineered || result.feature_columns?.length || 0}</p>
                 </motion.div>
             </div>
 
@@ -389,7 +432,7 @@ const MLPredictions: React.FC = () => {
                             Feature Importance Ranking
                         </h3>
                         <div className="space-y-3">
-                            {result.feature_importance?.slice(0, 15).map((f, i) => (
+                            {rankedFeatures.slice(0, 50).map((f, i) => (
                                 <div
                                     key={i}
                                     className="flex items-center gap-4 p-3 rounded-xl"
@@ -423,23 +466,35 @@ const MLPredictions: React.FC = () => {
                             Make a Prediction with {result.best_model.name}
                         </h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-                            {(result.feature_metadata || result.feature_importance?.slice(0, 9).map(f => ({
-                                name: f.feature,
-                                type: 'numeric' as const,
-                                min: 0,
-                                max: 100,
-                                mean: 50
-                            }))).slice(0, 9).map((meta) => {
+                            {inputFeatures.map((meta) => {
                                 const featureName = meta.name;
                                 const isNumeric = meta.type === 'numeric';
 
+                                // Robust Text Detection
+                                // 1. Check explicit flags from backend
+                                const isExplicitText = (result as any).is_nlp_task && (result as any).primary_text_col === featureName;
+
+                                // 2. Check heuristics (name contains text patterns)
+                                const lowerName = featureName.toLowerCase();
+                                const isHeuristicText = lowerName.includes('text') ||
+                                    lowerName.includes('content') ||
+                                    lowerName.includes('body') ||
+                                    lowerName.includes('email') ||
+                                    lowerName.includes('review') ||
+                                    lowerName.includes('description') ||
+                                    lowerName.includes('summary') ||
+                                    lowerName.includes('message');
+
+                                const isText = isExplicitText || isHeuristicText;
+
                                 return (
-                                    <div key={featureName}>
+                                    <div key={featureName} className={isText ? "col-span-full" : ""}>
                                         <label className="block text-sm font-medium mb-2" style={{ color: theme.textMuted }}>
                                             {featureName}
                                             <span className="ml-2 text-xs opacity-60">
-                                                ({isNumeric ? 'numeric' : 'select'})
+                                                ({isNumeric ? 'numeric' : isText ? 'text input' : 'select'})
                                             </span>
+                                            {isText && <span className="ml-2 text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">NLP Content</span>}
                                         </label>
 
                                         {isNumeric ? (
@@ -458,22 +513,32 @@ const MLPredictions: React.FC = () => {
                                                     color: theme.textPrimary,
                                                 }}
                                             />
-                                        ) : (
-                                            <select
+                                        ) : isText ? (
+                                            <textarea
+                                                placeholder={`Enter text for ${featureName}...`}
                                                 value={predictionInput[featureName] || ''}
                                                 onChange={(e) => setPredictionInput({ ...predictionInput, [featureName]: e.target.value })}
-                                                className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:border-teal-500 transition-colors cursor-pointer"
+                                                rows={5}
+                                                className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:border-teal-500 transition-colors resize-none"
                                                 style={{
                                                     backgroundColor: theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
                                                     borderColor: theme.borderColor,
                                                     color: theme.textPrimary,
                                                 }}
-                                            >
-                                                <option value="">Select {featureName}</option>
-                                                {meta.options?.map((opt) => (
-                                                    <option key={opt} value={opt}>{opt}</option>
-                                                ))}
-                                            </select>
+                                            />
+                                        ) : (
+                                            <input
+                                                type="text"
+                                                placeholder={`Enter ${featureName}`}
+                                                value={predictionInput[featureName] || ''}
+                                                onChange={(e) => setPredictionInput({ ...predictionInput, [featureName]: e.target.value })}
+                                                className="w-full px-4 py-3 rounded-xl border focus:outline-none focus:border-teal-500 transition-colors"
+                                                style={{
+                                                    backgroundColor: theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+                                                    borderColor: theme.borderColor,
+                                                    color: theme.textPrimary,
+                                                }}
+                                            />
                                         )}
                                     </div>
                                 );

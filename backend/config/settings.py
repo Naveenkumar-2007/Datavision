@@ -66,13 +66,32 @@ class Settings:
     FAST_MODEL = "groq/llama-3.1-8b-instant"          # Fast model for simple queries
     REASONING_MODEL = "groq/llama-3.3-70b-versatile"  # For complex queries
     
+    # Collect all available GROQ keys for fallback
+    GROQ_API_KEYS = []
+    
+    # 1. Add primary key
+    if os.environ.get("GROQ_API_KEY"):
+        GROQ_API_KEYS.append(os.environ.get("GROQ_API_KEY"))
+        
+    # 2. Add numbered fallback keys (GROQ_KEY_1 to GROQ_KEY_10)
+    for i in range(1, 11):
+        key_name = f"GROQ_KEY_{i}"
+        key_val = os.environ.get(key_name)
+        if key_val and key_val not in GROQ_API_KEYS:
+            GROQ_API_KEYS.append(key_val)
+            
+    # 3. Add comma-separated keys from GROQ_API_KEYS_LIST env var (if exists)
+    if os.environ.get("GROQ_API_KEYS_LIST"):
+        extra_keys = os.environ.get("GROQ_API_KEYS_LIST").split(",")
+        for k in extra_keys:
+            clean_k = k.strip()
+            if clean_k and clean_k not in GROQ_API_KEYS:
+                GROQ_API_KEYS.append(clean_k)
+    
     # Fallback
     FALLBACK_MODEL = "groq/llama-3.1-8b-instant"
     
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-    
-    # Ollama Local LLM (Fallback when Groq fails)
-    OLLAMA_MODEL = "ollama/qwen2.5:3b"  # Smarter model for business analysis
 
 
 

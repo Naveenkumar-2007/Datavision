@@ -115,6 +115,8 @@ interface AutoMLResult {
     api_endpoint: string | null;
     charts?: Record<string, any>;
     clustering?: ClusteringResult;
+    is_nlp_task?: boolean;
+    primary_text_col?: string;
 }
 
 const AutoML: React.FC = () => {
@@ -911,6 +913,23 @@ const AutoML: React.FC = () => {
                                         const importance = result.feature_importance.find(f => f.feature === feature);
                                         const isImportant = importance && importance.rank <= 3;
 
+                                        // Robust Text Detection Logic
+                                        // 1. Explicit backend flag
+                                        const isExplicitText = (result as any).is_nlp_task && (result as any).primary_text_col === feature;
+
+                                        // 2. Heuristic fallback (for older results or missed flags)
+                                        const lowerFeat = feature.toLowerCase();
+                                        const isHeuristicText = lowerFeat.includes('text') ||
+                                            lowerFeat.includes('content') ||
+                                            lowerFeat.includes('body') ||
+                                            lowerFeat.includes('email') ||
+                                            lowerFeat.includes('review') ||
+                                            lowerFeat.includes('description') ||
+                                            lowerFeat.includes('summary') ||
+                                            lowerFeat.includes('message');
+
+                                        const shouldUseTextArea = isExplicitText || isHeuristicText;
+
                                         return (
                                             <div key={i}>
                                                 <label className="text-sm font-medium mb-1 flex items-center gap-2" style={{ color: theme.textMuted }}>
@@ -920,15 +939,34 @@ const AutoML: React.FC = () => {
                                                             Top Feature
                                                         </span>
                                                     )}
+                                                    {/* NLP Badge */}
+                                                    {shouldUseTextArea && (
+                                                        <span className="px-1.5 py-0.5 text-xs rounded bg-blue-500/20 text-blue-400">
+                                                            Text Input
+                                                        </span>
+                                                    )}
                                                 </label>
-                                                <input
-                                                    type="text"
-                                                    value={predictionInputs[feature] || ''}
-                                                    onChange={(e) => handleInputChange(feature, e.target.value)}
-                                                    placeholder={`Enter ${feature}...`}
-                                                    className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition"
-                                                    style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
-                                                />
+
+                                                {/* Text Area for NLP/Text columns */}
+                                                {shouldUseTextArea ? (
+                                                    <textarea
+                                                        value={predictionInputs[feature] || ''}
+                                                        onChange={(e) => handleInputChange(feature, e.target.value)}
+                                                        placeholder={`Enter text content for ${feature}... (e.g. Email body, Review text)`}
+                                                        rows={6}
+                                                        className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition resize-none"
+                                                        style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+                                                    />
+                                                ) : (
+                                                    <input
+                                                        type="text"
+                                                        value={predictionInputs[feature] || ''}
+                                                        onChange={(e) => handleInputChange(feature, e.target.value)}
+                                                        placeholder={`Enter ${feature}...`}
+                                                        className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition"
+                                                        style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+                                                    />
+                                                )}
                                             </div>
                                         );
                                     })}

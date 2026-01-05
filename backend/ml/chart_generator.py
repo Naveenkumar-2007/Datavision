@@ -188,33 +188,60 @@ class MLChartGenerator:
     
     def _model_comparison(self, leaderboard: List[Dict], is_classification: bool) -> str:
         """Model performance comparison"""
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        names = [m['name'] for m in leaderboard[:8]][::-1]
-        metric = 'f1' if is_classification else 'r2'
-        scores = [m['metrics'].get(metric, m['metrics'].get('accuracy', 0)) for m in leaderboard[:8]][::-1]
-        
-        colors = [PALETTE[i % len(PALETTE)] for i in range(len(names))]
-        
-        bars = ax.barh(range(len(names)), scores, color=colors, height=0.65, 
-                      edgecolor='white', linewidth=2)
-        
-        # Value labels
-        for bar, score in zip(bars, scores):
-            ax.text(bar.get_width() + 0.02, bar.get_y() + bar.get_height()/2,
-                   f'{score:.3f}', va='center', fontsize=11, fontweight='bold')
-        
-        ax.set_yticks(range(len(names)))
-        ax.set_yticklabels(names)
-        ax.set_xlabel(f'{metric.upper()} Score', fontweight='bold')
-        ax.set_title('🏆 Model Performance Comparison', fontweight='bold', pad=15, fontsize=14)
-        ax.set_xlim(0, max(scores) * 1.2 if scores else 1)
-        ax.grid(axis='x', alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            names = [m['name'] for m in leaderboard[:8]][::-1]
+            metric = 'f1' if is_classification else 'r2'
+            
+            # Get raw scores
+            raw_scores = [m['metrics'].get(metric, m['metrics'].get('accuracy', -1.0)) for m in leaderboard[:8]][::-1]
+            
+            # Clip scores for plotting ONLY (so chart doesn't explode on -1000 R2)
+            # For visualization, R2 < -2 is effectively just "Bad".
+            plot_scores = [max(s, -2.0) if metric == 'r2' else s for s in raw_scores]
+            
+            colors = [PALETTE[i % len(PALETTE)] for i in range(len(names))]
+            
+            bars = ax.barh(range(len(names)), plot_scores, color=colors, height=0.65, 
+                          edgecolor='white', linewidth=2)
+            
+            # Value labels (Show TRUE value, not clipped)
+            for bar, score in zip(bars, raw_scores):
+                # Position text slightly offset
+                # If very negative, put text inside or to right of 0
+                width = bar.get_width()
+                if width < 0:
+                    x_pos = min(0, width + 0.05) # Just to the right of the negative bar end
+                    ha = 'left'
+                else:
+                    x_pos = width + 0.02
+                    ha = 'left'
+                    
+                ax.text(x_pos, bar.get_y() + bar.get_height()/2,
+                       f'{score:.3f}', va='center', ha=ha, fontsize=10, fontweight='bold')
+            
+            ax.set_yticks(range(len(names)))
+            ax.set_yticklabels(names)
+            ax.set_xlabel(f'{metric.upper()} Score (Clipped at -2.0)', fontweight='bold')
+            ax.set_title('🏆 Model Performance Comparison', fontweight='bold', pad=15, fontsize=14)
+            
+            # Intelligent axis limits
+            if all(s < 0 for s in plot_scores):
+                ax.set_xlim(min(plot_scores) * 1.1, 0)
+            else:
+                ax.set_xlim(min(min(plot_scores), 0) * 1.1, max(max(plot_scores), 0.1) * 1.2)
+                
+            ax.grid(axis='x', alpha=0.3)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.axvline(0, color='black', linewidth=1, alpha=0.5)
+            
+            plt.tight_layout()
+            return fig_to_base64(fig)
+        except Exception as e:
+            print(f"   ⚠️ Model comparison chart failed: {e}")
+            return ""
     
     def _training_time(self, leaderboard: List[Dict]) -> str:
         """Training time comparison"""
@@ -543,8 +570,16 @@ class MLChartGenerator:
         """Correct vs incorrect predictions pie"""
         fig, ax = plt.subplots(figsize=(8, 8))
         
-        correct = np.sum(y_test == y_pred)
-        incorrect = len(y_test) - correct
+        correct = int(np.sum(y_test == y_pred))
+        incorrect = int(len(y_test) - correct)
+        
+        # Ensure non-negative values for pie chart
+        correct = max(0, correct)
+        incorrect = max(0, incorrect)
+        
+        # Handle edge case where both are 0
+        if correct == 0 and incorrect == 0:
+            correct = 1
         
         sizes = [correct, incorrect]
         labels = [f'Correct\n({correct})', f'Incorrect\n({incorrect})']
