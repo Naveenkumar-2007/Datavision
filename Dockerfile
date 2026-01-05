@@ -25,7 +25,10 @@ COPY backend/ backend/
 
 # Set permissions for HuggingFace (runs as user 1000)
 # Critical for SQLite, uploads, and model saving
-RUN chmod -R 777 /app
+# Set permissions for HuggingFace (runs as user 1000)
+RUN mkdir -p /app/storage /app/backend/storage && \
+    chmod -R 777 /app/storage /app/backend/storage && \
+    chmod -R 777 /app
 
 # Set Python path
 ENV PYTHONPATH=/app/backend:/app

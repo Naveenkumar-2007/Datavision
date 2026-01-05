@@ -118,104 +118,62 @@ def render_insight_email_template(
         '''
     
     return f'''
-    <!DOCTYPE html>
-    <html lang="en">
+
+    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+    <html xmlns="http://www.w3.org/1999/xhtml">
     <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
         <title>DataVision Intelligence Alert</title>
+        <style type="text/css">
+            body, td, div, p, a, input {{ font-family: 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif; }}
+        </style>
     </head>
-    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0b; color: #e2e8f0;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0a0a0b; padding: 40px 20px;">
+    <body style="margin: 0; padding: 0; background-color: #0a0a0b; color: #e2e8f0;">
+        <!-- Wrapper Table (Forces Background) -->
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #0a0a0b;">
             <tr>
-                <td align="center">
-                    <table width="600" cellpadding="0" cellspacing="0" style="background-color: #141414; border-radius: 20px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.4); border: 1px solid #262626;">
-                        <!-- Professional Header with Gradient -->
+                <td align="center" style="padding: 40px 10px;">
+                    <!-- Main Card -->
+                    <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #141414; border-radius: 16px; overflow: hidden; border: 1px solid #262626; box-shadow: 0 4px 24px rgba(0,0,0,0.5); max-width: 600px;">
+                        
+                        <!-- Header with Gradient Border Top -->
                         <tr>
-                            <td style="background: linear-gradient(180deg, #111827 0%, #141414 100%); padding: 40px 30px; text-align: center; border-bottom: 1px solid #262626;">
-                                <table width="100%" cellpadding="0" cellspacing="0">
-                                    <tr>
-                                        <td style="text-align: center;">
-                                            <div style="display: inline-block; background: rgba(20, 184, 166, 0.1); padding: 8px 16px; border-radius: 50px; margin-bottom: 20px; border: 1px solid rgba(20, 184, 166, 0.2);">
-                                                <span style="color: #2dd4bf; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;">Business Intelligence</span>
-                                            </div>
-                                            <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: 800; line-height: 1.2; letter-spacing: -0.5px; background: linear-gradient(to right, #2dd4bf, #f59e0b); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
-                                                DataVision
-                                            </h1>
-                                            <p style="margin: 12px 0 0 0; color: #94a3b8; font-size: 15px;">
-                                                Universal Data Intelligence Platform
-                                            </p>
-                                        </td>
-                                    </tr>
-                                </table>
+                            <td style="background-color: #1a1a1a; padding: 40px 30px; border-bottom: 1px solid #262626; text-align: center;">
+                                <div style="display: inline-block; padding: 6px 12px; border-radius: 50px; background-color: rgba(20, 184, 166, 0.1); border: 1px solid rgba(20, 184, 166, 0.2); margin-bottom: 16px;">
+                                    <span style="color: #2dd4bf; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">AI Analyst Insight</span>
+                                </div>
+                                <h1 style="margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px; color: #ffffff;">
+                                    <span style="color: #2dd4bf;">Data</span><span style="color: #f59e0b;">Vision</span>
+                                </h1>
                             </td>
                         </tr>
-                        
-                        <!-- Content Section -->
+
+                        <!-- Content Body -->
                         <tr>
-                            <td style="padding: 40px 30px;">
-                                <!-- Insight Badge -->
-                                <div style="display: inline-block; background: rgba(245, 158, 11, 0.1); color: #fbbf24; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; margin-bottom: 24px; border: 1px solid rgba(245, 158, 11, 0.2);">
-                                    📊 New Insight Available
-                                </div>
-                                
-                                <!-- Title -->
-                                <h2 style="margin: 0 0 20px 0; color: #f8fafc; font-size: 24px; font-weight: 700; line-height: 1.4;">
+                            <td style="padding: 40px 30px; background-color: #141414;">
+                                <h2 style="margin: 0 0 16px 0; font-size: 22px; font-weight: 700; color: #ffffff;">
                                     {title}
                                 </h2>
                                 
-                                <!-- Body Content -->
-                                <p style="margin: 0 0 24px 0; color: #cbd5e1; line-height: 1.8; font-size: 16px;">
-                                    {body}
-                                </p>
-                                
+                                <div style="color: #cccccc; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+                                    {body.replace(chr(10), '<br/>')}
+                                </div>
+
                                 <!-- Action Button -->
                                 {action_button}
-                                
-                                <!-- Divider -->
-                                <div style="height: 1px; background: #262626; margin: 30px 0;"></div>
-                                
-                                <!-- Additional Info -->
-                                <p style="margin: 0; color: #64748b; font-size: 13px; line-height: 1.6;">
-                                    💡 This insight was generated by our AI analytics engine based on your latest business data. 
-                                    <a href="{APP_URL}/chat" style="color: #2dd4bf; text-decoration: none; font-weight: 600;">Ask questions</a> or 
-                                    <a href="{APP_URL}" style="color: #2dd4bf; text-decoration: none; font-weight: 600;">view your dashboard</a> for more details.
-                                </p>
                             </td>
                         </tr>
-                        
+
                         <!-- Footer -->
                         <tr>
-                            <td style="padding: 30px; background: #111111; border-top: 1px solid #262626;">
-                                <table width="100%" cellpadding="0" cellspacing="0">
-                                    <tr>
-                                        <td style="text-align: center;">
-                                            <p style="margin: 0 0 12px 0; color: #e2e8f0; font-size: 14px; font-weight: 600;">
-                                                DataVision
-                                            </p>
-                                            <p style="margin: 0 0 16px 0; color: #64748b; font-size: 13px;">
-                                                Universal Data Intelligence • Predictive Analytics • AI Insights
-                                            </p>
-                                            <p style="margin: 0; font-size: 12px;">
-                                                <a href="{APP_URL}" style="color: #2dd4bf; text-decoration: none; margin: 0 10px;">Dashboard</a>
-                                                <span style="color: #475569;">|</span>
-                                                <a href="{APP_URL}/settings/notifications" style="color: #94a3b8; text-decoration: none; margin: 0 10px;">Notification Settings</a>
-                                                <span style="color: #475569;">|</span>
-                                                <a href="{APP_URL}/help" style="color: #94a3b8; text-decoration: none; margin: 0 10px;">Help Center</a>
-                                            </p>
-                                        </td>
-                                    </tr>
-                                </table>
-                            </td>
-                        </tr>
-                    </table>
-                    
-                    <!-- Email Footer Text -->
-                    <table width="600" cellpadding="0" cellspacing="0" style="margin-top: 24px;">
-                        <tr>
-                            <td style="text-align: center; padding: 0 30px;">
-                                <p style="margin: 0; color: #64748b; font-size: 12px; line-height: 1.6;">
-                                    You're receiving this email because you have notifications enabled for AI-generated insights.
+                            <td style="background-color: #0f0f0f; padding: 24px; text-align: center; border-top: 1px solid #262626;">
+                                <p style="margin: 0; color: #64748b; font-size: 13px;">
+                                    &copy; 2026 DataVision AI. All rights reserved.
+                                </p>
+                                <p style="margin: 8px 0 0 0; font-size: 12px; color: #475569;">
+                                    <a href="{APP_URL}" style="color: #2dd4bf; text-decoration: none;">Dashboard</a> &bull; 
+                                    <a href="{APP_URL}/settings" style="color: #2dd4bf; text-decoration: none;">Unsubscribe</a>
                                 </p>
                             </td>
                         </tr>

@@ -138,7 +138,7 @@ def detect_compute_device() -> Dict[str, Any]:
             device_info['device'] = 'cuda'
             device_info['gpu_available'] = True
             device_info['gpu_name'] = torch.cuda.get_device_name(0)
-            print(f"🚀 GPU Detected: {device_info['gpu_name']}")
+            logger.info(f"🚀 GPU Detected: {device_info['gpu_name']}")
             return device_info
     except ImportError:
         pass
@@ -152,7 +152,7 @@ def detect_compute_device() -> Dict[str, Any]:
         except:
             device_info['xgb_gpu'] = False
     
-    print("💻 Using CPU for training")
+    logger.info("💻 Using CPU for training")
     return device_info
 
 DEVICE_INFO = detect_compute_device()
@@ -204,6 +204,7 @@ class ProductionMLEngine:
         self.target_col = None
         self.task_type = "classification"
         self.task_type_simple = "classification" # classification/regression
+        self.n_classes = None # Fix: Initialize for regression tasks
         self.label_encoders = {}
         self.scaler = None
         self.metrics = {}
@@ -397,6 +398,7 @@ class ProductionMLEngine:
         dropped = []
         
         print("📊 Analyzing columns...")
+        logger.info("📊 Analyzing columns...")
         
         # First pass: detect if this is an NLP dataset
         is_nlp = getattr(self, 'is_nlp_task', False)
@@ -411,12 +413,12 @@ class ProductionMLEngine:
             # SPECIAL CASE: For NLP datasets, ALWAYS keep text columns
             if analysis['dtype'] == 'text' and (is_nlp or col == primary_text):
                 text_cols.append(col)
-                print(f"   ✅ {col}: NLP text column (kept for text classification)")
+                logger.info(f"   ✅ {col}: NLP text column (kept for text classification)")
                 continue
             
             if analysis['should_drop']:
                 dropped.append(col)
-                print(f"   ❌ {col}: {analysis['drop_reason']}")
+                logger.info(f"   ❌ {col}: {analysis['drop_reason']}")
             elif analysis['dtype'] == 'numeric' or analysis['dtype'] == 'boolean':
                 numeric_cols.append(col)
             elif analysis['dtype'] == 'categorical':
@@ -426,12 +428,12 @@ class ProductionMLEngine:
                 avg_len = df[col].astype(str).str.len().mean()
                 if avg_len > 30:  # Long text = valuable content
                     text_cols.append(col)
-                    print(f"   ✅ {col}: text column (avg {avg_len:.0f} chars)")
+                    logger.info(f"   ✅ {col}: text column (avg {avg_len:.0f} chars)")
                 elif analysis['unique_ratio'] < 0.9:
                     text_cols.append(col)
                 else:
                     dropped.append(col)
-                    print(f"   ❌ {col}: Short unique text (no pattern)")
+                    logger.info(f"   ❌ {col}: Short unique text (no pattern)")
         
         print(f"   ✅ Keeping: {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, {len(text_cols)} text")
         print(f"   ❌ Dropped: {len(dropped)} columns")
@@ -449,7 +451,7 @@ class ProductionMLEngine:
         exact_keywords = ['target', 'label', 'class', 'output', 'y']
         for col in df.columns:
             if col.lower().strip() in exact_keywords:
-                print(f"🎯 Target (exact match): {col}")
+                logger.info(f"🎯 Target (exact match): {col}")
                 return col
         
         # Priority 2: Contains keywords (sorted by priority)
@@ -462,7 +464,7 @@ class ProductionMLEngine:
         for keyword in contains_keywords:
             for col in df.columns:
                 if keyword in col.lower():
-                    print(f"🎯 Target (contains '{keyword}'): {col}")
+                    logger.info(f"🎯 Target (contains '{keyword}'): {col}")
                     return col
         
         # Priority 3: Heuristic - prefer last column if it's a good target
@@ -470,7 +472,7 @@ class ProductionMLEngine:
         last_unique = df[last_col].nunique()
         
         if last_unique <= 20 or pd.api.types.is_numeric_dtype(df[last_col]):
-            print(f"🎯 Target (last column): {last_col}")
+            logger.info(f"🎯 Target (last column): {last_col}")
             return last_col
         
         # Priority 4: Find best candidate
@@ -492,77 +494,64 @@ class ProductionMLEngine:
         
         if candidates:
             candidates.sort(key=lambda x: x[1], reverse=True)
-            print(f"🎯 Target (best candidate): {candidates[0][0]}")
+            logger.info(f"🎯 Target (best candidate): {candidates[0][0]}")
             return candidates[0][0]
         
-        print(f"🎯 Target (fallback): {df.columns[-1]}")
+        logger.info(f"🎯 Target (fallback): {df.columns[-1]}")
         return df.columns[-1]
     
     def _detect_task_type(self, y: pd.Series) -> Tuple[str, int]:
         """
         PRODUCTION-LEVEL Task Type Detection
-        
-        Uses multiple heuristics:
-        1. Data type (string = classification)
-        2. Unique value count
-        3. Unique ratio (unique/total)
-        4. Value characteristics (decimals, range)
         """
         n_unique = y.nunique()
         n_samples = len(y)
         unique_ratio = n_unique / n_samples if n_samples > 0 else 0
         
-        print(f"   🔍 Analyzing target: {n_unique} unique values, ratio={unique_ratio:.2%}")
+        logger.info(f"   🔍 Analyzing target: {n_unique} unique values, ratio={unique_ratio:.2%}")
         
         # ====== RULE 0: PRIORITY - Check if convertible to Numeric first! ======
-        # Many datasets have numeric targets loaded as strings (e.g. "$50,000")
         try:
             y_numeric = pd.to_numeric(y.astype(str).str.replace(r'[$,]', '', regex=True), errors='coerce')
             if y_numeric.notna().sum() > len(y) * 0.9: # 90% valid numbers
                 y = y_numeric
                 n_unique = y.nunique()
-                print("   ✅ Converted target to numeric (was string/mixed)")
+                logger.info("   ✅ Converted target to numeric (was string/mixed)")
         except:
             pass
 
         # ====== RULE 1: String/Object type = Classification (if NOT numeric) ======
         if pd.api.types.is_object_dtype(y) or pd.api.types.is_categorical_dtype(y):
             if n_unique == 2:
-                print(f"   ✅ Binary Classification (string, 2 classes)")
+                logger.info(f"   ✅ Binary Classification (string, 2 classes)")
                 return 'binary_classification', 2
             elif n_unique <= 50:
-                print(f"   ✅ Multiclass Classification (string, {n_unique} classes)")
+                logger.info(f"   ✅ Multiclass Classification (string, {n_unique} classes)")
                 return 'multiclass_classification', n_unique
             else:
-                # IMPORTANT FIX: If it has high cardinality but looks like numeric (we already tried converting above)
-                # It might be regression with slight noise, or text classification.
-                # But if we are here, it means it FAILED numeric conversion or is strictly non-numeric objects.
-                # Check if it could be text classification?
                 avg_len = y.astype(str).str.len().mean()
                 if avg_len > 20: 
-                     # Could be NLP target? Usually NLP is input, not target. 
-                     # But let's fallback to multiclass if we can't do anything else.
                      pass 
                 
-                print(f"   ⚠️ High-cardinality string ({n_unique} unique) - treating as multiclass")
+                logger.warning(f"   ⚠️ High-cardinality string ({n_unique} unique) - treating as multiclass")
                 return 'multiclass_classification', n_unique
         
         # ====== RULE 2: Boolean = Binary Classification ======
         if pd.api.types.is_bool_dtype(y):
-            print(f"   ✅ Binary Classification (boolean)")
+            logger.info(f"   ✅ Binary Classification (boolean)")
             return 'binary_classification', 2
         
         # ====== RULE 3: Numeric Analysis ======
         y_clean = pd.to_numeric(y, errors='coerce').dropna()
         
         if len(y_clean) == 0:
-            print(f"   ⚠️ No valid numeric values - defaulting to regression")
+            logger.warning(f"   ⚠️ No valid numeric values - defaulting to regression")
             return 'regression', 0
         
         # Check for binary (0/1 or similar)
         unique_vals = set(y_clean.unique())
         if unique_vals.issubset({0, 1}) or unique_vals.issubset({-1, 1}):
-            print(f"   ✅ Binary Classification (0/1 or -1/1)")
+            logger.info(f"   ✅ Binary Classification (0/1 or -1/1)")
             return 'binary_classification', 2
         
         # Check if values are whole numbers
@@ -571,14 +560,14 @@ class ProductionMLEngine:
         # Integer with few unique values = Classification
         if is_whole_numbers:
             if n_unique == 2:
-                print(f"   ✅ Binary Classification (2 integer classes)")
+                logger.info(f"   ✅ Binary Classification (2 integer classes)")
                 return 'binary_classification', 2
             elif n_unique <= 10:
-                print(f"   ✅ Multiclass Classification ({n_unique} integer classes)")
+                logger.info(f"   ✅ Multiclass Classification ({n_unique} integer classes)")
                 return 'multiclass_classification', n_unique
             elif n_unique <= 20 and unique_ratio < 0.05:
                 # Low unique ratio suggests classification
-                print(f"   ✅ Multiclass Classification ({n_unique} classes, low ratio)")
+                logger.info(f"   ✅ Multiclass Classification ({n_unique} classes, low ratio)")
                 return 'multiclass_classification', n_unique
         
         # ====== RULE 4: Continuous values = Regression ======
@@ -589,23 +578,23 @@ class ProductionMLEngine:
         val_range = y_clean.max() - y_clean.min()
         
         if has_decimals:
-            print(f"   ✅ Regression (continuous decimals, range={val_range:.2f})")
+            logger.info(f"   ✅ Regression (continuous decimals, range={val_range:.2f})")
             return 'regression', 0
         
         if unique_ratio > 0.1 and n_unique > 20:
-            print(f"   ✅ Regression (high unique ratio={unique_ratio:.1%}, {n_unique} values)")
+            logger.info(f"   ✅ Regression (high unique ratio={unique_ratio:.1%}, {n_unique} values)")
             return 'regression', 0
         
         if val_range > 100 and n_unique > 30:
-            print(f"   ✅ Regression (large range={val_range:.0f})")
+            logger.info(f"   ✅ Regression (large range={val_range:.0f})")
             return 'regression', 0
         
         # Default based on unique count
         if n_unique <= 15:
-            print(f"   ✅ Multiclass Classification ({n_unique} classes, default)")
+            logger.info(f"   ✅ Multiclass Classification ({n_unique} classes, default)")
             return 'multiclass_classification', n_unique
         
-        print(f"   ✅ Regression (default, {n_unique} unique values)")
+        logger.info(f"   ✅ Regression (default, {n_unique} unique values)")
         return 'regression', 0
     
     # =========================================================================
@@ -670,7 +659,7 @@ class ProductionMLEngine:
             
             n_capped = np.sum(outlier_mask)
             if n_capped > 0:
-                print(f"      🛠️ Detected {n_capped} outliers ({n_capped/len(data)*100:.1f}%)")
+                logger.info(f"      🛠️ Detected {n_capped} outliers ({n_capped/len(data)*100:.1f}%)")
             
             return capped
         except:
@@ -691,9 +680,9 @@ class ProductionMLEngine:
             to_drop = [col for col in upper_triangle.columns if any(upper_triangle[col] > threshold)]
             
             if to_drop:
-                print(f"   ⚠️ Removing {len(to_drop)} highly correlated features (>{threshold:.0%} correlation)")
+                logger.warning(f"   ⚠️ Removing {len(to_drop)} highly correlated features (>{threshold:.0%} correlation)")
                 for col in to_drop:
-                    print(f"      - {col}")
+                    logger.warning(f"      - {col}")
             
             return to_drop
         except:
@@ -702,16 +691,8 @@ class ProductionMLEngine:
     def _production_feature_selection(self, X: np.ndarray, y: np.ndarray, feature_names: List[str]) -> Tuple[np.ndarray, List[str], Dict]:
         """
         PRODUCTION-LEVEL Feature Selection Pipeline
-        
-        Steps:
-        1. Variance Threshold - Remove zero/near-zero variance
-        2. Correlation Filter - Remove highly correlated (>0.95)
-        3. Mutual Information - Rank by information gain
-        4. Select Top K - Keep best features
-        
-        Returns: (X_selected, selected_feature_names, selection_info)
         """
-        print("   🔍 FEATURE SELECTION PIPELINE...")
+        logger.info("   🔍 FEATURE SELECTION PIPELINE...")
         selection_info = {'original_features': len(feature_names), 'steps': []}
         
         current_X = X.copy()
@@ -726,7 +707,7 @@ class ProductionMLEngine:
             current_features = [f for f, m in zip(current_features, mask) if m]
             removed = len(feature_names) - len(current_features)
             if removed > 0:
-                print(f"      ✂️ Variance filter: removed {removed} low-variance features")
+                logger.info(f"      ✂️ Variance filter: removed {removed} low-variance features")
                 selection_info['steps'].append({'step': 'variance', 'removed': removed})
         except:
             pass
@@ -743,7 +724,7 @@ class ProductionMLEngine:
                 current_X = current_X[:, mask]
                 current_features = [f for f, m in zip(current_features, mask) if m]
                 if len(cols_to_drop) > 0:
-                    print(f"      ✂️ Correlation filter: removed {len(cols_to_drop)} correlated features")
+                    logger.info(f"      ✂️ Correlation filter: removed {len(cols_to_drop)} correlated features")
                     selection_info['steps'].append({'step': 'correlation', 'removed': len(cols_to_drop)})
         except:
             pass
@@ -767,13 +748,13 @@ class ProductionMLEngine:
                 current_features = [current_features[i] for i in top_indices]
                 removed = len(mi_scores) - k
                 if removed > 0:
-                    print(f"      ✂️ MI ranking: kept top {k} informative features")
+                    logger.info(f"      ✂️ MI ranking: kept top {k} informative features")
                     selection_info['steps'].append({'step': 'mutual_info', 'kept': k})
         except:
             pass
         
         selection_info['final_features'] = len(current_features)
-        print(f"      ✅ Feature selection: {selection_info['original_features']} → {selection_info['final_features']}")
+        logger.info(f"      ✅ Feature selection: {selection_info['original_features']} → {selection_info['final_features']}")
         
         return current_X, current_features, selection_info
     
@@ -839,9 +820,9 @@ class ProductionMLEngine:
         recommended = []
         techniques = []
         
-        print("📊 DATA PROFILE ANALYSIS:")
-        print(f"   Samples: {profile['n_samples']:,} | Features: {profile['n_features']}")
-        print(f"   Numeric: {profile['n_numeric']} | Categorical: {profile['n_categorical']} | Text: {profile['n_text']}")
+        logger.info("📊 DATA PROFILE ANALYSIS:")
+        logger.info(f"   Samples: {profile['n_samples']:,} | Features: {profile['n_features']}")
+        logger.info(f"   Numeric: {profile['n_numeric']} | Categorical: {profile['n_categorical']} | Text: {profile['n_text']}")
         
         # === ALGORITHM SELECTION RULES ===
         
@@ -849,20 +830,20 @@ class ProductionMLEngine:
         if profile['is_small_data']:
             recommended.extend(['LogisticRegression', 'RandomForest', 'SVM', 'KNN', 'DecisionTree', 'BayesianRidge', 'LDA'])
             techniques.append('cross_validation_10_fold')
-            print("   📈 Small data → Simple models + Bayesian regression")
+            logger.info("   📈 Small data → Simple models + Bayesian regression")
         
         # Medium data: balanced approach
         elif profile['is_medium_data']:
             recommended.extend(['RandomForest', 'XGBoost', 'LightGBM', 'HistGradientBoosting', 'MLP', 'HuberRegressor'])
             techniques.append('cross_validation_5_fold')
-            print("   📈 Medium data → Ensemble + gradient boosting + robust regression")
+            logger.info("   📈 Medium data → Ensemble + gradient boosting + robust regression")
         
         # Large data: gradient boosting shines, can use neural nets
         else:
             recommended.extend(['LightGBM', 'XGBoost', 'CatBoost', 'HistGradientBoosting', 'MLP', 'SGD'])
             techniques.append('cross_validation_3_fold')
             techniques.append('early_stopping')
-            print("   📈 Large data → Fast gradient boosting + early stopping")
+            logger.info("   📈 Large data → Fast gradient boosting + early stopping")
 
         # === SPECIALIZED RECOMMENDATIONS ===
         
@@ -871,32 +852,32 @@ class ProductionMLEngine:
             y = df[target_col].dropna()
             if (y >= 0).all() and (y % 1 == 0).all() and y.max() > 1:
                  recommended.append('PoissonRegressor')
-                 print("   🔢 Count data detected → Added PoissonRegressor")
+                 logger.info("   🔢 Count data detected → Added PoissonRegressor")
 
         # High Dimensionality (p > n or large p)
         if profile['is_high_dimensional']:
             recommended.extend(['Lasso', 'ElasticNet', 'LinearSVC'])
-            print("   🤏 High dimensionality → Added Regularized Linear Models")
+            logger.info("   🤏 High dimensionality → Added Regularized Linear Models")
         
         # High dimensional: regularization important
         if profile['is_high_dimensional']:
             recommended.extend(['SGDClassifier', 'LogisticRegression', 'LinearSVC'])
             techniques.append('feature_selection')
             techniques.append('regularization')
-            print("   📈 High dimensional → Linear models + regularization")
+            logger.info("   📈 High dimensional → Linear models + regularization")
         
         # NLP/Text data: specific algorithms
         if profile['is_nlp_task']:
             recommended = ['MultinomialNB', 'ComplementNB', 'LogisticRegression', 'LinearSVC', 
                           'SGDClassifier', 'PassiveAggressive', 'MLP']
             techniques.extend(['tfidf', 'ngrams', 'sentiment_features', 'text_stats'])
-            print("   📈 NLP task → Text-optimized classifiers")
+            logger.info("   📈 NLP task → Text-optimized classifiers")
         
         # Imbalanced data: specific handling
         if profile.get('is_imbalanced', False):
             techniques.append('smote')
             techniques.append('class_weights')
-            print(f"   ⚠️ Imbalanced (ratio: {profile.get('imbalance_ratio', 0):.1f}:1) → SMOTE + class weights")
+            logger.info(f"   ⚠️ Imbalanced (ratio: {profile.get('imbalance_ratio', 0):.1f}:1) → SMOTE + class weights")
         
         # Add ensemble techniques for accuracy
         techniques.append('stacking_ensemble')
@@ -905,7 +886,7 @@ class ProductionMLEngine:
         profile['recommended_algorithms'] = list(set(recommended))
         profile['recommended_techniques'] = list(set(techniques))
         
-        print(f"   🎯 Recommended: {', '.join(profile['recommended_algorithms'][:5])}")
+        logger.info(f"   🎯 Recommended: {', '.join(profile['recommended_algorithms'][:5])}")
         
         self.data_profile = profile
         return profile
@@ -921,11 +902,11 @@ class ProductionMLEngine:
         
         # === NLP SPECIFIC MODELS ===
         if profile.get('is_nlp_task', False):
-            print("   🔤 NLP Task Detected: Using specialized text classification models")
+            logger.info("   🔤 NLP Task Detected: Using specialized text classification models")
             
             # SPLIT: Check if regression or classification
             if self.task_type_simple == 'regression':
-                print("   Note: Regression task with text features - using robust regressors")
+                logger.info("   Note: Regression task with text features - using robust regressors")
                 models = {
                     # Regularized Linear Models (good for high-dim text)
                     'Ridge': (
@@ -1274,11 +1255,11 @@ class ProductionMLEngine:
         from sklearn.decomposition import TruncatedSVD
         from sklearn.pipeline import Pipeline
         
-        print(f"   🔤 NLP Processing: {col_name}")
+        logger.info(f"   🔤 NLP Processing: {col_name}")
         
         # Clean text
         clean_texts = text_series.fillna('').astype(str).apply(self._clean_text_nlp)
-        print(f"      ✅ Text cleaned")
+        logger.info(f"      ✅ Text cleaned")
         
         n_samples = len(text_series)
         
@@ -1308,15 +1289,15 @@ class ProductionMLEngine:
                 tfidf_features = svd.fit_transform(tfidf_matrix)
                 self.text_svd_transformers = getattr(self, 'text_svd_transformers', {})
                 self.text_svd_transformers[col_name] = svd
-                print(f"      ✅ TF-IDF+SVD: {n_components} dense features (from {tfidf_matrix.shape[1]} sparse)")
+                logger.info(f"      ✅ TF-IDF+SVD: {n_components} dense features (from {tfidf_matrix.shape[1]} sparse)")
             else:
                 tfidf_features = tfidf_matrix.toarray()
-                print(f"      ✅ TF-IDF: {tfidf_features.shape[1]} features")
+                logger.info(f"      ✅ TF-IDF: {tfidf_features.shape[1]} features")
             
             self.text_vectorizers[col_name] = tfidf
             
         except Exception as e:
-            print(f"      ⚠️ TF-IDF failed: {e}")
+            logger.warning(f"      ⚠️ TF-IDF failed: {e}")
             tfidf_features = np.zeros((len(text_series), 1))
         
         # 2. Text statistics (always useful, interpretable)
@@ -1324,18 +1305,18 @@ class ProductionMLEngine:
         stats_features = np.array([[s['char_count'], s['word_count'], s['avg_word_len'], 
                                    s['sentence_count'], s['uppercase_ratio'], s['digit_ratio']] 
                                   for s in stats_list])
-        print(f"      ✅ Text stats: 6 features")
+        logger.info(f"      ✅ Text stats: 6 features")
         
         # 3. Sentiment (simple but effective)
         sentiment_list = clean_texts.apply(self._get_sentiment_features).tolist()
         sentiment_features = np.array([[s['positive_score'], s['negative_score'], 
                                        s['sentiment_ratio'], s['polarity']] 
                                       for s in sentiment_list])
-        print(f"      ✅ Sentiment: 4 features")
+        logger.info(f"      ✅ Sentiment: 4 features")
         
         # Combine all features
         all_features = np.hstack([tfidf_features, stats_features, sentiment_features])
-        print(f"      ✅ Total NLP features: {all_features.shape[1]}")
+        logger.info(f"      ✅ Total NLP features: {all_features.shape[1]}")
         
         return all_features
     
@@ -1407,13 +1388,13 @@ class ProductionMLEngine:
                 corr = abs(X[col].corr(y))
                 if corr > threshold:
                     leaky_features.append(col)
-                    print(f"   🚨 LEAKAGE detected: '{col}' has {corr:.1%} correlation with target!")
+                    logger.warning(f"   🚨 LEAKAGE detected: '{col}' has {corr:.1%} correlation with target!")
             
             # SAFEGUARD: If ALL numeric features are considered leakage, don't drop them!
             # This happens in small datasets where features ARE the predictors
             if len(leaky_features) > 0 and len(leaky_features) == len(numeric_cols):
-                print(f"   ⚠️ WARNING: All numeric features are highly correlated (>95%). ")
-                print(f"      Keeping them to avoid empty dataset (might be small dataset or strong predictors).")
+                logger.warning(f"   ⚠️ WARNING: All numeric features are highly correlated (>95%). ")
+                logger.warning(f"      Keeping them to avoid empty dataset (might be small dataset or strong predictors).")
                 return []
                 
         except:
@@ -1424,7 +1405,7 @@ class ProductionMLEngine:
     def _preprocess_training(self, df: pd.DataFrame, target_col: str) -> Tuple[np.ndarray, np.ndarray]:
         """Preprocess data for training - ENHANCED for messy real-world data and NLP"""
         
-        print("🧹 ADVANCED DATA CLEANING...")
+        logger.info("🧹 ADVANCED DATA CLEANING...")
         
         X = df.drop(columns=[target_col]).copy()
         y = df[target_col].copy()
@@ -1437,13 +1418,13 @@ class ProductionMLEngine:
         self.n_classes = task_info[1]
         self.task_type_simple = 'classification' if 'classification' in self.task_type else 'regression'
         
-        print(f"   Task: {self.task_type} ({'n_classes=' + str(self.n_classes) if self.n_classes else 'continuous'})")
+        logger.info(f"   Task: {self.task_type} ({'n_classes=' + str(self.n_classes) if self.n_classes else 'continuous'})")
         
         # DETECT NLP DATASET
         self.is_nlp_task, self.primary_text_col = self._is_nlp_dataset(df, target_col)
         if self.is_nlp_task:
-            print(f"   📝 DETECTED: NLP/Text Classification Dataset")
-            print(f"   📝 Primary text column: {self.primary_text_col}")
+            logger.info(f"   📝 DETECTED: NLP/Text Classification Dataset")
+            logger.info(f"   📝 Primary text column: {self.primary_text_col}")
         
         # STEP 1: Detect data leakage (features that perfectly predict target)
         y_numeric = pd.to_numeric(y, errors='coerce')
@@ -1451,7 +1432,7 @@ class ProductionMLEngine:
             leaky_cols = self._detect_target_leakage(X, y_numeric, threshold=0.95)
             if leaky_cols:
                 X = X.drop(columns=leaky_cols)
-                print(f"   🚨 Removed {len(leaky_cols)} leaky features")
+                logger.info(f"   🚨 Removed {len(leaky_cols)} leaky features")
         
         # STEP 2: Remove highly correlated features (>95% correlation)
         correlated_cols = self._remove_highly_correlated(X, threshold=0.95)
@@ -1578,11 +1559,11 @@ class ProductionMLEngine:
                             'type': 'text',
                             'vocab_size': len(vectorizer.vocabulary_)
                         })
-                        print(f"   ✅ {col}: {len(vectorizer.vocabulary_)} text features")
+                        logger.info(f"   ✅ {col}: {len(vectorizer.vocabulary_)} text features")
                     else:
                         self.text_cols.remove(col)
             except Exception as e:
-                print(f"   ⚠️ Skipping {col}: {str(e)[:50]}")
+                logger.warning(f"   ⚠️ Skipping {col}: {str(e)[:50]}")
                 if col in self.text_cols:
                     self.text_cols.remove(col)
         
@@ -1601,7 +1582,7 @@ class ProductionMLEngine:
                 # Ensure feature names match column count (LabelEnc=1, Numeric=1)
                 # This check ensures we don't mismatch if something expanded unexpectedly
                 if hasattr(X_processed, 'shape') and X_processed.shape[1] == len(current_features):
-                    print("   🔧 Applying Advanced Feature Engineering (Poly + Interactions)...")
+                    logger.info("   🔧 Applying Advanced Feature Engineering (Poly + Interactions)...")
                     
                     # 1. Polynomial Features
                     if len(self.numeric_cols) > 0:
@@ -1618,7 +1599,7 @@ class ProductionMLEngine:
                     # GBMs (XGBoost/CatBoost) capture interactions automatically.
 
         except Exception as e:
-            print(f"   ⚠️ Advanced feature engineering skipped: {e}")
+            logger.warning(f"   ⚠️ Advanced feature engineering skipped: {e}")
         
         # Clean final array
         X_processed = np.nan_to_num(X_processed, nan=0.0, posinf=0.0, neginf=0.0)
@@ -1631,7 +1612,7 @@ class ProductionMLEngine:
             y_processed = pd.to_numeric(y, errors='coerce').fillna(0).values.astype(float)
             y_processed = np.nan_to_num(y_processed, nan=0.0)
         
-        print(f"   Final shape: {X_processed.shape}")
+        logger.info(f"   Final shape: {X_processed.shape}")
         
         return X_processed, y_processed
     
@@ -1686,7 +1667,7 @@ class ProductionMLEngine:
                         
                         parts.append(tfidf_feats)
                     except Exception as e:
-                        print(f"   ⚠️ TF-IDF/SVD transform failed for {col}: {e}")
+                        logger.warning(f"   ⚠️ TF-IDF/SVD transform failed for {col}: {e}")
                         # Fallback to expected SVD size or vocab size
                         svd_transformers = getattr(self, 'text_svd_transformers', {})
                         if col in svd_transformers:
@@ -1743,7 +1724,7 @@ class ProductionMLEngine:
                     else:
                         X_processed = X_poly
         except Exception as e:
-            print(f"⚠️ Prediction feature engineering error: {e}")
+            logger.warning(f"⚠️ Prediction feature engineering error: {e}")
             
         return X_processed
     
@@ -2033,10 +2014,10 @@ class ProductionMLEngine:
             study = optuna.create_study(direction='maximize')
             study.optimize(objective, n_trials=n_trials, show_progress_bar=False, n_jobs=1)
             
-            print(f"   🎯 Optuna best score: {study.best_value:.4f}")
+            logger.info(f"   🎯 Optuna best score: {study.best_value:.4f}")
             return study.best_params, study.best_value
         except Exception as e:
-            print(f"   ⚠️ Optuna failed: {e}")
+            logger.warning(f"   ⚠️ Optuna failed: {e}")
             return None, {}
     
     def _build_stacking_ensemble(
@@ -2053,7 +2034,7 @@ class ProductionMLEngine:
             # Select top 3 models for stacking
             estimators = [(name, model) for name, model in list(trained_models.items())[:3]]
             
-            print(f"   🏗️ Building stacking ensemble with {len(estimators)} models...")
+            logger.info(f"   🏗️ Building stacking ensemble with {len(estimators)} models...")
             
             if self.task_type_simple == 'classification':
                 meta_learner = LogisticRegression(max_iter=1000, random_state=42)
@@ -2075,10 +2056,10 @@ class ProductionMLEngine:
                 )
             
             stacker.fit(X_train, y_train)
-            print(f"   ✅ Stacking ensemble trained successfully")
+            logger.info(f"   ✅ Stacking ensemble trained successfully")
             return stacker
         except Exception as e:
-            print(f"   ⚠️ Stacking failed: {e}")
+            logger.warning(f"   ⚠️ Stacking failed: {e}")
             return None
 
     def _get_cv_strategy(self, y: np.ndarray, n_splits: int = 5):
@@ -2132,16 +2113,16 @@ class ProductionMLEngine:
         self.errors = []
         start = datetime.now()
         
-        print("=" * 60)
-        print("🚀 SILICON VALLEY GRADE ML PIPELINE")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info("🚀 SILICON VALLEY GRADE ML PIPELINE")
+        logger.info("=" * 60)
         
         # Detect target if not provided
         if not target_col:
             target_col = self._detect_target(df)
         
-        print(f"📊 Data: {df.shape[0]} rows, {df.shape[1]} columns")
-        print(f"🎯 Target: {target_col}")
+        logger.info(f"📊 Data: {df.shape[0]} rows, {df.shape[1]} columns")
+        logger.info(f"🎯 Target: {target_col}")
         
         # 1. Clean data
         cleaner = ProductionDataCleaner()
@@ -2151,7 +2132,7 @@ class ProductionMLEngine:
         target_nan_count = df_clean[target_col].isna().sum()
         if target_nan_count > 0:
             df_clean = df_clean.dropna(subset=[target_col])
-            print(f"   ⚠️ Dropped {target_nan_count} rows with missing target values")
+            logger.warning(f"   ⚠️ Dropped {target_nan_count} rows with missing target values")
         
         # 2. Detect task type (IMPROVED: check for decimal/float values)
         y_temp = df_clean[target_col]
@@ -2174,7 +2155,7 @@ class ProductionMLEngine:
         else:
             self.task_type = 'regression'
             self.task_type_simple = 'regression'
-        print(f"📋 Task: {self.task_type}")
+        logger.info(f"📋 Task: {self.task_type}")
         
         # 3. Feature engineering
         engineer = ProductionFeatureEngineer()
@@ -2219,11 +2200,11 @@ class ProductionMLEngine:
             )
         except ValueError as e:
             # Fallback: use regular split if stratified fails (rare classes)
-            print(f"   ⚠️ Stratified split failed, using regular split: {str(e)[:50]}")
+            logger.warning(f"   ⚠️ Stratified split failed, using regular split: {str(e)[:50]}")
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, random_state=42
             )
-        print(f"   Train: {len(X_train)} | Test: {len(X_test)}")
+        logger.info(f"   Train: {len(X_train)} | Test: {len(X_test)}")
         
         # 6. Train all models
         trainer = ProductionModelTrainer(self.task_type_simple)
@@ -2255,11 +2236,11 @@ class ProductionMLEngine:
         
         elapsed = (datetime.now() - start).total_seconds()
         
-        print("\n" + "=" * 60)
-        print(f"✅ COMPLETE in {elapsed:.1f}s")
-        print(f"🏆 Best Model: {trainer.best_name}")
-        print(f"📈 Score: {trainer.best_score:.4f}")
-        print("=" * 60)
+        logger.info("\n" + "=" * 60)
+        logger.info(f"✅ COMPLETE in {elapsed:.1f}s")
+        logger.info(f"🏆 Best Model: {trainer.best_name}")
+        logger.info(f"📈 Score: {trainer.best_score:.4f}")
+        logger.info("=" * 60)
         
         # Get best metrics - for Ensemble, calculate directly
         best_result = next((r for r in trainer.results if r['name'] == trainer.best_name), None)
@@ -2313,23 +2294,23 @@ class ProductionMLEngine:
         self.errors = []
         start = datetime.now()
         
-        print("=" * 60)
-        print("🚀 PRODUCTION ML ENGINE v7.0 - TRAIN WITH TEST SET")
-        print("=" * 60)
-        print(f"📊 Train: {len(train_df)} rows | Test: {len(test_df)} rows")
+        logger.info("=" * 60)
+        logger.info("🚀 PRODUCTION ML ENGINE v7.0 - TRAIN WITH TEST SET")
+        logger.info("=" * 60)
+        logger.info(f"📊 Train: {len(train_df)} rows | Test: {len(test_df)} rows")
         
         # Detect target
         if not target_col:
             target_col = self._detect_target(train_df)
         else:
-            print(f"🎯 Target: {target_col}")
+            logger.info(f"🎯 Target: {target_col}")
         
         # Analyze data profile
         self._analyze_data_profile(train_df, target_col)
         
         # Preprocess TRAIN data (fit transformers)
         X_train, y_train = self._preprocess_training(train_df, target_col)
-        print(f"   Train shape: {X_train.shape}")
+        logger.info(f"   Train shape: {X_train.shape}")
         
         # Preprocess TEST data (use fitted transformers)
         # Remove target from test df for preprocessing
@@ -2343,7 +2324,7 @@ class ProductionMLEngine:
                 x_single = self._preprocess_single(row.to_dict())
                 X_test_parts.append(x_single)
             except Exception as e:
-                print(f"   ⚠️ Test row {idx} error: {e}")
+                logger.warning(f"   ⚠️ Test row {idx} error: {e}")
                 # Append zeros matching train shape
                 X_test_parts.append(np.zeros((1, X_train.shape[1])))
         
@@ -2355,7 +2336,7 @@ class ProductionMLEngine:
         else:
             y_test = pd.to_numeric(y_test_raw, errors='coerce').fillna(0).values.astype(float)
         
-        print(f"   Test shape: {X_test.shape}")
+        logger.info(f"   Test shape: {X_test.shape}")
         
         # Store for charts
         self._X_train = X_train
@@ -2377,13 +2358,13 @@ class ProductionMLEngine:
         cv_folds = 5 if len(train_df) > 500 else 3
         n_iter = 8
         
-        print(f"🤖 Training {len(models)} models on user-provided train/test split...")
+        logger.info(f"🤖 Training {len(models)} models on user-provided train/test split...")
         trained_models = {}
         
         for idx, (name, (model, params)) in enumerate(models.items(), 1):
             try:
                 t0 = datetime.now()
-                print(f"   [{idx}/{len(models)}] {name}...", end=" ", flush=True)
+                logger.info(f"   [{idx}/{len(models)}] {name}...")
                 
                 # Simple fit (skip CV search for speed with user test set)
                 model.fit(X_train, y_train)
@@ -2411,7 +2392,7 @@ class ProductionMLEngine:
                 results.append({'name': name, 'metrics': metrics, 'training_time': round(elapsed, 2)})
                 
                 metric_name = 'f1' if self.task_type_simple == 'classification' else 'r2'
-                print(f"{metric_name}={score:.3f} ({elapsed:.1f}s)")
+                logger.info(f"{metric_name}={score:.3f} ({elapsed:.1f}s)")
                 
                 if score > best_score:
                     best_score = score
@@ -2421,7 +2402,7 @@ class ProductionMLEngine:
                     best_proba = y_proba
                     
             except Exception as e:
-                print(f"ERROR - {name}: {str(e)[:50]}")
+                logger.warning(f"ERROR - {name}: {str(e)[:50]}")
                 self.errors.append(f"{name}: {str(e)[:100]}")
         
         self.model = best_model
@@ -2430,7 +2411,7 @@ class ProductionMLEngine:
         if self.model is None:
             raise ValueError("All models failed. Errors: " + "; ".join(self.errors[-3:]))
         
-        print(f"🏆 Best: {best_name} (score={best_score:.3f})")
+        logger.info(f"🏆 Best: {best_name} (score={best_score:.3f})")
         
         # Save model
         self._y_test = y_test
@@ -2438,7 +2419,7 @@ class ProductionMLEngine:
         self._save(user_id)
         
         elapsed = (datetime.now() - start).total_seconds()
-        print(f"✅ Complete in {elapsed:.1f}s")
+        logger.info(f"✅ Complete in {elapsed:.1f}s")
         
         return TrainResult(
             success=True,
@@ -2461,21 +2442,21 @@ class ProductionMLEngine:
             primary_text_col=self.primary_text_col
         )
     
-    async def train(self, df: pd.DataFrame, target_col: Optional[str] = None, user_id: str = "default") -> TrainResult:
+    async def train(self, df: pd.DataFrame, target_col: Optional[str] = None, user_id: str = "default") -> 'TrainResult':
         """PRODUCTION-LEVEL Main training pipeline with adaptive technique selection"""
         self.errors = []
         start = datetime.now()
         
-        print("=" * 60)
-        print("🚀 PRODUCTION ML ENGINE v7.0 - COMPLETE AUTOML PIPELINE")
-        print("=" * 60)
-        print(f"📊 Data: {len(df)} rows, {len(df.columns)} columns")
+        logger.info("=" * 60)
+        logger.info("🚀 PRODUCTION ML ENGINE v7.0 - COMPLETE AUTOML PIPELINE")
+        logger.info("=" * 60)
+        logger.info(f"📊 Data: {len(df)} rows, {len(df.columns)} columns")
         
         # Detect target
         if not target_col:
             target_col = self._detect_target(df)
         else:
-            print(f"🎯 Target (user specified): {target_col}")
+            logger.info(f"🎯 Target (user specified): {target_col}")
         
         # ADAPTIVE: Analyze data profile BEFORE preprocessing to recommend techniques
         self._analyze_data_profile(df, target_col)
@@ -2488,7 +2469,7 @@ class ProductionMLEngine:
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=stratify
         )
-        print(f"   Train: {len(X_train)}, Test: {len(X_test)}")
+        logger.info(f"   Train: {len(X_train)}, Test: {len(X_test)}")
         
         # Store for learning curves and chart generation
         self._X_train = X_train
@@ -2524,7 +2505,7 @@ class ProductionMLEngine:
             cv_folds = 5
             n_iter = 8
         
-        print(f"🤖 Training {len(models)} ADAPTIVE models ({cv_folds}-fold CV)...")  
+        logger.info(f"🤖 Training {len(models)} ADAPTIVE models ({cv_folds}-fold CV)...")  
         
         # Track trained models for stacking
         trained_models = {}
@@ -2532,7 +2513,7 @@ class ProductionMLEngine:
         for idx, (name, (model, params)) in enumerate(models.items(), 1):
             try:
                 t0 = datetime.now()
-                print(f"   [{idx}/{len(models)}] {name}...", end=" ", flush=True)
+                logger.info(f"   [{idx}/{len(models)}] {name}...")
                 
                 # Fallback mechanism: Try GridSearch/RandomSearch first, then simple fit
                 try:
@@ -2545,7 +2526,7 @@ class ProductionMLEngine:
                     best_est = search.best_estimator_
                     best_params = search.best_params_
                 except Exception as search_err:
-                    print(f"   ⚠️ Search failed ({str(search_err)[:50]}), falling back to simple fit...")
+                    logger.warning(f"   ⚠️ Search failed ({str(search_err)[:50]}), falling back to simple fit...")
                     model.fit(X_train_balanced, y_train_balanced)
                     best_est = model
                     best_params = "default"
@@ -2584,7 +2565,7 @@ class ProductionMLEngine:
                 })
                 
                 metric_name = 'f1' if self.task_type_simple == 'classification' else 'r2'
-                print(f"{metric_name}={score:.3f} ({elapsed:.1f}s)")
+                logger.info(f"{metric_name}={score:.3f} ({elapsed:.1f}s)")
                 
                 if score > best_score:
                     best_score = score
@@ -2597,7 +2578,7 @@ class ProductionMLEngine:
                 import traceback
                 traceback.print_exc()
                 error_msg = f"{name}: {str(e)[:100]}"
-                print(f"ERROR - {error_msg}")
+                logger.warning(f"ERROR - {error_msg}")
                 self.errors.append(error_msg)  # Store error for reporting
         
         self.model = best_model
@@ -2607,17 +2588,17 @@ class ProductionMLEngine:
             error_summary = "; ".join(self.errors[-3:]) if hasattr(self, 'errors') else "Unknown error"
             raise ValueError(f"All models failed to train. Errors: {error_summary}")
 
-        print(f"🏆 Best: {best_name} (score={best_score:.3f})")
+        logger.info(f"🏆 Best: {best_name} (score={best_score:.3f})")
         
         # Retrain on full data
         try:
-            print(f"🔄 Retraining {best_name} on full data...")
+            logger.info(f"🔄 Retraining {best_name} on full data...")
             self.model.fit(X, y)
         except Exception as e:
-            print(f"⚠️ Retraining failed, keeping split model: {e}")
+            logger.warning(f"⚠️ Retraining failed, keeping split model: {e}")
             # Keep the already trained best_model from split
             pass
-        print(f"   ✅ Retrained on {len(X)} samples")
+        logger.info(f"   ✅ Retrained on {len(X)} samples")
         
         # === STACKING ENSEMBLE ===
         # Try to build an ensemble of the best models for top 1% performance
@@ -2647,7 +2628,7 @@ class ProductionMLEngine:
                         stack_metrics = {'r2': round(stack_score, 4), 'mae': round(stack_mae, 4)}
                         y_proba_stack = None
                     
-                    print(f"   🤖 Stacking Ensemble: {metric_name}={stack_score:.3f}")
+                    logger.info(f"   🤖 Stacking Ensemble: {metric_name}={stack_score:.3f}")
                     
                     # Add to results
                     results.append({
@@ -2660,7 +2641,7 @@ class ProductionMLEngine:
                     
                     # If better, update best
                     if stack_score > best_score:
-                        print(f"   🚀 Stacking Ensemble is the new BEST model! (+{(stack_score - best_score):.4f})")
+                        logger.info(f"   🚀 Stacking Ensemble is the new BEST model! (+{(stack_score - best_score):.4f})")
                         best_score = stack_score
                         best_model = stacker
                         best_name = 'StackingEnsemble'
@@ -2670,7 +2651,7 @@ class ProductionMLEngine:
                         # Add to trained models so it can be saved/retrained
                         trained_models['StackingEnsemble'] = stacker
             except Exception as e:
-                print(f"   ⚠️ Stacking evaluation failed: {e}")
+                logger.warning(f"   ⚠️ Stacking evaluation failed: {e}")
 
         # Sort results
         metric_key = 'f1' if self.task_type_simple == 'classification' else 'r2'
@@ -2693,9 +2674,9 @@ class ProductionMLEngine:
                 self.metrics['f1'] = float(f1_score(y_test, best_pred, average='weighted', zero_division=0))
                 self.metrics['precision'] = float(precision_score(y_test, best_pred, average='weighted', zero_division=0))
                 self.metrics['recall'] = float(recall_score(y_test, best_pred, average='weighted', zero_division=0))
-                print(f"📊 Stored metrics: Accuracy={self.metrics['accuracy']:.1%}, F1={self.metrics['f1']:.1%}")
+                logger.info(f"📊 Stored metrics: Accuracy={self.metrics['accuracy']:.1%}, F1={self.metrics['f1']:.1%}")
             except Exception as cm_err:
-                print(f"⚠️ Confusion matrix error: {cm_err}")
+                logger.warning(f"⚠️ Confusion matrix error: {cm_err}")
                 self.confusion_matrix = None
         else:
             # Regression metrics
@@ -2704,9 +2685,9 @@ class ProductionMLEngine:
                 self.metrics['r2'] = float(r2_score(y_test, best_pred))
                 self.metrics['mae'] = float(mean_absolute_error(y_test, best_pred))
                 self.metrics['rmse'] = float(np.sqrt(mean_squared_error(y_test, best_pred)))
-                print(f"📊 Stored metrics: R²={self.metrics['r2']:.3f}, MAE={self.metrics['mae']:.2f}")
+                logger.info(f"📊 Stored metrics: R²={self.metrics['r2']:.3f}, MAE={self.metrics['mae']:.2f}")
             except Exception as reg_err:
-                print(f"⚠️ Regression metrics error: {reg_err}")
+                logger.warning(f"⚠️ Regression metrics error: {reg_err}")
         
         # Save (now includes metrics, y_test, y_pred, confusion_matrix)
         self._save(user_id)
@@ -2716,9 +2697,9 @@ class ProductionMLEngine:
         
         processing_time = (datetime.now() - start).total_seconds()
         
-        print("=" * 60)
-        print(f"✅ Complete in {processing_time:.1f}s")
-        print("=" * 60)
+        logger.info("=" * 60)
+        logger.info(f"✅ Complete in {processing_time:.1f}s")
+        logger.info("=" * 60)
         
         # Generate all charts using the enhanced chart generator
         try:

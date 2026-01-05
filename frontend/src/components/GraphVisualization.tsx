@@ -247,7 +247,7 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({ userId, maxNode
       if (!pos) return;
 
       // Color by type
-      let color = '#f97316'; // Default orange
+      let color = '#14B8A6'; // Default teal
       if (node.type === 'customer') color = '#3b82f6'; // Blue
       else if (node.type === 'product') color = '#10b981'; // Green
       else if (node.type === 'invoice') color = '#f59e0b'; // Orange

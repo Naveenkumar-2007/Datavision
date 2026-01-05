@@ -1,32 +1,28 @@
 import os
 import uvicorn
+import logging
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Load env from multiple possible locations
-# Try: backend/.env, project_root/.env
-env_paths = [
-    Path(__file__).parent / ".env",  # backend/.env
-    Path(__file__).parent.parent / ".env",  # project_root/.env
-]
+# Configure Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("main")
 
-for env_path in env_paths:
-    if env_path.exists():
-        load_dotenv(env_path)
-        print(f"✅ Loaded environment from: {env_path}")
-        break
-else:
-    load_dotenv()  # Try default location
-    print("⚠️ Using default .env location")
+# Load env using the new Settings logic (it loads env automatically on import)
+from config.settings import Settings
 
 # Import Routers
 from api.v1.endpoints import (
     chat, 
     files,
     analytics,
+    reports,
     reports,
     email_prefs
 )
@@ -36,7 +32,7 @@ from api.v1.endpoints import dashboard_api
 
 # 🧠 Import Autonomous Brain API
 from api.v1.endpoints import brain
-print("✅ Autonomous Brain API loaded")
+logger.info("✅ Autonomous Brain API loaded")
 
 # Initialize App
 app = FastAPI(
@@ -65,6 +61,7 @@ app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytic
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(email_prefs.router, prefix="/api/v1/settings", tags=["Settings"])
 
+
 # 🏆 Autonomous Dashboard API
 app.include_router(dashboard_api.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 
@@ -74,12 +71,12 @@ app.include_router(brain.router, prefix="/api/v1/brain", tags=["Brain"])
 # 🚀 DataVision API v2 (All Features)
 from api.v1.endpoints import datavision_api
 app.include_router(datavision_api.router, prefix="/api/v2", tags=["DataVision v2"])
-print("✅ DataVision API v2 loaded")
+logger.info("✅ DataVision API v2 loaded")
 
 # 🤖 AutoML API (Production ML)
 from api.v1.endpoints import automl_api
 app.include_router(automl_api.router, prefix="/api/v2/automl", tags=["AutoML"])
-print("✅ AutoML API loaded")
+logger.info("✅ AutoML API loaded")
 
 from fastapi.responses import FileResponse
 
@@ -157,23 +154,23 @@ async def spa_fallback(full_path: str):
 
 @app.on_event("startup")
 async def startup_event():
-    print("=" * 50)
-    print("🚀 DATAVISION 2.0 - Universal AI Data Platform")
-    print("=" * 50)
-    print("🧠 Autonomous Brain: ACTIVE")
-    print("🤖 Universal Agent: ACTIVE")
-    print("🔗 Knowledge Graphs: ACTIVE")
-    print("🔮 Predictive Intelligence: ACTIVE")
-    print("⚡ Advanced MCPs: LOADED")
-    print("🏢 Enterprise Features: ENABLED")
-    print("=" * 50)
-    print("📡 API v2 available at: /api/v2")
-    print("📚 Docs at: /docs")
-    print("=" * 50)
+    logger.info("=" * 50)
+    logger.info("🚀 DATAVISION 2.0 - Universal AI Data Platform")
+    logger.info("=" * 50)
+    logger.info("🧠 Autonomous Brain: ACTIVE")
+    logger.info("🤖 Universal Agent: ACTIVE")
+    logger.info("🔗 Knowledge Graphs: ACTIVE")
+    logger.info("🔮 Predictive Intelligence: ACTIVE")
+    logger.info("⚡ Advanced MCPs: LOADED")
+    logger.info("🏢 Enterprise Features: ENABLED")
+    logger.info("=" * 50)
+    logger.info("📡 API v2 available at: /api/v2")
+    logger.info("📚 Docs at: /docs")
+    logger.info("=" * 50)
     
 @app.on_event("shutdown")
 async def shutdown_event():
-    print("🛑 DataVision Shutting Down...")
+    logger.info("🛑 DataVision Shutting Down...")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

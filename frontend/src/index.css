@@ -735,52 +735,7 @@ button[class*="bg-gradient"],
   color: #ffffff !important;
 }
 
-/* Force Primary Orange Backgrounds in Light Mode */
-html.light-theme .bg-primary-500 {
-  background-color: #14B8A6 !important;
-}
-
-html.light-theme .bg-primary-600 {
-  background-color: #0D9488 !important;
-}
-
-/* Force Primary Orange Backgrounds in Dark Mode (Safety Net) */
-.bg-primary-500 {
-  background-color: #14B8A6 !important;
-}
-
-.bg-primary-600 {
-  background-color: #0D9488 !important;
-}
-
-/* LIGHT MODE GRADIENT & TOGGLE FIXES */
-html.light-theme .from-primary-500 {
-  --tw-gradient-from: #14B8A6 !important;
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(20, 184, 166, 0)) !important;
-}
-
-html.light-theme .to-primary-600 {
-  --tw-gradient-to: #0D9488 !important;
-}
-
-/* Fix Toggles in Light Mode */
-html.light-theme .peer:checked~div {
-  background-color: #14B8A6 !important;
-}
-
-html.light-theme .bg-primary-500\/20 {
-  background-color: rgba(20, 184, 166, 0.2) !important;
-}
-
-button[class*="bg-purple"] *,
-button[class*="bg-primary"] *,
-button[class*="bg-gradient"] *,
-.bg-purple-600 *,
-.bg-purple-500 *,
-.bg-primary-500 *,
-.bg-primary-600 * {
-  color: #ffffff !important;
-}
+/* CSS Overrides cleaned up - using Tailwind Config for primary colors */
 
 /* ------------------------------------------------------------------
    CLAUDE-STYLE CHAT INTERFACE COMPONENTS

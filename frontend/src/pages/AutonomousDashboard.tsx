@@ -5,6 +5,7 @@ import {
     Database, Calendar, Layers, Activity, Target, Zap,
     RefreshCw, Maximize2, Grid3X3, List
 } from 'lucide-react';
+import { Skeleton } from '../components/ui/Skeleton';
 import { useUserStore } from '../store/userStore';
 import { api } from '../services/api';
 
@@ -200,17 +201,61 @@ const VisualIntelligenceDashboard: React.FC = () => {
         return BarChart3;
     };
 
-    // Loading state
+    // Loading state with Skeleton
     if (loading) {
         return (
-            <div className={`min-h-screen flex items-center justify-center ${t.bg}`}>
-                <div className="text-center">
-                    <div className="relative inline-block">
-                        <div className={`w-16 h-16 rounded-full border-4 ${isDark ? 'border-gray-800' : 'border-gray-200'}`} />
-                        <div className="absolute top-0 left-0 w-16 h-16 rounded-full border-4 border-t-transparent animate-spin" style={{ borderColor: `${t.accent} transparent transparent transparent` }} />
+            <div className={`min-h-screen ${t.bg}`}>
+                {/* Header Skeleton */}
+                <div className={`border-b ${t.border} ${isDark ? 'bg-[#0a0f1a]/90' : 'bg-white/90'} px-6 py-3`}>
+                    <div className="flex justify-between items-center max-w-[1920px] mx-auto">
+                        <div className="flex items-center gap-3">
+                            <Skeleton className="w-10 h-10 rounded-xl" />
+                            <div className="space-y-2">
+                                <Skeleton className="h-4 w-48" />
+                                <Skeleton className="h-3 w-32" />
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            <Skeleton className="w-8 h-8 rounded-lg" />
+                            <Skeleton className="w-8 h-8 rounded-lg" />
+                        </div>
                     </div>
-                    <p className={`mt-6 text-lg font-medium ${t.text}`}>Analyzing Your Data...</p>
-                    <p className={`mt-2 text-sm ${t.textMuted}`}>Building Autonomous Visual Intelligence</p>
+                </div>
+
+                <div className="max-w-[1920px] mx-auto p-6 space-y-6">
+                    {/* KPIs Skeleton */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                        {[1, 2, 3, 4, 5, 6].map((i) => (
+                            <div key={i} className={`p-4 rounded-xl border ${t.border} ${t.card}`}>
+                                <Skeleton className="h-3 w-16 mb-2" />
+                                <Skeleton className="h-8 w-24 mb-2" />
+                                <Skeleton className="h-3 w-12" />
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Pills Skeleton */}
+                    <div className="flex gap-2">
+                        {[1, 2, 3, 4].map((i) => (
+                            <Skeleton key={i} className="h-8 w-24 rounded-full" />
+                        ))}
+                    </div>
+
+                    {/* Charts Grid Skeleton */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {[1, 2, 3, 4, 5, 6].map((i) => (
+                            <div key={i} className={`rounded-xl border ${t.border} ${t.card} p-4 h-[300px]`}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <div className="flex gap-2 items-center">
+                                        <Skeleton className="w-4 h-4 rounded-full" />
+                                        <Skeleton className="h-4 w-32" />
+                                    </div>
+                                    <Skeleton className="w-4 h-4" />
+                                </div>
+                                <Skeleton className="w-full h-[220px] rounded-lg" />
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         );
@@ -366,7 +411,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                             <ul className="space-y-3">
                                 {dashboard.insights.map((insight, i) => (
                                     <li key={i} className="flex items-start gap-3">
-                                        <span className="w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0" style={{ backgroundColor: ['#14b8a6', '#8b5cf6', '#f97316', '#10b981', '#ec4899'][i % 5] }} />
+                                        <span className="w-1.5 h-1.5 rounded-full mt-2 flex-shrink-0" style={{ backgroundColor: ['#14b8a6', '#8b5cf6', '#f59e0b', '#10b981', '#ec4899'][i % 5] }} />
                                         <p className={`text-sm ${t.textSecondary}`}>{insight}</p>
                                     </li>
                                 ))}

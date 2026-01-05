@@ -212,15 +212,34 @@ def chat(
         try:
             logger.info(f"☁️ Using Groq model: {primary_model} (Key {i+1}/{len(keys_to_try)})")
             
-            response = litellm.completion(
-                model=primary_model,
-                messages=final_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                api_key=api_key # 🔑 Explicitly pass key
-            )
-            logger.info(f"✅ Success with: {primary_model}")
-            return response.choices[0].message.content
+            # RETRY LOGIC (3 attempts per key)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = litellm.completion(
+                        model=primary_model,
+                        messages=final_messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                        api_key=api_key # 🔑 Explicitly pass key
+                    )
+                    logger.info(f"✅ Success with: {primary_model}")
+                    return response.choices[0].message.content
+                except Exception as e:
+                    # Reraise immediately if it's an auth error (no point retrying same key)
+                    error_str = str(e).lower()
+                    if 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str or '401' in error_str:
+                        raise e
+                        
+                    # If this was the last attempt, reraise to outer loop
+                    if attempt == max_retries - 1:
+                        raise e
+                        
+                    # Otherwise wait and retry
+                    wait_time = (2 ** attempt) * 1  # 1s, 2s, 4s
+                    logger.warning(f"   ⚠️ Attempt {attempt+1}/{max_retries} failed ({str(e)[:50]}). Retrying in {wait_time}s...")
+                    import time
+                    time.sleep(wait_time)
             
         except Exception as e:
             last_error = e
@@ -315,7 +334,7 @@ def embed_text(text: str) -> List[float]:
         # 1. Try local SentenceTransformer (Zero-cost, fast)
         if SENTENCE_TRANSFORMER_AVAILABLE and "sentence-transformers" in Settings.EMBEDDING_MODEL:
             if Settings.EMBEDDING_MODEL not in _embedding_model_cache:
-                print(f"📥 Loading local embedding model: {Settings.EMBEDDING_MODEL}")
+                logger.info(f"📥 Loading local embedding model: {Settings.EMBEDDING_MODEL}")
                 _embedding_model_cache[Settings.EMBEDDING_MODEL] = SentenceTransformer(Settings.EMBEDDING_MODEL)
             
             model = _embedding_model_cache[Settings.EMBEDDING_MODEL]
@@ -351,7 +370,7 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
         # 1. Try local SentenceTransformer
         if SENTENCE_TRANSFORMER_AVAILABLE and "sentence-transformers" in Settings.EMBEDDING_MODEL:
             if Settings.EMBEDDING_MODEL not in _embedding_model_cache:
-                print(f"📥 Loading local embedding model: {Settings.EMBEDDING_MODEL}")
+                logger.info(f"📥 Loading local embedding model: {Settings.EMBEDDING_MODEL}")
                 _embedding_model_cache[Settings.EMBEDDING_MODEL] = SentenceTransformer(Settings.EMBEDDING_MODEL)
             
             model = _embedding_model_cache[Settings.EMBEDDING_MODEL]

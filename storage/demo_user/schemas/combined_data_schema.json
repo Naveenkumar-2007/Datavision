@@ -1,0 +1,76 @@
+{
+  "domain": "e-commerce",
+  "domain_confidence": 0.2,
+  "key_metrics": [],
+  "dimensions": [
+    "value",
+    "category",
+    "status"
+  ],
+  "time_column": "date",
+  "suggested_analyses": [
+    "Domain-specific e-commerce analysis"
+  ],
+  "columns": {
+    "id": {
+      "name": "id",
+      "dtype": "int64",
+      "null_count": 0,
+      "unique_count": 8,
+      "category": "identifier",
+      "stats": {
+        "mean": 4.5,
+        "std": 2.449489742783178,
+        "min": 1.0,
+        "max": 8.0
+      }
+    },
+    "value": {
+      "name": "value",
+      "dtype": "int64",
+      "null_count": 0,
+      "unique_count": 8,
+      "category": "numeric",
+      "stats": {
+        "mean": 190.0,
+        "std": 66.97547525560596,
+        "min": 100.0,
+        "max": 300.0
+      }
+    },
+    "category": {
+      "name": "category",
+      "dtype": "object",
+      "null_count": 0,
+      "unique_count": 2,
+      "category": "categorical"
+    },
+    "status": {
+      "name": "status",
+      "dtype": "int64",
+      "null_count": 0,
+      "unique_count": 2,
+      "category": "numeric",
+      "stats": {
+        "mean": 0.5,
+        "std": 0.5345224838248488,
+        "min": 0.0,
+        "max": 1.0
+      }
+    },
+    "date": {
+      "name": "date",
+      "dtype": "object",
+      "null_count": 0,
+      "unique_count": 8,
+      "category": "temporal"
+    }
+  },
+  "data_quality": {
+    "completeness": 1.0,
+    "row_count": 8,
+    "column_count": 5,
+    "null_count": 0,
+    "duplicate_count": 0
+  }
+}

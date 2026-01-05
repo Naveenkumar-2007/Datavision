@@ -298,7 +298,7 @@ const AutoML: React.FC = () => {
                 orientation: 'h' as const,
                 marker: {
                     color: features.map((_, i) => {
-                        const colors = ['#10b981', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#f97316', '#eab308'];
+                        const colors = ['#10b981', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#14B8A6', '#eab308'];
                         return colors[i % colors.length];
                     }),
                 },

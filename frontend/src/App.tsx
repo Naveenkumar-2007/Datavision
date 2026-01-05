@@ -2,6 +2,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState, useCallback } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { AuthProvider } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import SplashScreen from './components/SplashScreen';
 import Landing from './pages/Landing';
 import DataHub from './pages/DataHub';
@@ -74,44 +75,46 @@ function App() {
       </AnimatePresence>
       <HashRouter>
         <AuthProvider>
-          <Routes>
-            {/* Public routes */}
-            <Route path="/" element={<Landing />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/auth/callback" element={<AuthCallback />} />
-            <Route path="/auth/confirm" element={<EmailConfirm />} />
+          <ToastProvider>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<Landing />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/auth/confirm" element={<EmailConfirm />} />
 
-            {/* Redirect /overview to /chat - Overview page removed */}
-            <Route path="/overview" element={<Navigate to="/chat" replace />} />
+              {/* Redirect /overview to /chat - Overview page removed */}
+              <Route path="/overview" element={<Navigate to="/chat" replace />} />
 
-            {/* Chat - Full screen without main navigation */}
-            <Route path="/chat" element={
-              <ProtectedRoute>
-                <AnalystChat />
-              </ProtectedRoute>
-            } />
+              {/* Chat - Full screen without main navigation */}
+              <Route path="/chat" element={
+                <ProtectedRoute>
+                  <AnalystChat />
+                </ProtectedRoute>
+              } />
 
-            {/* Protected routes with AppLayout (main navigation) */}
-            <Route element={
-              <ProtectedRoute>
-                <AppLayout />
-              </ProtectedRoute>
-            }>
-              <Route path="/data-hub" element={<DataHub />} />
-              <Route path="/datahub" element={<DataHub />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/settings/notifications" element={<NotificationSettings />} />
-              {/* 🏆 Autonomous Dashboard - Power BI-like AI-generated */}
-              <Route path="/dashboard" element={<AutonomousDashboard />} />
-              {/* 🤖 AutoML - ML Results Page */}
-              <Route path="/automl" element={<AutoML />} />
-              {/* 🧠 ML Predictions - Real ML Charts */}
-              <Route path="/ml-predictions" element={<MLPredictions />} />
-            </Route>
-          </Routes>
+              {/* Protected routes with AppLayout (main navigation) */}
+              <Route element={
+                <ProtectedRoute>
+                  <AppLayout />
+                </ProtectedRoute>
+              }>
+                <Route path="/data-hub" element={<DataHub />} />
+                <Route path="/datahub" element={<DataHub />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/settings/notifications" element={<NotificationSettings />} />
+                {/* 🏆 Autonomous Dashboard - Power BI-like AI-generated */}
+                <Route path="/dashboard" element={<AutonomousDashboard />} />
+                {/* 🤖 AutoML - ML Results Page */}
+                <Route path="/automl" element={<AutoML />} />
+                {/* 🧠 ML Predictions - Real ML Charts */}
+                <Route path="/ml-predictions" element={<MLPredictions />} />
+              </Route>
+            </Routes>
+          </ToastProvider>
         </AuthProvider>
       </HashRouter>
     </>
