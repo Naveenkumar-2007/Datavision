@@ -56,7 +56,7 @@ const AppLayout: React.FC = () => {
     { path: '/data-hub', label: 'Data Hub', icon: Database },
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }, // 🏆 AI Dashboard
     { path: '/reports', label: 'Reports', icon: FileText },
-    ...(hasMLResults ? [{ path: '/ml-predictions', label: 'ML Predictions', icon: Brain }] : []),
+    { path: '/ml-predictions', label: 'ML Predictions', icon: Brain }, // Always visible
     { path: '/chat', label: 'AI Analyst', icon: MessageSquare },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];

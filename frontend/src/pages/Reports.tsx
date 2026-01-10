@@ -58,6 +58,8 @@ interface ThemeContext {
 interface ReportSection {
   title: string;
   content: string;
+  data?: any[];
+  chartType?: string;
 }
 
 interface GeneratedReport {
@@ -85,7 +87,8 @@ const Reports: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string>('metrics');
   const [analytics, setAnalytics] = useState<any>(null);
-  // Removed dashboardStats - no longer needed
+  const [hasMLModel, setHasMLModel] = useState(false);
+  const [mlModelInfo, setMlModelInfo] = useState<any>(null);
 
   const CHART_COLORS = ['#14B8A6', '#22C55E', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899'];
   const userPreferredCurrency = getUserPreferredCurrency();
@@ -93,16 +96,21 @@ const Reports: React.FC = () => {
   const currencySymbol = getCurrencySymbol(currency);
   const hasMultipleCurrencies = analytics?.currencyBreakdown?.currencies_count > 1;
 
-  // Commented out as these are no longer needed with dynamic metrics
-  // const rawRevenue = hasMultipleCurrencies
-  //   ? analytics?.currencyBreakdown?.total_usd_equivalent || analytics?.metrics?.totalRevenue
-  //   : analytics?.metrics?.totalRevenue || 0;
-  // const displayRevenue = hasMultipleCurrencies && currency !== 'USD'
-  //   ? convertCurrency(rawRevenue, 'USD', currency)
-  //   : rawRevenue;
-
   useEffect(() => {
     loadAnalytics();
+    checkMLModel();
+  }, []);
+
+  // Listen for file updates from DataHub - refresh analytics when files change
+  useEffect(() => {
+    const handleFilesUpdated = () => {
+      console.log('📁 Files updated - refreshing reports analytics...');
+      loadAnalytics();
+      checkMLModel();
+    };
+
+    window.addEventListener('filesUpdated', handleFilesUpdated);
+    return () => window.removeEventListener('filesUpdated', handleFilesUpdated);
   }, []);
 
   const loadAnalytics = async () => {
@@ -112,6 +120,20 @@ const Reports: React.FC = () => {
       setAnalytics(analyticsResponse.data);
     } catch (err) {
       console.error('Failed to load analytics:', err);
+    }
+  };
+
+  const checkMLModel = async () => {
+    try {
+      const userId = localStorage.getItem('userId') || 'default';
+      const response = await fetch(`/api/v2/autonomous/models/${userId}`);
+      const data = await response.json();
+      if (data.success && data.has_models) {
+        setHasMLModel(true);
+        setMlModelInfo(data.active_model);
+      }
+    } catch (err) {
+      console.log('No ML model found');
     }
   };
 
@@ -158,8 +180,26 @@ const Reports: React.FC = () => {
     { value: 'breakdown', label: 'Data Breakdown', description: 'Category distributions & segments', icon: PieChartIcon, color: '#8B5CF6' },
     { value: 'summary', label: 'Data Summary', description: 'Complete overview of all data', icon: BarChart3, color: '#3B82F6' },
     { value: 'executive', label: 'Executive Summary', description: 'High-level insights for leaders', icon: FileText, color: '#22C55E' },
-    { value: 'predictive', label: '🔮 Predictive Report', description: 'ML forecasts & predictions', icon: TrendingUp, color: '#F59E0B', badge: 'AI' },
-    { value: 'anomaly', label: '⚠️ Anomaly Report', description: 'Outliers & unusual patterns', icon: AlertCircle, color: '#EF4444', badge: 'AI' },
+    {
+      value: 'predictive',
+      label: '🔮 Predictive Report',
+      description: hasMLModel
+        ? `Uses ${mlModelInfo?.model_name || 'trained model'} for predictions`
+        : 'ML forecasts & predictions (train a model first)',
+      icon: TrendingUp,
+      color: '#F59E0B',
+      badge: hasMLModel ? 'AutoML' : 'AI'
+    },
+    {
+      value: 'anomaly',
+      label: '⚠️ Anomaly Report',
+      description: hasMLModel
+        ? `Detect anomalies in ${mlModelInfo?.target_column || 'target'} data`
+        : 'Outliers & unusual patterns detection',
+      icon: AlertCircle,
+      color: '#EF4444',
+      badge: hasMLModel ? 'AutoML' : 'AI'
+    },
   ];
 
   return (
@@ -169,6 +209,36 @@ const Reports: React.FC = () => {
         <h1 className="text-2xl font-bold" style={{ color: theme.textPrimary }}>Data Reports</h1>
         <p className="text-sm" style={{ color: theme.textMuted }}>Automatic reports generated from your uploaded data</p>
       </motion.div>
+
+      {/* ML Model Status Banner */}
+      {hasMLModel && mlModelInfo && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 rounded-xl border bg-gradient-to-r from-amber-500/10 to-teal-500/10"
+          style={{ borderColor: '#F59E0B' }}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🤖</span>
+            <div className="flex-1">
+              <div className="font-semibold" style={{ color: theme.textPrimary }}>
+                AutoML Model Ready: {mlModelInfo.model_name}
+              </div>
+              <div className="text-sm" style={{ color: theme.textMuted }}>
+                {mlModelInfo.task_type?.toUpperCase()} • Target: {mlModelInfo.target_column} •
+                Score: {(() => {
+                  const m = mlModelInfo.metrics || {};
+                  const score = m.accuracy || m.f1_score || m.f1 || m.precision || m.r2 || m.r2_score || 0;
+                  return (score * 100).toFixed(1);
+                })()}%
+              </div>
+            </div>
+            <div className="px-3 py-1 bg-teal-500/20 text-teal-400 text-xs font-bold rounded-full">
+              v{mlModelInfo.version}
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Key Metrics - Dynamic from Unified Analytics */}
       {analytics?.hasData && (
@@ -664,15 +734,32 @@ const Reports: React.FC = () => {
 
                               // BOX CHART (simulated) - for anomaly/outlier detection
                               if (selectedChart === 'box') {
+                                // Use median for box plot data visualization
                                 return (
                                   <BarChartComponent data={data} margin={{ left: 10, right: 30 }}>
                                     <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} vertical={false} />
                                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
                                     <YAxis axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
-                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
-                                    <Bar dataKey="value" radius={[4, 4, 4, 4]}>
+                                    <Tooltip
+                                      contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }}
+                                      formatter={(value: any, name: string, props: any) => {
+                                        const item = props.payload;
+                                        return [
+                                          <div key="tooltip">
+                                            <div>Min: {item.min}</div>
+                                            <div>Q1: {item.q1}</div>
+                                            <div>Median: {item.median}</div>
+                                            <div>Q3: {item.q3}</div>
+                                            <div>Max: {item.max}</div>
+                                            <div>Outliers: {item.outliers}</div>
+                                          </div>,
+                                          ''
+                                        ];
+                                      }}
+                                    />
+                                    <Bar dataKey="median" radius={[4, 4, 4, 4]} name="Median">
                                       {data.map((item: any, idx: number) => (
-                                        <Cell key={`box-${idx}`} fill={item.color || (item.percentage > 5 ? '#EF4444' : item.percentage > 2 ? '#F59E0B' : '#22C55E')} />
+                                        <Cell key={`box-${idx}`} fill={item.color || CHART_COLORS[idx % CHART_COLORS.length]} />
                                       ))}
                                     </Bar>
                                   </BarChartComponent>
@@ -733,7 +820,24 @@ const Reports: React.FC = () => {
                                 );
                               }
 
-                              // DEFAULT: VERTICAL BAR CHART
+                              // DEFAULT: VERTICAL BAR CHART or explicit 'bar' type
+                              if (selectedChart === 'bar') {
+                                return (
+                                  <BarChartComponent data={data} margin={{ left: 10, right: 30 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} vertical={false} />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: theme.textMuted, fontSize: 10 }} />
+                                    <Tooltip contentStyle={{ backgroundColor: theme.cardBg, border: `1px solid ${theme.borderColor}`, borderRadius: '8px' }} />
+                                    <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                                      {data.map((item: any, idx: number) => (
+                                        <Cell key={`vbar-${idx}`} fill={item.color || CHART_COLORS[idx % CHART_COLORS.length]} />
+                                      ))}
+                                    </Bar>
+                                  </BarChartComponent>
+                                );
+                              }
+
+                              // DEFAULT: Horizontal BAR CHART (fallback)
                               return (
                                 <BarChartComponent data={data} layout="vertical" margin={{ left: 20, right: 30 }}>
                                   <CartesianGrid strokeDasharray="3 3" stroke={theme.borderColor} horizontal={true} vertical={false} />

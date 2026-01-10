@@ -87,11 +87,6 @@ const VisualIntelligenceDashboard: React.FC = () => {
         accentSecondary: '#4f46e5'
     };
 
-    // Auto-load dashboard
-    useEffect(() => {
-        loadDashboard();
-    }, [user?.id]);
-
     const loadDashboard = useCallback(async () => {
         const userId = user?.id || localStorage.getItem('userId') || 'guest';
         setLoading(true);
@@ -110,6 +105,22 @@ const VisualIntelligenceDashboard: React.FC = () => {
             setLoading(false);
         }
     }, [user?.id]);
+
+    // Auto-load dashboard
+    useEffect(() => {
+        loadDashboard();
+    }, [user?.id, loadDashboard]);
+
+    // Listen for file updates from DataHub - refresh dashboard when files change
+    useEffect(() => {
+        const handleFilesUpdated = () => {
+            console.log('📁 Files updated - refreshing dashboard...');
+            loadDashboard();
+        };
+
+        window.addEventListener('filesUpdated', handleFilesUpdated);
+        return () => window.removeEventListener('filesUpdated', handleFilesUpdated);
+    }, [loadDashboard]);
 
     const formatValue = (value: number | string, format: string): string => {
         if (typeof value === 'string') return value;

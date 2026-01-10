@@ -33,7 +33,10 @@ import {
     Activity,
     PieChart,
     Layers,
+    History,
+    Database,
 } from 'lucide-react';
+import ModelHistory from '@/components/automl/ModelHistory';
 
 interface ThemeContext {
     isDark: boolean;
@@ -117,6 +120,7 @@ interface AutoMLResult {
     clustering?: ClusteringResult;
     is_nlp_task?: boolean;
     primary_text_col?: string;
+    cleaned_file?: string;
 }
 
 const AutoML: React.FC = () => {
@@ -133,7 +137,7 @@ const AutoML: React.FC = () => {
     const location = useLocation();
 
     const [result, setResult] = useState<AutoMLResult | null>(null);
-    const [activeTab, setActiveTab] = useState<'overview' | 'models' | 'charts' | 'features' | 'clustering' | 'predictions' | 'insights'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'models' | 'charts' | 'features' | 'clustering' | 'predictions' | 'insights' | 'history' | 'data'>('overview');
 
     // Prediction state
     const [predictionInputs, setPredictionInputs] = useState<Record<string, string>>({});
@@ -163,10 +167,17 @@ const AutoML: React.FC = () => {
         }
     }, [location.state]);
 
-    // Save result to localStorage when it changes
+    // Save result to localStorage when it changes (excluding heavy charts)
     useEffect(() => {
         if (result) {
-            localStorage.setItem('automlResult', JSON.stringify(result));
+            try {
+                // Create a lightweight version without heavy base64 charts
+                // This prevents "QuotaExceededError" in localStorage
+                const { charts, ...lightweightResult } = result;
+                localStorage.setItem('automlResult', JSON.stringify(lightweightResult));
+            } catch (e) {
+                console.warn('Failed to save to localStorage:', e);
+            }
         }
     }, [result]);
 
@@ -517,6 +528,8 @@ const AutoML: React.FC = () => {
                     { id: 'clustering', label: 'Clustering', icon: Layers },
                     { id: 'predictions', label: 'Predictions', icon: Target },
                     { id: 'insights', label: 'AI Insights', icon: Sparkles },
+                    { id: 'history', label: 'Model History', icon: History },
+                    { id: 'data', label: 'Cleaned Data', icon: Database },
                 ].map((tab) => (
                     <button
                         key={tab.id}
@@ -1158,6 +1171,62 @@ const AutoML: React.FC = () => {
                                 </div>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Model History Tab */}
+                {activeTab === 'history' && (
+                    <div
+                        className="p-6 rounded-2xl border"
+                        style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                    >
+                        <ModelHistory theme={theme} userId="default" />
+                    </div>
+                )}
+
+                {/* Cleaned Data Tab */}
+                {activeTab === 'data' && (
+                    <div
+                        className="p-12 text-center rounded-2xl border border-dashed"
+                        style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="max-w-md mx-auto"
+                        >
+                            <div className="w-20 h-20 mx-auto bg-blue-500/20 rounded-full flex items-center justify-center mb-6">
+                                <Database className="w-10 h-10 text-blue-400" />
+                            </div>
+                            <h2 className="text-2xl font-bold mb-4" style={{ color: theme.textPrimary }}>
+                                Production Cleaned Dataset
+                            </h2>
+                            <p className="mb-8 leading-relaxed" style={{ color: theme.textMuted }}>
+                                Download the exact dataset used for training. This data has been processed by our
+                                Silicon Valley Grade pipeline (Imputed, Encoded, Scaled, and Cleaned).
+                            </p>
+
+                            {result.cleaned_file ? (
+                                <div className="space-y-4">
+                                    <a
+                                        href={`/api/v1/files/${localStorage.getItem('userId') || 'default'}/${result.cleaned_file}/download`}
+                                        className="inline-flex items-center gap-3 px-8 py-4 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/20 transition-all hover:scale-105"
+                                    >
+                                        <Download className="w-6 h-6" />
+                                        Download Cleaned CSV
+                                    </a>
+                                    <p className="text-xs opacity-60 flex items-center justify-center gap-2" style={{ color: theme.textMuted }}>
+                                        <CheckCircle className="w-3 h-3 text-emerald-400" />
+                                        Ready for Production Deployment
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="p-4 bg-amber-500/10 text-amber-500 rounded-lg inline-flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5" />
+                                    <span>Cleaned dataset not available for this session.</span>
+                                </div>
+                            )}
+                        </motion.div>
                     </div>
                 )}
             </motion.div>

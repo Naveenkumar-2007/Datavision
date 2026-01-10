@@ -34,6 +34,46 @@ from sklearn.metrics import (
     r2_score, mean_absolute_error, mean_squared_error, confusion_matrix
 )
 
+# Global Cancellation Tracking
+CANCELLATION_FLAGS = {}
+
+class TrainingCancelledError(Exception):
+    """Exception raised when training is cancelled by user"""
+    pass
+
+def cancel_training(user_id: str):
+    """Signal training to stop for a user"""
+    CANCELLATION_FLAGS[user_id] = True
+    logging.info(f"🚫 Stop signal received for user {user_id}")
+
+def check_cancellation(user_id: str):
+    """Check if training should stop, raise exception if so"""
+    if CANCELLATION_FLAGS.get(user_id, False):
+        # Clear flag and raise error
+        CANCELLATION_FLAGS[user_id] = False 
+        logging.info(f"🚫 Aborting training for user {user_id}")
+        raise TrainingCancelledError("Training cancelled by user")
+
+# Global Cancellation Tracking
+CANCELLATION_FLAGS = {}
+
+class TrainingCancelledError(Exception):
+    """Exception raised when training is cancelled by user"""
+    pass
+
+def cancel_training(user_id: str):
+    """Signal training to stop for a user"""
+    CANCELLATION_FLAGS[user_id] = True
+    logging.info(f"🚫 Stop signal received for user {user_id}")
+
+def check_cancellation(user_id: str):
+    """Check if training should stop, raise exception if so"""
+    if CANCELLATION_FLAGS.get(user_id, False):
+        # Clear flag and raise error
+        CANCELLATION_FLAGS[user_id] = False 
+        logging.info(f"🚫 Aborting training for user {user_id}")
+        raise TrainingCancelledError("Training cancelled by user")
+
 # Models - Classification & Regression
 from sklearn.ensemble import (
     RandomForestClassifier, RandomForestRegressor,
@@ -48,6 +88,20 @@ from sklearn.linear_model import (
     SGDClassifier, SGDRegressor, PassiveAggressiveClassifier
 )
 from sklearn.svm import SVC, SVR, LinearSVC, LinearSVR
+from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.naive_bayes import GaussianNB, MultinomialNB
+from sklearn.neural_network import MLPClassifier, MLPRegressor
+
+# IMPORT NEW PRODUCTION PIPELINE CLASSES
+try:
+    from ml.production_ml_core import (
+        ProductionDataCleaner, 
+        ProductionFeatureEngineer, 
+        ProductionModelTrainer
+    )
+except ImportError:
+    # Fallback or local definition if module not found (should not happen in prod)
+    logging.warning("Could not import production_ml_core, using local fallback")
 from sklearn.ensemble import IsolationForest  # Outlier detection
 from sklearn.naive_bayes import MultinomialNB, GaussianNB, ComplementNB
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
@@ -179,6 +233,7 @@ class TrainResult:
     charts: Optional[Dict[str, str]] = None  # NEW: Base64 encoded charts
     is_nlp_task: bool = False  # NEW: Flag for NLP tasks
     primary_text_col: Optional[str] = None  # NEW: Primary text column for NLP
+    cleaned_file_path: Optional[str] = None # NEW: Path to cleaned dataset
 
 
 class ProductionMLEngine:
@@ -260,6 +315,19 @@ class ProductionMLEngine:
         self.scaler: Optional[RobustScaler] = None
         self.numeric_fill_values: Dict[str, float] = {}
         self.feature_metadata: List[Dict] = []
+    
+    @property
+    def feature_importance(self) -> Dict[str, float]:
+        """Get feature importance as a dictionary {feature_name: importance_value}"""
+        if self.model is None:
+            return {}
+        
+        importance_list = self._get_importance(self.model)
+        if not importance_list:
+            return {}
+        
+        # Convert list of dicts to dictionary
+        return {item['feature']: item['importance'] for item in importance_list}
     
     # =========================================================================
     # COLUMN ANALYSIS & SELECTION
@@ -440,6 +508,49 @@ class ProductionMLEngine:
         
         return numeric_cols, categorical_cols, text_cols, dropped
     
+        return numeric_cols, categorical_cols, text_cols, dropped
+    
+    def _calculate_feature_metadata(self, df: pd.DataFrame) -> List[Dict]:
+        """
+        Calculate metadata (min, max, mean, type) for RAW columns.
+        This allows the Frontend to show correct placeholders (e.g. 50,000 instead of 50).
+        """
+        metadata = []
+        for col in self.numeric_cols:
+            if col in df.columns:
+                try:
+                    metadata.append({
+                        'name': col,
+                        'type': 'numeric',
+                        'min': float(df[col].min()),
+                        'max': float(df[col].max()),
+                        'mean': float(df[col].mean())
+                    })
+                except:
+                    pass
+        
+        for col in self.categorical_cols:
+            if col in df.columns:
+                try:
+                    # Limit options to top 10 for UI performance
+                    options = df[col].value_counts().nlargest(10).index.tolist()
+                    metadata.append({
+                        'name': col,
+                        'type': 'categorical',
+                        'options': [str(x) for x in options]
+                    })
+                except:
+                    pass
+                    
+        for col in self.text_cols:
+             metadata.append({
+                 'name': col,
+                 'type': 'text'
+             })
+             
+        self.feature_metadata = metadata
+        return metadata
+
     # =========================================================================
     # TARGET DETECTION
     # =========================================================================
@@ -1563,7 +1674,24 @@ class ProductionMLEngine:
                     else:
                         self.text_cols.remove(col)
             except Exception as e:
-                logger.warning(f"   ⚠️ Skipping {col}: {str(e)[:50]}")
+                logger.warning(f"   ⚠️ Text processing failed for {col}: {str(e)[:50]}")
+                # FALLBACK: Encode as categorical if text processing fails
+                try:
+                    series = X[col].fillna('_MISSING_').astype(str).str.strip()
+                    encoder = LabelEncoder()
+                    encoded = encoder.fit_transform(series).reshape(-1, 1)
+                    self.label_encoders[col] = encoder
+                    processed_parts.append(encoded.astype(float))
+                    logger.info(f"   ✅ {col}: Fallback to categorical encoding ({len(encoder.classes_)} categories)")
+                    self.feature_metadata.append({
+                        'name': col,
+                        'type': 'categorical',
+                        'options': encoder.classes_.tolist()[:50],
+                        'default': encoder.classes_[0],
+                        'n_categories': len(encoder.classes_)
+                    })
+                except Exception as fallback_err:
+                    logger.warning(f"   ❌ {col}: Could not encode, skipping: {fallback_err}")
                 if col in self.text_cols:
                     self.text_cols.remove(col)
         
@@ -1601,8 +1729,23 @@ class ProductionMLEngine:
         except Exception as e:
             logger.warning(f"   ⚠️ Advanced feature engineering skipped: {e}")
         
-        # Clean final array
-        X_processed = np.nan_to_num(X_processed, nan=0.0, posinf=0.0, neginf=0.0)
+        # Clean final array - ensure numeric dtype before nan_to_num
+        try:
+            # Convert to float, handling any object types
+            if X_processed.dtype == object:
+                X_processed = X_processed.astype(float)
+            X_processed = np.nan_to_num(X_processed.astype(float), nan=0.0, posinf=0.0, neginf=0.0)
+        except (ValueError, TypeError) as conv_err:
+            logger.warning(f"   ⚠️ Numeric conversion issue: {conv_err}, attempting column-wise conversion")
+            # Fallback: column-wise conversion
+            X_clean = np.zeros_like(X_processed, dtype=float)
+            for i in range(X_processed.shape[1]):
+                try:
+                    col = pd.to_numeric(X_processed[:, i], errors='coerce')
+                    X_clean[:, i] = np.nan_to_num(col, nan=0.0, posinf=0.0, neginf=0.0)
+                except:
+                    X_clean[:, i] = 0.0
+            X_processed = X_clean
         
         # Process target
         if self.task_type_simple == 'classification':
@@ -2091,7 +2234,30 @@ class ProductionMLEngine:
     # PRODUCTION TRAINING (SILICON VALLEY GRADE)
     # =========================================================================
     
-    async def production_train(
+    async def train_with_test_set(
+        self,
+        train_df: pd.DataFrame,
+        test_df: pd.DataFrame,
+        target_col: Optional[str] = None,
+        user_id: str = "default"
+    ) -> 'TrainResult':
+        """
+        Wrapper to handle separate Test set from API.
+        Concatenates data and runs production pipeline to ensure consistent processing.
+        """
+        logger.info(f"🔄 train_with_test_set called: Train={len(train_df)}, Test={len(test_df)}")
+        
+        # Calculate Metadata on Train set specifically (to capture raw distributions)
+        # We do this before concat to ensure we capture training distribution
+        self._calculate_feature_metadata(train_df)
+        
+        # Concatenate for full AutoML logic (which handles splitting internally)
+        # Note: We rely on production_train's internal robust validation
+        full_df = pd.concat([train_df, test_df], ignore_index=True)
+        
+        return self.production_train(full_df, target_col, user_id)
+
+    def production_train(
         self,
         df: pd.DataFrame,
         target_col: Optional[str] = None,
@@ -2109,6 +2275,14 @@ class ProductionMLEngine:
         Expected accuracy: 80%+
         """
         from sklearn.model_selection import train_test_split
+        
+        # Reset cancellation flag for this user
+        CANCELLATION_FLAGS[user_id] = False
+        cleaned_file_path = None # Track cleaned file path
+        
+        # Callback wrapper to allow cancellation during training
+        def check_stop():
+            check_cancellation(user_id)
         
         self.errors = []
         start = datetime.now()
@@ -2134,28 +2308,73 @@ class ProductionMLEngine:
             df_clean = df_clean.dropna(subset=[target_col])
             logger.warning(f"   ⚠️ Dropped {target_nan_count} rows with missing target values")
         
-        # 2. Detect task type (IMPROVED: check for decimal/float values)
+        # SAVE CLEANED DATA (User Request)
+        # SAVE CLEANED DATA (User Request)
+        try:
+            from utils.paths import get_user_paths
+            user_paths = get_user_paths(user_id)
+            # Save to standard 'files' storage so /api/v1/files endpoint can serve it
+            upload_dir = user_paths['files']
+            
+            cleaned_filename = f"cleaned_{int(datetime.now().timestamp())}.csv"
+            cleaned_full_path = upload_dir / cleaned_filename
+            
+            df_clean.to_csv(cleaned_full_path, index=False)
+            logger.info(f"💾 Saved cleaned data to: {cleaned_full_path}")
+            cleaned_file_path = cleaned_filename
+        except Exception as e:
+            logger.error(f"Failed to save cleaned data: {e}")
+            cleaned_file_path = None
+        
+        # 2. Detect task type (IMPROVED - handles Rating columns with decimals correctly)
         y_temp = df_clean[target_col]
         n_unique = y_temp.nunique()
         
+        # CRITICAL FIX: First try to convert to numeric, then check types
+        y_numeric = pd.to_numeric(y_temp, errors='coerce')
+        valid_numeric_ratio = y_numeric.notna().sum() / len(y_temp)
+        is_numeric = valid_numeric_ratio > 0.5  # >50% are valid numbers
+        
         # Check if values are continuous decimals (like ratings 4.1, 4.2)
         is_decimal = False
-        if pd.api.types.is_numeric_dtype(y_temp):
-            # Check if any values have decimal parts
+        if is_numeric and y_numeric.notna().any():
             try:
-                decimal_check = y_temp.dropna().apply(lambda x: x != int(x) if pd.notna(x) else False)
-                is_decimal = decimal_check.any()
-            except:
-                pass
+                # Use the converted numeric values
+                non_null = y_numeric.dropna()
+                # Check if any value has decimal part
+                is_decimal = (non_null % 1 != 0).any()
+                
+                if is_decimal:
+                    logger.info(f"   🔍 Detected decimal values in target (e.g., {non_null.iloc[0]})")
+            except Exception as e:
+                logger.warning(f"   ⚠️ Decimal check failed: {e}")
         
-        # Classification: discrete values, low unique count, NOT decimals
-        if n_unique <= 20 and n_unique / len(y_temp) < 0.05 and not is_decimal:
-            self.task_type = 'binary_classification' if n_unique == 2 else 'multiclass_classification'
-            self.task_type_simple = 'classification'
-        else:
+        # IMPROVED LOGIC:
+        # 1. If target has decimals AND >10 unique values -> ALWAYS Regression (ratings, prices)
+        # 2. If target is NOT numeric (strings) -> Classification
+        # 3. If target is integer with <=20 unique values -> Classification
+        # 4. Otherwise -> Regression
+        
+        if is_decimal and n_unique > 10:
+            # Continuous values like ratings (4.1, 4.2, 4.3...)
             self.task_type = 'regression'
             self.task_type_simple = 'regression'
-        logger.info(f"📋 Task: {self.task_type}")
+            logger.info(f"📋 Task: REGRESSION (decimal values, {n_unique} unique)")
+        elif not is_numeric:
+            # String targets like Category, Type
+            self.task_type_simple = 'classification'
+            self.task_type = 'binary_classification' if n_unique == 2 else 'multiclass_classification'
+            logger.info(f"📋 Task: CLASSIFICATION (non-numeric, {n_unique} classes)")
+        elif n_unique <= 20 and not is_decimal:
+            # Integer categories like 1-5 ratings
+            self.task_type_simple = 'classification'
+            self.task_type = 'binary_classification' if n_unique == 2 else 'multiclass_classification'
+            logger.info(f"📋 Task: CLASSIFICATION (integer, {n_unique} classes)")
+        else:
+            # Continuous numeric
+            self.task_type = 'regression'
+            self.task_type_simple = 'regression'
+            logger.info(f"📋 Task: REGRESSION (default, {n_unique} unique)")
         
         # 3. Feature engineering
         engineer = ProductionFeatureEngineer()
@@ -2208,7 +2427,11 @@ class ProductionMLEngine:
         
         # 6. Train all models
         trainer = ProductionModelTrainer(self.task_type_simple)
-        results = trainer.train_all(X_train, y_train, X_test, y_test)
+        
+        # Check cancellation before heavy training phase
+        check_stop()
+        
+        results = trainer.train_all(X_train, y_train, X_test, y_test, check_cancellation=check_stop)
         
         # 7. Build ensemble
         ensemble = trainer.build_ensemble(X_train, y_train, X_test, y_test, top_n=3)
@@ -2259,6 +2482,29 @@ class ProductionMLEngine:
                 mae = mean_absolute_error(y_test, self._y_pred)
                 best_metrics = {'r2': round(r2, 4), 'mae': round(mae, 4)}
         
+        # IMPORTANT: Store metrics on self so they're saved to persistence
+        self.metrics = best_metrics
+        
+        # Generate charts
+        charts = {}
+        try:
+            from ml.chart_generator import generate_ml_charts, generate_model_comparison_chart
+            class_names = self.target_encoder.classes_.tolist() if self.target_encoder else None
+            charts = generate_ml_charts(
+                task_type=self.task_type,
+                y_test=y_test,
+                y_pred=self._y_pred,
+                y_proba=y_proba,
+                feature_importance=self._get_importance(self.model),
+                class_names=class_names,
+                model_name=trainer.best_name
+            )
+            comparison_chart = generate_model_comparison_chart(trainer.results)
+            if comparison_chart:
+                charts['model_comparison'] = comparison_chart
+        except Exception as chart_err:
+            logger.warning(f"⚠️ Chart generation error: {chart_err}")
+        
         return TrainResult(
             success=True,
             task_type=self.task_type,
@@ -2275,9 +2521,10 @@ class ProductionMLEngine:
             n_rows=len(df),
             n_cols=len(df.columns),
             processing_time=elapsed,
-            charts=None,
+            charts=charts,
             is_nlp_task=False,
-            primary_text_col=None
+            primary_text_col=None,
+            cleaned_file_path=cleaned_file_path
         )
     
     async def train_with_test_set(
@@ -2421,6 +2668,29 @@ class ProductionMLEngine:
         elapsed = (datetime.now() - start).total_seconds()
         logger.info(f"✅ Complete in {elapsed:.1f}s")
         
+        # IMPORTANT: Store metrics on self so they're saved to persistence
+        self.metrics = results[0]['metrics'] if results else {}
+        
+        # Generate charts
+        charts = {}
+        try:
+            from ml.chart_generator import generate_ml_charts, generate_model_comparison_chart
+            class_names = self.target_encoder.classes_.tolist() if self.target_encoder else None
+            charts = generate_ml_charts(
+                task_type=self.task_type,
+                y_test=y_test,
+                y_pred=best_pred,
+                y_proba=best_proba,
+                feature_importance=self._get_importance(best_model),
+                class_names=class_names,
+                model_name=best_name
+            )
+            comparison_chart = generate_model_comparison_chart(results)
+            if comparison_chart:
+                charts['model_comparison'] = comparison_chart
+        except Exception as chart_err:
+            logger.warning(f"⚠️ Chart generation error: {chart_err}")
+        
         return TrainResult(
             success=True,
             task_type=self.task_type,
@@ -2437,7 +2707,7 @@ class ProductionMLEngine:
             n_rows=len(train_df) + len(test_df),
             n_cols=len(train_df.columns),
             processing_time=elapsed,
-            charts=None,
+            charts=charts,
             is_nlp_task=self.is_nlp_task,
             primary_text_col=self.primary_text_col
         )
@@ -2701,22 +2971,40 @@ class ProductionMLEngine:
         logger.info(f"✅ Complete in {processing_time:.1f}s")
         logger.info("=" * 60)
         
-        # Generate all charts using the enhanced chart generator
+        # Generate all charts using the production chart generator
         try:
-            from ml.chart_generator import chart_generator
-            charts = chart_generator.generate_all_charts(
+            from ml.chart_generator import generate_ml_charts, generate_model_comparison_chart
+            
+            # Get class names for classification
+            class_names = None
+            if self.target_encoder is not None:
+                class_names = self.target_encoder.classes_.tolist()
+            
+            # Generate ML charts
+            charts = generate_ml_charts(
                 task_type=self.task_type,
                 y_test=y_test,
                 y_pred=best_pred,
-                y_proba=best_proba[:, 1] if best_proba is not None and self.task_type_simple == 'classification' and len(best_proba.shape) > 1 and best_proba.shape[1] == 2 else best_proba,
-                feature_importance=results[0].get('importance', []) if results else [],
-                leaderboard=results,
-                model=self.model,
-                X_train=X_train
+                y_proba=best_proba,
+                feature_importance=self._get_importance(self.model),
+                class_names=class_names,
+                model_name=best_name
             )
+            
+            # Add model comparison chart
+            comparison_chart = generate_model_comparison_chart(results)
+            if comparison_chart:
+                charts['model_comparison'] = comparison_chart
+                
+            logger.info(f"📊 Generated {len(charts)} charts: {list(charts.keys())}")
         except Exception as chart_err:
-            print(f"⚠️ Chart generation error: {chart_err}")
+            logger.warning(f"⚠️ Chart generation error: {chart_err}")
+            import traceback
+            traceback.print_exc()
             charts = {}
+        
+        # IMPORTANT: Store metrics on self so they're saved to persistence
+        self.metrics = results[0]['metrics'] if results else {}
         
         return TrainResult(
             success=True,
@@ -2740,87 +3028,114 @@ class ProductionMLEngine:
         )
     
     def _get_importance(self, model) -> List[Dict]:
-        """Get feature importance with REAL column names for charts"""
+        """Get feature importance with REAL column names for charts
+        
+        Uses feature_metadata to properly map engineered features back to 
+        their source columns.
+        """
         values = []
         
-        # PRO TRY: Voting/Stacking Classifier support
+        # Get importance values from model
         if hasattr(model, 'estimators_'):
-            # Average importance from all estimators that have it
             all_importances = []
             for est in model.estimators_:
                 if hasattr(est, 'feature_importances_'):
                     all_importances.append(est.feature_importances_)
                 elif hasattr(est, 'coef_'):
                     all_importances.append(np.abs(est.coef_).flatten())
-            
             if all_importances:
-                # Pad with 0 if lengths differ (unlikely if same pipeline)
                 max_len = max(len(imp) for imp in all_importances)
                 padded = [np.pad(imp, (0, max_len - len(imp))) for imp in all_importances]
                 values = np.mean(padded, axis=0)
         
-        # Standard models
         if len(values) == 0:
             if hasattr(model, 'feature_importances_'):
                 values = model.feature_importances_
             elif hasattr(model, 'coef_'):
                 values = np.abs(model.coef_).flatten()
-            elif hasattr(model, 'steps'): # Pipeline
+            elif hasattr(model, 'steps'):
                 return self._get_importance(model.steps[-1][1])
         
-        # Fallback: Equal importance if we have feature columns but no values
-        if len(values) == 0 and hasattr(self, 'feature_columns') and self.feature_columns:
-            values = np.ones(len(self.feature_columns)) / len(self.feature_columns)
-        
         if len(values) == 0:
+            # No importance available, use equal distribution for known columns
+            all_cols = getattr(self, 'numeric_cols', []) + getattr(self, 'categorical_cols', []) + getattr(self, 'text_cols', [])
+            if all_cols:
+                return [{'feature': col, 'importance': round(1.0 / len(all_cols), 4), 'rank': i + 1} 
+                        for i, col in enumerate(all_cols)]
             return []
         
-        # PRODUCTION MODE: Aggregate to original column names
-        if getattr(self, 'production_mode', False) and hasattr(self, 'production_engineer'):
-            engineer = self.production_engineer
-            # Use the new aggregation method
-            column_imp = engineer.get_importance_by_column(values)
-            
-            if column_imp:
-                # Convert to sorted list
-                importance = []
-                for rank, (col, imp) in enumerate(sorted(column_imp.items(), key=lambda x: x[1], reverse=True), 1):
-                    if rank > 20:
-                        break
-                    importance.append({
-                        'feature': col,
-                        'importance': round(float(imp), 4),
-                        'rank': rank
-                    })
-                return importance
-        
-        # LEGACY MODE: Use existing feature names
-        names = []
-        for col in self.numeric_cols:
-            names.append(col)
-        for col in self.categorical_cols:
-            names.append(col)
-        for col in self.text_cols:
-            vec = self.text_vectorizers.get(col)
-            if vec:
-                for w in list(vec.vocabulary_.keys())[:5]:
-                    names.append(f"{col}:{w}")
-        
-        if len(values) != len(names):
-            # Use feature_metadata if available (has real names)
-            if hasattr(self, 'feature_metadata') and self.feature_metadata:
-                names = [m['name'] for m in self.feature_metadata[:len(values)]]
-            else:
-                names = [f"Feature_{i}" for i in range(len(values))]
-        
+        # Normalize
+        values = np.array(values)
         if values.sum() > 0:
             values = values / values.sum()
         
+        n_features = len(values)
+        
+        # ==================================================================
+        # USE FEATURE_METADATA FOR PROPER COLUMN MAPPING
+        # ==================================================================
+        
+        column_importance = {}
+        idx = 0
+        
+        # feature_metadata is built during preprocessing in order:
+        # 1. numeric columns (each adds 1 feature)
+        # 2. categorical columns (each adds 1 feature)
+        # 3. text columns (each adds vocab_size or n_features)
+        
+        if hasattr(self, 'feature_metadata') and self.feature_metadata:
+            for meta in self.feature_metadata:
+                col_name = meta.get('name', 'Unknown')
+                col_type = meta.get('type', 'numeric')
+                
+                if col_type == 'numeric':
+                    # Numeric: 1 feature
+                    if idx < n_features:
+                        column_importance[col_name] = float(values[idx])
+                        idx += 1
+                
+                elif col_type == 'categorical':
+                    # Categorical: 1 feature (label encoded)
+                    if idx < n_features:
+                        column_importance[col_name] = float(values[idx])
+                        idx += 1
+                
+                elif col_type in ('text', 'nlp_text'):
+                    # Text: many TF-IDF features - aggregate them
+                    n_text_features = meta.get('vocab_size', meta.get('n_features', 1))
+                    text_imp = 0.0
+                    for _ in range(n_text_features):
+                        if idx < n_features:
+                            text_imp += float(values[idx])
+                            idx += 1
+                    column_importance[col_name] = text_imp
+        
+        # Fallback if feature_metadata is empty or doesn't work
+        if not column_importance or sum(column_importance.values()) < 0.01:
+            # Use original columns directly
+            all_cols = getattr(self, 'numeric_cols', []) + getattr(self, 'categorical_cols', []) + getattr(self, 'text_cols', [])
+            
+            if all_cols:
+                # Distribute all importance across source columns
+                per_col = 1.0 / len(all_cols) if all_cols else 0
+                for col in all_cols:
+                    column_importance[col] = per_col
+        
+        # Re-normalize
+        total = sum(column_importance.values())
+        if total > 0:
+            column_importance = {k: v / total for k, v in column_importance.items()}
+        
+        # Convert to sorted list
         importance = []
-        for rank, (n, v) in enumerate(sorted(zip(names, values), key=lambda x: x[1], reverse=True), 1):
-            if rank > 20:
+        for rank, (col, imp) in enumerate(sorted(column_importance.items(), key=lambda x: x[1], reverse=True), 1):
+            if rank > 15:
                 break
-            importance.append({'feature': n, 'importance': round(float(v), 4), 'rank': rank})
+            importance.append({
+                'feature': col,
+                'importance': round(float(imp), 4),
+                'rank': rank
+            })
         
         return importance
     
@@ -2895,7 +3210,7 @@ class ProductionMLEngine:
         return self.production_engineer.transform_single(data)
     
     def _save(self, user_id: str):
-        """Save model and preprocessors"""
+        """Save model and preprocessors with enhanced persistence"""
         save_dir = os.path.join(STORAGE_PATH, user_id)
         os.makedirs(save_dir, exist_ok=True)
         
@@ -2932,6 +3247,30 @@ class ProductionMLEngine:
         
         with open(os.path.join(save_dir, "model.pkl"), 'wb') as f:
             pickle.dump(data, f)
+        
+        # Also save via the new persistence manager for versioning & metadata
+        try:
+            from ml.model_persistence import model_persistence
+            
+            model_persistence.save_model(
+                user_id=user_id,
+                engine_state=data,
+                model_name=getattr(self, 'model_name', 'Unknown'),
+                task_type=self.task_type,
+                target_column=self.target_column,
+                feature_columns=self.feature_columns,
+                metrics=getattr(self, 'metrics', {}),
+                dataset_info={
+                    'n_features': len(self.feature_columns),
+                    'n_numeric': len(self.numeric_cols),
+                    'n_categorical': len(self.categorical_cols),
+                    'n_text': len(self.text_cols),
+                    'is_nlp_task': getattr(self, 'is_nlp_task', False)
+                }
+            )
+            logger.info(f"💾 Saved with versioning to model persistence manager")
+        except Exception as e:
+            logger.warning(f"⚠️ Persistence manager save failed: {e}")
         
         print(f"💾 Saved to {save_dir}")
     
@@ -3202,12 +3541,11 @@ class ProductionMLEngine:
     def get_all_ml_charts(self) -> Dict[str, Any]:
         """Get all ML charts for the trained model using enhanced chart generator"""
         try:
-            from ml.chart_generator import chart_generator
+            from ml.chart_generator import generate_ml_charts, generate_model_comparison_chart
             
             y_test = getattr(self, '_y_test', None)
             y_pred = getattr(self, '_y_pred', None)
             y_proba = getattr(self, '_y_proba', None)
-            X_train = getattr(self, '_X_train', None)
             
             if y_test is None or y_pred is None:
                 return {'error': 'No model trained yet'}
@@ -3215,16 +3553,20 @@ class ProductionMLEngine:
             # Get feature importance
             importance = self._get_importance(self.model) if self.model else []
             
-            # Generate all charts using the enhanced generator
-            charts = chart_generator.generate_all_charts(
+            # Get class names for classification
+            class_names = None
+            if self.target_encoder is not None:
+                class_names = self.target_encoder.classes_.tolist()
+            
+            # Generate all charts using the new generator
+            charts = generate_ml_charts(
                 task_type=self.task_type,
                 y_test=y_test,
                 y_pred=y_pred,
                 y_proba=y_proba,
                 feature_importance=importance,
-                leaderboard=[],  # Not stored, but can be added if needed
-                model=self.model,
-                X_train=X_train
+                class_names=class_names,
+                model_name=getattr(self, 'model_name', 'Model')
             )
             
             logger.info(f"✅ Generated {len(charts)} ML charts")

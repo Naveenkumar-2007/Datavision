@@ -7,9 +7,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Configure Basic Logging
+# Configure Basic Logging
+import sys
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ],
+    force=True
 )
 logger = logging.getLogger("settings")
 

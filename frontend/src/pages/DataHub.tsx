@@ -21,6 +21,8 @@ import {
   ExternalLink,
   Brain,
   Sparkles,
+  Wrench,
+  BarChart2,
 } from 'lucide-react';
 import apiService from '@/services/api';
 
@@ -60,6 +62,32 @@ const DataHub: React.FC = () => {
   const [sheetUrl, setSheetUrl] = useState('');
   const [importingSheet, setImportingSheet] = useState(false);
   const [sheetPreview, setSheetPreview] = useState<any>(null);
+  const [autoFixEnabled, setAutoFixEnabled] = useState(false); // OFF by default - enable to clean data before upload
+  const [fixingData, setFixingData] = useState(false);
+  const [lastFixReport, setLastFixReport] = useState<any>(null);
+
+  // Training UX State
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [progressMessage, setProgressMessage] = useState('Initializing...');
+
+  // Animation loop for training messages
+  useEffect(() => {
+    if (!automlRunning) return;
+    const messages = [
+      '🧹 Cleaning Data (Phase 1/4)...',
+      '🛠️ Engineering Features (Phase 2/4)...',
+      '🤖 Training 15+ Models (Phase 3/4)...',
+      '📈 Optimizing Hyperparameters...',
+      '⚖️ Building Ensembles...',
+      '📊 Generating High-Res Charts...'
+    ];
+    let i = 0;
+    const interval = setInterval(() => {
+      setProgressMessage(messages[i % messages.length]);
+      i++;
+    }, 3500);
+    return () => clearInterval(interval);
+  }, [automlRunning]);
 
   const loadFiles = async () => {
     try {
@@ -76,20 +104,67 @@ const DataHub: React.FC = () => {
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setUploading(true);
+    setLastFixReport(null);
     try {
+      // Separate data files from other files
+      const dataFiles = acceptedFiles.filter(f =>
+        f.name.endsWith('.csv') || f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
+      );
+      const otherFiles = acceptedFiles.filter(f =>
+        !f.name.endsWith('.csv') && !f.name.endsWith('.xlsx') && !f.name.endsWith('.xls')
+      );
+
+      let filesToUpload = [...otherFiles];
+
+      // If auto-fix is enabled and we have data files, fix them first
+      if (autoFixEnabled && dataFiles.length > 0) {
+        setFixingData(true);
+
+        for (const dataFile of dataFiles) {
+          const formData = new FormData();
+          formData.append('file', dataFile);
+          formData.append('user_id', localStorage.getItem('userId') || 'default');
+          formData.append('fix_missing', 'true');
+          formData.append('fix_outliers', 'true');
+          formData.append('fix_duplicates', 'true');
+          formData.append('fix_types', 'true');
+          formData.append('enrich_dates', 'true');
+
+          try {
+            const fixResponse = await fetch('/api/v2/autonomous/auto-fix', {
+              method: 'POST',
+              body: formData,
+            });
+            const fixData = await fixResponse.json();
+
+            if (fixData.success && fixData.report) {
+              setLastFixReport(fixData.report);
+              const improvement = fixData.report.quality_improvement;
+              console.log(`✅ Fixed ${dataFile.name}: ${(improvement.before * 100).toFixed(0)}% → ${(improvement.after * 100).toFixed(0)}%`);
+            }
+          } catch (e) {
+            console.warn('Auto-fix failed, using original file:', e);
+          }
+        }
+        setFixingData(false);
+        // Note: Fixed file is saved server-side, original still uploads but training uses fixed version
+      }
+
+      // Upload all accepted files (server will handle them)
       const response = await apiService.uploadFiles(acceptedFiles);
       if (response.data.success) {
-        alert(`✅ ${response.data.files.length} file(s) uploaded successfully!`);
+        alert(`✅ ${response.data.files.length} file(s) uploaded${autoFixEnabled && dataFiles.length > 0 ? ' (data quality auto-fixed)' : ''}!`);
         await loadFiles();
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
       console.error('Upload failed:', error);
       alert(`❌ Upload failed: ${error.response?.data?.detail || error.message}`);
+      setFixingData(false);
     } finally {
       setUploading(false);
     }
-  }, []);
+  }, [autoFixEnabled]);
 
   // Run AutoML Training
   const handleRunAutoML = async () => {
@@ -104,10 +179,17 @@ const DataHub: React.FC = () => {
     }
 
     setAutomlRunning(true);
+
+    // Create abort controller for "Stop" functionality
+    const controller = new AbortController();
+    setAbortController(controller);
+
     try {
       // Get the file from server and send to AutoML
       const userId = localStorage.getItem('userId') || 'default';
-      const fileResponse = await fetch(`/api/v1/files/${userId}/${dataFiles[0].name}/download`);
+      const fileResponse = await fetch(`/api/v1/files/${userId}/${dataFiles[0].name}/download`, {
+        signal: controller.signal
+      });
 
       if (!fileResponse.ok) throw new Error('Failed to get file');
 
@@ -116,28 +198,61 @@ const DataHub: React.FC = () => {
       formData.append('file', fileBlob, dataFiles[0].name);
       formData.append('user_id', userId);
 
+      // Send to Training API with abort signal
       const automlResponse = await fetch('/api/v2/automl/train', {
         method: 'POST',
         body: formData,
+        signal: controller.signal
       });
 
       const automlResult = await automlResponse.json();
 
       if (automlResult.success) {
-        // Save to localStorage for persistence
-        localStorage.setItem('mlResults', JSON.stringify(automlResult));
-        localStorage.setItem('hasMLResults', 'true');
+        // Save to localStorage with USER-SPECIFIC key for data isolation
+        const userId = localStorage.getItem('userId') || 'default';
 
-        // Navigate to ML Predictions page
-        navigate('/ml-predictions', { state: { automlResult } });
+        try {
+          // Save full result including charts to localStorage
+          // Charts are base64 encoded images, can be large but important for display
+          localStorage.setItem(`mlResults_${userId}`, JSON.stringify(automlResult));
+          localStorage.setItem(`hasMLResults_${userId}`, 'true');
+
+          // Also save charts to sessionStorage as backup (in case localStorage fails due to size)
+          if (automlResult.charts) {
+            try {
+              sessionStorage.setItem(`mlCharts_${userId}`, JSON.stringify(automlResult.charts));
+            } catch (chartErr) {
+              console.warn("Charts too large for sessionStorage");
+            }
+          }
+        } catch (e) {
+          console.warn("Storage quota full, saving result without charts");
+          // Fallback: save without charts
+          const { charts, ...lightResult } = automlResult;
+          localStorage.setItem(`mlResults_${userId}`, JSON.stringify(lightResult));
+          localStorage.setItem(`hasMLResults_${userId}`, 'true');
+        }
+
+        // Navigate to predictions page with clean data tab
+        navigate('/ml-predictions', {
+          state: {
+            automlResult: automlResult,
+            activeTab: 'data' // Direct to "Cleaned Data" tab
+          }
+        });
       } else {
         alert(`❌ AutoML failed: ${automlResult.detail || 'Unknown error'}`);
       }
     } catch (error: any) {
+      // Handle User Stop
+      if (error.name === 'AbortError') {
+        return; // Silent exit on stop
+      }
       console.error('AutoML error:', error);
       alert(`❌ AutoML error: ${error.message}`);
     } finally {
       setAutomlRunning(false);
+      setAbortController(null);
     }
   };
 
@@ -163,6 +278,13 @@ const DataHub: React.FC = () => {
       const response = await apiService.deleteFile(fileId);
       if (response.data.success) {
         setFiles(files.filter(f => f.id !== fileId));
+
+        // Clear cached ML results since the model may have been trained on this file
+        const userId = localStorage.getItem('userId') || 'default';
+        localStorage.removeItem(`mlResults_${userId}`);
+        localStorage.removeItem(`hasMLResults_${userId}`);
+        sessionStorage.removeItem(`mlCharts_${userId}`);
+
         alert('✅ File deleted and indexes retrained!');
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
@@ -177,7 +299,15 @@ const DataHub: React.FC = () => {
       const response = await apiService.deleteAllFiles();
       if (response.data.success) {
         setFiles([]);
+        // Clear cached ML results when files are deleted
+        const userId = localStorage.getItem('userId') || 'default';
+        localStorage.removeItem(`mlResults_${userId}`);
+        localStorage.removeItem(`hasMLResults_${userId}`);
+        sessionStorage.removeItem(`mlCharts_${userId}`);
+
         alert('All files deleted successfully!');
+        // Dispatch event so all pages refresh their data
+        window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
       alert(`Failed to delete files: ${error.response?.data?.detail || error.message}`);
@@ -286,6 +416,7 @@ const DataHub: React.FC = () => {
           <p className="text-sm" style={{ color: theme.textMuted }}>Upload and manage your business data</p>
         </div>
         <div className="flex gap-3">
+
           {/* 🤖 ML Train Button - Shows when data files exist */}
           {hasDataFiles && (
             <button
@@ -324,10 +455,10 @@ const DataHub: React.FC = () => {
             <span>Delete All</span>
           </button>
         </div>
-      </motion.div>
+      </motion.div >
 
       {/* Upload Area */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+      < motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <div
           {...getRootProps()}
           className={`p-12 border-2 border-dashed rounded-2xl transition-all cursor-pointer ${isDragActive ? 'border-blue-500 bg-blue-500/5' : 'hover:border-blue-500/50'
@@ -367,15 +498,37 @@ const DataHub: React.FC = () => {
                   <p className="text-xs mt-3" style={{ color: theme.textMuted }}>
                     ✅ Auto-trained • 🧠 Persistent memory • 🔍 RAG + Graph + Hybrid modes
                   </p>
+
+                  {/* Auto-Fix Toggle */}
+                  <div className="mt-4 pt-4 border-t" style={{ borderColor: theme.borderColor }}>
+                    <label className="flex items-center justify-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={autoFixEnabled}
+                        onChange={(e) => setAutoFixEnabled(e.target.checked)}
+                        className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-amber-500 focus:ring-amber-500 cursor-pointer"
+                      />
+                      <span style={{ color: theme.textPrimary }} className="font-medium flex items-center gap-2">
+                        <Wrench className="w-4 h-4 text-amber-400" />
+                        🔧 Auto-Fix Data Quality
+                      </span>
+                      <span className="text-xs px-2 py-1 rounded-full bg-amber-500/20 text-amber-400">
+                        {autoFixEnabled ? 'ON' : 'OFF'}
+                      </span>
+                    </label>
+                    <p className="text-xs mt-2 text-center" style={{ color: theme.textMuted }}>
+                      Automatically fix missing values, outliers & duplicates before upload
+                    </p>
+                  </div>
                 </div>
               </>
             )}
           </div>
         </div>
-      </motion.div>
+      </motion.div >
 
       {/* Google Sheets Import */}
-      <motion.div
+      < motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15 }}
@@ -415,24 +568,26 @@ const DataHub: React.FC = () => {
             Import
           </button>
         </div>
-        {sheetPreview?.success && (
-          <div className="p-4 rounded-xl border" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderColor: theme.borderColor }}>
-            <div className="flex items-center justify-between mb-3">
-              <span style={{ color: theme.textPrimary }} className="font-medium">Preview</span>
-              <span className="text-sm" style={{ color: theme.textMuted }}>{sheetPreview.rowCount} rows × {sheetPreview.columnCount} columns</span>
+        {
+          sheetPreview?.success && (
+            <div className="p-4 rounded-xl border" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderColor: theme.borderColor }}>
+              <div className="flex items-center justify-between mb-3">
+                <span style={{ color: theme.textPrimary }} className="font-medium">Preview</span>
+                <span className="text-sm" style={{ color: theme.textMuted }}>{sheetPreview.rowCount} rows × {sheetPreview.columnCount} columns</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {sheetPreview.columns?.slice(0, 8).map((col: string, i: number) => (
+                  <span key={i} className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium">{col}</span>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {sheetPreview.columns?.slice(0, 8).map((col: string, i: number) => (
-                <span key={i} className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs font-medium">{col}</span>
-              ))}
-            </div>
-          </div>
-        )}
+          )
+        }
         <p className="text-xs mt-3" style={{ color: theme.textMuted }}>💡 Sheet must be accessible: File → Share → "Anyone with the link can view"</p>
-      </motion.div>
+      </motion.div >
 
       {/* Search */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="flex items-center gap-4">
+      < motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="flex items-center gap-4" >
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: theme.textMuted }} />
           <input
@@ -451,10 +606,10 @@ const DataHub: React.FC = () => {
           <Filter className="w-5 h-5" />
           <span>Filters</span>
         </button>
-      </motion.div>
+      </motion.div >
 
       {/* Files List */}
-      <motion.div
+      < motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
@@ -527,8 +682,73 @@ const DataHub: React.FC = () => {
             </div>
           )}
         </div>
-      </motion.div>
-    </div>
+      </motion.div >
+
+      {/* TRAINING OVERLAY - BIG ANIMATION & STOP BUTTON */}
+      {
+        automlRunning && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center transition-all duration-500"
+            style={{ backgroundColor: theme.bgColor }}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className="flex flex-col items-center max-w-lg w-full p-8 text-center"
+            >
+              {/* Big Animated Icon */}
+              <div className="relative w-40 h-40 mb-8 flex items-center justify-center">
+                <div className="absolute inset-0 bg-teal-500/20 blur-2xl rounded-full animate-pulse"></div>
+                <div className="absolute inset-0 border-4 border-t-teal-400 border-r-teal-400/50 border-b-teal-400/20 border-l-teal-400/50 rounded-full animate-spin"></div>
+                <div className="absolute inset-4 border-4 border-b-blue-400 border-l-blue-400/50 border-t-blue-400/20 border-r-blue-400/50 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '3s' }}></div>
+                <Brain className="w-16 h-16 relative z-10 animate-pulse" style={{ color: theme.textPrimary }} />
+              </div>
+
+              <h2 className="text-4xl font-bold bg-gradient-to-r from-teal-400 via-emerald-400 to-blue-400 bg-clip-text text-transparent mb-4">
+                Training Intelligence
+              </h2>
+
+              <div
+                className="backdrop-blur border rounded-2xl p-6 w-full mb-8 shadow-2xl"
+                style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+              >
+                <p className="text-xl font-medium mb-2" style={{ color: theme.textPrimary }}>
+                  {progressMessage}
+                </p>
+                <p className="text-sm" style={{ color: theme.textMuted }}>
+                  This usually takes 30-90 seconds depending on data size.
+                </p>
+              </div>
+
+              <button
+                onClick={async () => {
+                  if (abortController) abortController.abort();
+                  setAutomlRunning(false);
+
+                  // Signal Backend to Stop Permanently
+                  try {
+                    const userId = localStorage.getItem('userId') || 'default';
+                    const formData = new FormData();
+                    formData.append('user_id', userId);
+                    await fetch('/api/v2/automl/stop_training', {
+                      method: 'POST',
+                      body: formData
+                    });
+                  } catch (e) {
+                    console.error("Failed to signal stop to backend", e);
+                  }
+                }}
+                className="group px-8 py-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-400 font-bold hover:bg-red-500/20 hover:border-red-500/50 transition-all flex items-center gap-3"
+              >
+                <XCircle className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                STOP TRAINING
+              </button>
+            </motion.div>
+          </div>
+        )
+      }
+
+    </div >
   );
 };
 

@@ -49,22 +49,20 @@ async def production_train(
         print(f"📂 File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
         
         from ml.automl_engine import automl_engine
-        result = await automl_engine.production_train(df, target_column, user_id)
         
-        # Generate charts
-        charts = {}
-        try:
-            from ml.chart_generator import chart_generator
-            charts = chart_generator.generate_all_charts(
-                task_type=result.task_type,
-                y_test=result.y_test,
-                y_pred=result.y_pred,
-                y_proba=result.y_proba,
-                feature_importance=result.feature_importance,
-                leaderboard=result.leaderboard
-            )
-        except Exception as e:
-            print(f"⚠️ Chart error: {e}")
+        # Run synchronous blocking training in a separate thread
+        # This allows the API to process /stop_training requests concurrently
+        import asyncio
+        loop = asyncio.get_running_loop()
+        print(f"🧵 Offloading training to thread pool for user {user_id}")
+        result = await loop.run_in_executor(
+            None, 
+            lambda: automl_engine.production_train(df, target_column, user_id)
+        )
+        
+        # Use charts already generated during training
+        charts = result.charts or {}
+        print(f"📊 Charts available: {list(charts.keys())}")
         
         # JSON safe helper
         def json_safe(obj):
@@ -97,8 +95,11 @@ async def production_train(
             },
             "all_models": result.leaderboard,
             "feature_importance": result.feature_importance,
-            "charts": charts,
+            "charts": charts,  # Generated matplotlib charts
             "processing_time_seconds": result.processing_time,
+            "cleaned_file": getattr(result, 'cleaned_file_path', None), # Return cleaned filename
+            "feature_columns": result.feature_columns,  # For predictions
+            "feature_metadata": getattr(result, 'feature_metadata', []),
             "insights": [
                 f"🚀 Silicon Valley Grade Pipeline",
                 f"🏆 Best: {result.best_model_name}",
@@ -107,6 +108,10 @@ async def production_train(
         })
         
     except Exception as e:
+        if "Training cancelled" in str(e):
+            print(f"🛑 Training stopped for user {user_id}")
+            return {"success": False, "detail": "Training stopped by user request"}
+
         logger.error(f"Production train error: {e}")
         import traceback
         traceback.print_exc()
@@ -165,20 +170,9 @@ async def train_with_test_file(
             user_id=user_id
         )
         
-        # Generate charts
-        charts = {}
-        try:
-            charts = chart_generator.generate_all_charts(
-                task_type=result.task_type,
-                y_test=result.y_test,
-                y_pred=result.y_pred,
-                y_proba=result.y_proba,
-                feature_importance=result.feature_importance,
-                leaderboard=result.leaderboard
-            )
-            print(f"   ✅ Generated {len(charts)} charts")
-        except Exception as e:
-            print(f"⚠️ Chart error: {e}")
+        # Use charts already generated during training
+        charts = result.charts or {}
+        print(f"📊 Charts available: {list(charts.keys())}")
         
         # Helper for JSON safety
         def json_safe(obj):
@@ -263,34 +257,22 @@ async def train_automl(
         # SUPERVISED LEARNING (SILICON VALLEY GRADE)
         # =========================================
         from ml.automl_engine import automl_engine
+        import asyncio
+        loop = asyncio.get_running_loop()
         
         # Use production training ONLY (no legacy fallback - legacy has broken prediction)
-        result = await automl_engine.production_train(df, target_column, user_id)
+        # Run in thread pool to prevent blocking event loop (Crucial for Cancellation)
+        result = await loop.run_in_executor(
+            None,
+            lambda: automl_engine.production_train(df, target_column, user_id)
+        )
         
         # =========================================
         # GENERATE PRODUCTION ML CHARTS (Base64 Images)
         # =========================================
-        charts = {}
-        try:
-            from ml.chart_generator import chart_generator
-            
-            print(f"📊 Generating charts for {result.task_type}...")
-            
-            # Generate ALL charts using the proven chart_generator
-            charts = chart_generator.generate_all_charts(
-                task_type=result.task_type,
-                y_test=result.y_test,
-                y_pred=result.y_pred,
-                y_proba=result.y_proba,
-                feature_importance=result.feature_importance,
-                leaderboard=result.leaderboard
-            )
-            
-            print(f"   ✅ Generated {len(charts)} charts")
-        except Exception as e:
-            print(f"⚠️ Chart error: {e}")
-            import traceback
-            traceback.print_exc()
+        # Use charts already generated during training
+        charts = result.charts or {}
+        print(f"📊 Charts available: {list(charts.keys())}")
         
         # =========================================
         # UNSUPERVISED LEARNING (AUTO CLUSTERING)
@@ -356,6 +338,9 @@ async def train_automl(
             "feature_columns": result.feature_columns,
             "charts": json_safe(charts),
             "processing_time_seconds": json_safe(result.processing_time),
+            "cleaned_file": getattr(result, 'cleaned_file_path', None),
+            "is_nlp_task": getattr(result, 'is_nlp_task', False),
+            "primary_text_col": getattr(result, 'primary_text_col', None),
             "bias_reports": [],
             "insights": [
                 f"🏆 Best model: {result.best_model_name}",
@@ -436,3 +421,156 @@ async def get_status():
         }
     except:
         return {"ready": True, "model_trained": False}
+
+
+@router.post("/stop_training")
+async def stop_training(user_id: str = Form(...)):
+    """
+    ⛔ stop current training task for user
+    Sets the cancellation flag which checked by the training engine loop.
+    """
+    try:
+        print(f"🛑 [STOP] Received stop request for user: {user_id}")
+        from ml.automl_engine import cancel_training
+        cancel_training(user_id)
+        return {"success": True, "message": "Training stop signal sent"}
+    except Exception as e:
+        logger.error(f"Stop error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/predict")
+async def make_prediction(request: PredictRequest):
+    """
+    🔮 MAKE PREDICTION - Use trained model to predict new data
+    
+    Uses AutoMLEngine hydration to ensure exact feature pipeline replication.
+    """
+    try:
+        print(f"🔮 [PREDICT] Request from user: {request.user_id}")
+        
+        from ml.model_persistence import ModelPersistenceManager
+        from ml.automl_engine import ProductionMLEngine
+        import numpy as np
+        
+        # Load the model state
+        persistence = ModelPersistenceManager()
+        engine_state = persistence.load_model(request.user_id)
+        
+        if not engine_state:
+            return {
+                "success": False,
+                "error": "No trained model found. Please train a model first."
+            }
+            
+        # 1. Hydrate ProductionMLEngine (Silicon Valley V2)
+        # matches the definition in automl_engine.py
+        try:
+            # Create fresh engine
+            engine = ProductionMLEngine()
+            
+            # Load state dict into engine instance
+            if isinstance(engine_state, dict):
+                # Manually restore critical attributes for _preprocess_single
+                # (ProductionMLEngine uses these keys)
+                engine.model = engine_state.get('model') or engine_state.get('best_model')
+                engine.numeric_cols = engine_state.get('numeric_cols', [])
+                engine.categorical_cols = engine_state.get('categorical_cols', [])
+                engine.text_cols = engine_state.get('text_cols', [])
+                engine.numeric_fill_values = engine_state.get('numeric_fill_values', {})
+                engine.scaler = engine_state.get('scaler')
+                engine.label_encoders = engine_state.get('label_encoders', {})
+                engine.text_vectorizers = engine_state.get('text_vectorizers', {})
+                engine.text_svd_transformers = engine_state.get('text_svd_transformers', {})
+                engine.is_nlp_task = engine_state.get('is_nlp_task', False)
+                engine.primary_text_col = engine_state.get('primary_text_col')
+                engine.task_type_simple = engine_state.get('task_type_simple', 'regression')
+                engine.target_encoder = engine_state.get('target_encoder')
+                
+                # Restore feature engineer (Critical for Poly features)
+                engine.feature_engineer = engine_state.get('feature_engineer')
+                
+                # Also restore production engineer if present
+                engine.production_engineer = engine_state.get('production_engineer')
+            else:
+                # Fallback for old simple model saves
+                engine.model = engine_state
+        
+            if engine.model is None:
+                 return {"success": False, "error": "Model object missing in saved state"}
+                 
+        except Exception as e:
+            logger.error(f"Hydration failed: {e}")
+            return {"success": False, "error": f"Failed to load model architecture: {e}"}
+
+        # 2. Preprocess Input
+        # Uses the engine's internal logic to handle missing vals, encoding, scaling exactly like training
+        try:
+            print("🔮 [PREDICT] Running AutoMLEngine._preprocess_single...")
+            X_input = engine._preprocess_single(request.data)
+            print(f"🔮 [PREDICT] Processed input shape: {X_input.shape}")
+        except Exception as pre_err:
+            logger.error(f"Preprocessing failed: {pre_err}")
+            return {"success": False, "error": f"Data preprocessing failed: {pre_err}"}
+            
+        # 3. Predict
+        prediction = engine.model.predict(X_input)
+        
+        # 4. Format Output
+        if engine.task_type_simple == 'classification':
+            # Handle classification output
+            label = str(prediction[0])
+            if engine.target_encoder:
+                try:
+                    label = engine.target_encoder.inverse_transform(prediction)[0]
+                except:
+                    pass
+            elif hasattr(engine, 'label_encoders') and 'target' in engine.label_encoders:
+                 # Fallback if target was encoded as a feature
+                 pass
+            
+            # Probabilities
+            probs = None
+            if hasattr(engine.model, 'predict_proba'):
+                try:
+                    probs_arr = engine.model.predict_proba(X_input)[0]
+                    if engine.target_encoder:
+                         probs = {str(engine.target_encoder.inverse_transform([i])[0]): float(p) for i, p in enumerate(probs_arr)}
+                    else:
+                         probs = {f"class_{i}": float(p) for i, p in enumerate(probs_arr)}
+                except:
+                    pass
+
+            return {
+                "success": True,
+                "task_type": "classification",
+                "prediction": label,
+                "probabilities": probs,
+                "model_used": type(engine.model).__name__
+            }
+        else:
+            # Regression
+            val = float(prediction[0])
+            
+            # IMPORTANT: Current engine does NOT scale Y for regression, 
+            # so raw output is correct.
+            
+            return {
+                "success": True,
+                "task_type": "regression",
+                "prediction": val,
+                "formatted_prediction": f"{val:,.4f}",
+                "model_used": type(engine.model).__name__
+            }
+
+    except Exception as e:
+        logger.error(f"Prediction error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e)
+        }
+

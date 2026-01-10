@@ -29,7 +29,11 @@ import {
     PieChart,
     Activity,
     Play,
+    History,
+    Database,
+    Download,
 } from 'lucide-react';
+import ModelHistory from '@/components/automl/ModelHistory';
 
 interface ThemeContext {
     isDark: boolean;
@@ -80,11 +84,13 @@ interface MLResult {
         rows: number;
         columns: number;
         features_engineered: number;
+        features_used?: number;  // Actual engineered features count from API
     };
     processing_time_seconds: number;
     is_nlp_task?: boolean;
     primary_text_col?: string;
     feature_columns?: string[];
+    cleaned_file?: string;
 }
 
 const MLPredictions: React.FC = () => {
@@ -101,31 +107,137 @@ const MLPredictions: React.FC = () => {
     const location = useLocation();
 
     const [result, setResult] = useState<MLResult | null>(null);
-    const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'features' | 'predict'>('overview');
+    const [loading, setLoading] = useState(true);  // Add loading state
+    const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'features' | 'predict' | 'history' | 'data'>('overview');
     const [predictionInput, setPredictionInput] = useState<Record<string, string>>({});
     const [predictionResult, setPredictionResult] = useState<any>(null);
 
-    // Load result from location state or localStorage
+    // Load result from location state or localStorage (PER-USER)
     useEffect(() => {
-        if (location.state?.automlResult) {
-            setResult(location.state.automlResult);
-        } else {
-            const saved = localStorage.getItem('mlResults');
+        const loadResults = () => {
+            const userId = localStorage.getItem('userId') || 'default';
+
+            // Helper to add charts from sessionStorage if missing
+            const addChartsFromSession = (result: MLResult): MLResult => {
+                if (!result.charts || Object.keys(result.charts).length === 0) {
+                    const savedCharts = sessionStorage.getItem(`mlCharts_${userId}`);
+                    if (savedCharts) {
+                        try {
+                            result.charts = JSON.parse(savedCharts);
+                        } catch (e) {
+                            console.warn('Failed to parse saved charts');
+                        }
+                    }
+                }
+                return result;
+            };
+
+            // Priority 1: Location state (from navigation)
+            if (location.state?.automlResult) {
+                const navResult = location.state.automlResult;
+                console.log('[MLPredictions] Received from navigation:', {
+                    hasCharts: !!navResult.charts,
+                    chartCount: navResult.charts ? Object.keys(navResult.charts).length : 0,
+                    chartKeys: navResult.charts ? Object.keys(navResult.charts) : []
+                });
+
+                setResult(addChartsFromSession(navResult));
+
+                // Save to localStorage - but wrap in try-catch for quota issues
+                try {
+                    localStorage.setItem(`mlResults_${userId}`, JSON.stringify(navResult));
+                    localStorage.setItem(`hasMLResults_${userId}`, 'true');
+                    console.log('[MLPredictions] Saved full result to localStorage');
+                } catch (storageErr) {
+                    console.warn('[MLPredictions] localStorage quota exceeded, saving without charts');
+                    // Save without charts
+                    const { charts, ...lightResult } = navResult;
+                    localStorage.setItem(`mlResults_${userId}`, JSON.stringify(lightResult));
+                    localStorage.setItem(`hasMLResults_${userId}`, 'true');
+                }
+
+                // ALWAYS save charts to sessionStorage as backup
+                if (navResult.charts && Object.keys(navResult.charts).length > 0) {
+                    try {
+                        sessionStorage.setItem(`mlCharts_${userId}`, JSON.stringify(navResult.charts));
+                        console.log('[MLPredictions] Saved charts to sessionStorage backup');
+                    } catch (e) {
+                        console.warn('[MLPredictions] sessionStorage charts save failed');
+                    }
+                }
+
+                setLoading(false);
+                return;
+            }
+
+            // Priority 2: User-specific localStorage
+            const saved = localStorage.getItem(`mlResults_${userId}`);
             if (saved) {
                 try {
-                    setResult(JSON.parse(saved));
+                    const parsedSaved = JSON.parse(saved);
+                    console.log('[MLPredictions] Loaded from localStorage:', {
+                        hasCharts: !!parsedSaved.charts,
+                        chartCount: parsedSaved.charts ? Object.keys(parsedSaved.charts).length : 0
+                    });
+                    setResult(addChartsFromSession(parsedSaved));
+                    setLoading(false);
+                    return;
                 } catch (e) {
                     console.error('Failed to parse saved result:', e);
                 }
+            } else {
+                console.log('[MLPredictions] No localStorage data found for user:', userId);
             }
+
+            // Priority 3: Legacy global key (one-time migration)
+            const legacySaved = localStorage.getItem('mlResults');
+            if (legacySaved) {
+                try {
+                    const parsed = JSON.parse(legacySaved);
+                    setResult(addChartsFromSession(parsed));
+                    // Migrate to user-specific
+                    localStorage.setItem(`mlResults_${userId}`, legacySaved);
+                    localStorage.setItem(`hasMLResults_${userId}`, 'true');
+                    setLoading(false);
+                    return;
+                } catch (e) {
+                    console.error('Failed to parse legacy result:', e);
+                }
+            }
+
+            // No data found
+            setLoading(false);
+        };
+
+        loadResults();
+
+        // Handle navigation state for active tab
+        if (location.state?.activeTab) {
+            setActiveTab(location.state.activeTab);
         }
-    }, [location.state]);
+    }, [location.state, location.key]);  // Add location.key to trigger on navigation
 
     const getMetricColor = (value: number) => {
         if (value >= 0.9) return '#10b981';
         if (value >= 0.7) return '#f59e0b';
         return '#ef4444';
     };
+
+    // Show loading spinner while loading
+    if (loading) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh]">
+                <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="text-center"
+                >
+                    <RefreshCw className="w-16 h-16 mx-auto mb-4 animate-spin text-teal-400" />
+                    <h2 className="text-xl font-semibold" style={{ color: theme.textPrimary }}>Loading ML Results...</h2>
+                </motion.div>
+            </div>
+        );
+    }
 
     if (!result) {
         return (
@@ -137,17 +249,19 @@ const MLPredictions: React.FC = () => {
                     style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
                 >
                     <Brain className="w-20 h-20 mx-auto mb-6" style={{ color: theme.textMuted }} />
-                    <h2 className="text-2xl font-bold mb-3" style={{ color: theme.textPrimary }}>No ML Results Yet</h2>
+                    <h2 className="text-2xl font-bold mb-3" style={{ color: theme.textPrimary }}>No ML Models Yet</h2>
                     <p className="mb-8 max-w-md" style={{ color: theme.textMuted }}>
-                        Go to DataHub, upload a dataset, and click "🤖 Auto ML Train" to train ML models.
+                        Train your first machine learning model! Upload a dataset and click "🤖 Auto ML Train".
                     </p>
-                    <button
-                        onClick={() => navigate('/datahub')}
-                        className="px-6 py-3 bg-gradient-to-r from-teal-500 to-emerald-500 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 mx-auto"
-                    >
-                        <Zap className="w-5 h-5" />
-                        Go to DataHub
-                    </button>
+                    <div className="flex gap-4 justify-center">
+                        <button
+                            onClick={() => navigate('/data-hub')}
+                            className="px-6 py-3 bg-gradient-to-r from-teal-500 to-emerald-500 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity flex items-center gap-2"
+                        >
+                            <Zap className="w-5 h-5" />
+                            Go to DataHub
+                        </button>
+                    </div>
                 </motion.div>
             </div>
         );
@@ -297,9 +411,9 @@ const MLPredictions: React.FC = () => {
                         <div className="p-2 rounded-lg bg-amber-500/20">
                             <Sparkles className="w-5 h-5 text-amber-400" />
                         </div>
-                        <span className="text-sm font-medium" style={{ color: theme.textMuted }}>Features</span>
+                        <span className="text-sm font-medium" style={{ color: theme.textMuted }}>Columns</span>
                     </div>
-                    <p className="text-2xl font-bold text-amber-400">{(result.feature_importance?.length > 0 ? result.feature_importance.length : null) || result.data_summary?.features_engineered || result.feature_columns?.length || 0}</p>
+                    <p className="text-2xl font-bold text-amber-400">{result.data_summary?.columns || result.feature_importance?.length || 0}</p>
                 </motion.div>
             </div>
 
@@ -310,6 +424,8 @@ const MLPredictions: React.FC = () => {
                     { id: 'charts', label: 'ML Charts', icon: BarChart3 },
                     { id: 'features', label: 'Features', icon: TrendingUp },
                     { id: 'predict', label: 'Make Prediction', icon: Play },
+                    { id: 'history', label: 'Model History', icon: History },
+                    { id: 'data', label: 'Cleaned Data', icon: Database },
                 ].map((tab) => (
                     <button
                         key={tab.id}
@@ -596,6 +712,62 @@ const MLPredictions: React.FC = () => {
                     </div>
                 )
                 }
+
+                {/* Model History Tab */}
+                {activeTab === 'history' && (
+                    <div
+                        className="p-6 rounded-2xl border"
+                        style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                    >
+                        <ModelHistory theme={theme} userId={localStorage.getItem('userId') || 'default'} />
+                    </div>
+                )}
+
+                {/* Cleaned Data Tab */}
+                {activeTab === 'data' && (
+                    <div
+                        className="p-12 text-center rounded-2xl border border-dashed"
+                        style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="max-w-md mx-auto"
+                        >
+                            <div className="w-20 h-20 mx-auto bg-blue-500/20 rounded-full flex items-center justify-center mb-6">
+                                <Database className="w-10 h-10 text-blue-400" />
+                            </div>
+                            <h2 className="text-2xl font-bold mb-4" style={{ color: theme.textPrimary }}>
+                                Production Cleaned Dataset
+                            </h2>
+                            <p className="mb-8 leading-relaxed" style={{ color: theme.textMuted }}>
+                                Download the exact dataset used for training. This data has been processed by our
+                                Silicon Valley Grade pipeline (Imputed, Encoded, Scaled, and Cleaned).
+                            </p>
+
+                            {result.cleaned_file ? (
+                                <div className="space-y-4">
+                                    <a
+                                        href={`/api/v1/files/${localStorage.getItem('userId') || 'default'}/${result.cleaned_file}/download`}
+                                        className="inline-flex items-center gap-3 px-8 py-4 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/20 transition-all hover:scale-105"
+                                    >
+                                        <Download className="w-6 h-6" />
+                                        Download Cleaned CSV
+                                    </a>
+                                    <p className="text-xs opacity-60 flex items-center justify-center gap-2" style={{ color: theme.textMuted }}>
+                                        <CheckCircle className="w-3 h-3 text-emerald-400" />
+                                        Ready for Production Deployment
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="p-4 bg-amber-500/10 text-amber-500 rounded-lg inline-flex items-center gap-2">
+                                    <AlertTriangle className="w-5 h-5" />
+                                    <span>Cleaned dataset not available for this session.</span>
+                                </div>
+                            )}
+                        </motion.div>
+                    </div>
+                )}
             </motion.div>
 
             {/* Footer */}

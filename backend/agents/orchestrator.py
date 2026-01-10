@@ -1,441 +1,382 @@
 """
-Orchestrator Agent: The CEO of the Agent Network
-=================================================
+🤖 Agentic AutoML - Agent Orchestrator
 
-The Orchestrator is responsible for:
-1. TASK DECOMPOSITION - Breaking complex queries into sub-tasks
-2. AGENT DELEGATION - Assigning tasks to specialized agents
-3. RESULT SYNTHESIS - Combining outputs from multiple agents
-4. QUALITY CONTROL - Ensuring final output meets standards
-5. ADAPTIVE PLANNING - Adjusting strategy based on results
-
-This is the "brain" that coordinates all other agents.
-
-Uses FREE APIs only (Groq/Gemini).
+The central coordinator that:
+- Manages agent execution order
+- Handles two-phase optimization (Fast Discovery → Deep Validation)
+- Implements feedback loops and retry logic
+- Routes messages between agents
 """
 
-import os
-import json
-import re
-import logging
-from typing import Dict, List, Any, Optional, Callable, Awaitable
-from dataclasses import dataclass, field
-from enum import Enum
+from typing import Dict, List, Optional, Any, Callable
 from datetime import datetime
+from enum import Enum
+import logging
+import uuid
+import time
 
-from core.llm import chat
+from .base import (
+    BaseAgent, AgentResult, AgentStatus, AgentMessage, 
+    MessageType, Phase, AgentRegistry
+)
+from .memory import AgentMemory
 
 logger = logging.getLogger(__name__)
 
 
-class TaskType(Enum):
-    """Types of tasks the orchestrator can handle"""
-    ANALYSIS = "analysis"          # Data analysis
-    RETRIEVAL = "retrieval"        # Information retrieval
-    VISUALIZATION = "visualization" # Chart/graph creation
-    PREDICTION = "prediction"      # Forecasting
-    COMPARISON = "comparison"      # Compare entities
-    SUMMARY = "summary"            # Summarize information
-    CALCULATION = "calculation"    # Math operations
-    EXPLANATION = "explanation"    # Explain concepts
-    ACTION = "action"              # Take an action (email, etc.)
+class PipelineStatus(Enum):
+    """Overall pipeline status"""
+    IDLE = "idle"
+    RUNNING = "running"
+    FAST_DISCOVERY = "fast_discovery"
+    DEEP_VALIDATION = "deep_validation"
+    SUCCESS = "success"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
-class AgentType(Enum):
-    """Types of agents available"""
-    RESEARCHER = "researcher"       # Deep analysis
-    DATA_SCIENTIST = "data_scientist"  # ML/predictions
-    VISUALIZER = "visualizer"       # Charts
-    WRITER = "writer"               # Reports/text
-    CALCULATOR = "calculator"       # Computations
-    VALIDATOR = "validator"         # Fact-checking
-    EXECUTOR = "executor"           # Actions
-
-
-@dataclass
-class SubTask:
-    """A sub-task to be executed"""
-    id: str
-    type: TaskType
-    description: str
-    assigned_agent: AgentType
-    dependencies: List[str] = field(default_factory=list)
-    status: str = "pending"  # pending, running, completed, failed
-    result: Any = None
-    priority: int = 1
-
-
-@dataclass
-class ExecutionPlan:
-    """Complete execution plan for a query"""
-    query: str
-    sub_tasks: List[SubTask]
-    execution_order: List[str]  # Task IDs in order
-    estimated_time: str
-    reasoning: str
-
-
-class OrchestratorAgent:
+class AgentOrchestrator:
     """
-    The CEO of the agent network - decomposes, delegates, and synthesizes.
+    Central orchestrator for the Agentic AutoML pipeline.
     
-    Uses FREE APIs (Groq/Gemini).
+    Responsibilities:
+    1. Coordinate agent execution order
+    2. Manage two-phase optimization strategy
+    3. Handle message routing between agents
+    4. Implement feedback loops for failure recovery
+    5. Track pipeline state and metrics
     """
     
     def __init__(self):
-        self.agents: Dict[AgentType, Callable] = {}
-        self.execution_history: List[Dict[str, Any]] = []
+        self.memory = AgentMemory()
+        self.agents: Dict[str, BaseAgent] = {}
+        self.status = PipelineStatus.IDLE
+        self.current_phase = Phase.FAST_DISCOVERY
+        self.iteration = 0
+        self.max_iterations = 5
+        self.message_queue: List[AgentMessage] = []
+        self.execution_log: List[Dict] = []
+        
+        # Thresholds for phase transition
+        self.fast_phase_threshold = 0.5  # Minimum score to enter deep phase
+        self.approval_threshold = 0.7     # Minimum score for final approval
+        
+        # Callbacks
+        self.on_progress: Optional[Callable[[str, float], None]] = None
+        self.check_cancellation: Optional[Callable[[], None]] = None
+        
+        # Timing
+        self.start_time: Optional[datetime] = None
+        
+    # =========================================================================
+    # AGENT REGISTRATION
+    # =========================================================================
     
-    def register_agent(self, agent_type: AgentType, handler: Callable):
-        """Register a handler for an agent type"""
-        self.agents[agent_type] = handler
-        logger.info(f"Registered agent: {agent_type.value}")
+    def register_agent(self, name: str, agent: BaseAgent):
+        """Register an agent with the orchestrator"""
+        agent.memory = self.memory
+        self.agents[name] = agent
+        logger.info(f"📝 Registered agent: {name}")
     
-    async def decompose_query(self, query: str, context: str = "") -> ExecutionPlan:
-        """
-        Decompose a complex query into sub-tasks.
-        
-        This is the "planning" phase.
-        """
-        
-        prompt = f"""You are a task planning AI. Decompose this user query into sub-tasks.
-
-USER QUERY: {query}
-
-AVAILABLE CONTEXT:
-{context[:2000] if context else "General business data available"}
-
-AVAILABLE AGENTS:
-- researcher: Deep analysis, multi-source synthesis
-- data_scientist: ML predictions, forecasting, statistics
-- visualizer: Charts, graphs, visualizations
-- writer: Reports, summaries, explanations
-- calculator: Math, aggregations, computations
-- validator: Fact-checking, verification
-
-Decompose the query into 1-5 sub-tasks. Each task should be:
-1. Specific and actionable
-2. Assigned to the most appropriate agent
-3. Ordered by dependencies (what must run first)
-
-Respond with JSON:
-{{
-    "sub_tasks": [
-        {{
-            "id": "task_1",
-            "type": "analysis" | "retrieval" | "visualization" | "prediction" | "comparison" | "summary" | "calculation" | "explanation",
-            "description": "what this task does",
-            "agent": "researcher" | "data_scientist" | "visualizer" | "writer" | "calculator" | "validator",
-            "dependencies": [],
-            "priority": 1-5
-        }}
-    ],
-    "execution_order": ["task_1", "task_2"],
-    "estimated_time": "5 seconds",
-    "reasoning": "why this plan makes sense"
-}}"""
-
-        try:
-            result = chat(prompt, temperature=0.2)
-            
-            # Parse JSON
-            json_match = re.search(r'\{.*\}', result, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group())
-                
-                sub_tasks = []
-                for task_data in data.get("sub_tasks", []):
-                    task = SubTask(
-                        id=task_data.get("id", f"task_{len(sub_tasks)}"),
-                        type=TaskType(task_data.get("type", "analysis")),
-                        description=task_data.get("description", ""),
-                        assigned_agent=AgentType(task_data.get("agent", "researcher")),
-                        dependencies=task_data.get("dependencies", []),
-                        priority=task_data.get("priority", 1)
-                    )
-                    sub_tasks.append(task)
-                
-                return ExecutionPlan(
-                    query=query,
-                    sub_tasks=sub_tasks,
-                    execution_order=data.get("execution_order", [t.id for t in sub_tasks]),
-                    estimated_time=data.get("estimated_time", "unknown"),
-                    reasoning=data.get("reasoning", "")
-                )
-        
-        except Exception as e:
-            logger.error(f"Error decomposing query: {e}")
-        
-        # Fallback: single analysis task
-        return ExecutionPlan(
-            query=query,
-            sub_tasks=[
-                SubTask(
-                    id="task_main",
-                    type=TaskType.ANALYSIS,
-                    description=query,
-                    assigned_agent=AgentType.RESEARCHER
-                )
-            ],
-            execution_order=["task_main"],
-            estimated_time="5 seconds",
-            reasoning="Fallback to single task execution"
-        )
+    def get_agent(self, name: str) -> Optional[BaseAgent]:
+        """Get an agent by name"""
+        return self.agents.get(name)
     
-    async def execute_task(
-        self,
-        task: SubTask,
-        context: str,
-        previous_results: Dict[str, Any]
-    ) -> Any:
-        """
-        Execute a single sub-task.
-        """
-        
-        task.status = "running"
-        logger.info(f"Executing task {task.id}: {task.description}")
-        
-        # Check if we have a registered agent
-        if task.assigned_agent in self.agents:
-            try:
-                handler = self.agents[task.assigned_agent]
-                result = await handler(task.description, context, previous_results)
-                task.status = "completed"
-                task.result = result
-                return result
-            except Exception as e:
-                logger.error(f"Agent error: {e}")
-                task.status = "failed"
-                return {"error": str(e)}
-        
-        # Default: use LLM for the task
-        return await self._default_task_handler(task, context, previous_results)
+    # =========================================================================
+    # PIPELINE EXECUTION
+    # =========================================================================
     
-    async def _default_task_handler(
-        self,
-        task: SubTask,
-        context: str,
-        previous_results: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def run(self, 
+            dataset, 
+            target_column: str,
+            task_type: str = None,
+            on_progress: Callable[[str, float], None] = None,
+            check_cancellation: Callable[[], None] = None) -> Dict[str, Any]:
         """
-        Default handler when no specific agent is registered.
-        Uses LLM to handle the task.
-        """
+        Run the complete agentic AutoML pipeline.
         
-        prev_context = ""
-        if previous_results:
-            prev_context = "\n\nPREVIOUS RESULTS:\n" + json.dumps(previous_results, indent=2)[:1500]
-        
-        prompt = f"""You are a {task.assigned_agent.value} agent. Complete this task.
-
-TASK: {task.description}
-
-TASK TYPE: {task.type.value}
-
-AVAILABLE DATA:
-{context[:3000]}
-{prev_context}
-
-Complete the task and provide a clear, concise output.
-If it's a calculation, show the math.
-If it's analysis, provide insights.
-If it's visualization, describe what chart to create.
-
-YOUR OUTPUT:"""
-
-        try:
-            result = chat(prompt, temperature=0.3)
-            task.status = "completed"
-            task.result = {"output": result.strip()}
-            return task.result
-        except Exception as e:
-            task.status = "failed"
-            return {"error": str(e)}
-    
-    async def synthesize_results(
-        self,
-        query: str,
-        plan: ExecutionPlan,
-        results: Dict[str, Any]
-    ) -> str:
-        """
-        Synthesize results from all sub-tasks into a final response.
-        """
-        
-        results_summary = "\n\n".join([
-            f"**{task.description}**:\n{json.dumps(results.get(task.id, {}), indent=2)[:500]}"
-            for task in plan.sub_tasks
-        ])
-        
-        prompt = f"""You are a response synthesizer. Combine these sub-task results into a final, coherent response.
-
-ORIGINAL QUERY: {query}
-
-SUB-TASK RESULTS:
-{results_summary}
-
-Create a clear, professional response that:
-1. Directly answers the user's query
-2. Integrates insights from all sub-tasks
-3. Is concise and well-structured
-4. Highlights key findings
-
-FINAL RESPONSE:"""
-
-        try:
-            response = chat(prompt, temperature=0.3)
-            return response.strip()
-        except Exception as e:
-            logger.error(f"Error synthesizing: {e}")
-            # Fallback: just return the first result
-            first_result = list(results.values())[0] if results else {}
-            return first_result.get("output", "Unable to synthesize results.")
-    
-    async def execute_plan(
-        self,
-        plan: ExecutionPlan,
-        context: str
-    ) -> Dict[str, Any]:
-        """
-        Execute all sub-tasks in the plan.
-        """
-        
-        results: Dict[str, Any] = {}
-        
-        for task_id in plan.execution_order:
-            # Find the task
-            task = next((t for t in plan.sub_tasks if t.id == task_id), None)
-            if not task:
-                continue
-            
-            # Check dependencies
-            for dep_id in task.dependencies:
-                if dep_id not in results:
-                    logger.warning(f"Dependency {dep_id} not ready for {task_id}")
-            
-            # Execute the task
-            result = await self.execute_task(task, context, results)
-            results[task_id] = result
-        
-        return results
-    
-    async def run(
-        self,
-        query: str,
-        context: str = ""
-    ) -> Dict[str, Any]:
-        """
-        Main entry point - execute a query end-to-end.
+        Args:
+            dataset: Input DataFrame
+            target_column: Name of target column
+            task_type: 'classification' or 'regression' (auto-detected if None)
+            on_progress: Callback for progress updates
+            check_cancellation: Callback to check for user cancellation
         
         Returns:
-            {
-                "response": str,
-                "plan": ExecutionPlan,
-                "sub_results": Dict,
-                "execution_time": str
-            }
+            Dict with results, metrics, and artifacts
         """
+        self.start_time = datetime.now()
+        self.on_progress = on_progress
+        self.check_cancellation = check_cancellation
+        self.status = PipelineStatus.RUNNING
+        self.iteration = 0
         
-        start_time = datetime.now()
+        # Initialize memory
+        self.memory.clear()
+        self.memory.pipeline_id = str(uuid.uuid4())[:8]
+        self.memory.set("dataset", dataset, "orchestrator")
+        self.memory.set("target_column", target_column, "orchestrator")
+        self.memory.set("task_type", task_type, "orchestrator")
         
-        # 1. Decompose the query
-        logger.info(f"Orchestrator: Planning for query: {query[:50]}...")
-        plan = await self.decompose_query(query, context)
-        logger.info(f"Orchestrator: Created plan with {len(plan.sub_tasks)} tasks")
+        logger.info(f"🚀 Starting Agentic AutoML Pipeline (ID: {self.memory.pipeline_id})")
+        self._report_progress("Initializing pipeline", 0.0)
         
-        # 2. Execute all tasks
-        results = await self.execute_plan(plan, context)
+        try:
+            # ========== PHASE 1: FAST DISCOVERY ==========
+            self.current_phase = Phase.FAST_DISCOVERY
+            self.status = PipelineStatus.FAST_DISCOVERY
+            logger.info("⚡ PHASE 1: FAST DISCOVERY")
+            
+            fast_result = self._run_fast_discovery()
+            
+            if not fast_result['success']:
+                return self._build_failure_result(fast_result.get('errors', []))
+            
+            # Check if we should proceed to deep validation
+            fast_score = fast_result.get('score', 0)
+            if fast_score < self.fast_phase_threshold:
+                logger.warning(f"⚠️ Fast phase score ({fast_score:.2f}) below threshold")
+                return self._build_result(fast_result, approved=False)
+            
+            # ========== PHASE 2: DEEP VALIDATION ==========
+            self.current_phase = Phase.DEEP_VALIDATION
+            self.status = PipelineStatus.DEEP_VALIDATION
+            logger.info("🔍 PHASE 2: DEEP VALIDATION")
+            
+            deep_result = self._run_deep_validation()
+            
+            if not deep_result['success']:
+                # Failed deep validation - return best fast phase result
+                logger.warning("⚠️ Deep validation failed, using fast phase result")
+                return self._build_result(fast_result, approved=False)
+            
+            # ========== FINAL APPROVAL ==========
+            final_score = deep_result.get('score', 0)
+            approved = final_score >= self.approval_threshold
+            
+            self.status = PipelineStatus.SUCCESS if approved else PipelineStatus.FAILED
+            
+            return self._build_result(deep_result, approved=approved)
+            
+        except Exception as e:
+            logger.error(f"❌ Pipeline error: {str(e)}")
+            self.status = PipelineStatus.FAILED
+            return self._build_failure_result([str(e)])
+    
+    # =========================================================================
+    # PHASE EXECUTION
+    # =========================================================================
+    
+    def _run_fast_discovery(self) -> Dict[str, Any]:
+        """
+        Fast Discovery Phase:
+        - Limited algorithms (top 3-4)
+        - Shallow hyperparameter search
+        - Quick feature screening
+        - Single train-test split
+        """
+        self._check_cancelled()
         
-        # 3. Synthesize final response
-        response = await self.synthesize_results(query, plan, results)
+        # Set all agents to fast phase
+        for agent in self.agents.values():
+            agent.set_phase(Phase.FAST_DISCOVERY)
         
-        execution_time = (datetime.now() - start_time).total_seconds()
+        # Execute data pipeline
+        self._report_progress("Data Quality Check", 0.1)
+        data_result = self._run_agent("data_quality")
+        if not data_result.success:
+            return {"success": False, "errors": data_result.errors}
         
-        # Record in history
-        self.execution_history.append({
-            "query": query,
-            "plan": plan,
-            "results": results,
-            "response": response,
-            "time": execution_time,
+        self._report_progress("Preprocessing", 0.2)
+        prep_result = self._run_agent("preprocessing")
+        if not prep_result.success:
+            return {"success": False, "errors": prep_result.errors}
+        
+        self._report_progress("Feature Engineering", 0.3)
+        feature_result = self._run_agent("feature_engineer")
+        if not feature_result.success:
+            return {"success": False, "errors": feature_result.errors}
+        
+        # Execute model pipeline
+        self._report_progress("Model Selection", 0.4)
+        model_result = self._run_agent("model_strategy")
+        if not model_result.success:
+            return {"success": False, "errors": model_result.errors}
+        
+        self._report_progress("Hyperparameter Tuning", 0.5)
+        hyperparam_result = self._run_agent("hyperparam")
+        if not hyperparam_result.success:
+            return {"success": False, "errors": hyperparam_result.errors}
+        
+        self._report_progress("Training Validation", 0.6)
+        training_result = self._run_agent("training_validator")
+        
+        # Handle training validation result with feedback loop
+        if training_result.should_retry:
+            return self._handle_feedback_loop(training_result)
+        
+        if not training_result.success:
+            return {"success": False, "errors": training_result.errors}
+        
+        return {
+            "success": True,
+            "score": training_result.metrics.get("score", 0),
+            "metrics": training_result.metrics,
+            "phase": "fast_discovery"
+        }
+    
+    def _run_deep_validation(self) -> Dict[str, Any]:
+        """
+        Deep Validation Phase:
+        - Robust cross-validation
+        - Stability checks
+        - Overfitting detection
+        - Feature ablation
+        - Drift sensitivity
+        """
+        self._check_cancelled()
+        
+        # Set all agents to deep phase
+        for agent in self.agents.values():
+            agent.set_phase(Phase.DEEP_VALIDATION)
+        
+        self._report_progress("Evaluation & Generalization", 0.7)
+        eval_result = self._run_agent("evaluation")
+        
+        if eval_result.should_retry:
+            return self._handle_feedback_loop(eval_result)
+        
+        if not eval_result.success:
+            return {"success": False, "errors": eval_result.errors}
+        
+        # Only generate visualizations if evaluation passed
+        self._report_progress("Generating Explanations", 0.85)
+        viz_result = self._run_agent("visualization")
+        
+        # Prepare for deployment
+        self._report_progress("Deployment Preparation", 0.95)
+        deploy_result = self._run_agent("deployment")
+        
+        return {
+            "success": True,
+            "score": eval_result.metrics.get("score", 0),
+            "metrics": eval_result.metrics,
+            "phase": "deep_validation",
+            "approved": deploy_result.success
+        }
+    
+    # =========================================================================
+    # FEEDBACK LOOPS
+    # =========================================================================
+    
+    def _handle_feedback_loop(self, result: AgentResult) -> Dict[str, Any]:
+        """
+        Handle feedback from validators.
+        Routes back to appropriate agent based on recommendations.
+        """
+        self.iteration += 1
+        
+        if self.iteration >= self.max_iterations:
+            logger.warning(f"⚠️ Max iterations ({self.max_iterations}) reached")
+            return {"success": False, "errors": ["Max iterations reached"]}
+        
+        logger.info(f"🔄 Feedback loop iteration {self.iteration}")
+        
+        # Parse recommendations to determine which agent to retry
+        for msg in result.messages:
+            if msg.type == MessageType.RETRY:
+                target_agent = msg.receiver
+                logger.info(f"   → Routing to {target_agent}")
+                
+                # Re-run from that agent
+                retry_result = self._run_agent(target_agent)
+                if retry_result.success:
+                    # Continue from where we left off
+                    if self.current_phase == Phase.FAST_DISCOVERY:
+                        return self._run_fast_discovery()
+                    else:
+                        return self._run_deep_validation()
+        
+        # Default: retry current phase
+        if self.current_phase == Phase.FAST_DISCOVERY:
+            return self._run_fast_discovery()
+        else:
+            return self._run_deep_validation()
+    
+    # =========================================================================
+    # HELPER METHODS
+    # =========================================================================
+    
+    def _run_agent(self, agent_name: str) -> AgentResult:
+        """Run a specific agent"""
+        agent = self.agents.get(agent_name)
+        
+        if not agent:
+            logger.warning(f"⚠️ Agent not found: {agent_name}")
+            return AgentResult(
+                status=AgentStatus.SUCCESS,  # Skip gracefully
+                agent_name=agent_name,
+                phase=self.current_phase
+            )
+        
+        self._check_cancelled()
+        
+        result = agent.run()
+        
+        # Log execution
+        self.execution_log.append({
+            "agent": agent_name,
+            "status": result.status.value,
+            "duration": result.duration_seconds,
             "timestamp": datetime.now().isoformat()
         })
         
+        # Process any messages
+        for msg in result.messages:
+            self.message_queue.append(msg)
+        
+        return result
+    
+    def _check_cancelled(self):
+        """Check if pipeline was cancelled"""
+        if self.check_cancellation:
+            self.check_cancellation()
+    
+    def _report_progress(self, stage: str, progress: float):
+        """Report progress to callback"""
+        logger.info(f"📍 {stage} ({progress*100:.0f}%)")
+        if self.on_progress:
+            self.on_progress(stage, progress)
+    
+    def _build_result(self, phase_result: Dict, approved: bool) -> Dict[str, Any]:
+        """Build final result dictionary"""
+        duration = (datetime.now() - self.start_time).total_seconds() if self.start_time else 0
+        
         return {
-            "response": response,
-            "plan": {
-                "tasks": [
-                    {
-                        "id": t.id,
-                        "type": t.type.value,
-                        "agent": t.assigned_agent.value,
-                        "description": t.description,
-                        "status": t.status
-                    }
-                    for t in plan.sub_tasks
-                ],
-                "reasoning": plan.reasoning
-            },
-            "sub_results": results,
-            "execution_time": f"{execution_time:.2f}s"
+            "success": True,
+            "approved": approved,
+            "pipeline_id": self.memory.pipeline_id,
+            "status": self.status.value,
+            "phase": phase_result.get("phase", "unknown"),
+            "score": phase_result.get("score", 0),
+            "metrics": phase_result.get("metrics", {}),
+            "duration_seconds": duration,
+            "iterations": self.iteration,
+            "model": self.memory.best_model,
+            "execution_log": self.execution_log
         }
     
-    def get_plan_summary(self, plan: ExecutionPlan) -> str:
-        """
-        Get human-readable plan summary.
-        """
+    def _build_failure_result(self, errors: List[str]) -> Dict[str, Any]:
+        """Build failure result dictionary"""
+        duration = (datetime.now() - self.start_time).total_seconds() if self.start_time else 0
         
-        summary = f"📋 **Execution Plan** ({plan.estimated_time})\n\n"
-        
-        for i, task in enumerate(plan.sub_tasks, 1):
-            status_emoji = {
-                "pending": "⏳",
-                "running": "🔄",
-                "completed": "✅",
-                "failed": "❌"
-            }.get(task.status, "⏳")
-            
-            summary += f"{i}. {status_emoji} [{task.assigned_agent.value}] {task.description}\n"
-        
-        summary += f"\n💡 {plan.reasoning}"
-        
-        return summary
-
-
-# Convenience function
-async def orchestrate_query(
-    query: str,
-    context: str = ""
-) -> Dict[str, Any]:
-    """
-    Simple interface to orchestrate a query.
-    """
-    
-    orchestrator = OrchestratorAgent()
-    return await orchestrator.run(query, context)
-
-
-# Test
-if __name__ == "__main__":
-    import asyncio
-    
-    async def test():
-        query = "Compare Q3 and Q4 revenue, identify the main driver of growth, and create a visualization"
-        
-        context = """
-        Q3 2024: Revenue $1.4M, Expenses $1.2M, Customers: 1,100
-        Q4 2024: Revenue $2.5M, Expenses $1.8M, Customers: 1,250
-        Main products: Product A ($1.5M Q4), Product B ($800K Q4), Services ($200K Q4)
-        """
-        
-        result = await orchestrate_query(query, context)
-        
-        print("=== PLAN ===")
-        print(json.dumps(result["plan"], indent=2))
-        
-        print("\n=== RESPONSE ===")
-        print(result["response"])
-        
-        print(f"\n⏱️ Execution time: {result['execution_time']}")
-    
-    asyncio.run(test())
+        return {
+            "success": False,
+            "approved": False,
+            "pipeline_id": self.memory.pipeline_id,
+            "status": PipelineStatus.FAILED.value,
+            "errors": errors,
+            "duration_seconds": duration,
+            "iterations": self.iteration,
+            "execution_log": self.execution_log
+        }

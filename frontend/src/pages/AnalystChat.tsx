@@ -1021,6 +1021,26 @@ const AnalystChat: React.FC = () => {
     }
   }, [currentConversation?.id]);
 
+  // Listen for file updates from DataHub - notify user when new files are available
+  useEffect(() => {
+    const handleFilesUpdated = () => {
+      console.log('📁 Files updated in chat context');
+      // Add a system notification message to let user know data has been refreshed
+      if (currentConversationId) {
+        const systemMessage = {
+          id: `system_${Date.now()}`,
+          role: 'assistant' as const,
+          content: '📁 **Data Updated!** New files have been uploaded. Your data context has been refreshed. Feel free to ask questions about your updated dataset.',
+          timestamp: new Date().toISOString(),
+        };
+        addMessageToConversation(currentConversationId, systemMessage);
+      }
+    };
+
+    window.addEventListener('filesUpdated', handleFilesUpdated);
+    return () => window.removeEventListener('filesUpdated', handleFilesUpdated);
+  }, [currentConversationId, addMessageToConversation]);
+
   // =========================================================================
   // CHATGPT-STYLE SCROLL LOGIC
   // =========================================================================

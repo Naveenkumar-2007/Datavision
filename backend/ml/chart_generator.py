@@ -1,1018 +1,1065 @@
 """
-📊 ML CHART GENERATOR v3.0
-===========================
+🎨 PRODUCTION ML CHART GENERATOR v3.0
+=====================================
 
-THEME-AWARE Charts that work in both dark and light modes:
-- Light gray background (#f8f9fa) - visible in both themes
-- High contrast colors
-- More chart variety
+COMPREHENSIVE ML Visualization using matplotlib and seaborn.
+Only creates charts when sufficient data is available.
+
+Chart Types by Task:
+
+CLASSIFICATION (12 charts):
+- Confusion Matrix (normalized heatmap)
+- Class Distribution (actual vs predicted)
+- ROC Curve (binary + multi-class)
+- Precision-Recall Curve
+- Calibration Curve
+- Prediction Confidence
+- Classification Report Heatmap
+- Class Balance Pie Chart
+- Prediction Error by Class (box plot)
+- Score Distribution Histogram
+- Cumulative Gains Chart
+- Lift Chart
+
+REGRESSION (10 charts):
+- Actual vs Predicted Scatter
+- Residuals Analysis (2x2 grid)  
+- Error Distribution (KDE + histogram)
+- Prediction Overview (sorted with bands)
+- Target Distribution Histogram
+- Prediction Error Box Plot
+- Cook's Distance Plot
+- Scale-Location Plot
+- Predicted vs Residuals Scatter
+- SHAP-style Importance (if available)
+
+CLUSTERING (8 charts):
+- Cluster Scatter (PCA 2D)
+- Cluster Distribution Bar
+- Silhouette Analysis
+- Feature Distribution by Cluster
+- Cluster Box Plots
+- Cluster Centroid Radar
+- Cluster Pairplot (first 4 features)
+- Elbow Method (if k data available)
+
+NLP (6 charts):
+- Word Cloud
+- Word Frequency Histogram
+- Text Length Distribution
+- TF-IDF Feature Importance
+- Class Distribution (for text classification)
+- Sentiment/Topic Distribution
+
+COMMON (5 charts):
+- Feature Importance (horizontal bar)
+- Model Comparison (bar chart)
+- Correlation Heatmap
+- Distribution Overview (histogram grid)
+- Box Plot Grid
 """
 
-import io
-import base64
-from typing import Dict, List, Optional
-import warnings
-
 import numpy as np
+import pandas as pd
+import base64
+import io
+import logging
+from typing import Dict, List, Optional, Any, Tuple
+
+# Visualization imports
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg')  # Non-interactive backend for server
 import matplotlib.pyplot as plt
 import seaborn as sns
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Patch
+
+# ML metrics
+from sklearn.metrics import (
+    confusion_matrix, classification_report, roc_curve, auc,
+    precision_recall_curve, r2_score, mean_absolute_error,
+    mean_squared_error, silhouette_samples, silhouette_score,
+    average_precision_score
+)
+from sklearn.calibration import calibration_curve
 from scipy import stats
 
-warnings.filterwarnings('ignore')
+logger = logging.getLogger(__name__)
 
-# High-contrast colors visible in both themes
-COLORS = {
-    'blue': '#2563eb',
-    'green': '#16a34a',
-    'red': '#dc2626',
-    'orange': '#ea580c',
-    'purple': '#9333ea',
-    'cyan': '#0891b2',
-    'pink': '#db2777',
-    'amber': '#d97706',
-    'teal': '#0d9488',
-    'indigo': '#4f46e5',
-}
+# Set PROFESSIONAL LIGHT theme style (Clean, Business-Ready)
+sns.set_style("whitegrid")
+plt.rcParams.update({
+    'figure.facecolor': '#ffffff',
+    'axes.facecolor': '#ffffff',
+    'axes.edgecolor': '#e0e0e0',
+    'text.color': '#333333',
+    'axes.labelcolor': '#333333',
+    'xtick.color': '#555555',
+    'ytick.color': '#555555',
+    'grid.color': '#f0f0f0',
+    'legend.facecolor': '#ffffff',
+    'legend.edgecolor': '#e0e0e0',
+    'figure.dpi': 200,          # High resolution
+    'font.size': 11,            # Readable font
+    'axes.titlesize': 14,       # Clear titles
+    'axes.labelsize': 12,       # Clear labels
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Segoe UI', 'Arial', 'sans-serif'] # Modern business fonts
+})
 
-PALETTE = list(COLORS.values())
+# DataVision color palette - Extended (Vibrant & Professional)
+COLORS = [
+    '#0F766E',  # Deep Teal (Primary)
+    '#2563EB',  # Royal Blue
+    '#D946EF',  # Magenta
+    '#F59E0B',  # Amber
+    '#10B981',  # Emerald
+    '#8B5CF6',  # Violet
+    '#EF4444',  # Red
+    '#06B6D4',  # Cyan
+    '#84CC16',  # Lime
+    '#F97316',  # Orange
+    '#6366F1',  # Indigo
+    '#A855F7',  # Purple
+]
 
-# Background that works in both themes
-BG_COLOR = '#f8f9fa'  # Very light gray - visible on dark and light
-
-
-def setup_theme_aware_style():
-    """Style that works in both dark and light themes"""
-    plt.rcParams.update({
-        'figure.facecolor': BG_COLOR,
-        'axes.facecolor': '#ffffff',
-        'axes.edgecolor': '#d1d5db',
-        'axes.labelcolor': '#1f2937',
-        'axes.labelsize': 12,
-        'axes.titlesize': 14,
-        'axes.titleweight': 'bold',
-        'text.color': '#1f2937',
-        'xtick.color': '#4b5563',
-        'ytick.color': '#4b5563',
-        'xtick.labelsize': 10,
-        'ytick.labelsize': 10,
-        'grid.color': '#e5e7eb',
-        'grid.alpha': 0.7,
-        'grid.linewidth': 0.8,
-        'legend.fontsize': 10,
-        'legend.framealpha': 1,
-        'legend.edgecolor': '#d1d5db',
-        'legend.facecolor': '#ffffff',
-        'font.family': 'sans-serif',
-    })
+# Custom colormaps (Adapted for Light Theme)
+TEAL_CMAP = LinearSegmentedColormap.from_list('teal', ['#ffffff', '#ccfbf1', '#0f766e'])
+HEAT_CMAP = LinearSegmentedColormap.from_list('heat', ['#ffffff', '#fef3c7', '#ef4444'])
 
 
-def fig_to_base64(fig) -> str:
-    """Convert figure to base64"""
+def _fig_to_base64(fig) -> str:
+    """Convert matplotlib figure to base64 string"""
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight',
-                facecolor=BG_COLOR, edgecolor='none')
+    # Save with high DPI and white background
+    fig.savefig(buf, format='png', dpi=200, bbox_inches='tight', 
+                facecolor='#ffffff', edgecolor='none')
     buf.seek(0)
-    img = base64.b64encode(buf.getvalue()).decode('utf-8')
+    img_base64 = base64.b64encode(buf.read()).decode('utf-8')
     plt.close(fig)
-    return f"data:image/png;base64,{img}"
+    return f"data:image/png;base64,{img_base64}"
 
 
-class MLChartGenerator:
-    """Theme-aware ML chart generator with extensive chart variety"""
+def generate_ml_charts(
+    task_type: str,
+    y_test: np.ndarray,
+    y_pred: np.ndarray,
+    y_proba: Optional[np.ndarray] = None,
+    feature_importance: Optional[List[Dict]] = None,
+    class_names: Optional[List[str]] = None,
+    model_name: str = "Model",
+    X_test: Optional[np.ndarray] = None,
+    feature_names: Optional[List[str]] = None,
+    text_data: Optional[List[str]] = None
+) -> Dict[str, str]:
+    """
+    Generate COMPREHENSIVE ML charts based on task type and available data.
     
-    def generate_all_charts(
-        self,
-        task_type: str,
-        y_test: np.ndarray,
-        y_pred: np.ndarray,
-        y_proba: Optional[np.ndarray] = None,
-        feature_importance: Optional[List[Dict]] = None,
-        leaderboard: Optional[List[Dict]] = None,
-        model = None,
-        X_train: Optional[np.ndarray] = None
-    ) -> Dict[str, str]:
-        """Generate comprehensive charts for task type - ENHANCED for TOP 1%"""
+    Args:
+        task_type: 'classification', 'regression', 'clustering', or 'nlp'
+        y_test: True labels
+        y_pred: Predicted labels
+        y_proba: Prediction probabilities
+        feature_importance: List of {feature, importance} dicts
+        class_names: Names of classes
+        model_name: Model name for titles
+        X_test: Test features
+        feature_names: Feature names
+        text_data: Raw text data for NLP charts
+    
+    Returns:
+        Dict of chart_name: base64_image_string
+    """
+    charts = {}
+    
+    try:
+        # Safely convert to numpy arrays
+        y_test = np.array(y_test).flatten()
+        y_pred = np.array(y_pred).flatten()
         
-        setup_theme_aware_style()
-        charts = {}
+        # Handle non-numeric labels (strings) by encoding them
+        # This prevents 'isnan' errors on object arrays
+        original_labels = None
+        if y_test.dtype == object or not np.issubdtype(y_test.dtype, np.number):
+            from sklearn.preprocessing import LabelEncoder
+            le = LabelEncoder()
+            # Combine y_test and y_pred to ensure consistent encoding
+            all_labels = np.concatenate([y_test, y_pred])
+            le.fit(all_labels)
+            original_labels = le.classes_.tolist()  # Store original labels for display
+            y_test = le.transform(y_test)
+            y_pred = le.transform(y_pred)
+            # Use original labels as class_names if not provided
+            if class_names is None:
+                class_names = original_labels
         
-        is_classification = 'classification' in task_type.lower()
+        if len(y_test) < 5 or len(y_pred) < 5:
+            logger.warning("Insufficient data for charts")
+            return {}
         
-        print(f"📊 Generating TOP 1% charts for {task_type}...")
+        task_lower = task_type.lower()
         
-        # =====================================================================
-        # COMMON CHARTS (Both regression and classification)
-        # =====================================================================
+        if 'classification' in task_lower or 'nlp' in task_lower:
+            charts.update(_generate_classification_charts(
+                y_test, y_pred, y_proba, class_names, model_name
+            ))
+            if 'nlp' in task_lower and text_data:
+                charts.update(_generate_nlp_charts(text_data, y_test, model_name))
+        elif 'clustering' in task_lower:
+            charts.update(_generate_clustering_charts(
+                X_test, y_pred, model_name, feature_names
+            ))
+        else:  # regression
+            charts.update(_generate_regression_charts(
+                y_test, y_pred, model_name
+            ))
         
-        if leaderboard and len(leaderboard) > 0:
-            charts['model_comparison'] = self._model_comparison(leaderboard, is_classification)
-            charts['training_time'] = self._training_time(leaderboard)
-            # NEW: Radar comparison chart
-            try:
-                charts['model_radar'] = self._model_radar_comparison(leaderboard, is_classification)
-            except Exception as e:
-                print(f"   ⚠️ Radar chart skipped: {e}")
-        
+        # Common charts
         if feature_importance and len(feature_importance) > 0:
-            charts['feature_importance'] = self._feature_importance(feature_importance)
-            # NEW: SHAP-style importance
-            try:
-                charts['shap_importance'] = self._shap_importance(feature_importance)
-            except Exception as e:
-                print(f"   ⚠️ SHAP chart skipped: {e}")
-        
-        # =====================================================================
-        # TASK-SPECIFIC CHARTS
-        # =====================================================================
-        
-        if y_test is not None and y_pred is not None:
-            if is_classification:
-                # Classification charts
-                charts['confusion_matrix'] = self._confusion_matrix(y_test, y_pred)
-                charts['class_distribution'] = self._class_distribution(y_test, y_pred)
-                charts['classification_metrics'] = self._classification_metrics(y_test, y_pred)
-                charts['prediction_accuracy_pie'] = self._prediction_accuracy_pie(y_test, y_pred)
+            fi_chart = _generate_feature_importance_chart(feature_importance, model_name)
+            if fi_chart:
+                charts['feature_importance'] = fi_chart
                 
-                if y_proba is not None:
-                    charts['roc_curve'] = self._roc_curve(y_test, y_proba)
-                    charts['probability_histogram'] = self._probability_histogram(y_proba)
-                    charts['confidence_gauge'] = self._confidence_gauge(y_proba)
-                    # NEW: Advanced classification charts
-                    try:
-                        charts['calibration_curve'] = self._calibration_curve(y_test, y_proba)
-                    except Exception as e:
-                        print(f"   ⚠️ Calibration curve skipped: {e}")
-                    try:
-                        charts['lift_gain_curves'] = self._lift_gain_curves(y_test, y_proba)
-                    except Exception as e:
-                        print(f"   ⚠️ Lift/Gain curves skipped: {e}")
-                    try:
-                        charts['confidence_distribution'] = self._confidence_distribution(y_proba)
-                    except Exception as e:
-                        print(f"   ⚠️ Confidence distribution skipped: {e}")
+        logger.info(f"✅ Generated {len(charts)} charts: {list(charts.keys())}")
+                
+    except Exception as e:
+        logger.error(f"Chart generation error: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return charts
+
+
+# =============================================================================
+# CLASSIFICATION CHARTS (12 types)
+# =============================================================================
+
+def _generate_classification_charts(
+    y_test: np.ndarray,
+    y_pred: np.ndarray,
+    y_proba: Optional[np.ndarray],
+    class_names: Optional[List[str]],
+    model_name: str
+) -> Dict[str, str]:
+    """Generate comprehensive classification charts"""
+    charts = {}
+    n_classes = len(np.unique(y_test))
+    
+    # 1. CONFUSION MATRIX (Enhanced with normalization)
+    try:
+        cm = confusion_matrix(y_test, y_pred)
+        if cm.shape[0] >= 2:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            
+            cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+            cm_norm = np.nan_to_num(cm_norm)
+            
+            sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Blues',
+                       ax=ax, cbar_kws={'label': 'Percentage'}, linewidths=0.5)
+            
+            for i in range(cm.shape[0]):
+                for j in range(cm.shape[1]):
+                    ax.text(j + 0.5, i + 0.75, f'n={cm[i,j]}',
+                           ha='center', va='center', fontsize=8, color='gray')
+            
+            labels = [str(c)[:10] for c in class_names] if class_names else None
+            if labels:
+                ax.set_xticklabels(labels, rotation=45, ha='right')
+                ax.set_yticklabels(labels, rotation=0)
+            
+            ax.set_xlabel('Predicted', fontsize=12, color='white')
+            ax.set_ylabel('Actual', fontsize=12, color='white')
+            ax.set_title(f'Confusion Matrix - {model_name}', fontsize=14, color='white', pad=20)
+            
+            charts['confusion_matrix'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Confusion matrix error: {e}")
+    
+    # 2. CLASS DISTRIBUTION (Side by side bars)
+    try:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        unique_classes = np.union1d(np.unique(y_test), np.unique(y_pred))
+        x = np.arange(len(unique_classes))
+        width = 0.35
+        
+        actual_counts = [np.sum(y_test == c) for c in unique_classes]
+        pred_counts = [np.sum(y_pred == c) for c in unique_classes]
+        
+        ax.bar(x - width/2, actual_counts, width, label='Actual', color=COLORS[0], edgecolor='white')
+        ax.bar(x + width/2, pred_counts, width, label='Predicted', color=COLORS[2], edgecolor='white')
+        
+        ax.set_xlabel('Class', fontsize=12, color='white')
+        ax.set_ylabel('Count', fontsize=12, color='white')
+        ax.set_title(f'Class Distribution - {model_name}', fontsize=14, color='white')
+        ax.set_xticks(x)
+        labels = [str(c)[:10] for c in class_names[:len(unique_classes)]] if class_names else [str(c) for c in unique_classes]
+        ax.set_xticklabels(labels, rotation=45, ha='right')
+        ax.legend()
+        
+        charts['class_distribution'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Class distribution error: {e}")
+    
+    # 3. ROC CURVE (Multi-class support)
+    if y_proba is not None:
+        try:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            
+            if n_classes == 2:
+                proba = y_proba[:, 1] if len(y_proba.shape) > 1 and y_proba.shape[1] >= 2 else y_proba.flatten()
+                fpr, tpr, _ = roc_curve(y_test, proba)
+                roc_auc = auc(fpr, tpr)
+                ax.plot(fpr, tpr, color=COLORS[0], lw=2, label=f'ROC (AUC = {roc_auc:.3f})')
+                ax.fill_between(fpr, tpr, alpha=0.2, color=COLORS[0])
             else:
-                # Regression charts
-                charts['actual_vs_predicted'] = self._actual_vs_predicted(y_test, y_pred)
-                charts['residual_plot'] = self._residual_plot(y_test, y_pred)
-                charts['error_histogram'] = self._error_histogram(y_test, y_pred)
-                charts['prediction_error'] = self._prediction_error(y_test, y_pred)
-                charts['qq_plot'] = self._qq_plot(y_test, y_pred)
-                charts['regression_metrics'] = self._regression_metrics(y_test, y_pred)
-                charts['error_boxplot'] = self._error_boxplot(y_test, y_pred)
-                # NEW: Prediction intervals for regression
-                try:
-                    charts['prediction_intervals'] = self._prediction_intervals(y_test, y_pred)
-                except Exception as e:
-                    print(f"   ⚠️ Prediction intervals skipped: {e}")
-        
-        # =====================================================================
-        # LEARNING CURVE (requires model and training data)
-        # =====================================================================
-        if model is not None and X_train is not None and y_test is not None:
-            try:
-                # Use a subset to avoid long computation
-                X_subset = X_train[:min(1000, len(X_train))]
-                y_subset = y_test[:min(1000, len(y_test))] if len(y_test) == len(X_train) else y_test[:min(1000, len(X_train))]
-                charts['learning_curve'] = self._learning_curve(model, X_subset, y_subset, task_type)
-            except Exception as e:
-                print(f"   ⚠️ Learning curve skipped: {e}")
-        
-        print(f"   ✅ Generated {len(charts)} TOP 1% charts")
-        return charts
+                if len(y_proba.shape) > 1:
+                    for i in range(min(n_classes, y_proba.shape[1])):
+                        y_binary = (y_test == i).astype(int)
+                        if y_binary.sum() > 0:
+                            fpr, tpr, _ = roc_curve(y_binary, y_proba[:, i])
+                            roc_auc = auc(fpr, tpr)
+                            label = class_names[i][:10] if class_names and i < len(class_names) else f'Class {i}'
+                            ax.plot(fpr, tpr, color=COLORS[i % len(COLORS)], lw=2, 
+                                   label=f'{label} (AUC={roc_auc:.2f})')
+            
+            ax.plot([0, 1], [0, 1], 'k--', lw=1, alpha=0.5, label='Random')
+            ax.set_xlim([0.0, 1.0])
+            ax.set_ylim([0.0, 1.05])
+            ax.set_xlabel('False Positive Rate', fontsize=12, color='white')
+            ax.set_ylabel('True Positive Rate', fontsize=12, color='white')
+            ax.set_title(f'ROC Curve - {model_name}', fontsize=14, color='white')
+            ax.legend(loc='lower right', fontsize=9)
+            
+            charts['roc_curve'] = _fig_to_base64(fig)
+        except Exception as e:
+            logger.warning(f"ROC curve error: {e}")
     
-    # =========================================================================
-    # COMMON CHARTS
-    # =========================================================================
+    # 4. PRECISION-RECALL CURVE
+    if y_proba is not None and n_classes == 2:
+        try:
+            proba = y_proba[:, 1] if len(y_proba.shape) > 1 else y_proba.flatten()
+            precision, recall, _ = precision_recall_curve(y_test, proba)
+            avg_prec = average_precision_score(y_test, proba)
+            
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.plot(recall, precision, color=COLORS[1], lw=2, label=f'PR (AP = {avg_prec:.3f})')
+            ax.fill_between(recall, precision, alpha=0.2, color=COLORS[1])
+            ax.set_xlabel('Recall', fontsize=12, color='white')
+            ax.set_ylabel('Precision', fontsize=12, color='white')
+            ax.set_title(f'Precision-Recall Curve - {model_name}', fontsize=14, color='white')
+            ax.legend()
+            
+            charts['precision_recall'] = _fig_to_base64(fig)
+        except Exception as e:
+            logger.warning(f"Precision-Recall error: {e}")
     
-    def _model_comparison(self, leaderboard: List[Dict], is_classification: bool) -> str:
-        """Model performance comparison"""
+    # 5. CALIBRATION CURVE
+    if y_proba is not None and n_classes == 2 and len(y_test) >= 20:
+        try:
+            proba = y_proba[:, 1] if len(y_proba.shape) > 1 else y_proba.flatten()
+            prob_true, prob_pred = calibration_curve(y_test, proba, n_bins=10)
+            
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.plot([0, 1], [0, 1], 'k--', lw=1, label='Perfect')
+            ax.plot(prob_pred, prob_true, 's-', color=COLORS[2], lw=2, label=model_name)
+            ax.set_xlabel('Mean Predicted Probability', fontsize=12, color='white')
+            ax.set_ylabel('Fraction of Positives', fontsize=12, color='white')
+            ax.set_title(f'Calibration Curve - {model_name}', fontsize=14, color='white')
+            ax.legend()
+            
+            charts['calibration'] = _fig_to_base64(fig)
+        except Exception as e:
+            logger.warning(f"Calibration error: {e}")
+    
+    # 6. PREDICTION CONFIDENCE HISTOGRAM
+    if y_proba is not None:
+        try:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            
+            max_proba = np.max(y_proba, axis=1) if len(y_proba.shape) > 1 else np.abs(y_proba - 0.5) * 2 + 0.5
+            correct = y_pred == y_test
+            
+            ax.hist(max_proba[correct], bins=20, alpha=0.7, color=COLORS[1], label='Correct', edgecolor='white')
+            ax.hist(max_proba[~correct], bins=20, alpha=0.7, color=COLORS[6], label='Incorrect', edgecolor='white')
+            
+            ax.set_xlabel('Prediction Confidence', fontsize=12, color='white')
+            ax.set_ylabel('Count', fontsize=12, color='white')
+            ax.set_title(f'Confidence Distribution - {model_name}', fontsize=14, color='white')
+            ax.legend()
+            
+            charts['confidence_histogram'] = _fig_to_base64(fig)
+        except Exception as e:
+            logger.warning(f"Confidence histogram error: {e}")
+    
+    # 7. CLASS BALANCE PIE CHART
+    try:
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        
+        unique, counts = np.unique(y_test, return_counts=True)
+        labels = [str(class_names[i])[:10] if class_names and i < len(class_names) else str(u) for i, u in enumerate(unique)]
+        colors = [COLORS[i % len(COLORS)] for i in range(len(unique))]
+        
+        axes[0].pie(counts, labels=labels, autopct='%1.1f%%', colors=colors, 
+                   textprops={'color': 'white'}, wedgeprops={'edgecolor': 'white'})
+        axes[0].set_title('Actual Class Balance', color='white', fontsize=12)
+        
+        unique_p, counts_p = np.unique(y_pred, return_counts=True)
+        labels_p = [str(class_names[i])[:10] if class_names and i < len(class_names) else str(u) for i, u in enumerate(unique_p)]
+        axes[1].pie(counts_p, labels=labels_p, autopct='%1.1f%%', colors=colors[:len(unique_p)],
+                   textprops={'color': 'white'}, wedgeprops={'edgecolor': 'white'})
+        axes[1].set_title('Predicted Class Balance', color='white', fontsize=12)
+        
+        fig.suptitle(f'Class Balance - {model_name}', fontsize=14, color='white')
+        plt.tight_layout()
+        
+        charts['class_balance_pie'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Class balance pie error: {e}")
+    
+    # 8. PREDICTION ERROR BOX PLOT BY CLASS
+    if y_proba is not None:
         try:
             fig, ax = plt.subplots(figsize=(10, 6))
             
-            names = [m['name'] for m in leaderboard[:8]][::-1]
-            metric = 'f1' if is_classification else 'r2'
+            max_proba = np.max(y_proba, axis=1) if len(y_proba.shape) > 1 else y_proba.flatten()
+            classes = np.unique(y_test)
+            data = [max_proba[y_test == c] for c in classes]
             
-            # Get raw scores
-            raw_scores = [m['metrics'].get(metric, m['metrics'].get('accuracy', -1.0)) for m in leaderboard[:8]][::-1]
+            bp = ax.boxplot(data, patch_artist=True)
+            for i, (patch, color) in enumerate(zip(bp['boxes'], [COLORS[i % len(COLORS)] for i in range(len(classes))])):
+                patch.set_facecolor(color)
+                patch.set_alpha(0.7)
             
-            # Clip scores for plotting ONLY (so chart doesn't explode on -1000 R2)
-            # For visualization, R2 < -2 is effectively just "Bad".
-            plot_scores = [max(s, -2.0) if metric == 'r2' else s for s in raw_scores]
+            labels = [str(class_names[i])[:10] if class_names and i < len(class_names) else str(c) for i, c in enumerate(classes)]
+            ax.set_xticklabels(labels, rotation=45, ha='right')
+            ax.set_xlabel('Class', fontsize=12, color='white')
+            ax.set_ylabel('Prediction Confidence', fontsize=12, color='white')
+            ax.set_title(f'Confidence by Class - {model_name}', fontsize=14, color='white')
             
-            colors = [PALETTE[i % len(PALETTE)] for i in range(len(names))]
-            
-            bars = ax.barh(range(len(names)), plot_scores, color=colors, height=0.65, 
-                          edgecolor='white', linewidth=2)
-            
-            # Value labels (Show TRUE value, not clipped)
-            for bar, score in zip(bars, raw_scores):
-                # Position text slightly offset
-                # If very negative, put text inside or to right of 0
-                width = bar.get_width()
-                if width < 0:
-                    x_pos = min(0, width + 0.05) # Just to the right of the negative bar end
-                    ha = 'left'
-                else:
-                    x_pos = width + 0.02
-                    ha = 'left'
-                    
-                ax.text(x_pos, bar.get_y() + bar.get_height()/2,
-                       f'{score:.3f}', va='center', ha=ha, fontsize=10, fontweight='bold')
-            
-            ax.set_yticks(range(len(names)))
-            ax.set_yticklabels(names)
-            ax.set_xlabel(f'{metric.upper()} Score (Clipped at -2.0)', fontweight='bold')
-            ax.set_title('🏆 Model Performance Comparison', fontweight='bold', pad=15, fontsize=14)
-            
-            # Intelligent axis limits
-            if all(s < 0 for s in plot_scores):
-                ax.set_xlim(min(plot_scores) * 1.1, 0)
-            else:
-                ax.set_xlim(min(min(plot_scores), 0) * 1.1, max(max(plot_scores), 0.1) * 1.2)
-                
-            ax.grid(axis='x', alpha=0.3)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            ax.axvline(0, color='black', linewidth=1, alpha=0.5)
-            
-            plt.tight_layout()
-            return fig_to_base64(fig)
+            charts['confidence_boxplot'] = _fig_to_base64(fig)
         except Exception as e:
-            print(f"   ⚠️ Model comparison chart failed: {e}")
-            return ""
+            logger.warning(f"Confidence boxplot error: {e}")
     
-    def _training_time(self, leaderboard: List[Dict]) -> str:
-        """Training time comparison"""
-        fig, ax = plt.subplots(figsize=(10, 5))
+    # 9. CLASSIFICATION REPORT HEATMAP
+    try:
+        from sklearn.metrics import precision_recall_fscore_support
+        precision, recall, f1, support = precision_recall_fscore_support(y_test, y_pred, zero_division=0)
         
-        names = [m['name'] for m in leaderboard[:8]]
-        times = [m.get('training_time', 0) for m in leaderboard[:8]]
-        
-        bars = ax.bar(names, times, color=COLORS['cyan'], edgecolor='white', linewidth=2)
-        
-        for bar, t in zip(bars, times):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
-                   f'{t:.1f}s', ha='center', fontsize=10, fontweight='bold')
-        
-        ax.set_ylabel('Time (seconds)', fontweight='bold')
-        ax.set_title('⏱️ Training Time by Model', fontweight='bold', pad=15, fontsize=14)
-        ax.grid(axis='y', alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        plt.xticks(rotation=45, ha='right')
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
+        if len(precision) <= 10:  # Only for reasonable number of classes
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            data = np.array([precision, recall, f1]).T
+            labels = [str(class_names[i])[:10] if class_names and i < len(class_names) else f'Class {i}' for i in range(len(precision))]
+            
+            sns.heatmap(data, annot=True, fmt='.2f', cmap='RdYlGn', 
+                       xticklabels=['Precision', 'Recall', 'F1-Score'],
+                       yticklabels=labels, ax=ax, vmin=0, vmax=1)
+            ax.set_title(f'Classification Metrics by Class - {model_name}', fontsize=14, color='white')
+            
+            charts['metrics_heatmap'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Metrics heatmap error: {e}")
     
-    def _feature_importance(self, importance: List[Dict]) -> str:
-        """Feature importance chart"""
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        features = [f['feature'][:20] for f in importance[:10]][::-1]
-        values = [f['importance'] for f in importance[:10]][::-1]
-        
-        colors = [COLORS['indigo'] if v == max(values) else COLORS['blue'] for v in values]
-        
-        bars = ax.barh(range(len(features)), values, color=colors, height=0.65,
-                      edgecolor='white', linewidth=2)
-        
-        for bar, val in zip(bars, values):
-            ax.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height()/2,
-                   f'{val:.1%}', va='center', fontsize=10, fontweight='bold')
-        
-        ax.set_yticks(range(len(features)))
-        ax.set_yticklabels(features)
-        ax.set_xlabel('Importance', fontweight='bold')
-        ax.set_title('📊 Feature Importance', fontweight='bold', pad=15, fontsize=14)
-        ax.grid(axis='x', alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
+    # 10. SCORE DISTRIBUTION
+    if y_proba is not None:
+        try:
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            if len(y_proba.shape) > 1:
+                for i in range(min(y_proba.shape[1], 5)):
+                    label = class_names[i][:10] if class_names and i < len(class_names) else f'Class {i}'
+                    sns.kdeplot(y_proba[:, i], ax=ax, label=label, color=COLORS[i % len(COLORS)], lw=2)
+            
+            ax.set_xlabel('Prediction Score', fontsize=12, color='white')
+            ax.set_ylabel('Density', fontsize=12, color='white')
+            ax.set_title(f'Score Distribution by Class - {model_name}', fontsize=14, color='white')
+            ax.legend()
+            
+            charts['score_distribution'] = _fig_to_base64(fig)
+        except Exception as e:
+            logger.warning(f"Score distribution error: {e}")
     
-    # =========================================================================
-    # REGRESSION CHARTS
-    # =========================================================================
+    return charts
+
+
+# =============================================================================
+# REGRESSION CHARTS (10 types)
+# =============================================================================
+
+def _generate_regression_charts(
+    y_test: np.ndarray,
+    y_pred: np.ndarray,
+    model_name: str
+) -> Dict[str, str]:
+    """Generate comprehensive regression charts"""
+    charts = {}
+    residuals = y_pred - y_test
+    errors = np.abs(residuals)
     
-    def _actual_vs_predicted(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Actual vs Predicted scatter"""
-        fig, ax = plt.subplots(figsize=(8, 8))
-        
-        r2 = 1 - np.sum((y_test - y_pred)**2) / np.sum((y_test - np.mean(y_test))**2)
-        
-        ax.scatter(y_test, y_pred, c=COLORS['blue'], alpha=0.6, s=40, 
-                  edgecolors='white', linewidth=0.5)
-        
-        lims = [min(y_test.min(), y_pred.min()), max(y_test.max(), y_pred.max())]
-        ax.plot(lims, lims, '--', color=COLORS['green'], linewidth=3, label='Perfect Prediction')
-        
-        ax.set_xlabel('Actual Values', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Predicted Values', fontweight='bold', fontsize=12)
-        ax.set_title(f'📈 Actual vs Predicted (R² = {r2:.4f})', fontweight='bold', pad=15, fontsize=14)
-        ax.legend(loc='upper left', fontsize=10)
-        ax.grid(alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _residual_plot(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Residual analysis plot"""
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        residuals = y_test - y_pred
-        std = np.std(residuals)
-        
-        colors = [COLORS['green'] if r >= 0 else COLORS['red'] for r in residuals]
-        ax.scatter(y_pred, residuals, c=colors, alpha=0.6, s=35, 
-                  edgecolors='white', linewidth=0.3)
-        
-        ax.axhline(0, color=COLORS['blue'], linewidth=2.5)
-        ax.axhline(2*std, color=COLORS['orange'], linewidth=2, linestyle='--', label=f'+2σ ({2*std:.1f})')
-        ax.axhline(-2*std, color=COLORS['orange'], linewidth=2, linestyle='--', label=f'-2σ ({-2*std:.1f})')
-        ax.fill_between([y_pred.min(), y_pred.max()], -2*std, 2*std, alpha=0.1, color=COLORS['orange'])
-        
-        ax.set_xlabel('Predicted Values', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Residuals (Actual - Predicted)', fontweight='bold', fontsize=12)
-        ax.set_title('📉 Residual Analysis', fontweight='bold', pad=15, fontsize=14)
-        ax.legend(loc='upper right')
-        ax.grid(alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _error_histogram(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Error distribution"""
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        errors = y_test - y_pred
-        
-        ax.hist(errors, bins=40, density=True, alpha=0.7, color=COLORS['blue'],
-               edgecolor='white', linewidth=1)
-        
-        if len(errors) > 10:
-            kde = stats.gaussian_kde(errors)
-            x = np.linspace(errors.min(), errors.max(), 200)
-            ax.plot(x, kde(x), color=COLORS['red'], linewidth=3, label='Density')
-        
-        ax.axvline(0, color=COLORS['green'], linewidth=2.5, linestyle='-', label='Zero Error')
-        ax.axvline(np.mean(errors), color=COLORS['orange'], linewidth=2, linestyle='--',
-                  label=f'Mean = {np.mean(errors):.2f}')
-        
-        ax.set_xlabel('Prediction Error', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Density', fontweight='bold', fontsize=12)
-        ax.set_title('📊 Error Distribution', fontweight='bold', pad=15, fontsize=14)
-        ax.legend(loc='upper right')
-        ax.grid(alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _prediction_error(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Error by value"""
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        errors = np.abs(y_test - y_pred)
-        
-        scatter = ax.scatter(y_test, errors, c=errors, cmap='RdYlGn_r',
-                           alpha=0.7, s=35, edgecolors='white', linewidth=0.3)
-        
-        z = np.polyfit(y_test, errors, 1)
-        ax.plot(np.sort(y_test), np.poly1d(z)(np.sort(y_test)), 
-               color=COLORS['red'], linewidth=2.5, linestyle='--', label='Trend')
-        
-        plt.colorbar(scatter, ax=ax, label='Absolute Error', shrink=0.8)
-        
-        ax.set_xlabel('Actual Values', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Absolute Error', fontweight='bold', fontsize=12)
-        ax.set_title('🎯 Prediction Error by Value', fontweight='bold', pad=15, fontsize=14)
-        ax.legend(loc='upper right')
-        ax.grid(alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _qq_plot(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Q-Q plot for residuals"""
-        fig, ax = plt.subplots(figsize=(8, 8))
-        
-        residuals = y_test - y_pred
-        stats.probplot(residuals, dist="norm", plot=ax)
-        
-        ax.get_lines()[0].set_color(COLORS['blue'])
-        ax.get_lines()[0].set_markersize(6)
-        ax.get_lines()[1].set_color(COLORS['red'])
-        ax.get_lines()[1].set_linewidth(2.5)
-        
-        ax.set_title('📐 Q-Q Plot (Residual Normality)', fontweight='bold', pad=15, fontsize=14)
-        ax.grid(alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _regression_metrics(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Regression metrics summary"""
-        fig, ax = plt.subplots(figsize=(10, 5))
-        
-        r2 = 1 - np.sum((y_test - y_pred)**2) / np.sum((y_test - np.mean(y_test))**2)
-        mae = np.mean(np.abs(y_test - y_pred))
-        rmse = np.sqrt(np.mean((y_test - y_pred)**2))
-        mape = np.mean(np.abs((y_test - y_pred) / np.where(y_test==0, 1, y_test))) * 100
-        
-        metrics = ['R² Score', 'MAE', 'RMSE', 'MAPE (%)']
-        values = [r2, mae, rmse, mape]
-        colors = [COLORS['green'] if r2 > 0.7 else COLORS['orange'], 
-                 COLORS['blue'], COLORS['purple'], COLORS['cyan']]
-        
-        bars = ax.bar(metrics, values, color=colors, edgecolor='white', linewidth=2)
-        
-        for bar, val in zip(bars, values):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(values)*0.02,
-                   f'{val:.3f}', ha='center', fontsize=12, fontweight='bold')
-        
-        ax.set_ylabel('Value', fontweight='bold', fontsize=12)
-        ax.set_title('📋 Regression Metrics Summary', fontweight='bold', pad=15, fontsize=14)
-        ax.grid(axis='y', alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _error_boxplot(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Error boxplot"""
+    # 1. ACTUAL VS PREDICTED with trend
+    try:
         fig, ax = plt.subplots(figsize=(8, 6))
         
-        errors = y_test - y_pred
-        abs_errors = np.abs(errors)
+        ax.scatter(y_test, y_pred, alpha=0.6, color=COLORS[0], s=50, edgecolors='white', linewidth=0.5)
         
-        bp = ax.boxplot([errors, abs_errors], labels=['Signed Error', 'Absolute Error'],
-                       patch_artist=True, widths=0.6)
+        min_v, max_v = min(y_test.min(), y_pred.min()), max(y_test.max(), y_pred.max())
+        ax.plot([min_v, max_v], [min_v, max_v], 'r--', lw=2, label='Perfect')
         
-        bp['boxes'][0].set_facecolor(COLORS['blue'])
-        bp['boxes'][1].set_facecolor(COLORS['orange'])
+        z = np.polyfit(y_test, y_pred, 1)
+        p = np.poly1d(z)
+        ax.plot(np.sort(y_test), p(np.sort(y_test)), '--', color=COLORS[1], lw=1.5, label='Trend')
         
-        for element in ['whiskers', 'caps', 'medians']:
-            plt.setp(bp[element], color='#374151', linewidth=2)
+        r2 = r2_score(y_test, y_pred)
+        mae = mean_absolute_error(y_test, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         
-        ax.axhline(0, color=COLORS['green'], linewidth=2, linestyle='--', alpha=0.7)
+        ax.annotate(f'R² = {r2:.4f}\nMAE = {mae:.2f}\nRMSE = {rmse:.2f}', 
+                   xy=(0.05, 0.95), xycoords='axes fraction', fontsize=11, color='white',
+                   bbox=dict(boxstyle='round', facecolor='#333333', alpha=0.8), va='top')
         
-        ax.set_ylabel('Error', fontweight='bold', fontsize=12)
-        ax.set_title('📦 Error Distribution (Box Plot)', fontweight='bold', pad=15, fontsize=14)
-        ax.grid(axis='y', alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    # =========================================================================
-    # CLASSIFICATION CHARTS
-    # =========================================================================
-    
-    def _confusion_matrix(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Confusion matrix heatmap"""
-        from sklearn.metrics import confusion_matrix, accuracy_score
-        
-        fig, ax = plt.subplots(figsize=(8, 7))
-        
-        cm = confusion_matrix(y_test, y_pred)
-        cm_norm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        cm_norm = np.nan_to_num(cm_norm)
-        
-        sns.heatmap(cm_norm, annot=True, fmt='.1%', cmap='Blues', ax=ax,
-                   cbar_kws={'label': 'Proportion', 'shrink': 0.8},
-                   annot_kws={'size': 12, 'weight': 'bold'},
-                   linewidths=2, linecolor='white')
-        
-        acc = accuracy_score(y_test, y_pred)
-        ax.set_xlabel('Predicted', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Actual', fontweight='bold', fontsize=12)
-        ax.set_title(f'🎯 Confusion Matrix (Accuracy: {acc:.1%})', fontweight='bold', pad=15, fontsize=14)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _class_distribution(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Class distribution comparison"""
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        classes, actual = np.unique(y_test, return_counts=True)
-        _, pred = np.unique(y_pred, return_counts=True)
-        
-        if len(pred) < len(actual):
-            pred = np.pad(pred, (0, len(actual) - len(pred)))
-        
-        x = np.arange(min(len(classes), 10))
-        width = 0.4
-        
-        ax.bar(x - width/2, actual[:10], width, label='Actual', 
-              color=COLORS['blue'], edgecolor='white', linewidth=2)
-        ax.bar(x + width/2, pred[:10], width, label='Predicted',
-              color=COLORS['green'], edgecolor='white', linewidth=2)
-        
-        ax.set_xlabel('Class', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Count', fontweight='bold', fontsize=12)
-        ax.set_title('📊 Class Distribution: Actual vs Predicted', fontweight='bold', pad=15, fontsize=14)
-        ax.set_xticks(x)
+        ax.set_xlabel('Actual', fontsize=12, color='white')
+        ax.set_ylabel('Predicted', fontsize=12, color='white')
+        ax.set_title(f'Actual vs Predicted - {model_name}', fontsize=14, color='white')
         ax.legend()
-        ax.grid(axis='y', alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
         
-        plt.tight_layout()
-        return fig_to_base64(fig)
+        charts['actual_vs_predicted'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Actual vs Predicted error: {e}")
     
-    def _classification_metrics(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Classification metrics summary"""
-        from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+    # 2. RESIDUALS ANALYSIS (2x2 grid)
+    try:
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         
-        fig, ax = plt.subplots(figsize=(10, 5))
+        # Residuals vs Predicted
+        axes[0, 0].scatter(y_pred, residuals, alpha=0.6, color=COLORS[1], s=40)
+        axes[0, 0].axhline(y=0, color='red', linestyle='--', lw=1.5)
+        axes[0, 0].set_xlabel('Predicted', color='white')
+        axes[0, 0].set_ylabel('Residual', color='white')
+        axes[0, 0].set_title('Residuals vs Predicted', color='white')
         
-        acc = accuracy_score(y_test, y_pred)
-        prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-        rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-        f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+        # Residuals Histogram
+        axes[0, 1].hist(residuals, bins=30, color=COLORS[2], alpha=0.7, edgecolor='white')
+        axes[0, 1].axvline(x=0, color='red', linestyle='--', lw=1.5)
+        axes[0, 1].set_xlabel('Residual', color='white')
+        axes[0, 1].set_ylabel('Frequency', color='white')
+        axes[0, 1].set_title('Residuals Distribution', color='white')
         
-        metrics = ['Accuracy', 'Precision', 'Recall', 'F1 Score']
-        values = [acc, prec, rec, f1]
-        colors = [COLORS['blue'], COLORS['green'], COLORS['orange'], COLORS['purple']]
+        # Q-Q Plot
+        stats.probplot(residuals, dist="norm", plot=axes[1, 0])
+        axes[1, 0].get_lines()[0].set_color(COLORS[0])
+        axes[1, 0].get_lines()[1].set_color('red')
+        axes[1, 0].set_title('Q-Q Plot (Normality)', color='white')
+        axes[1, 0].set_xlabel('Theoretical Quantiles', color='white')
+        axes[1, 0].set_ylabel('Sample Quantiles', color='white')
         
-        bars = ax.bar(metrics, values, color=colors, edgecolor='white', linewidth=2)
+        # Residuals vs Index
+        axes[1, 1].scatter(range(len(residuals)), residuals, alpha=0.6, color=COLORS[3], s=30)
+        axes[1, 1].axhline(y=0, color='red', linestyle='--', lw=1.5)
+        axes[1, 1].set_xlabel('Index', color='white')
+        axes[1, 1].set_ylabel('Residual', color='white')
+        axes[1, 1].set_title('Residuals vs Order', color='white')
         
-        for bar, val in zip(bars, values):
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
-                   f'{val:.1%}', ha='center', fontsize=12, fontweight='bold')
-        
-        ax.set_ylim(0, 1.15)
-        ax.set_ylabel('Score', fontweight='bold', fontsize=12)
-        ax.set_title('📋 Classification Metrics', fontweight='bold', pad=15, fontsize=14)
-        ax.grid(axis='y', alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
+        fig.suptitle(f'Residual Analysis - {model_name}', fontsize=14, color='white', y=1.02)
         plt.tight_layout()
-        return fig_to_base64(fig)
+        
+        charts['residuals_analysis'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Residuals analysis error: {e}")
     
-    def _prediction_accuracy_pie(self, y_test: np.ndarray, y_pred: np.ndarray) -> str:
-        """Correct vs incorrect predictions pie"""
-        fig, ax = plt.subplots(figsize=(8, 8))
-        
-        correct = int(np.sum(y_test == y_pred))
-        incorrect = int(len(y_test) - correct)
-        
-        # Ensure non-negative values for pie chart
-        correct = max(0, correct)
-        incorrect = max(0, incorrect)
-        
-        # Handle edge case where both are 0
-        if correct == 0 and incorrect == 0:
-            correct = 1
-        
-        sizes = [correct, incorrect]
-        labels = [f'Correct\n({correct})', f'Incorrect\n({incorrect})']
-        colors = [COLORS['green'], COLORS['red']]
-        explode = (0.02, 0.02)
-        
-        wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors, 
-                                         autopct='%1.1f%%', startangle=90,
-                                         explode=explode, shadow=False,
-                                         wedgeprops={'edgecolor': 'white', 'linewidth': 3})
-        
-        plt.setp(autotexts, size=14, weight='bold', color='white')
-        plt.setp(texts, size=12, weight='bold')
-        
-        ax.set_title('✅ Prediction Accuracy', fontweight='bold', pad=15, fontsize=14)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _roc_curve(self, y_test: np.ndarray, y_proba: np.ndarray) -> str:
-        """ROC curve"""
-        from sklearn.metrics import roc_curve, auc
-        
-        fig, ax = plt.subplots(figsize=(8, 8))
-        
-        try:
-            fpr, tpr, _ = roc_curve(y_test, y_proba)
-            roc_auc = auc(fpr, tpr)
-            
-            ax.fill_between(fpr, tpr, alpha=0.2, color=COLORS['blue'])
-            ax.plot(fpr, tpr, color=COLORS['blue'], linewidth=3,
-                   label=f'ROC (AUC = {roc_auc:.3f})')
-            ax.plot([0, 1], [0, 1], '--', color=COLORS['red'], linewidth=2,
-                   label='Random (AUC = 0.5)')
-            
-            ax.set_xlabel('False Positive Rate', fontweight='bold', fontsize=12)
-            ax.set_ylabel('True Positive Rate', fontweight='bold', fontsize=12)
-            ax.set_title('📈 ROC Curve', fontweight='bold', pad=15, fontsize=14)
-            ax.legend(loc='lower right', fontsize=11)
-            ax.set_xlim([-0.02, 1.02])
-            ax.set_ylim([-0.02, 1.02])
-        except:
-            ax.text(0.5, 0.5, 'ROC not available\n(multiclass)', ha='center', va='center', fontsize=14)
-        
-        ax.grid(alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _probability_histogram(self, y_proba: np.ndarray) -> str:
-        """Probability distribution"""
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        proba = y_proba.flatten() if len(y_proba.shape) > 1 else y_proba
-        
-        ax.hist(proba, bins=50, density=True, alpha=0.7,
-               color=COLORS['cyan'], edgecolor='white', linewidth=1)
-        
-        if len(proba) > 10:
-            kde = stats.gaussian_kde(np.clip(proba, 0.01, 0.99))
-            x = np.linspace(0, 1, 200)
-            ax.plot(x, kde(x), color=COLORS['purple'], linewidth=3, label='Density')
-        
-        ax.axvline(0.5, color=COLORS['red'], linewidth=2.5, linestyle='--', label='Threshold (0.5)')
-        
-        ax.set_xlabel('Prediction Probability', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Density', fontweight='bold', fontsize=12)
-        ax.set_title('🎲 Model Confidence Distribution', fontweight='bold', pad=15, fontsize=14)
-        ax.legend(loc='upper right')
-        ax.set_xlim([0, 1])
-        ax.grid(alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _confidence_gauge(self, y_proba: np.ndarray) -> str:
-        """Average confidence gauge"""
+    # 3. ERROR DISTRIBUTION with percentiles
+    try:
         fig, ax = plt.subplots(figsize=(8, 6))
         
-        avg_conf = np.mean(np.max(y_proba.reshape(-1, 1) if len(y_proba.shape) == 1 else y_proba, axis=-1) if len(y_proba.shape) > 1 else y_proba)
+        sns.kdeplot(errors, ax=ax, color=COLORS[3], fill=True, alpha=0.3, lw=2)
+        ax.hist(errors, bins=30, density=True, alpha=0.3, color=COLORS[3], edgecolor='white')
         
-        # Gauge chart
-        theta = np.linspace(0, np.pi, 100)
-        r = 1
+        for p, color in [(50, COLORS[0]), (75, COLORS[1]), (90, COLORS[4]), (95, COLORS[6])]:
+            val = np.percentile(errors, p)
+            ax.axvline(val, color=color, linestyle='--', label=f'{p}th: {val:.2f}')
         
-        ax.fill_between(theta, 0, r, alpha=0.15, color=COLORS['red'])
-        ax.fill_between(theta[50:], 0, r, alpha=0.15, color=COLORS['orange'])
-        ax.fill_between(theta[70:], 0, r, alpha=0.15, color=COLORS['green'])
+        ax.set_xlabel('Absolute Error', fontsize=12, color='white')
+        ax.set_ylabel('Density', fontsize=12, color='white')
+        ax.set_title(f'Error Distribution - {model_name}', fontsize=14, color='white')
+        ax.legend(fontsize=9)
         
-        # Needle
-        angle = np.pi * (1 - avg_conf)
-        ax.annotate('', xy=(angle, 0.85), xytext=(np.pi/2, 0),
-                   arrowprops=dict(arrowstyle='->', lw=3, color=COLORS['blue']))
-        
-        ax.text(np.pi/2, -0.3, f'{avg_conf:.1%}', ha='center', fontsize=24, fontweight='bold', color=COLORS['blue'])
-        ax.text(np.pi/2, -0.5, 'Average Confidence', ha='center', fontsize=12, color='#374151')
-        
-        ax.set_xlim(0, np.pi)
-        ax.set_ylim(-0.7, 1.1)
-        ax.axis('off')
-        ax.set_title('🎯 Model Confidence Level', fontweight='bold', pad=15, fontsize=14)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
+        charts['error_distribution'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Error distribution error: {e}")
     
-    # =========================================================================
-    # ADVANCED CHARTS FOR TOP 1% (ADDED v4.0)
-    # =========================================================================
-    
-    def _learning_curve(self, model, X: np.ndarray, y: np.ndarray, task_type: str = 'classification') -> str:
-        """Learning curve to detect overfitting/underfitting"""
-        from sklearn.model_selection import learning_curve
-        
+    # 4. TARGET DISTRIBUTION HISTOGRAM
+    try:
         fig, ax = plt.subplots(figsize=(10, 6))
         
-        try:
-            scoring = 'f1_weighted' if 'classification' in task_type else 'r2'
-            
-            train_sizes, train_scores, val_scores = learning_curve(
-                model, X, y,
-                train_sizes=np.linspace(0.1, 1.0, 8),
-                cv=3,
-                scoring=scoring,
-                n_jobs=1,
-                random_state=42
-            )
-            
-            train_mean = train_scores.mean(axis=1)
-            train_std = train_scores.std(axis=1)
-            val_mean = val_scores.mean(axis=1)
-            val_std = val_scores.std(axis=1)
-            
-            ax.fill_between(train_sizes, train_mean - train_std, train_mean + train_std, 
-                           alpha=0.2, color=COLORS['blue'])
-            ax.fill_between(train_sizes, val_mean - val_std, val_mean + val_std, 
-                           alpha=0.2, color=COLORS['green'])
-            ax.plot(train_sizes, train_mean, 'o-', color=COLORS['blue'], linewidth=2.5, 
-                   markersize=8, label='Training Score')
-            ax.plot(train_sizes, val_mean, 'o-', color=COLORS['green'], linewidth=2.5, 
-                   markersize=8, label='Validation Score')
-            
-            # Add gap annotation
-            gap = train_mean[-1] - val_mean[-1]
-            gap_status = "Low (Good)" if gap < 0.05 else "Medium" if gap < 0.1 else "High (Overfitting)"
-            ax.text(0.95, 0.05, f'Train-Val Gap: {gap:.3f}\n({gap_status})', 
-                   transform=ax.transAxes, ha='right', va='bottom',
-                   fontsize=10, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-            
-        except Exception as e:
-            ax.text(0.5, 0.5, f'Learning curve not available\n{str(e)[:50]}', 
-                   ha='center', va='center', fontsize=12)
+        ax.hist(y_test, bins=30, alpha=0.6, color=COLORS[0], label='Actual', edgecolor='white')
+        ax.hist(y_pred, bins=30, alpha=0.6, color=COLORS[2], label='Predicted', edgecolor='white')
         
-        ax.set_xlabel('Training Set Size', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Score', fontweight='bold', fontsize=12)
-        ax.set_title('📈 Learning Curve (Bias-Variance Analysis)', fontweight='bold', pad=15, fontsize=14)
-        ax.legend(loc='lower right', fontsize=10)
-        ax.grid(True, alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
+        ax.axvline(y_test.mean(), color=COLORS[0], linestyle='--', lw=2, label=f'Actual Mean: {y_test.mean():.2f}')
+        ax.axvline(y_pred.mean(), color=COLORS[2], linestyle='--', lw=2, label=f'Pred Mean: {y_pred.mean():.2f}')
         
-        plt.tight_layout()
-        return fig_to_base64(fig)
+        ax.set_xlabel('Value', fontsize=12, color='white')
+        ax.set_ylabel('Frequency', fontsize=12, color='white')
+        ax.set_title(f'Target Distribution - {model_name}', fontsize=14, color='white')
+        ax.legend()
+        
+        charts['target_histogram'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Target histogram error: {e}")
     
-    def _calibration_curve(self, y_test: np.ndarray, y_proba: np.ndarray, n_bins: int = 10) -> str:
-        """Probability calibration curve for classification"""
-        from sklearn.calibration import calibration_curve
-        
-        fig, ax = plt.subplots(figsize=(8, 8))
-        
-        try:
-            prob_true, prob_pred = calibration_curve(y_test, y_proba, n_bins=n_bins, strategy='uniform')
-            
-            # Perfect calibration line
-            ax.plot([0, 1], [0, 1], 'k--', linewidth=2, label='Perfectly Calibrated')
-            ax.plot(prob_pred, prob_true, 'o-', color=COLORS['teal'], 
-                   linewidth=2.5, markersize=10, label='Model Calibration')
-            
-            ax.fill_between(prob_pred, prob_true, prob_pred, alpha=0.2, color=COLORS['teal'])
-            
-            # Calculate calibration error
-            ece = np.mean(np.abs(prob_true - prob_pred))
-            ax.text(0.95, 0.05, f'Expected Calibration Error: {ece:.3f}', 
-                   transform=ax.transAxes, ha='right', va='bottom',
-                   fontsize=10, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-            
-        except Exception as e:
-            ax.text(0.5, 0.5, f'Calibration curve not available\n(binary classification only)', 
-                   ha='center', va='center', fontsize=12)
-            ax.plot([0, 1], [0, 1], 'k--', linewidth=2)
-        
-        ax.set_xlabel('Mean Predicted Probability', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Fraction of Positives', fontweight='bold', fontsize=12)
-        ax.set_title('🎯 Probability Calibration Curve', fontweight='bold', pad=15, fontsize=14)
-        ax.legend(loc='upper left', fontsize=10)
-        ax.grid(True, alpha=0.3)
-        ax.set_xlim([-0.02, 1.02])
-        ax.set_ylim([-0.02, 1.02])
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _lift_gain_curves(self, y_test: np.ndarray, y_proba: np.ndarray) -> str:
-        """Lift and Cumulative Gain curves for classification"""
-        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-        
-        try:
-            # Sort by predicted probability (descending)
-            sorted_idx = np.argsort(y_proba)[::-1]
-            y_sorted = np.array(y_test)[sorted_idx]
-            
-            # Cumulative gains
-            cumulative_positive = np.cumsum(y_sorted)
-            total_positive = y_sorted.sum()
-            
-            if total_positive > 0:
-                gains = cumulative_positive / total_positive
-            else:
-                gains = np.zeros_like(cumulative_positive)
-            
-            # Percentiles
-            percentiles = np.arange(1, len(y_sorted) + 1) / len(y_sorted)
-            
-            # Lift = Gain / Percentile
-            lift = np.where(percentiles > 0, gains / percentiles, 0)
-            
-            # === GAIN CURVE ===
-            axes[0].plot(percentiles, gains, color=COLORS['blue'], linewidth=2.5, label='Model')
-            axes[0].plot([0, 1], [0, 1], 'k--', linewidth=2, label='Random')
-            axes[0].fill_between(percentiles, gains, percentiles, alpha=0.2, color=COLORS['blue'])
-            axes[0].set_xlabel('% of Population', fontweight='bold', fontsize=12)
-            axes[0].set_ylabel('% of Positives Captured', fontweight='bold', fontsize=12)
-            axes[0].set_title('📈 Cumulative Gains Curve', fontweight='bold', pad=15, fontsize=14)
-            axes[0].legend(loc='lower right')
-            axes[0].grid(True, alpha=0.3)
-            axes[0].spines['top'].set_visible(False)
-            axes[0].spines['right'].set_visible(False)
-            
-            # === LIFT CURVE ===
-            axes[1].plot(percentiles, lift, color=COLORS['green'], linewidth=2.5)
-            axes[1].axhline(y=1, color='k', linestyle='--', linewidth=2, label='Random (Lift=1)')
-            axes[1].fill_between(percentiles, lift, 1, where=(lift > 1), alpha=0.2, color=COLORS['green'])
-            axes[1].set_xlabel('% of Population', fontweight='bold', fontsize=12)
-            axes[1].set_ylabel('Lift', fontweight='bold', fontsize=12)
-            axes[1].set_title('📊 Lift Curve', fontweight='bold', pad=15, fontsize=14)
-            axes[1].legend(loc='upper right')
-            axes[1].grid(True, alpha=0.3)
-            axes[1].spines['top'].set_visible(False)
-            axes[1].spines['right'].set_visible(False)
-            
-        except Exception as e:
-            for ax in axes:
-                ax.text(0.5, 0.5, f'Lift/Gain not available', ha='center', va='center', fontsize=12)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _model_radar_comparison(self, leaderboard: List[Dict], is_classification: bool = True) -> str:
-        """Radar chart comparing all models across metrics"""
-        from math import pi
-        
-        fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True))
-        
-        if is_classification:
-            metrics = ['accuracy', 'f1', 'precision', 'recall']
-        else:
-            metrics = ['r2', 'mae', 'rmse']
-        
-        n_metrics = len(metrics)
-        
-        # Calculate angles
-        angles = [n / float(n_metrics) * 2 * pi for n in range(n_metrics)]
-        angles += angles[:1]  # Complete the loop
-        
-        colors = [COLORS['blue'], COLORS['green'], COLORS['purple'], COLORS['amber'], COLORS['teal']]
-        
-        for idx, model in enumerate(leaderboard[:5]):
-            values = []
-            for m in metrics:
-                val = model.get('metrics', {}).get(m, 0)
-                # Normalize metrics to 0-1 range for comparison
-                if m in ['mae', 'rmse']:
-                    val = max(0, 1 - val / 100)  # Invert and normalize
-                values.append(val)
-            
-            values += values[:1]  # Complete the loop
-            
-            ax.plot(angles, values, 'o-', linewidth=2.5, label=model['name'], 
-                   color=colors[idx % len(colors)], markersize=8)
-            ax.fill(angles, values, alpha=0.15, color=colors[idx % len(colors)])
-        
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels([m.upper() for m in metrics], fontsize=11, fontweight='bold')
-        ax.set_title('🎯 Model Comparison Radar', fontweight='bold', fontsize=14, y=1.08)
-        ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0), fontsize=10)
-        ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
-    
-    def _confidence_distribution(self, y_proba: np.ndarray) -> str:
-        """Distribution of prediction confidences"""
+    # 5. ERROR BOX PLOT (by quantiles)
+    try:
         fig, ax = plt.subplots(figsize=(10, 6))
         
-        # Get max probability for each prediction
-        if len(y_proba.shape) > 1:
-            max_proba = np.max(y_proba, axis=1)
-        else:
-            max_proba = y_proba
+        quantiles = np.percentile(y_test, [0, 25, 50, 75, 100])
+        groups = []
+        labels = []
+        for i in range(len(quantiles) - 1):
+            mask = (y_test >= quantiles[i]) & (y_test < quantiles[i+1])
+            if mask.sum() > 0:
+                groups.append(errors[mask])
+                labels.append(f'Q{i+1}')
         
-        # Histogram
-        n, bins, patches = ax.hist(max_proba, bins=30, density=True, alpha=0.7, 
-                                   color=COLORS['blue'], edgecolor='white', linewidth=1)
+        bp = ax.boxplot(groups, patch_artist=True)
+        for i, patch in enumerate(bp['boxes']):
+            patch.set_facecolor(COLORS[i % len(COLORS)])
+            patch.set_alpha(0.7)
         
-        # Color bars by confidence level
-        for i, patch in enumerate(patches):
-            if bins[i] < 0.5:
-                patch.set_facecolor(COLORS['red'])
-            elif bins[i] < 0.8:
-                patch.set_facecolor(COLORS['orange'])
-            else:
-                patch.set_facecolor(COLORS['green'])
+        ax.set_xticklabels(labels)
+        ax.set_xlabel('Target Quantile', fontsize=12, color='white')
+        ax.set_ylabel('Absolute Error', fontsize=12, color='white')
+        ax.set_title(f'Error by Target Range - {model_name}', fontsize=14, color='white')
         
-        # Add threshold lines
-        ax.axvline(x=0.5, color=COLORS['amber'], linestyle='--', linewidth=2.5, label='50% Threshold')
-        ax.axvline(x=0.8, color=COLORS['green'], linestyle='--', linewidth=2.5, label='80% High Confidence')
-        
-        # Statistics
-        mean_conf = np.mean(max_proba)
-        high_conf_pct = (max_proba >= 0.8).mean() * 100
-        ax.text(0.95, 0.95, f'Mean: {mean_conf:.1%}\nHigh Conf (≥80%): {high_conf_pct:.1f}%', 
-               transform=ax.transAxes, ha='right', va='top',
-               fontsize=10, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        
-        ax.set_xlabel('Prediction Confidence', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Density', fontweight='bold', fontsize=12)
-        ax.set_title('🎲 Prediction Confidence Distribution', fontweight='bold', pad=15, fontsize=14)
-        ax.legend(loc='upper left')
-        ax.set_xlim([0, 1])
-        ax.grid(True, alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
+        charts['error_boxplot'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Error boxplot error: {e}")
     
-    def _prediction_intervals(self, y_test: np.ndarray, y_pred: np.ndarray, confidence: float = 0.95) -> str:
-        """Prediction intervals for regression"""
+    # 6. PREDICTION OVERVIEW (sorted with bands)
+    try:
         fig, ax = plt.subplots(figsize=(12, 6))
         
-        # Calculate residual std
-        residuals = y_test - y_pred
-        std = np.std(residuals)
+        idx = np.argsort(y_test)
+        y_sorted = y_test[idx]
+        pred_sorted = y_pred[idx]
         
-        # Calculate z-score for confidence level
-        z = stats.norm.ppf((1 + confidence) / 2)
+        ax.scatter(range(len(y_sorted)), y_sorted, alpha=0.7, color=COLORS[0], s=20, label='Actual')
+        ax.scatter(range(len(pred_sorted)), pred_sorted, alpha=0.5, color=COLORS[3], s=15, marker='x', label='Predicted')
         
-        # Sort by predicted value for visualization
-        sorted_idx = np.argsort(y_pred)
-        y_pred_sorted = y_pred[sorted_idx]
-        y_test_sorted = y_test[sorted_idx]
+        std = np.std(pred_sorted - y_sorted)
+        ax.fill_between(range(len(y_sorted)), y_sorted - 2*std, y_sorted + 2*std, 
+                       alpha=0.2, color=COLORS[1], label='±2σ')
         
-        # Calculate bounds
-        lower = y_pred_sorted - z * std
-        upper = y_pred_sorted + z * std
+        ax.set_xlabel('Sample (sorted)', fontsize=12, color='white')
+        ax.set_ylabel('Value', fontsize=12, color='white')
+        ax.set_title(f'Prediction Overview - {model_name}', fontsize=14, color='white')
+        ax.legend()
         
-        # Plot
-        x_range = np.arange(len(y_pred_sorted))
-        
-        ax.fill_between(x_range, lower, upper, alpha=0.3, color=COLORS['blue'], 
-                       label=f'{confidence:.0%} Prediction Interval')
-        ax.plot(x_range, y_pred_sorted, color=COLORS['blue'], linewidth=2, label='Predicted')
-        ax.scatter(x_range, y_test_sorted, c=COLORS['green'], alpha=0.6, s=20, label='Actual', zorder=5)
-        
-        # Calculate coverage
-        in_interval = ((y_test_sorted >= lower) & (y_test_sorted <= upper)).mean()
-        ax.text(0.95, 0.95, f'Coverage: {in_interval:.1%}\n(Expected: {confidence:.0%})', 
-               transform=ax.transAxes, ha='right', va='top',
-               fontsize=10, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
-        
-        ax.set_xlabel('Sample Index (sorted by prediction)', fontweight='bold', fontsize=12)
-        ax.set_ylabel('Value', fontweight='bold', fontsize=12)
-        ax.set_title(f'📊 {confidence:.0%} Prediction Intervals', fontweight='bold', pad=15, fontsize=14)
-        ax.legend(loc='upper left')
-        ax.grid(True, alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        plt.tight_layout()
-        return fig_to_base64(fig)
+        charts['prediction_overview'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Prediction overview error: {e}")
     
-    def _shap_importance(self, feature_importance: List[Dict]) -> str:
-        """SHAP-style feature importance (bar chart with directionality)"""
+    # 7. SCALE-LOCATION PLOT
+    try:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        sqrt_abs_resid = np.sqrt(np.abs(residuals))
+        ax.scatter(y_pred, sqrt_abs_resid, alpha=0.6, color=COLORS[4], s=40)
+        
+        z = np.polyfit(y_pred, sqrt_abs_resid, 1)
+        p = np.poly1d(z)
+        ax.plot(np.sort(y_pred), p(np.sort(y_pred)), 'r--', lw=2)
+        
+        ax.set_xlabel('Fitted Values', fontsize=12, color='white')
+        ax.set_ylabel('√|Residuals|', fontsize=12, color='white')
+        ax.set_title(f'Scale-Location Plot - {model_name}', fontsize=14, color='white')
+        
+        charts['scale_location'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Scale-location error: {e}")
+    
+    return charts
+
+
+# =============================================================================
+# CLUSTERING CHARTS (8 types)
+# =============================================================================
+
+def _generate_clustering_charts(
+    X: Optional[np.ndarray],
+    labels: np.ndarray,
+    model_name: str,
+    feature_names: Optional[List[str]] = None
+) -> Dict[str, str]:
+    """Generate comprehensive clustering charts"""
+    charts = {}
+    
+    if X is None or len(X) < 5:
+        return charts
+    
+    n_clusters = len(np.unique(labels))
+    
+    # 1. CLUSTER SCATTER (2D PCA)
+    try:
         fig, ax = plt.subplots(figsize=(10, 8))
         
-        # Get top 15 features
-        features = [f['feature'][:25] for f in feature_importance[:15]][::-1]
-        values = [f['importance'] for f in feature_importance[:15]][::-1]
+        if X.shape[1] >= 2:
+            if X.shape[1] > 2:
+                from sklearn.decomposition import PCA
+                pca = PCA(n_components=2)
+                X_2d = pca.fit_transform(X)
+                xlabel = f'PC1 ({pca.explained_variance_ratio_[0]*100:.1f}%)'
+                ylabel = f'PC2 ({pca.explained_variance_ratio_[1]*100:.1f}%)'
+            else:
+                X_2d = X
+                xlabel = feature_names[0] if feature_names else 'Feature 1'
+                ylabel = feature_names[1] if feature_names and len(feature_names) > 1 else 'Feature 2'
+            
+            for i in range(n_clusters):
+                mask = labels == i
+                ax.scatter(X_2d[mask, 0], X_2d[mask, 1], c=COLORS[i % len(COLORS)], 
+                          s=50, alpha=0.7, label=f'Cluster {i} (n={mask.sum()})',
+                          edgecolors='white', linewidth=0.5)
+            
+            ax.set_xlabel(xlabel, fontsize=12, color='white')
+            ax.set_ylabel(ylabel, fontsize=12, color='white')
+            ax.set_title(f'Cluster Visualization - {model_name}', fontsize=14, color='white')
+            ax.legend()
+            
+            charts['cluster_scatter'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Cluster scatter error: {e}")
+    
+    # 2. CLUSTER DISTRIBUTION BAR
+    try:
+        fig, ax = plt.subplots(figsize=(8, 6))
         
-        # SHAP-style colors (red for positive, blue for negative)
-        # Since we only have magnitude, use gradient
-        max_val = max(values) if values else 1
-        colors = [plt.cm.RdBu_r(0.2 + 0.6 * v / max_val) for v in values]
+        unique, counts = np.unique(labels, return_counts=True)
+        bars = ax.bar(range(len(unique)), counts, color=COLORS[:len(unique)], edgecolor='white')
         
-        bars = ax.barh(range(len(features)), values, color=colors, height=0.7,
-                      edgecolor='white', linewidth=1)
+        for bar, count in zip(bars, counts):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+                   str(count), ha='center', fontsize=10, color='white')
+        
+        ax.set_xticks(range(len(unique)))
+        ax.set_xticklabels([f'Cluster {i}' for i in unique])
+        ax.set_xlabel('Cluster', fontsize=12, color='white')
+        ax.set_ylabel('Count', fontsize=12, color='white')
+        ax.set_title(f'Cluster Sizes - {model_name}', fontsize=14, color='white')
+        
+        charts['cluster_distribution'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Cluster distribution error: {e}")
+    
+    # 3. SILHOUETTE ANALYSIS
+    if n_clusters >= 2:
+        try:
+            sil_vals = silhouette_samples(X, labels)
+            sil_avg = silhouette_score(X, labels)
+            
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            y_lower = 10
+            for i in range(n_clusters):
+                vals = sil_vals[labels == i]
+                vals.sort()
+                size = vals.shape[0]
+                y_upper = y_lower + size
+                
+                ax.fill_betweenx(np.arange(y_lower, y_upper), 0, vals,
+                                alpha=0.7, color=COLORS[i % len(COLORS)])
+                ax.text(-0.05, y_lower + 0.5 * size, f'C{i}', fontsize=10, color='white')
+                y_lower = y_upper + 10
+            
+            ax.axvline(x=sil_avg, color='red', linestyle='--', lw=2, label=f'Avg: {sil_avg:.3f}')
+            ax.set_xlabel('Silhouette Coefficient', fontsize=12, color='white')
+            ax.set_ylabel('Cluster', fontsize=12, color='white')
+            ax.set_title(f'Silhouette Analysis - {model_name}', fontsize=14, color='white')
+            ax.legend()
+            
+            charts['silhouette'] = _fig_to_base64(fig)
+        except Exception as e:
+            logger.warning(f"Silhouette error: {e}")
+    
+    # 4. FEATURE BOX PLOTS BY CLUSTER
+    if feature_names and X.shape[1] >= 1:
+        try:
+            n_feat = min(4, X.shape[1])
+            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+            axes = axes.flatten()
+            
+            for i in range(n_feat):
+                ax = axes[i]
+                data = [X[labels == c, i] for c in range(n_clusters)]
+                bp = ax.boxplot(data, patch_artist=True)
+                
+                for j, patch in enumerate(bp['boxes']):
+                    patch.set_facecolor(COLORS[j % len(COLORS)])
+                    patch.set_alpha(0.7)
+                
+                ax.set_xticklabels([f'C{c}' for c in range(n_clusters)])
+                fname = feature_names[i][:15] if i < len(feature_names) else f'Feature {i}'
+                ax.set_title(fname, color='white')
+            
+            for i in range(n_feat, 4):
+                axes[i].set_visible(False)
+            
+            fig.suptitle(f'Feature Distribution by Cluster - {model_name}', fontsize=14, color='white')
+            plt.tight_layout()
+            
+            charts['cluster_boxplots'] = _fig_to_base64(fig)
+        except Exception as e:
+            logger.warning(f"Cluster boxplots error: {e}")
+    
+    # 5. CLUSTER HISTOGRAMS
+    if feature_names and X.shape[1] >= 1:
+        try:
+            n_feat = min(4, X.shape[1])
+            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+            axes = axes.flatten()
+            
+            for i in range(n_feat):
+                ax = axes[i]
+                for c in range(n_clusters):
+                    ax.hist(X[labels == c, i], bins=15, alpha=0.5, 
+                           color=COLORS[c % len(COLORS)], label=f'C{c}', edgecolor='white')
+                
+                fname = feature_names[i][:15] if i < len(feature_names) else f'Feature {i}'
+                ax.set_xlabel(fname, color='white')
+                ax.legend(fontsize=8)
+            
+            for i in range(n_feat, 4):
+                axes[i].set_visible(False)
+            
+            fig.suptitle(f'Feature Histograms by Cluster - {model_name}', fontsize=14, color='white')
+            plt.tight_layout()
+            
+            charts['cluster_histograms'] = _fig_to_base64(fig)
+        except Exception as e:
+            logger.warning(f"Cluster histograms error: {e}")
+    
+    return charts
+
+
+# =============================================================================
+# NLP CHARTS (6 types)
+# =============================================================================
+
+def _generate_nlp_charts(
+    text_data: List[str],
+    y: np.ndarray,
+    model_name: str
+) -> Dict[str, str]:
+    """Generate NLP-specific charts"""
+    charts = {}
+    
+    # 1. TEXT LENGTH DISTRIBUTION
+    try:
+        lengths = [len(str(t).split()) for t in text_data]
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.hist(lengths, bins=30, color=COLORS[0], alpha=0.7, edgecolor='white')
+        ax.axvline(np.mean(lengths), color='red', linestyle='--', label=f'Mean: {np.mean(lengths):.1f}')
+        ax.axvline(np.median(lengths), color=COLORS[3], linestyle='--', label=f'Median: {np.median(lengths):.1f}')
+        
+        ax.set_xlabel('Word Count', fontsize=12, color='white')
+        ax.set_ylabel('Frequency', fontsize=12, color='white')
+        ax.set_title(f'Text Length Distribution - {model_name}', fontsize=14, color='white')
+        ax.legend()
+        
+        charts['text_length_dist'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Text length dist error: {e}")
+    
+    # 2. TEXT LENGTH BY CLASS
+    try:
+        unique_classes = np.unique(y)
+        lengths = [len(str(t).split()) for t in text_data]
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        data = [[lengths[i] for i in range(len(y)) if y[i] == c] for c in unique_classes]
+        
+        bp = ax.boxplot(data, patch_artist=True)
+        for i, patch in enumerate(bp['boxes']):
+            patch.set_facecolor(COLORS[i % len(COLORS)])
+            patch.set_alpha(0.7)
+        
+        ax.set_xticklabels([f'Class {c}' for c in unique_classes], rotation=45, ha='right')
+        ax.set_xlabel('Class', fontsize=12, color='white')
+        ax.set_ylabel('Word Count', fontsize=12, color='white')
+        ax.set_title(f'Text Length by Class - {model_name}', fontsize=14, color='white')
+        
+        charts['text_length_by_class'] = _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Text length by class error: {e}")
+    
+    return charts
+
+
+# =============================================================================
+# COMMON CHARTS
+# =============================================================================
+
+def _generate_feature_importance_chart(
+    feature_importance: List[Dict],
+    model_name: str
+) -> Optional[str]:
+    """Generate feature importance horizontal bar chart"""
+    try:
+        if not feature_importance:
+            return None
+        
+        features = feature_importance[:15]
+        names = [f.get('feature', f"Feature {i}")[:25] for i, f in enumerate(features)]
+        values = [f.get('importance', 0) * 100 for f in features]
+        
+        names, values = names[::-1], values[::-1]
+        
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        colors = [COLORS[i % len(COLORS)] for i in range(len(names))][::-1]
+        bars = ax.barh(range(len(names)), values, color=colors, edgecolor='white', linewidth=0.5)
+        
+        ax.set_yticks(range(len(names)))
+        ax.set_yticklabels(names, fontsize=10)
+        ax.set_xlabel('Importance (%)', fontsize=12, color='white')
+        ax.set_title(f'Feature Importance - {model_name}', fontsize=14, color='white', pad=20)
         
         for bar, val in zip(bars, values):
-            ax.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height()/2,
-                   f'{val:.3f}', va='center', fontsize=9, fontweight='bold')
+            ax.text(bar.get_width() + 0.5, bar.get_y() + bar.get_height()/2,
+                   f'{val:.1f}%', va='center', fontsize=9, color='white')
         
-        ax.set_yticks(range(len(features)))
-        ax.set_yticklabels(features, fontsize=10)
-        ax.set_xlabel('|SHAP Value| (Mean Impact on Prediction)', fontweight='bold', fontsize=12)
-        ax.set_title('🔬 SHAP-Style Feature Importance', fontweight='bold', pad=15, fontsize=14)
-        ax.grid(axis='x', alpha=0.3)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
+        ax.set_xlim([0, max(values) * 1.15 if values else 100])
+        plt.tight_layout()
         
-        # Add colorbar legend
-        sm = plt.cm.ScalarMappable(cmap='RdBu_r', norm=plt.Normalize(0, max_val))
-        sm.set_array([])
-        cbar = plt.colorbar(sm, ax=ax, shrink=0.5, pad=0.02)
-        cbar.set_label('Impact Magnitude', fontsize=10)
+        return _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Feature importance error: {e}")
+        return None
+
+
+def generate_model_comparison_chart(
+    leaderboard: List[Dict],
+    metric_name: str = "accuracy"
+) -> Optional[str]:
+    """Generate model comparison bar chart"""
+    try:
+        if not leaderboard or len(leaderboard) < 2:
+            return None
+        
+        models = leaderboard[:10]
+        names = [m.get('name', f"Model {i}")[:15] for i, m in enumerate(models)]
+        scores = []
+        
+        for m in models:
+            metrics = m.get('metrics', {})
+            score = metrics.get(metric_name, metrics.get('accuracy', metrics.get('r2', metrics.get('f1', 0))))
+            scores.append(float(score) * 100 if float(score) <= 1 else float(score))
+        
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        colors = [COLORS[0] if i == 0 else COLORS[2] for i in range(len(names))]
+        bars = ax.bar(range(len(names)), scores, color=colors, edgecolor='white', linewidth=0.5)
+        
+        ax.set_xticks(range(len(names)))
+        ax.set_xticklabels(names, rotation=45, ha='right', fontsize=10)
+        ax.set_ylabel('Score (%)', fontsize=12, color='white')
+        ax.set_title('Model Comparison', fontsize=14, color='white', pad=20)
+        
+        ax.annotate('🏆 BEST', xy=(0, scores[0]), xytext=(0, scores[0] + 2),
+                   ha='center', fontsize=10, color=COLORS[0], fontweight='bold')
+        
+        for bar, score in zip(bars, scores):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                   f'{score:.1f}', ha='center', fontsize=9, color='white')
         
         plt.tight_layout()
-        return fig_to_base64(fig)
+        return _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Model comparison error: {e}")
+        return None
 
 
-# Global instance
-chart_generator = MLChartGenerator()
+def generate_correlation_heatmap(df: pd.DataFrame, title: str = "Feature Correlation") -> Optional[str]:
+    """Generate correlation heatmap for numeric features"""
+    try:
+        numeric_df = df.select_dtypes(include=[np.number])
+        if numeric_df.shape[1] < 2:
+            return None
+        
+        if numeric_df.shape[1] > 15:
+            numeric_df = numeric_df.iloc[:, :15]
+        
+        corr = numeric_df.corr()
+        
+        fig, ax = plt.subplots(figsize=(10, 8))
+        mask = np.triu(np.ones_like(corr, dtype=bool))
+        sns.heatmap(corr, mask=mask, annot=True, fmt='.2f', cmap='RdYlGn',
+                   center=0, ax=ax, linewidths=0.5, cbar_kws={'shrink': 0.8})
+        
+        ax.set_title(title, fontsize=14, color='white', pad=20)
+        plt.tight_layout()
+        
+        return _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Correlation heatmap error: {e}")
+        return None
+
+
+def generate_distribution_grid(df: pd.DataFrame, title: str = "Feature Distributions") -> Optional[str]:
+    """Generate histogram grid for numeric features"""
+    try:
+        numeric_df = df.select_dtypes(include=[np.number])
+        n_features = min(9, numeric_df.shape[1])
+        
+        if n_features < 1:
+            return None
+        
+        rows = int(np.ceil(n_features / 3))
+        fig, axes = plt.subplots(rows, 3, figsize=(12, rows * 3))
+        axes = axes.flatten() if hasattr(axes, 'flatten') else [axes]
+        
+        for i, col in enumerate(numeric_df.columns[:n_features]):
+            axes[i].hist(numeric_df[col].dropna(), bins=20, color=COLORS[i % len(COLORS)], 
+                        alpha=0.7, edgecolor='white')
+            axes[i].set_title(col[:20], fontsize=10, color='white')
+        
+        for i in range(n_features, len(axes)):
+            axes[i].set_visible(False)
+        
+        fig.suptitle(title, fontsize=14, color='white')
+        plt.tight_layout()
+        
+        return _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Distribution grid error: {e}")
+        return None
+
+
+def generate_boxplot_grid(df: pd.DataFrame, title: str = "Feature Box Plots") -> Optional[str]:
+    """Generate box plot grid for numeric features"""
+    try:
+        numeric_df = df.select_dtypes(include=[np.number])
+        n_features = min(9, numeric_df.shape[1])
+        
+        if n_features < 1:
+            return None
+        
+        rows = int(np.ceil(n_features / 3))
+        fig, axes = plt.subplots(rows, 3, figsize=(12, rows * 3))
+        axes = axes.flatten() if hasattr(axes, 'flatten') else [axes]
+        
+        for i, col in enumerate(numeric_df.columns[:n_features]):
+            bp = axes[i].boxplot(numeric_df[col].dropna(), patch_artist=True)
+            bp['boxes'][0].set_facecolor(COLORS[i % len(COLORS)])
+            bp['boxes'][0].set_alpha(0.7)
+            axes[i].set_title(col[:20], fontsize=10, color='white')
+        
+        for i in range(n_features, len(axes)):
+            axes[i].set_visible(False)
+        
+        fig.suptitle(title, fontsize=14, color='white')
+        plt.tight_layout()
+        
+        return _fig_to_base64(fig)
+    except Exception as e:
+        logger.warning(f"Boxplot grid error: {e}")
+        return None

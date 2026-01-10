@@ -376,6 +376,10 @@ async def list_files(
         if paths["files"].exists():
             for file_path in paths["files"].iterdir():
                 print(f"📄 [FILE LIST] Found: {file_path}")
+                # HIDE Generated Cleaned files from the main list (User Request)
+                if file_path.name.startswith("cleaned_"):
+                    continue
+                    
                 if file_path.is_file():
                     files.append({
                         "id": file_path.name,
@@ -483,6 +487,16 @@ async def delete_file(
         file_path.unlink()
         print(f"✅ File deleted: {file_id}")
         
+        # ALSO DELETE ALL cleaned_*.csv files (AutoML generated files)
+        # These are temporary files from ML training and should be cleared on delete
+        cleaned_files = list(paths["files"].glob("cleaned_*.csv"))
+        for cf in cleaned_files:
+            try:
+                cf.unlink()
+                print(f"🗑️ Deleted AutoML cleaned file: {cf.name}")
+            except Exception as e:
+                print(f"⚠️ Could not delete {cf.name}: {e}")
+        
         # COMPLETELY clear old indexes for fresh retraining
         # Clear FAISS index and metadata completely
         if paths["faiss"].exists():
@@ -507,8 +521,11 @@ async def delete_file(
             alt_graph_path.unlink()
             print(f"🗑️ Cleared alt graph file")
         
-        # Get remaining files for retraining
-        remaining_files = [f for f in paths["files"].glob("*") if f.is_file()]
+        # Get remaining files for retraining (EXCLUDING cleaned_ files)
+        remaining_files = [
+            f for f in paths["files"].glob("*") 
+            if f.is_file() and not f.name.startswith("cleaned_")
+        ]
         print(f"📁 Remaining files for retraining: {[f.name for f in remaining_files]}")
         
         if remaining_files:
@@ -572,7 +589,21 @@ async def rebuild_indexes(user_id: str):
     """RETRAIN: Rebuild indexes from existing files (clears old data first) - FRESH training"""
     try:
         paths = get_user_paths(user_id)
-        files = [f for f in paths["files"].glob("*") if f.is_file()]
+        
+        # First, delete all cleaned_*.csv files (AutoML generated)
+        cleaned_files = list(paths["files"].glob("cleaned_*.csv"))
+        for cf in cleaned_files:
+            try:
+                cf.unlink()
+                print(f"🗑️ Deleted AutoML cleaned file: {cf.name}")
+            except Exception as e:
+                print(f"⚠️ Could not delete {cf.name}: {e}")
+        
+        # Get only original files (not cleaned_ files)
+        files = [
+            f for f in paths["files"].glob("*") 
+            if f.is_file() and not f.name.startswith("cleaned_")
+        ]
         
         if not files:
             raise HTTPException(status_code=400, detail="No files to retrain. Upload files first.")

@@ -8,10 +8,12 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 # Configure Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure Logging
+# Note: Basic logging is handled in settings.py which is imported below.
+# We just ensure uvicorn loggers verify settings.
+import sys
+logging.getLogger("uvicorn.access").handlers = [logging.StreamHandler(sys.stdout)]
+logging.getLogger("uvicorn.error").handlers = [logging.StreamHandler(sys.stdout)]
 logger = logging.getLogger("main")
 
 # Load env using the new Settings logic (it loads env automatically on import)
@@ -77,6 +79,16 @@ logger.info("✅ DataVision API v2 loaded")
 from api.v1.endpoints import automl_api
 app.include_router(automl_api.router, prefix="/api/v2/automl", tags=["AutoML"])
 logger.info("✅ AutoML API loaded")
+
+# 🤖 Autonomous API (Model Management + Auto-Fix)
+from api.v1.endpoints import autonomous_api
+app.include_router(autonomous_api.router, prefix="/api/v2/autonomous", tags=["Autonomous"])
+logger.info("✅ Autonomous API loaded (Model Management + Auto-Fix)")
+
+# 🤖 Agentic AutoML (Multi-Agent ML Pipeline)
+from api.v1.endpoints import agentic_automl_api
+app.include_router(agentic_automl_api.router, prefix="/api/v2", tags=["Agentic AutoML"])
+logger.info("✅ Agentic AutoML API loaded (9 Specialized Agents)")
 
 from fastapi.responses import FileResponse
 

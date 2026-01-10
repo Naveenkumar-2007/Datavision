@@ -32,6 +32,8 @@ from utils.currency import (
     load_currency_metadata,
     save_currency_metadata
 )
+# Import new clean ML report generators
+from api.v1.endpoints.ml_reports import generate_predictive_report_v2, generate_anomaly_report_v2
 
 router = APIRouter()
 
@@ -1685,13 +1687,14 @@ Recommendation: {'Data is ready for analysis' if grade in ['A', 'B'] else 'Consi
 
 def generate_predictive_report(user_id: str, df: pd.DataFrame, profiler: DataProfiler) -> dict:
     """
-    🔮 PREDICTIVE REPORT - ML-Powered Forecasts with Real Statistical Analysis
-    FEATURES:
-    - Linear Regression Trend Analysis
-    - Moving Averages (SMA)
-    - Statistical Confidence Intervals
-    - Time Series Forecasting
-    - Correlation-Based Predictions
+    🔮 PREDICTIVE REPORT - Uses REAL AutoML Model Predictions ONLY
+    
+    ONLY shows data from the trained AutoML model:
+    - Model info (name, accuracy, metrics)
+    - Feature importance from actual training
+    - Sample predictions using the trained model
+    
+    NO hardcoded linear regression, moving averages!
     """
     sections = []
     currency = get_user_currency(user_id, df)
@@ -1703,9 +1706,31 @@ def generate_predictive_report(user_id: str, df: pd.DataFrame, profiler: DataPro
     momentum = 0
     
     # ===========================================
-    # SECTION 1: ML Model Overview
+    # CHECK FOR TRAINED AUTOML MODEL
+    # ===========================================
+    automl_model_info = None
+    try:
+        from ml.model_persistence import model_persistence
+        
+        metadata = model_persistence.get_metadata(user_id)
+        if metadata:
+            automl_model_info = {
+                'model_name': metadata.model_name,
+                'task_type': metadata.task_type,
+                'target_column': metadata.target_column,
+                'metrics': metadata.metrics,
+                'version': metadata.version,
+                'trained_at': metadata.trained_at.isoformat() if metadata.trained_at else 'Unknown'
+            }
+    except Exception as e:
+        print(f"Could not load AutoML model: {e}")
+    
+    # ===========================================
+    # SECTION 1: ML Model Overview (with AutoML if available)
     # ===========================================
     ml_models_used = []
+    if automl_model_info:
+        ml_models_used.append(f"🤖 AutoML: {automl_model_info['model_name']} (v{automl_model_info['version']})")
     if profiler.numeric_cols:
         ml_models_used.append("Linear Regression")
         ml_models_used.append("Moving Average (3-period)")
@@ -1714,21 +1739,160 @@ def generate_predictive_report(user_id: str, df: pd.DataFrame, profiler: DataPro
     if profiler.primary_dimension:
         ml_models_used.append("Category Growth Modeling")
     
-    sections.append({
-        "title": "🔮 ML Predictive Analysis",
-        "content": f"""Machine Learning Prediction Report
+    # Build intro content
+    intro_content = f"""Machine Learning Prediction Report
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Records Analyzed: {n:,}
 Numeric Features: {len(profiler.numeric_cols)}
 Categorical Features: {len(profiler.categorical_cols)}
 ML Models Applied: {len(ml_models_used)}
-  • {chr(10).join(f'  • {m}' for m in ml_models_used)}""",
-        "data": {"records": n, "models": len(ml_models_used), "numericCols": len(profiler.numeric_cols)}
+  • {chr(10).join(f'  • {m}' for m in ml_models_used)}"""
+    
+    if automl_model_info:
+        intro_content += f"""
+
+🤖 TRAINED AUTOML MODEL DETECTED:
+   Model: {automl_model_info['model_name']}
+   Task Type: {automl_model_info['task_type'].upper()}
+   Target: {automl_model_info['target_column']}
+   Trained: {automl_model_info['trained_at'][:10] if automl_model_info['trained_at'] != 'Unknown' else 'Unknown'}"""
+        
+        # Add metrics
+        metrics = automl_model_info.get('metrics', {})
+        if metrics:
+            metric_strs = []
+            for k, v in list(metrics.items())[:3]:
+                if isinstance(v, (int, float)):
+                    metric_strs.append(f"{k}: {v:.4f}")
+            if metric_strs:
+                intro_content += f"\n   Metrics: {' | '.join(metric_strs)}"
+    
+    sections.append({
+        "title": "🔮 ML Predictive Analysis",
+        "content": intro_content,
+        "data": {"records": n, "models": len(ml_models_used), "numericCols": len(profiler.numeric_cols), "hasAutoML": automl_model_info is not None}
     })
     
     # ===========================================
-    # SECTION 2: Categorical Frequency Analysis (For non-numeric data)
+    # SECTION: REAL AUTOML PREDICTIONS (if model available)
     # ===========================================
+    if automl_model_info:
+        try:
+            from ml.automl_engine import automl_engine
+            
+            # Load the trained model
+            automl_engine.load(user_id)
+            
+            if automl_engine.is_fitted:
+                target_col = automl_model_info.get('target_column', '')
+                task_type = automl_model_info.get('task_type', 'classification')
+                model_name = automl_model_info.get('model_name', 'Unknown')
+                
+                # Get feature importance from the model
+                feature_importance = []
+                if hasattr(automl_engine, 'feature_importance') and automl_engine.feature_importance:
+                    for feat, imp in sorted(automl_engine.feature_importance.items(), key=lambda x: x[1], reverse=True)[:10]:
+                        feature_importance.append({
+                            "name": feat.replace('_', ' ').title()[:20],
+                            "value": round(imp * 100, 2),
+                            "color": CHART_COLORS[len(feature_importance) % len(CHART_COLORS)]
+                        })
+                
+                # Build AutoML insights content
+                automl_content = f"""🤖 AutoML Model Insights
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Best Model: {model_name}
+Task Type: {task_type.upper()}
+Target Column: {target_col}
+
+Model Performance:"""
+                
+                metrics = automl_model_info.get('metrics', {})
+                for k, v in metrics.items():
+                    if isinstance(v, (int, float)):
+                        automl_content += f"\n  • {k.replace('_', ' ').title()}: {v:.4f}"
+                
+                if feature_importance:
+                    automl_content += "\n\nTop Predictive Features:"
+                    for i, feat in enumerate(feature_importance[:5], 1):
+                        automl_content += f"\n  {i}. {feat['name']}: {feat['value']}% importance"
+                
+                sections.append({
+                    "title": "🤖 AutoML Model Insights",
+                    "content": automl_content,
+                    "data": feature_importance if feature_importance else [],
+                    "chartType": "horizontal_bar" if feature_importance else None
+                })
+                
+                # Make sample predictions on the data
+                try:
+                    sample_size = min(5, len(df))
+                    sample_df = df.head(sample_size).copy()
+                    
+                    predictions = automl_engine.predict(sample_df)
+                    
+                    if predictions is not None and len(predictions) > 0:
+                        pred_content = f"Sample Predictions using {model_name}:\n"
+                        pred_data = []
+                        
+                        for i, pred in enumerate(predictions[:5]):
+                            pred_value = pred if isinstance(pred, (int, float, str)) else str(pred)
+                            pred_content += f"\n  Record {i+1}: Predicted {target_col} = {pred_value}"
+                            pred_data.append({
+                                "name": f"Record {i+1}",
+                                "value": float(pred) if isinstance(pred, (int, float)) else i,
+                                "color": CHART_COLORS[i % len(CHART_COLORS)]
+                            })
+                        
+                        sections.append({
+                            "title": "📊 Sample Predictions",
+                            "content": pred_content,
+                            "data": pred_data,
+                            "chartType": "bar"
+                        })
+                        
+                except Exception as pred_error:
+                    print(f"Prediction error: {pred_error}")
+                    
+        except Exception as automl_error:
+            print(f"AutoML section error: {automl_error}")
+    
+    # ===========================================
+    # SKIP HARDCODED SECTIONS IF AUTOML MODEL EXISTS
+    # ===========================================
+    if automl_model_info:
+        # Return early with only real AutoML data
+        return {
+            "title": f"🔮 Predictive Report - {automl_model_info.get('model_name', 'AutoML')}",
+            "generatedAt": datetime.now().isoformat(),
+            "dataSource": "uploaded_files",
+            "sections": sections,
+            "currency": currency,
+            "colors": CHART_COLORS,
+            "reportType": "predictive"
+        }
+    
+    # ===========================================
+    # FALLBACK: Basic data analysis if NO AutoML model
+    # ===========================================
+    sections.append({
+        "title": "⚠️ No AutoML Model Available",
+        "content": f"""No trained ML model found. To get real predictions:
+
+1. Go to Data Hub
+2. Upload your dataset  
+3. Click "🤖 Auto ML Train"
+4. Return here after training
+
+Current Data:
+• Records: {n:,}
+• Numeric Columns: {len(profiler.numeric_cols)}
+• Categorical Columns: {len(profiler.categorical_cols)}""",
+        "data": {"hasModel": False}
+    })
+
+    # ===========================================
+    # SECTION 2: Categorical Frequency Analysis (For non-numeric data)
     if not profiler.numeric_cols and profiler.categorical_cols:
         # When data is purely categorical, analyze frequency patterns
         freq_analysis = []
@@ -2065,6 +2229,8 @@ Signal: {signal}
 def generate_anomaly_report(user_id: str, df: pd.DataFrame, profiler: DataProfiler) -> dict:
     """
     ⚠️ ANOMALY REPORT - Outlier Detection and Unusual Patterns
+    NOW INTEGRATES with trained AutoML models for context!
+    
     UNIQUE: Statistical outliers, unusual patterns, data quality warnings
     """
     sections = []
@@ -2072,15 +2238,45 @@ def generate_anomaly_report(user_id: str, df: pd.DataFrame, profiler: DataProfil
     n = len(df)
     
     # ===========================================
+    # CHECK FOR TRAINED AUTOML MODEL
+    # ===========================================
+    automl_model_info = None
+    try:
+        from ml.model_persistence import model_persistence
+        
+        metadata = model_persistence.get_metadata(user_id)
+        if metadata:
+            automl_model_info = {
+                'model_name': metadata.model_name,
+                'task_type': metadata.task_type,
+                'target_column': metadata.target_column,
+                'metrics': metadata.metrics,
+                'version': metadata.version
+            }
+    except Exception as e:
+        print(f"Could not load AutoML model: {e}")
+    
+    # ===========================================
     # SECTION 1: Anomaly Overview
     # ===========================================
-    sections.append({
-        "title": "⚠️ Anomaly Detection Overview",
-        "content": f"""AI-Powered Anomaly Detection Report
+    overview_content = f"""AI-Powered Anomaly Detection Report
 Total Records Scanned: {n:,}
 Numeric Columns Analyzed: {len(profiler.numeric_cols)}
-Detection Method: Statistical + IQR-based""",
-        "data": {"records": n, "numericCols": len(profiler.numeric_cols)}
+Detection Method: Statistical + IQR-based + Modified Z-Score"""
+    
+    if automl_model_info:
+        overview_content += f"""
+
+🤖 AUTOML MODEL CONTEXT:
+   Target Column: {automl_model_info['target_column']}
+   Task Type: {automl_model_info['task_type'].upper()}
+   Model: {automl_model_info['model_name']}
+   Anomalies in target column may indicate prediction errors or edge cases."""
+
+    sections.append({
+        "title": "⚠️ Anomaly Detection Overview",
+        "content": overview_content,
+        "data": {"records": n, "numericCols": len(profiler.numeric_cols), "hasAutoML": automl_model_info is not None}
     })
     
     # ===========================================
@@ -2353,9 +2549,9 @@ async def generate_report(request: ReportRequest):
         elif report_type == "executive" or report_type == "overview":
             report = generate_executive_summary(user_id, df, profiler)
         elif report_type == "predictive":
-            report = generate_predictive_report(user_id, df, profiler)
+            report = generate_predictive_report_v2(user_id, df, profiler)
         elif report_type == "anomaly":
-            report = generate_anomaly_report(user_id, df, profiler)
+            report = generate_anomaly_report_v2(user_id, df, profiler)
         else:
             report = generate_executive_summary(user_id, df, profiler)
         

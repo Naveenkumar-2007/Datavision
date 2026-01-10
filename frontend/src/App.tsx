@@ -110,7 +110,8 @@ function App() {
                 <Route path="/dashboard" element={<AutonomousDashboard />} />
                 {/* 🤖 AutoML - ML Results Page */}
                 <Route path="/automl" element={<AutoML />} />
-                {/* 🧠 ML Predictions - Real ML Charts */}
+                {/* 🧠 ML Predictions - Real
+                 ML Charts */}
                 <Route path="/ml-predictions" element={<MLPredictions />} />
               </Route>
             </Routes>
