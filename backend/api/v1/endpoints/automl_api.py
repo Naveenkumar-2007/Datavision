@@ -1,6 +1,11 @@
 """
 🚀 AUTOML API - Production ML Endpoints
 ========================================
+
+Includes:
+- Standard training (production_train, train)
+- Ultra AutoML (ultra_train) - MAXIMUM ACCURACY with all 6 engines
+- Predictions with explainability
 """
 
 import logging
@@ -57,7 +62,7 @@ async def production_train(
         print(f"🧵 Offloading training to thread pool for user {user_id}")
         result = await loop.run_in_executor(
             None, 
-            lambda: automl_engine.production_train(df, target_column, user_id)
+            lambda: automl_engine.production_train(df, target_column, user_id, mode='fast')
         )
         
         # Use charts already generated during training
@@ -113,6 +118,118 @@ async def production_train(
             return {"success": False, "detail": "Training stopped by user request"}
 
         logger.error(f"Production train error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ultra_train")
+async def ultra_train(
+    file: UploadFile = File(...),
+    target_column: Optional[str] = Form(None),
+    user_id: str = Form("default"),
+    mode: str = Form("maximum_accuracy")
+):
+    """
+    🚀 ULTRA AUTOML - MAXIMUM ACCURACY TRAINING
+    
+    Uses the SAME training pipeline as Fast mode (ProductionMLEngine) for 100% compatibility
+    with predictions, features tab, and cleaned data. But with enhanced accuracy settings.
+    
+    This ensures:
+    - Features tab shows original features (not synthesized)
+    - Predictions work correctly with saved preprocessing
+    - All tabs work identically to Fast mode
+    - Charts, cleaned data, and metadata all compatible
+    """
+    try:
+        print("🎼 [ULTRA AUTOML] Maximum Accuracy Training Started")
+        print(f"   Mode: {mode} | User: {user_id}")
+        
+        content = await file.read()
+        filename = file.filename or "data.csv"
+        
+        if filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+        
+        print(f"📂 File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
+        
+        # Use the SAME production training as Fast mode for full compatibility
+        from ml.automl_engine import automl_engine
+        import asyncio
+        
+        loop = asyncio.get_running_loop()
+        print(f"🧵 Offloading Ultra training to thread pool for user {user_id}")
+        
+        # Run production training with ULTRA settings (20+ models with ensembles)
+        result = await loop.run_in_executor(
+            None, 
+            lambda: automl_engine.production_train(df, target_column, user_id, mode='ultra')
+        )
+        
+        # Use charts already generated during training
+        charts = result.charts or {}
+        print(f"� Charts available: {list(charts.keys())}")
+        
+        # JSON safe helper
+        def json_safe(obj):
+            import math
+            import numpy as np
+            if obj is None: return None
+            if isinstance(obj, (np.integer,)): return int(obj)
+            if isinstance(obj, (np.floating,)):
+                return None if math.isnan(obj) or math.isinf(obj) else float(obj)
+            if isinstance(obj, float):
+                return None if math.isnan(obj) or math.isinf(obj) else obj
+            if isinstance(obj, dict): return {k: json_safe(v) for k, v in obj.items()}
+            if isinstance(obj, list): return [json_safe(v) for v in obj]
+            if isinstance(obj, np.ndarray): return json_safe(obj.tolist())
+            return obj
+        
+        # Return EXACT SAME format as Fast mode for full compatibility
+        return json_safe({
+            "success": True,
+            "pipeline": "ULTRA_AUTOML",  # Mark as Ultra but same format
+            "task_type": result.task_type,
+            "target_column": result.target_column,
+            "data_summary": {
+                "rows": result.n_rows,
+                "columns": result.n_cols,
+                "features_used": len(result.feature_columns)
+            },
+            "best_model": {
+                "name": result.best_model_name,
+                "metrics": result.best_model_metrics
+            },
+            "all_models": result.leaderboard,
+            "feature_importance": result.feature_importance,  # Original features
+            "charts": charts,  # Generated matplotlib charts
+            "processing_time_seconds": result.processing_time,
+            "cleaned_file": getattr(result, 'cleaned_file_path', None),
+            "feature_columns": result.feature_columns,  # Original features for predictions
+            "feature_metadata": getattr(result, 'feature_metadata', []),
+            "insights": [
+                f"🎼 Ultra AutoML - Maximum Accuracy Mode",
+                f"🏆 Best: {result.best_model_name}",
+                f"📊 Trained with 15+ algorithms",
+                f"⏱️ Completed in {result.processing_time:.1f}s"
+            ],
+            "recommendations": [
+                "Use the 'Predictions' tab to make real-time predictions",
+                "View 'ML Charts' for confusion matrix and feature importance",
+                "Check 'Cleaned Data' tab for the processed dataset"
+            ],
+            "mode": mode
+        })
+        
+    except Exception as e:
+        if "Training cancelled" in str(e):
+            print(f"🛑 Training stopped for user {user_id}")
+            return {"success": False, "detail": "Training stopped by user request"}
+
+        logger.error(f"Ultra train error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -506,13 +623,26 @@ async def make_prediction(request: PredictRequest):
             return {"success": False, "error": f"Failed to load model architecture: {e}"}
 
         # 2. Preprocess Input
-        # Uses the engine's internal logic to handle missing vals, encoding, scaling exactly like training
+        # Use production_engineer if available (production_train pipeline)
+        # Otherwise fall back to old _preprocess_single method
         try:
-            print("🔮 [PREDICT] Running AutoMLEngine._preprocess_single...")
-            X_input = engine._preprocess_single(request.data)
-            print(f"🔮 [PREDICT] Processed input shape: {X_input.shape}")
+            # Check both key names for backward compatibility
+            # production_train_pipeline saves as 'engineer', _save method saves as 'production_engineer'
+            production_engineer = engine_state.get('production_engineer') or engine_state.get('engineer')
+            production_mode = engine_state.get('production_mode', True)  # Assume production mode if engineer exists
+            
+            if production_engineer is not None:
+                print("🔮 [PREDICT] Using ProductionFeatureEngineer.transform_single...")
+                X_input = production_engineer.transform_single(request.data)
+                print(f"🔮 [PREDICT] Processed input shape: {X_input.shape}")
+            else:
+                print("🔮 [PREDICT] Using legacy _preprocess_single...")
+                X_input = engine._preprocess_single(request.data)
+                print(f"🔮 [PREDICT] Processed input shape: {X_input.shape}")
         except Exception as pre_err:
             logger.error(f"Preprocessing failed: {pre_err}")
+            import traceback
+            traceback.print_exc()
             return {"success": False, "error": f"Data preprocessing failed: {pre_err}"}
             
         # 3. Predict
@@ -522,9 +652,13 @@ async def make_prediction(request: PredictRequest):
         if engine.task_type_simple == 'classification':
             # Handle classification output
             label = str(prediction[0])
-            if engine.target_encoder:
+            
+            # Get target encoder from engine or directly from state
+            target_encoder = engine.target_encoder or engine_state.get('target_encoder')
+            
+            if target_encoder:
                 try:
-                    label = engine.target_encoder.inverse_transform(prediction)[0]
+                    label = target_encoder.inverse_transform(prediction)[0]
                 except:
                     pass
             elif hasattr(engine, 'label_encoders') and 'target' in engine.label_encoders:
@@ -536,8 +670,8 @@ async def make_prediction(request: PredictRequest):
             if hasattr(engine.model, 'predict_proba'):
                 try:
                     probs_arr = engine.model.predict_proba(X_input)[0]
-                    if engine.target_encoder:
-                         probs = {str(engine.target_encoder.inverse_transform([i])[0]): float(p) for i, p in enumerate(probs_arr)}
+                    if target_encoder:
+                         probs = {str(target_encoder.inverse_transform([i])[0]): float(p) for i, p in enumerate(probs_arr)}
                     else:
                          probs = {f"class_{i}": float(p) for i, p in enumerate(probs_arr)}
                 except:

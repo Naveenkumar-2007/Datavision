@@ -2261,7 +2261,8 @@ class ProductionMLEngine:
         self,
         df: pd.DataFrame,
         target_col: Optional[str] = None,
-        user_id: str = "default"
+        user_id: str = "default",
+        mode: str = "fast"  # 'fast' or 'ultra'
     ) -> 'TrainResult':
         """
         🚀 SILICON VALLEY GRADE ML PIPELINE
@@ -2287,13 +2288,28 @@ class ProductionMLEngine:
         self.errors = []
         start = datetime.now()
         
+        
         logger.info("=" * 60)
         logger.info("🚀 SILICON VALLEY GRADE ML PIPELINE")
         logger.info("=" * 60)
         
-        # Detect target if not provided
-        if not target_col:
-            target_col = self._detect_target(df)
+        # 🆕 Use Smart Data Analyzer for improved target detection and insights
+        try:
+            from ml.smart_data_analyzer import SmartDataAnalyzer
+            analyzer = SmartDataAnalyzer()
+            analysis = analyzer.analyze(df, target_col)
+            
+            # Use detected target if none provided
+            if not target_col:
+                target_col = analysis.target_column
+            
+            logger.info(f"📊 Data Type: {analysis.data_type.value.upper()}")
+            logger.info(f"🎪 Task Type: {analysis.task_type.value}")
+            logger.info(f"🔧 Mode: {mode.upper()}")
+        except Exception as e:
+            logger.warning(f"Smart analyzer unavailable: {e}")
+            if not target_col:
+                target_col = self._detect_target(df)
         
         logger.info(f"📊 Data: {df.shape[0]} rows, {df.shape[1]} columns")
         logger.info(f"🎯 Target: {target_col}")
@@ -2352,32 +2368,44 @@ class ProductionMLEngine:
         # IMPROVED LOGIC:
         # 1. If target has decimals AND >10 unique values -> ALWAYS Regression (ratings, prices)
         # 2. If target is NOT numeric (strings) -> Classification
-        # 3. If target is integer with <=20 unique values -> Classification
-        # 4. Otherwise -> Regression
+        # 3. If target has few unique values (<20) -> Classification
         
-        if is_decimal and n_unique > 10:
-            # Continuous values like ratings (4.1, 4.2, 4.3...)
+        # 🆕 OVERRIDE: Use Smart Data Analyzer result if available
+        if 'analysis' in locals() and analysis:
+            smart_task = analysis.task_type.value
+            if 'classification' in smart_task:
+                self.task_type = 'classification'
+                self.task_type_simple = 'classification'
+                logger.info(f"🎯 Smart Analysis: Detected CLASSIFICATION ({smart_task})")
+            elif 'regression' in smart_task:
+                self.task_type = 'regression'
+                self.task_type_simple = 'regression'
+                logger.info(f"🎯 Smart Analysis: Detected REGRESSION ({smart_task})")
+        
+        # Fallback to heuristic if Smart Analysis didn't run or was inconclusive
+        elif is_decimal and n_unique > 10:
             self.task_type = 'regression'
             self.task_type_simple = 'regression'
-            logger.info(f"📋 Task: REGRESSION (decimal values, {n_unique} unique)")
+            logger.info(f"📋 Task: REGRESSION (decimal values detected)")
+            
         elif not is_numeric:
-            # String targets like Category, Type
+            self.task_type = 'classification'
             self.task_type_simple = 'classification'
-            self.task_type = 'binary_classification' if n_unique == 2 else 'multiclass_classification'
-            logger.info(f"📋 Task: CLASSIFICATION (non-numeric, {n_unique} classes)")
-        elif n_unique <= 20 and not is_decimal:
-            # Integer categories like 1-5 ratings
+            logger.info(f"📋 Task: CLASSIFICATION (non-numeric target)")
+            
+        elif n_unique < 20:
+            self.task_type = 'classification'
             self.task_type_simple = 'classification'
-            self.task_type = 'binary_classification' if n_unique == 2 else 'multiclass_classification'
-            logger.info(f"📋 Task: CLASSIFICATION (integer, {n_unique} classes)")
+            logger.info(f"📋 Task: CLASSIFICATION (low cardinality: {n_unique})")
+            
         else:
-            # Continuous numeric
+            # Default to regression for many unique numeric values
             self.task_type = 'regression'
             self.task_type_simple = 'regression'
             logger.info(f"📋 Task: REGRESSION (default, {n_unique} unique)")
         
-        # 3. Feature engineering
-        engineer = ProductionFeatureEngineer()
+        # 3. Feature engineering (pass mode for Fast vs Ultra NLP)
+        engineer = ProductionFeatureEngineer(mode=mode)
         
         # EXTRACT METADATA FOR PREDICTIONS TAB (INPUT SCHEMA) --
         self.feature_metadata = []
@@ -2426,7 +2454,9 @@ class ProductionMLEngine:
         logger.info(f"   Train: {len(X_train)} | Test: {len(X_test)}")
         
         # 6. Train all models
-        trainer = ProductionModelTrainer(self.task_type_simple)
+        # Pass mode to trainer ('fast' = 8 models, 'ultra' = 20+ with ensembles)
+        trainer = ProductionModelTrainer(self.task_type_simple, mode=mode)
+        logger.info(f"🎮 Training Mode: {mode.upper()}")
         
         # Check cancellation before heavy training phase
         check_stop()
@@ -2435,6 +2465,57 @@ class ProductionMLEngine:
         
         # 7. Build ensemble
         ensemble = trainer.build_ensemble(X_train, y_train, X_test, y_test, top_n=3)
+        
+        # 8. Neural Architecture Search (Ultra Mode Only)
+        if mode == 'ultra':
+            try:
+                from ml.neural_architecture_engine import train_neural_models
+                logger.info("🧠 Starting Neural Architecture Search (Ultra Mode)...")
+                
+                # Use subset for responsiveness if data is massive
+                if len(X_train) > 20000:
+                    indices = np.random.choice(len(X_train), 20000, replace=False)
+                    X_neural, y_neural = X_train[indices], y_train[indices]
+                else:
+                    X_neural, y_neural = X_train, y_train
+                
+                neural_results = train_neural_models(
+                    X_neural, y_neural,
+                    X_test[:5000], y_test[:5000], # Validation set
+                    task_type=self.task_type_simple,
+                    n_classes=len(np.unique(y_train)) if self.task_type_simple == 'classification' else 0,
+                    check_cancellation=check_stop,
+                    max_epochs=30 # Quick search
+                )
+                
+                if neural_results.success:
+                    logger.info(f"   🧠 Best Neural Model: {neural_results.best_model_name} (Score: {neural_results.best_score:.4f})")
+                    
+                    # Add to leaderboard for visibility
+                    for res in neural_results.all_results:
+                        # Construct metrics dict
+                        metrics = {
+                            'score': res['score'],
+                            'val_loss': res.get('val_loss', 0)
+                        }
+                        if self.task_type_simple == 'classification':
+                            metrics['f1'] = res['score']
+                        else:
+                            metrics['r2'] = res['score']
+
+                        trainer.results.append({
+                            'name': f"DNN_{res['name']}",
+                            'model': None, # Don't store Keras model to avoid pickle issues
+                            'score': res['score'],
+                            'metrics': metrics,
+                            'time': neural_results.total_time_seconds / len(neural_results.all_results)
+                        })
+                    
+                    # Re-sort leaderboard
+                    trainer.results.sort(key=lambda x: x['score'], reverse=True)
+                    
+            except Exception as e:
+                logger.warning(f"Neural engine skipped: {e}")
         
         # Store results
         self.model = trainer.best_model
@@ -2488,7 +2569,10 @@ class ProductionMLEngine:
         # Generate charts
         charts = {}
         try:
-            from ml.chart_generator import generate_ml_charts, generate_model_comparison_chart
+            from ml.chart_generator import (
+                generate_ml_charts, generate_model_comparison_chart,
+                generate_correlation_heatmap, generate_distribution_grid, generate_boxplot_grid
+            )
             class_names = self.target_encoder.classes_.tolist() if self.target_encoder else None
             charts = generate_ml_charts(
                 task_type=self.task_type,
@@ -2502,14 +2586,71 @@ class ProductionMLEngine:
             comparison_chart = generate_model_comparison_chart(trainer.results)
             if comparison_chart:
                 charts['model_comparison'] = comparison_chart
+            
+            # 🆕 ADD EXTRA CHARTS FROM REAL DATA
+            # Correlation Heatmap (numeric features only)
+            numeric_df = df_clean.select_dtypes(include=[np.number])
+            if len(numeric_df.columns) >= 2:
+                corr_chart = generate_correlation_heatmap(numeric_df, "Feature Correlations")
+                if corr_chart:
+                    charts['correlation_heatmap'] = corr_chart
+            
+            # Distribution Grid (histograms of features)
+            if len(numeric_df.columns) >= 1:
+                dist_chart = generate_distribution_grid(numeric_df, "Feature Distributions")
+                if dist_chart:
+                    charts['distribution_grid'] = dist_chart
+            
+            # Box Plot Grid
+            if len(numeric_df.columns) >= 1:
+                box_chart = generate_boxplot_grid(numeric_df, "Feature Box Plots")
+                if box_chart:
+                    charts['boxplot_grid'] = box_chart
+            
+            # 🆕 ULTRA MODE: Premium Enterprise Charts ($5M Quality)
+            if mode == 'ultra':
+                try:
+                    from ml.ultra_chart_engine import generate_ultra_charts
+                    
+                    ultra_charts = generate_ultra_charts(
+                        task_type=self.task_type_simple,
+                        y_test=y_test,
+                        y_pred=self._y_pred,
+                        y_proba=y_proba,
+                        model_name=trainer.best_name,
+                        metrics=best_metrics,
+                        leaderboard=trainer.results,
+                        feature_importance=self._get_importance(self.model),
+                        training_time=time.time() - start_time if 'start_time' in locals() else 0,
+                        n_models_tested=len(trainer.results),
+                        model=self.model,
+                        X_test=X_test
+                    )
+                    
+                    # Merge ultra charts with standard charts
+                    charts.update(ultra_charts)
+                    logger.info(f"   🎨 Ultra Charts: {list(ultra_charts.keys())}")
+                except Exception as ultra_err:
+                    logger.warning(f"⚠️ Ultra chart error: {ultra_err}")
+                    
+            print(f"📊 Generated {len(charts)} charts: {list(charts.keys())}")
+            
         except Exception as chart_err:
             logger.warning(f"⚠️ Chart generation error: {chart_err}")
+        
+        # CRITICAL: Save model for predictions
+        try:
+            self._save(user_id)
+            print(f"💾 Model saved for user: {user_id}")
+        except Exception as save_err:
+            logger.warning(f"⚠️ Model save error: {save_err}")
         
         return TrainResult(
             success=True,
             task_type=self.task_type,
             target_column=target_col,
-            feature_columns=feature_names,
+            # IMPORTANT: Use original columns (not engineered features) for Features tab
+            feature_columns=engineer.original_columns,
             best_model_name=trainer.best_name,
             best_model_metrics=best_metrics,
             leaderboard=[{'name': r['name'], 'metrics': r['metrics']} for r in trainer.results],
@@ -2690,6 +2831,13 @@ class ProductionMLEngine:
                 charts['model_comparison'] = comparison_chart
         except Exception as chart_err:
             logger.warning(f"⚠️ Chart generation error: {chart_err}")
+        
+        # CRITICAL: Save model for predictions
+        try:
+            self._save(user_id)
+            print(f"💾 Model saved for user: {user_id}")
+        except Exception as save_err:
+            logger.warning(f"⚠️ Model save error: {save_err}")
         
         return TrainResult(
             success=True,
@@ -2973,7 +3121,10 @@ class ProductionMLEngine:
         
         # Generate all charts using the production chart generator
         try:
-            from ml.chart_generator import generate_ml_charts, generate_model_comparison_chart
+            from ml.chart_generator import (
+                generate_ml_charts, generate_model_comparison_chart,
+                generate_correlation_heatmap, generate_distribution_grid, generate_boxplot_grid
+            )
             
             # Get class names for classification
             class_names = None
@@ -2995,6 +3146,26 @@ class ProductionMLEngine:
             comparison_chart = generate_model_comparison_chart(results)
             if comparison_chart:
                 charts['model_comparison'] = comparison_chart
+            
+            # 🆕 ADD EXTRA CHARTS FROM REAL DATA
+            # Correlation Heatmap (numeric features only)
+            numeric_df = df.select_dtypes(include=[np.number])
+            if len(numeric_df.columns) >= 2:
+                corr_chart = generate_correlation_heatmap(numeric_df, "Feature Correlations")
+                if corr_chart:
+                    charts['correlation_heatmap'] = corr_chart
+            
+            # Distribution Grid (histograms of features)
+            if len(numeric_df.columns) >= 1:
+                dist_chart = generate_distribution_grid(numeric_df, "Feature Distributions")
+                if dist_chart:
+                    charts['distribution_grid'] = dist_chart
+            
+            # Box Plot Grid
+            if len(numeric_df.columns) >= 1:
+                box_chart = generate_boxplot_grid(numeric_df, "Feature Box Plots")
+                if box_chart:
+                    charts['boxplot_grid'] = box_chart
                 
             logger.info(f"📊 Generated {len(charts)} charts: {list(charts.keys())}")
         except Exception as chart_err:
@@ -3005,6 +3176,13 @@ class ProductionMLEngine:
         
         # IMPORTANT: Store metrics on self so they're saved to persistence
         self.metrics = results[0]['metrics'] if results else {}
+        
+        # CRITICAL: Save model for predictions
+        try:
+            self._save(user_id)
+            print(f"💾 Model saved for user: {user_id}")
+        except Exception as save_err:
+            logger.warning(f"⚠️ Model save error: {save_err}")
         
         return TrainResult(
             success=True,
@@ -3275,8 +3453,38 @@ class ProductionMLEngine:
         print(f"💾 Saved to {save_dir}")
     
     def load(self, user_id: str) -> bool:
-        """Load model"""
-        # Ensure storage directory exists
+        """Load model - tries model_persistence first, then legacy model.pkl"""
+        
+        # NEW: Try loading from model_persistence first (has latest trained model)
+        try:
+            from ml.model_persistence import get_model_persistence_manager
+            pm = get_model_persistence_manager()
+            result = pm.load_model(user_id)
+            
+            if result and result.get('model'):
+                self.model = result['model']
+                self.model_name = result.get('model_name', 'Unknown')
+                self.task_type = result.get('task_type', 'classification')
+                self.task_type_simple = 'classification' if 'classification' in self.task_type else 'regression'
+                self.feature_columns = result.get('feature_columns', [])
+                self.target_column = result.get('target_column', '')
+                self.feature_metadata = result.get('feature_metadata', [])
+                self.metrics = result.get('metrics', {})
+                self.target_encoder = result.get('target_encoder')
+                self.n_classes = result.get('n_classes', 2)
+                
+                # Also load preprocessing objects if available
+                self.label_encoders = result.get('label_encoders', {})
+                self.text_vectorizers = result.get('text_vectorizers', {})
+                self.scaler = result.get('scaler')
+                self.production_engineer = result.get('production_engineer')
+                
+                print(f"📂 Loaded {self.model_name} from model_persistence (latest)")
+                return True
+        except Exception as e:
+            logger.warning(f"⚠️ Model persistence load failed: {e}, trying legacy...")
+        
+        # FALLBACK: Legacy model.pkl loading
         save_dir = os.path.join(STORAGE_PATH, user_id)
         os.makedirs(save_dir, exist_ok=True)
         
@@ -3322,7 +3530,7 @@ class ProductionMLEngine:
             if 'production_engineer' in data:
                 self.production_engineer = data['production_engineer']
             
-            print(f"📂 Loaded from {path}")
+            print(f"📂 Loaded from {path} (legacy)")
             return True
         except Exception as e:
             print(f"⚠️ Load error: {e}")

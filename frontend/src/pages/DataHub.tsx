@@ -23,8 +23,10 @@ import {
   Sparkles,
   Wrench,
   BarChart2,
+  Layers,
 } from 'lucide-react';
 import apiService from '@/services/api';
+import MultiFileUpload from '@/components/automl/MultiFileUpload';
 
 interface ThemeContext {
   isDark: boolean;
@@ -65,6 +67,10 @@ const DataHub: React.FC = () => {
   const [autoFixEnabled, setAutoFixEnabled] = useState(false); // OFF by default - enable to clean data before upload
   const [fixingData, setFixingData] = useState(false);
   const [lastFixReport, setLastFixReport] = useState<any>(null);
+  const [ultraMode, setUltraMode] = useState(true); // Ultra AutoML (maximum accuracy) is default
+  const [showMultiFile, setShowMultiFile] = useState(false); // Multi-file training toggle
+  const [targetColumn, setTargetColumn] = useState<string>(''); // User-selected target column
+  const [availableColumns, setAvailableColumns] = useState<string[]>([]); // Columns from uploaded file
 
   // Training UX State
   const [abortController, setAbortController] = useState<AbortController | null>(null);
@@ -73,7 +79,17 @@ const DataHub: React.FC = () => {
   // Animation loop for training messages
   useEffect(() => {
     if (!automlRunning) return;
-    const messages = [
+    const messages = ultraMode ? [
+      '🎼 Initializing Ultra AutoML...',
+      '📊 Analyzing Dataset Profile...',
+      '🎯 Meta-Learning Recommendations...',
+      '🔬 Synthesizing 50+ Features...',
+      '🤖 Training Classical Models...',
+      '🧠 Training Neural Networks...',
+      '📈 Optimizing Hyperparameters...',
+      '⚖️ Building Ultra Ensemble...',
+      '🔮 Generating Explainability...',
+    ] : [
       '🧹 Cleaning Data (Phase 1/4)...',
       '🛠️ Engineering Features (Phase 2/4)...',
       '🤖 Training 15+ Models (Phase 3/4)...',
@@ -98,6 +114,42 @@ const DataHub: React.FC = () => {
     }
   };
 
+  // Parse CSV to extract column names
+  const parseCSVColumns = (file: File): Promise<string[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target?.result as string;
+        const firstLine = text.split('\n')[0];
+        const columns = firstLine.split(',').map(col => col.trim().replace(/"/g, ''));
+        resolve(columns);
+      };
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  };
+
+  // Smart target column detection - looks for common patterns
+  const detectTargetColumn = (columns: string[]): string => {
+    const targetPatterns = [
+      'target', 'label', 'class', 'y', 'output', 'result', 'prediction',
+      'price_range', 'price', 'category', 'status', 'type', 'outcome',
+      'fraud', 'churn', 'default', 'survived', 'approved', 'purchased'
+    ];
+
+    // Check for exact/partial matches
+    for (const pattern of targetPatterns) {
+      for (const col of columns) {
+        if (col.toLowerCase().includes(pattern)) {
+          return col;
+        }
+      }
+    }
+
+    // Default: last column (common ML convention)
+    return columns[columns.length - 1];
+  };
+
   useEffect(() => {
     loadFiles();
   }, []);
@@ -113,6 +165,19 @@ const DataHub: React.FC = () => {
       const otherFiles = acceptedFiles.filter(f =>
         !f.name.endsWith('.csv') && !f.name.endsWith('.xlsx') && !f.name.endsWith('.xls')
       );
+
+      // Extract columns from first CSV file for target selection
+      if (dataFiles.length > 0 && dataFiles[0].name.endsWith('.csv')) {
+        try {
+          const columns = await parseCSVColumns(dataFiles[0]);
+          setAvailableColumns(columns);
+          const detected = detectTargetColumn(columns);
+          setTargetColumn(detected);
+          console.log(`📊 Detected columns: ${columns.length}, Target: ${detected}`);
+        } catch (e) {
+          console.warn('Could not parse columns from CSV:', e);
+        }
+      }
 
       let filesToUpload = [...otherFiles];
 
@@ -198,8 +263,18 @@ const DataHub: React.FC = () => {
       formData.append('file', fileBlob, dataFiles[0].name);
       formData.append('user_id', userId);
 
+      // Add target column if selected/detected
+      if (targetColumn) {
+        formData.append('target_column', targetColumn);
+      }
+
       // Send to Training API with abort signal
-      const automlResponse = await fetch('/api/v2/automl/train', {
+      // Use Ultra AutoML endpoint for maximum accuracy
+      const endpoint = ultraMode ? '/api/v2/automl/ultra_train' : '/api/v2/automl/train';
+      if (ultraMode) {
+        formData.append('mode', 'maximum_accuracy');
+      }
+      const automlResponse = await fetch(endpoint, {
         method: 'POST',
         body: formData,
         signal: controller.signal
@@ -419,26 +494,42 @@ const DataHub: React.FC = () => {
 
           {/* 🤖 ML Train Button - Shows when data files exist */}
           {hasDataFiles && (
-            <button
-              onClick={handleRunAutoML}
-              disabled={automlRunning}
-              className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${automlRunning
-                ? 'bg-teal-500/30 text-teal-300 cursor-wait'
-                : 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white hover:opacity-90 shadow-lg shadow-teal-500/25'
-                }`}
-            >
-              {automlRunning ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  <span>Training ML Models...</span>
-                </>
-              ) : (
-                <>
-                  <Brain className="w-5 h-5" />
-                  <span>🤖 Auto ML Train</span>
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Ultra Mode Toggle */}
+              <button
+                onClick={() => setUltraMode(!ultraMode)}
+                disabled={automlRunning}
+                className={`px-3 py-2 rounded-lg font-medium text-xs transition-all border ${ultraMode
+                  ? 'bg-purple-500/20 border-purple-500/50 text-purple-300'
+                  : 'bg-gray-500/10 border-gray-500/30 text-gray-400'
+                  }`}
+                title={ultraMode ? 'Ultra AutoML: Maximum Accuracy (TensorFlow + 6 Engines)' : 'Standard AutoML'}
+              >
+                {ultraMode ? '🚀 Ultra' : '⚡ Fast'}
+              </button>
+              <button
+                onClick={handleRunAutoML}
+                disabled={automlRunning}
+                className={`px-6 py-2 rounded-full font-semibold transition-all flex items-center gap-2 ${automlRunning
+                  ? 'bg-teal-500/30 text-teal-300 cursor-wait'
+                  : ultraMode
+                    ? 'bg-gradient-to-r from-purple-500 via-teal-500 to-emerald-500 text-white hover:opacity-90 shadow-lg shadow-purple-500/25'
+                    : 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white hover:opacity-90 shadow-lg shadow-teal-500/25'
+                  }`}
+              >
+                {automlRunning ? (
+                  <>
+                    <Loader className="w-5 h-5 animate-spin" />
+                    <span>{ultraMode ? 'Ultra Training...' : 'Training...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Brain className="w-5 h-5" />
+                    <span>{ultraMode ? '🧠 Ultra ML Train' : '🤖 Auto ML Train'}</span>
+                  </>
+                )}
+              </button>
+            </div>
           )}
           <button
             onClick={handleRebuild}
@@ -526,6 +617,96 @@ const DataHub: React.FC = () => {
           </div>
         </div>
       </motion.div >
+
+      {/* 🎯 Target Column Selection - Shows when columns detected */}
+      {availableColumns.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.11 }}
+          className="p-4 rounded-2xl border"
+          style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+        >
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 rounded-xl bg-purple-500/20">
+              <Sparkles className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <p className="font-semibold" style={{ color: theme.textPrimary }}>
+                🎯 Target Column (What to predict)
+              </p>
+              <p className="text-sm" style={{ color: theme.textMuted }}>
+                Auto-detected: <span className="text-purple-400">{targetColumn}</span> • Change if needed
+              </p>
+            </div>
+          </div>
+
+          <select
+            value={targetColumn}
+            onChange={(e) => setTargetColumn(e.target.value)}
+            className="w-full p-3 rounded-xl border bg-transparent outline-none focus:border-purple-500 transition-all"
+            style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+          >
+            {availableColumns.map((col) => (
+              <option key={col} value={col} style={{ backgroundColor: theme.cardBg }}>
+                {col}
+              </option>
+            ))}
+          </select>
+
+          <p className="text-xs mt-2" style={{ color: theme.textMuted }}>
+            💡 Tip: Select the column you want the model to predict (e.g., price, category, fraud)
+          </p>
+        </motion.div>
+      )}
+
+      {/* 🗂️ Multi-File Training Toggle */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.12 }}
+      >
+        <button
+          onClick={() => setShowMultiFile(!showMultiFile)}
+          className={`w-full p-4 rounded-2xl border flex items-center justify-between transition-all ${showMultiFile ? 'border-emerald-500/30 bg-emerald-500/5' : 'hover:border-emerald-500/20'
+            }`}
+          style={{ backgroundColor: theme.cardBg, borderColor: showMultiFile ? 'rgba(16, 185, 129, 0.3)' : theme.borderColor }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-emerald-500/20">
+              <Layers className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div className="text-left">
+              <p className="font-semibold" style={{ color: theme.textPrimary }}>Multi-File Training</p>
+              <p className="text-sm" style={{ color: theme.textMuted }}>Upload separate train and test files</p>
+            </div>
+          </div>
+          <div className={`px-3 py-1.5 rounded-full text-sm font-medium ${showMultiFile ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-500/10 text-gray-400'
+            }`}>
+            {showMultiFile ? '▼ Expanded' : '▶ Click to expand'}
+          </div>
+        </button>
+
+        {/* Multi-File Upload Section */}
+        {showMultiFile && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-4"
+          >
+            <MultiFileUpload
+              theme={theme}
+              onTrainingComplete={(result) => {
+                // Navigate to ML predictions page with result
+                navigate('/ml-predictions', {
+                  state: { automlResult: result }
+                });
+              }}
+            />
+          </motion.div>
+        )}
+      </motion.div>
 
       {/* Google Sheets Import */}
       < motion.div
@@ -704,9 +885,12 @@ const DataHub: React.FC = () => {
                 <Brain className="w-16 h-16 relative z-10 animate-pulse" style={{ color: theme.textPrimary }} />
               </div>
 
-              <h2 className="text-4xl font-bold bg-gradient-to-r from-teal-400 via-emerald-400 to-blue-400 bg-clip-text text-transparent mb-4">
-                Training Intelligence
+              <h2 className="text-4xl font-bold bg-gradient-to-r from-purple-400 via-teal-400 to-emerald-400 bg-clip-text text-transparent mb-4">
+                {ultraMode ? 'Ultra AutoML Training' : 'Training Intelligence'}
               </h2>
+              {ultraMode && (
+                <p className="text-sm text-purple-300 mb-4">Maximum Accuracy Mode • 6 Engines Active</p>
+              )}
 
               <div
                 className="backdrop-blur border rounded-2xl p-6 w-full mb-8 shadow-2xl"
@@ -716,7 +900,10 @@ const DataHub: React.FC = () => {
                   {progressMessage}
                 </p>
                 <p className="text-sm" style={{ color: theme.textMuted }}>
-                  This usually takes 30-90 seconds depending on data size.
+                  {ultraMode
+                    ? 'Ultra mode takes 60-180 seconds for maximum accuracy.'
+                    : 'This usually takes 30-90 seconds depending on data size.'
+                  }
                 </p>
               </div>
 

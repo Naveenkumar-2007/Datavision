@@ -35,7 +35,7 @@ from sklearn.preprocessing import (
 )
 from sklearn.impute import SimpleImputer
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.decomposition import TruncatedSVD
+from sklearn.decomposition import TruncatedSVD, PCA
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import (
     train_test_split, cross_val_score,
@@ -47,11 +47,15 @@ from sklearn.ensemble import (
     ExtraTreesClassifier, ExtraTreesRegressor,
     AdaBoostClassifier, AdaBoostRegressor,
     VotingClassifier, VotingRegressor,
-    StackingClassifier, StackingRegressor
+    StackingClassifier, StackingRegressor,
+    BaggingClassifier, BaggingRegressor,
+    HistGradientBoostingClassifier, HistGradientBoostingRegressor
 )
 from sklearn.linear_model import (
     LogisticRegression, Ridge, ElasticNet, Lasso,
-    RidgeClassifier, SGDClassifier, SGDRegressor
+    RidgeClassifier, SGDClassifier, SGDRegressor,
+    PassiveAggressiveClassifier, PassiveAggressiveRegressor,
+    BayesianRidge, HuberRegressor, TheilSenRegressor
 )
 from sklearn.svm import SVC, SVR
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
@@ -62,7 +66,10 @@ from sklearn.metrics import (
     r2_score, mean_absolute_error, mean_squared_error,
     roc_auc_score, confusion_matrix
 )
-from sklearn.naive_bayes import MultinomialNB, GaussianNB
+from sklearn.naive_bayes import MultinomialNB, GaussianNB, BernoulliNB
+from sklearn.discriminant_analysis import (
+    LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
+)
 
 warnings.filterwarnings('ignore')
 
@@ -444,14 +451,23 @@ class ProductionFeatureEngineer:
     ALL outputs are guaranteed to be numeric (float)
     """
     
-    def __init__(self, max_samples: int = 50000):
+    def __init__(self, max_samples: int = 50000, mode: str = 'fast'):
+        """
+        Initialize feature engineer.
+        
+        Args:
+            max_samples: Maximum samples for large datasets
+            mode: 'fast' (basic NLP) or 'ultra' (advanced NLP with embeddings)
+        """
         self.max_samples = max_samples
+        self.mode = mode  # 'fast' or 'ultra'
         self.is_fitted = False
         self.transformers = {}
         self.encoders = {}
         self.feature_names = []
         self.original_columns = []
         self.feature_to_column_map = {}
+        self.selected_feature_indices = None  # CRITICAL: for consistent prediction transforms
         
         # Common stopwords for NLP
         self.stopwords = {
@@ -801,6 +817,8 @@ class ProductionFeatureEngineer:
                 print(f"   ⚠️ Categorical '{col}' error: {str(e)[:30]}, skipping")
         
         # ===== TEXT/NLP FEATURES =====
+        is_ultra = self.mode == 'ultra'
+        
         for col in text_cols:
             try:
                 series = df[col].fillna('').astype(str)
@@ -808,11 +826,11 @@ class ProductionFeatureEngineer:
                 # Clean text
                 cleaned_series = series.apply(self._clean_text)
                 
-                # TF-IDF
+                # TF-IDF - More features for Ultra mode
                 tfidf = TfidfVectorizer(
-                    max_features=300,
+                    max_features=500 if is_ultra else 300,  # Ultra: 500 features
                     stop_words='english',
-                    ngram_range=(1, 2),
+                    ngram_range=(1, 3) if is_ultra else (1, 2),  # Ultra: up to trigrams
                     min_df=2,
                     max_df=0.9,
                     sublinear_tf=True
@@ -820,9 +838,9 @@ class ProductionFeatureEngineer:
                 
                 tfidf_matrix = tfidf.fit_transform(cleaned_series)
                 
-                # Dimensionality reduction with SVD
-                n_components = min(30, tfidf_matrix.shape[1] - 1, len(df) // 10)
-                n_components = max(5, n_components)
+                # Dimensionality reduction with SVD - More components for Ultra
+                n_components = min(50 if is_ultra else 30, tfidf_matrix.shape[1] - 1, len(df) // 10)
+                n_components = max(10 if is_ultra else 5, n_components)
                 
                 if tfidf_matrix.shape[1] > n_components:
                     svd = TruncatedSVD(n_components=n_components, random_state=42)
@@ -847,7 +865,27 @@ class ProductionFeatureEngineer:
                 feature_parts.append(sentiment)
                 feature_names.extend([f"{col}_sent", f"{col}_pos", f"{col}_neg", f"{col}_int"])
                 
-                print(f"   ✅ NLP '{col}': {text_features.shape[1] + 14} features")
+                # 🆕 Ultra Mode: Character-level N-grams for better text features
+                if is_ultra:
+                    try:
+                        char_tfidf = TfidfVectorizer(
+                            analyzer='char_wb',  # Character n-grams at word boundaries
+                            ngram_range=(2, 4),
+                            max_features=100,
+                            min_df=2
+                        )
+                        char_matrix = char_tfidf.fit_transform(cleaned_series)
+                        char_svd = TruncatedSVD(n_components=min(20, char_matrix.shape[1] - 1), random_state=42)
+                        char_features = char_svd.fit_transform(char_matrix)
+                        feature_parts.append(char_features)
+                        feature_names.extend([f"{col}_char_{i}" for i in range(char_features.shape[1])])
+                        self.transformers[f'{col}_char_tfidf'] = char_tfidf
+                        self.transformers[f'{col}_char_svd'] = char_svd
+                    except:
+                        pass  # Skip if fails
+                
+                mode_label = "ULTRA" if is_ultra else "FAST"
+                print(f"   ✅ NLP '{col}' ({mode_label}): {text_features.shape[1] + 14} features")
             
             except Exception as e:
                 print(f"   ⚠️ NLP '{col}' error: {str(e)[:30]}")
@@ -906,15 +944,43 @@ class ProductionFeatureEngineer:
         # Handle any remaining NaN/Inf
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         
-        # Remove low-variance features
+        # Remove low-variance features and SAVE INDICES for transform
         try:
             selector = VarianceThreshold(threshold=0.01)
             X = selector.fit_transform(X)
             mask = selector.get_support()
             feature_names = [f for f, m in zip(feature_names, mask) if m]
             self.transformers['variance_selector'] = selector
-        except:
-            pass
+            # CRITICAL: Save the indices of selected features for transform-time selection
+            self.selected_feature_indices = np.where(mask)[0].tolist()
+            print(f"   ✅ VarianceThreshold: {sum(mask)}/{len(mask)} features kept")
+        except Exception as e:
+            print(f"   ⚠️ VarianceThreshold skipped: {e}")
+            self.selected_feature_indices = None
+        
+        # PCA for high-dimensional datasets (100+ features)
+        # Reduces dimensions to prevent overfitting and improve training speed
+        PCA_THRESHOLD = 100  # Apply PCA when features exceed this
+        PCA_TARGET_COMPONENTS = 50  # Target number of components
+        
+        if X.shape[1] > PCA_THRESHOLD:
+            try:
+                # Use min of target components or 95% variance explained
+                n_components = min(PCA_TARGET_COMPONENTS, X.shape[1] - 1, X.shape[0] - 1)
+                
+                pca = PCA(n_components=n_components, random_state=42)
+                X = pca.fit_transform(X)
+                
+                # Update feature names to PCA components
+                feature_names = [f'pca_{i}' for i in range(n_components)]
+                
+                # Save PCA transformer for prediction-time use
+                self.transformers['pca'] = pca
+                
+                variance_explained = sum(pca.explained_variance_ratio_) * 100
+                print(f"   ✅ PCA: {pca.n_features_in_} → {n_components} features ({variance_explained:.1f}% variance)")
+            except Exception as e:
+                print(f"   ⚠️ PCA skipped: {e}")
         
         print(f"   ✅ Final: {X.shape[1]} features (all numeric)")
         
@@ -1036,17 +1102,13 @@ class ProductionFeatureEngineer:
                         
                         feature_parts.append(text_features)
                         
-                        # Stats and sentiment (stateless)
+                        # Stats and sentiment ARE needed to generate 253 features
+                        # before VarianceThreshold reduces to 98
                         text_stats = np.array([self._text_statistics(t) for t in series])
                         feature_parts.append(text_stats)
                         
                         sentiment = np.array([self._sentiment_score(t) for t in series])
                         feature_parts.append(sentiment)
-                    else:
-                        # Add zeros matching expected dims
-                        # Note: This is tricky without storing exact dims. 
-                        # Assuming robust error handling upstream or strict schema.
-                        pass # This might be skipped if col missing, potentially causing mismatch
                 except:
                     pass
         
@@ -1059,13 +1121,34 @@ class ProductionFeatureEngineer:
         
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
         
-        # Variance Selector
+        # Variance Selector - apply if dimensions match
         if 'variance_selector' in self.transformers:
+            selector = self.transformers['variance_selector']
             try:
-                selector = self.transformers['variance_selector']
-                X = selector.transform(X)
-            except:
-                pass
+                if X.shape[1] == selector.n_features_in_:
+                    X = selector.transform(X)
+                else:
+                    # Dimensions don't match - use stored feature indices if available
+                    if hasattr(self, 'selected_feature_indices') and self.selected_feature_indices is not None:
+                        # Use only the indices that are within bounds
+                        valid_indices = [i for i in self.selected_feature_indices if i < X.shape[1]]
+                        if valid_indices:
+                            X = X[:, valid_indices]
+                    # Otherwise truncation will happen in safety check below
+            except Exception as e:
+                print(f"   ⚠️ Variance selector error: {e}")
+        
+        # Apply PCA if it was used during training
+        if 'pca' in self.transformers:
+            try:
+                pca = self.transformers['pca']
+                if X.shape[1] == pca.n_features_in_:
+                    X = pca.transform(X)
+                    print(f"   ✅ PCA applied: {pca.n_features_in_} → {pca.n_components_} features")
+                else:
+                    print(f"   ⚠️ PCA dimension mismatch: got {X.shape[1]}, expected {pca.n_features_in_}")
+            except Exception as e:
+                print(f"   ⚠️ PCA transform error: {e}")
                 
         # Final safety: Ensure dimension matches training
         if X.shape[1] != len(self.feature_names):
@@ -1106,8 +1189,16 @@ class ProductionModelTrainer:
     5. Comprehensive error handling
     """
     
-    def __init__(self, task_type: str = 'classification'):
+    def __init__(self, task_type: str = 'classification', mode: str = 'fast'):
+        """
+        Initialize trainer with mode support.
+        
+        Args:
+            task_type: 'classification' or 'regression'
+            mode: 'fast' (8 quick models) or 'ultra' (20+ models with ensembles)
+        """
         self.task_type = task_type
+        self.mode = mode  # 'fast' or 'ultra'
         self.models = {}
         self.results = []
         self.best_model = None
@@ -1115,112 +1206,260 @@ class ProductionModelTrainer:
         self.best_score = -np.inf
     
     def get_models(self) -> Dict[str, Any]:
-        """Get ALL production-grade models with IMPROVED defaults"""
+        """
+        Get models based on mode:
+        - FAST: 8 quick models (30-60 seconds)
+        - ULTRA: 20+ models with ensembles (2-10 minutes)
+        """
+        is_ultra = self.mode == 'ultra'
+        
         if self.task_type == 'classification':
+            # === FAST MODE: 8 Essential Models (WITH CLASS BALANCING) ===
             models = {
-                # Linear models
-                'LogisticRegression': LogisticRegression(max_iter=2000, C=0.1, random_state=42, n_jobs=1),
-                'RidgeClassifier': RidgeClassifier(alpha=1.0, random_state=42),
-                
-                # Tree-based - IMPROVED DEFAULTS for better initial performance
-                'RandomForest': RandomForestClassifier(
-                    n_estimators=200, max_depth=15, min_samples_split=5,
-                    min_samples_leaf=2, random_state=42, n_jobs=1
+                # Linear - WITH CLASS WEIGHT BALANCING
+                'LogisticRegression': LogisticRegression(
+                    max_iter=2000, C=0.1, random_state=42, n_jobs=1,
+                    class_weight='balanced'  # CRITICAL: Handle imbalanced classes
                 ),
-                'ExtraTrees': ExtraTreesClassifier(
-                    n_estimators=200, max_depth=15, min_samples_split=5,
-                    min_samples_leaf=2, random_state=42, n_jobs=1
+                
+                # Tree-based (core) - WITH CLASS WEIGHT BALANCING
+                'RandomForest': RandomForestClassifier(
+                    n_estimators=100 if not is_ultra else 200, 
+                    max_depth=10 if not is_ultra else 15, 
+                    min_samples_split=5, random_state=42, n_jobs=1,
+                    class_weight='balanced'  # CRITICAL: Handle imbalanced classes
                 ),
                 'GradientBoosting': GradientBoostingClassifier(
-                    n_estimators=150, max_depth=5, learning_rate=0.1,
-                    subsample=0.8, random_state=42
+                    n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42
+                    # Note: GradientBoosting doesn't support class_weight directly
                 ),
                 
                 # Neighbors
-                'KNN': KNeighborsClassifier(n_neighbors=7, weights='distance', n_jobs=1),
-                
-                # Neural Network
-                'MLP': MLPClassifier(
-                    hidden_layer_sizes=(128, 64, 32), max_iter=1000,
-                    learning_rate='adaptive', random_state=42
-                ),
+                'KNN': KNeighborsClassifier(n_neighbors=5, weights='distance', n_jobs=1),
                 
                 # Naive Bayes
                 'GaussianNB': GaussianNB(),
             }
             
+            # XGBoost/LightGBM for both modes
             if HAS_XGBOOST:
                 models['XGBoost'] = xgb.XGBClassifier(
-                    n_estimators=200, max_depth=8, learning_rate=0.05,
-                    subsample=0.8, colsample_bytree=0.8,
+                    n_estimators=100 if not is_ultra else 200, 
+                    max_depth=6, learning_rate=0.1,
                     random_state=42, n_jobs=1, verbosity=0,
-                    use_label_encoder=False, eval_metric='mlogloss'
+                    eval_metric='mlogloss',
+                    scale_pos_weight=10  # CRITICAL: Balance classes (adjust ratio)
                 )
-            
             if HAS_LIGHTGBM:
                 models['LightGBM'] = lgb.LGBMClassifier(
-                    n_estimators=200, max_depth=8, learning_rate=0.05,
-                    num_leaves=50, subsample=0.8,
-                    random_state=42, n_jobs=1, verbose=-1
+                    n_estimators=100 if not is_ultra else 200, 
+                    max_depth=6, learning_rate=0.1,
+                    random_state=42, n_jobs=1, verbose=-1,
+                    class_weight='balanced'  # CRITICAL: Handle imbalanced classes
                 )
             
-            if HAS_CATBOOST:
-                models['CatBoost'] = cb.CatBoostClassifier(
-                    iterations=200, depth=8, learning_rate=0.05,
-                    random_state=42, verbose=False
+            # === ULTRA MODE: Additional Models (12+ more) WITH CLASS BALANCING ===
+            if is_ultra:
+                models.update({
+                    'RidgeClassifier': RidgeClassifier(alpha=1.0, random_state=42, class_weight='balanced'),
+                    'ExtraTrees': ExtraTreesClassifier(
+                        n_estimators=200, max_depth=15, random_state=42, n_jobs=1,
+                        class_weight='balanced'  # CRITICAL
+                    ),
+                    'MLP': MLPClassifier(
+                        hidden_layer_sizes=(128, 64, 32), max_iter=1000,
+                        learning_rate='adaptive', random_state=42
+                    ),
+                    # 🆕 NEW ALGORITHMS WITH CLASS BALANCING
+                    'AdaBoost': AdaBoostClassifier(
+                        n_estimators=100, learning_rate=0.5, random_state=42
+                    ),
+                    'Bagging': BaggingClassifier(
+                        n_estimators=50, random_state=42, n_jobs=1
+                    ),
+                    'HistGradientBoosting': HistGradientBoostingClassifier(
+                        max_iter=100, max_depth=10, learning_rate=0.1, 
+                        random_state=42, class_weight='balanced'  # CRITICAL
+                    ),
+                    'SGD': SGDClassifier(
+                        loss='log_loss', max_iter=1000, random_state=42,
+                        class_weight='balanced'  # CRITICAL
+                    ),
+                    'DecisionTree': DecisionTreeClassifier(
+                        max_depth=15, random_state=42, class_weight='balanced'  # CRITICAL
+                    ),
+                    'QDA': QuadraticDiscriminantAnalysis(),
+                    'LDA': LinearDiscriminantAnalysis(),
+                    'BernoulliNB': BernoulliNB(),
+                    'PassiveAggressive': PassiveAggressiveClassifier(
+                        max_iter=1000, random_state=42, class_weight='balanced'  # CRITICAL
+                    ),
+                })
+                
+                if HAS_CATBOOST:
+                    models['CatBoost'] = cb.CatBoostClassifier(
+                        iterations=200, depth=8, learning_rate=0.05,
+                        random_state=42, verbose=False,
+                        auto_class_weights='Balanced'  # CRITICAL: CatBoost balanced
+                    )
+                
+                # SVM with class balancing
+                models['SVM'] = SVC(
+                    kernel='rbf', C=1.0, probability=True, random_state=42,
+                    class_weight='balanced'  # CRITICAL
+                )
+                
+                # Stacking Ensemble (Ultra only) - WITH BALANCED MODELS
+                from sklearn.ensemble import StackingClassifier
+                estimators = [
+                    ('rf', RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1, class_weight='balanced')),
+                    ('gb', GradientBoostingClassifier(n_estimators=100, random_state=42)),
+                ]
+                if HAS_XGBOOST:
+                    estimators.append(('xgb', xgb.XGBClassifier(n_estimators=100, random_state=42, verbosity=0, eval_metric='mlogloss', scale_pos_weight=10)))
+                
+                models['StackingEnsemble'] = StackingClassifier(
+                    estimators=estimators,
+                    final_estimator=LogisticRegression(max_iter=1000, class_weight='balanced'),
+                    cv=3, n_jobs=1
                 )
         
-        else:  # regression
+        elif self.task_type == 'regression':
+            # === FAST MODE: 8 Essential Models ===
             models = {
-                # Linear models
+                # Linear
                 'Ridge': Ridge(alpha=1.0, random_state=42),
-                'ElasticNet': ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=42, max_iter=2000),
-                'Lasso': Lasso(alpha=0.01, random_state=42, max_iter=2000),
                 
-                # Tree-based - IMPROVED DEFAULTS for better initial performance
+                # Tree-based (core)
                 'RandomForest': RandomForestRegressor(
-                    n_estimators=200, max_depth=15, min_samples_split=5,
-                    min_samples_leaf=2, random_state=42, n_jobs=1
-                ),
-                'ExtraTrees': ExtraTreesRegressor(
-                    n_estimators=200, max_depth=15, min_samples_split=5,
-                    min_samples_leaf=2, random_state=42, n_jobs=1
+                    n_estimators=100 if not is_ultra else 200, 
+                    max_depth=10 if not is_ultra else 15, 
+                    min_samples_split=5, random_state=42, n_jobs=1
                 ),
                 'GradientBoosting': GradientBoostingRegressor(
-                    n_estimators=150, max_depth=5, learning_rate=0.1,
-                    subsample=0.8, random_state=42
+                    n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42
                 ),
                 
                 # Neighbors
-                'KNN': KNeighborsRegressor(n_neighbors=7, weights='distance', n_jobs=1),
-                
-                # Neural Network
-                'MLP': MLPRegressor(
-                    hidden_layer_sizes=(128, 64, 32), max_iter=1000,
-                    learning_rate='adaptive', random_state=42
-                ),
+                'KNN': KNeighborsRegressor(n_neighbors=5, weights='distance', n_jobs=1),
             }
             
+            # XGBoost/LightGBM for both modes
             if HAS_XGBOOST:
                 models['XGBoost'] = xgb.XGBRegressor(
-                    n_estimators=200, max_depth=8, learning_rate=0.05,
-                    subsample=0.8, colsample_bytree=0.8,
+                    n_estimators=100 if not is_ultra else 200, 
+                    max_depth=6, learning_rate=0.1,
                     random_state=42, n_jobs=1, verbosity=0
                 )
-            
             if HAS_LIGHTGBM:
                 models['LightGBM'] = lgb.LGBMRegressor(
-                    n_estimators=200, max_depth=8, learning_rate=0.05,
-                    num_leaves=50, subsample=0.8,
+                    n_estimators=100 if not is_ultra else 200, 
+                    max_depth=6, learning_rate=0.1,
                     random_state=42, n_jobs=1, verbose=-1
                 )
             
-            if HAS_CATBOOST:
-                models['CatBoost'] = cb.CatBoostRegressor(
-                    iterations=200, depth=8, learning_rate=0.05,
-                    random_state=42, verbose=False
+            # === ULTRA MODE: Additional Models (12+ more) ===
+            if is_ultra:
+                models.update({
+                    'ElasticNet': ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=42, max_iter=2000),
+                    'Lasso': Lasso(alpha=0.01, random_state=42, max_iter=2000),
+                    'ExtraTrees': ExtraTreesRegressor(
+                        n_estimators=200, max_depth=15, random_state=42, n_jobs=1
+                    ),
+                    'MLP': MLPRegressor(
+                        hidden_layer_sizes=(128, 64, 32), max_iter=1000,
+                        learning_rate='adaptive', random_state=42
+                    ),
+                    # 🆕 NEW REGRESSION ALGORITHMS
+                    'AdaBoost': AdaBoostRegressor(
+                        n_estimators=100, learning_rate=0.5, random_state=42
+                    ),
+                    'Bagging': BaggingRegressor(
+                        n_estimators=50, random_state=42, n_jobs=1
+                    ),
+                    'HistGradientBoosting': HistGradientBoostingRegressor(
+                        max_iter=100, max_depth=10, learning_rate=0.1, random_state=42
+                    ),
+                    'SGD': SGDRegressor(max_iter=1000, random_state=42),
+                    'DecisionTree': DecisionTreeRegressor(max_depth=15, random_state=42),
+                    'HuberRegressor': HuberRegressor(max_iter=500),
+                    'TheilSen': TheilSenRegressor(random_state=42, n_jobs=1),
+                    'BayesianRidge': BayesianRidge(),
+                    'SVR': SVR(kernel='rbf', C=1.0),
+                    'PassiveAggressive': PassiveAggressiveRegressor(
+                        max_iter=1000, random_state=42
+                    ),
+                })
+                
+                if HAS_CATBOOST:
+                    models['CatBoost'] = cb.CatBoostRegressor(
+                        iterations=200, depth=8, learning_rate=0.05,
+                        random_state=42, verbose=False
+                    )
+                
+                # Stacking Ensemble (Ultra only)
+                from sklearn.ensemble import StackingRegressor
+                estimators = [
+                    ('rf', RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=1)),
+                    ('gb', GradientBoostingRegressor(n_estimators=100, random_state=42)),
+                ]
+                if HAS_XGBOOST:
+                    estimators.append(('xgb', xgb.XGBRegressor(n_estimators=100, random_state=42, verbosity=0)))
+                
+                models['StackingEnsemble'] = StackingRegressor(
+                    estimators=estimators,
+                    final_estimator=Ridge(alpha=1.0),
+                    cv=3, n_jobs=1
                 )
         
+        # =====================================================================
+        # 🆕 CLUSTERING TASK TYPE
+        # =====================================================================
+        elif self.task_type == 'clustering':
+            from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering, MeanShift
+            from sklearn.mixture import GaussianMixture
+            
+            models = {
+                'KMeans_3': KMeans(n_clusters=3, random_state=42, n_init=10),
+                'KMeans_5': KMeans(n_clusters=5, random_state=42, n_init=10),
+                'DBSCAN': DBSCAN(eps=0.5, min_samples=5),
+                'AgglomerativeClustering': AgglomerativeClustering(n_clusters=3),
+                'GaussianMixture': GaussianMixture(n_components=3, random_state=42),
+            }
+            
+            if is_ultra:
+                from sklearn.cluster import SpectralClustering, Birch
+                models.update({
+                    'KMeans_7': KMeans(n_clusters=7, random_state=42, n_init=10),
+                    'MeanShift': MeanShift(),
+                    'SpectralClustering': SpectralClustering(n_clusters=3, random_state=42, affinity='nearest_neighbors'),
+                    'Birch': Birch(n_clusters=3),
+                })
+        
+        # =====================================================================
+        # 🆕 ANOMALY DETECTION TASK TYPE
+        # =====================================================================
+        elif self.task_type == 'anomaly_detection':
+            from sklearn.ensemble import IsolationForest
+            from sklearn.svm import OneClassSVM
+            from sklearn.neighbors import LocalOutlierFactor
+            from sklearn.covariance import EllipticEnvelope
+            
+            models = {
+                'IsolationForest': IsolationForest(contamination=0.1, random_state=42, n_jobs=1),
+                'OneClassSVM': OneClassSVM(kernel='rbf', nu=0.1),
+                'LocalOutlierFactor': LocalOutlierFactor(contamination=0.1, novelty=True, n_jobs=1),
+                'EllipticEnvelope': EllipticEnvelope(contamination=0.1, random_state=42),
+            }
+            
+            if is_ultra:
+                models.update({
+                    'IsolationForest_Strict': IsolationForest(contamination=0.05, random_state=42, n_jobs=1),
+                    'OneClassSVM_RBF': OneClassSVM(kernel='rbf', nu=0.05),
+                    'OneClassSVM_Linear': OneClassSVM(kernel='linear', nu=0.1),
+                })
+        
+        print(f"   📋 Mode: {self.mode.upper()} → {len(models)} models")
         return models
     
     def train_all(
@@ -1272,64 +1511,90 @@ class ProductionModelTrainer:
             # =========================================================
             # 🌟 SMOTE CLASS BALANCING - Critical for accuracy
             # =========================================================
+            self.use_class_weight = False  # Fallback flag for models
+            
             try:
-                from imblearn.over_sampling import SMOTE, ADASYN
-                from imblearn.combine import SMOTETomek
-                
-                # Check class distribution
+                # Check class distribution first
                 unique, counts = np.unique(y_train, return_counts=True)
-                min_count = min(counts)
-                max_count = max(counts)
+                min_count = int(min(counts))
+                max_count = int(max(counts))
                 imbalance_ratio = max_count / max(min_count, 1)
                 
-                print(f"   📊 Class distribution: {dict(zip(unique, counts))}")
+                print(f"   📊 Class distribution: {dict(zip(unique.tolist(), counts.tolist()))}")
                 print(f"   📊 Imbalance ratio: {imbalance_ratio:.2f}")
                 
-                # Apply SMOTE if imbalanced (ratio > 1.5)
-                if imbalance_ratio > 1.5 and min_count >= 6:
-                    try:
-                        # Use SMOTETomek for best results (combines oversampling + cleaning)
-                        smote = SMOTETomek(random_state=42)
-                        X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train)
-                        
-                        # Verify resampling worked
-                        new_unique, new_counts = np.unique(y_train_balanced, return_counts=True)
-                        print(f"   ✅ SMOTE+Tomek: {len(X_train)} → {len(X_train_balanced)} samples")
-                        print(f"   ✅ New distribution: {dict(zip(new_unique, new_counts))}")
-                        
-                        X_train = X_train_balanced
-                        y_train = y_train_balanced
-                        
-                    except Exception as smote_err:
-                        # Fallback to basic SMOTE
+                # Save for use in model training
+                self.imbalance_ratio = imbalance_ratio
+                
+                # Determine if we should use SMOTE or class weights
+                if imbalance_ratio > 1.5:
+                    if min_count >= 6:
                         try:
+                            from imblearn.over_sampling import SMOTE
+                            
+                            # Use k_neighbors based on minority class size
                             k_neighbors = min(5, min_count - 1)
+                            
                             if k_neighbors >= 1:
-                                smote = SMOTE(k_neighbors=k_neighbors, random_state=42)
-                                X_train, y_train = smote.fit_resample(X_train, y_train)
-                                print(f"   ✅ Basic SMOTE applied")
-                        except:
-                            print(f"   ⚠️ SMOTE skipped: {str(smote_err)[:40]}")
-                else:
-                    if min_count < 6:
-                        print(f"   ⚠️ Too few samples for SMOTE (min class: {min_count})")
+                                # Use sampling_strategy to control oversampling ratio
+                                # For extreme imbalance, don't fully balance - partial oversampling
+                                if imbalance_ratio > 100:
+                                    # Extreme imbalance: oversample to 10% of majority
+                                    target_ratio = min(0.1, 1.0)
+                                elif imbalance_ratio > 20:
+                                    # High imbalance: oversample to 25% of majority
+                                    target_ratio = min(0.25, 1.0)
+                                else:
+                                    # Moderate imbalance: full balance
+                                    target_ratio = 1.0
+                                
+                                smote = SMOTE(
+                                    k_neighbors=k_neighbors, 
+                                    sampling_strategy=target_ratio,
+                                    random_state=42
+                                )
+                                X_train_balanced, y_train_balanced = smote.fit_resample(X_train, y_train)
+                                
+                                new_unique, new_counts = np.unique(y_train_balanced, return_counts=True)
+                                print(f"   ✅ SMOTE: {len(X_train)} → {len(X_train_balanced)} samples")
+                                print(f"   ✅ New distribution: {dict(zip(new_unique.tolist(), new_counts.tolist()))}")
+                                
+                                X_train = X_train_balanced
+                                y_train = y_train_balanced
+                            else:
+                                print(f"   ⚠️ Too few neighbors for SMOTE (k={k_neighbors})")
+                                self.use_class_weight = True
+                                
+                        except ImportError:
+                            print("   ⚠️ imblearn not installed, using class_weight='balanced'")
+                            self.use_class_weight = True
+                        except Exception as smote_err:
+                            print(f"   ⚠️ SMOTE failed: {str(smote_err)[:60]}")
+                            print("   📊 Falling back to class_weight='balanced'")
+                            self.use_class_weight = True
                     else:
-                        print(f"   ✅ Classes already balanced")
-                        
-            except ImportError:
-                print("   ⚠️ imblearn not installed, skipping SMOTE")
+                        print(f"   ⚠️ Too few minority samples ({min_count}) for SMOTE, using class_weight")
+                        self.use_class_weight = True
+                else:
+                    print(f"   ✅ Classes balanced (ratio: {imbalance_ratio:.2f})")
+                    
             except Exception as e:
-                print(f"   ⚠️ SMOTE error: {str(e)[:50]}")
+                print(f"   ⚠️ Class balance check error: {str(e)[:50]}")
+                self.use_class_weight = True
         else:
             y_train = y_train.astype(float)
             y_test = y_test.astype(float)
         
-        # Cross-validation setup
+        # Cross-validation setup - FAST MODE OPTIMIZATION
+        # Fast mode: 3 folds (faster), Ultra mode: 5 folds (more accurate)
+        actual_cv_folds = 3 if self.mode == 'fast' else cv_folds
+        print(f"   🔄 Using {actual_cv_folds}-fold CV ({self.mode} mode)")
+        
         if self.task_type == 'classification':
-            cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=42)
+            cv = StratifiedKFold(n_splits=actual_cv_folds, shuffle=True, random_state=42)
             scoring = 'f1_weighted'
         else:
-            cv = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
+            cv = KFold(n_splits=actual_cv_folds, shuffle=True, random_state=42)
             scoring = 'r2'
         
         self.results = []
@@ -1349,18 +1614,68 @@ class ProductionModelTrainer:
                 # Evaluate
                 if self.task_type == 'classification':
                     accuracy = accuracy_score(y_test, y_pred)
-                    precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-                    recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-                    f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+                    # CRITICAL FIX: Use 'macro' averaging to treat minority class equally!
+                    # 'weighted' favors majority class, 'macro' gives equal weight to ALL classes
+                    precision = precision_score(y_test, y_pred, average='macro', zero_division=0)
+                    recall = recall_score(y_test, y_pred, average='macro', zero_division=0)
+                    f1 = f1_score(y_test, y_pred, average='macro', zero_division=0)
+                    
+                    # Also calculate weighted F1 for reference
+                    f1_weighted = f1_score(y_test, y_pred, average='weighted', zero_division=0)
                     
                     metrics = {
                         'accuracy': accuracy,
                         'precision': precision,
                         'recall': recall,
-                        'f1': f1
+                        'f1': f1,
+                        'f1_weighted': f1_weighted  # Keep weighted for reference
                     }
-                    score = f1  # Use F1 as primary metric
-                else:
+                    
+                    # For imbalanced data: Add minority class recall (CRITICAL for fraud detection)
+                    if hasattr(self, 'imbalance_ratio') and self.imbalance_ratio > 5:
+                        try:
+                            # Get per-class recall to find minority class performance
+                            from sklearn.metrics import classification_report, average_precision_score
+                            
+                            # Binary case: minority class is usually class 1
+                            unique_classes = np.unique(y_test)
+                            if len(unique_classes) == 2:
+                                # Minority class recall (catching fraud/rare events)
+                                minority_recall = recall_score(y_test, y_pred, pos_label=1, zero_division=0)
+                                minority_precision = precision_score(y_test, y_pred, pos_label=1, zero_division=0)
+                                
+                                # F2 Score (weighs recall 2x more than precision - for fraud detection)
+                                f2 = (5 * minority_precision * minority_recall) / (4 * minority_precision + minority_recall + 1e-10)
+                                
+                                # AUC-PR (Area Under Precision-Recall Curve) - best for imbalanced
+                                if hasattr(model, 'predict_proba'):
+                                    try:
+                                        y_proba = model.predict_proba(X_test)[:, 1]
+                                        auc_pr = average_precision_score(y_test, y_proba)
+                                        metrics['auc_pr'] = auc_pr
+                                    except:
+                                        pass
+                                
+                                metrics['minority_recall'] = minority_recall
+                                metrics['minority_precision'] = minority_precision
+                                metrics['f2_score'] = f2
+                                
+                                # For highly imbalanced data, use minority recall as primary metric
+                                # This prioritizes catching fraud/rare events
+                                score = (minority_recall * 0.6 + f1 * 0.4)  # Blend: 60% minority recall, 40% F1
+                                print(f"   ✅ {name}: accuracy={accuracy:.3f}, minority_recall={minority_recall:.3f}, f1={f1:.3f}")
+                            else:
+                                # Multiclass: use macro F1
+                                score = f1
+                                print(f"   ✅ {name}: accuracy={accuracy:.3f}, precision={precision:.3f}, recall={recall:.3f}")
+                        except Exception as imb_err:
+                            score = f1
+                            print(f"   ✅ {name}: accuracy={accuracy:.3f}, precision={precision:.3f}, recall={recall:.3f}")
+                    else:
+                        score = f1  # Use MACRO F1 as primary metric
+                        print(f"   ✅ {name}: accuracy={accuracy:.3f}, precision={precision:.3f}, recall={recall:.3f}")
+                
+                elif self.task_type == 'regression':
                     r2 = r2_score(y_test, y_pred)
                     mae = mean_absolute_error(y_test, y_pred)
                     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
@@ -1372,17 +1687,77 @@ class ProductionModelTrainer:
                     }
                     score = r2  # Use R² as primary metric
                 
+                elif self.task_type == 'clustering':
+                    # Clustering metrics - use silhouette score
+                    from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+                    try:
+                        # Get cluster labels (for models that predict labels vs fit_predict)
+                        if hasattr(model, 'labels_'):
+                            labels = model.labels_
+                        else:
+                            labels = y_pred
+                        
+                        # Only calculate if we have more than 1 cluster
+                        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+                        if n_clusters > 1 and n_clusters < len(X_test):
+                            silhouette = silhouette_score(X_test, labels)
+                            calinski = calinski_harabasz_score(X_test, labels)
+                            davies_bouldin = davies_bouldin_score(X_test, labels)
+                        else:
+                            silhouette = 0.0
+                            calinski = 0.0
+                            davies_bouldin = 1.0
+                        
+                        metrics = {
+                            'silhouette': silhouette,
+                            'calinski_harabasz': calinski,
+                            'davies_bouldin': davies_bouldin,
+                            'n_clusters': n_clusters
+                        }
+                        score = silhouette  # Use silhouette as primary (range -1 to 1)
+                    except Exception as clust_err:
+                        metrics = {'silhouette': 0.0, 'error': str(clust_err)[:30]}
+                        score = 0.0
+                
+                elif self.task_type == 'anomaly_detection':
+                    # Anomaly detection - predict returns 1 (normal) or -1 (anomaly)
+                    # Convert to binary and use contamination estimate
+                    anomaly_ratio = np.mean(y_pred == -1)
+                    normal_ratio = np.mean(y_pred == 1)
+                    
+                    metrics = {
+                        'anomaly_ratio': anomaly_ratio,
+                        'normal_ratio': normal_ratio,
+                        'n_anomalies': int(np.sum(y_pred == -1)),
+                        'n_normal': int(np.sum(y_pred == 1))
+                    }
+                    # Score based on reasonable anomaly detection (not too many, not too few)
+                    # Ideal is close to expected contamination rate
+                    score = 1.0 - abs(anomaly_ratio - 0.1)  # Penalize deviation from 10%
+                
+                else:
+                    # Unknown task type - basic metrics
+                    metrics = {'score': 0.0}
+                    score = 0.0
+                
                 # Register model immediately so optimization can access it
                 self.models[name] = model
                 
                 # Check if we should optimize (always optimize best tree-based models)
                 # FIXED: Previously only optimized when score > 0.4, missing weak datasets
                 # Now always optimize key models (XGBoost, LightGBM, CatBoost, RandomForest)
-                key_models = ['XGBoost', 'LightGBM', 'CatBoost', 'RandomForest', 'ExtraTrees']
+                # FAST MODE: Only optimize top 2 models, ULTRA: all 5
+                key_models_ultra = ['XGBoost', 'LightGBM', 'CatBoost', 'RandomForest', 'ExtraTrees']
+                key_models_fast = ['XGBoost', 'LightGBM']  # Only 2 for speed
+                key_models = key_models_fast if self.mode == 'fast' else key_models_ultra
+                
+                # FAST MODE: 10 trials, ULTRA: 30 trials
+                n_optuna_trials = 10 if self.mode == 'fast' else 30
+                
                 if HAS_OPTUNA and name in key_models:
-                    print(f"   🚀 Optimizing {name}...")
+                    print(f"   🚀 Optimizing {name} ({n_optuna_trials} trials)...")
                     try:
-                        best_params = self.optimize_with_optuna(name, X_train, y_train, check_cancellation=check_cancellation)
+                        best_params = self.optimize_with_optuna(name, X_train, y_train, n_trials=n_optuna_trials, check_cancellation=check_cancellation)
                         if best_params:
                             # Re-train with best params
                             model.set_params(**best_params)
@@ -1391,7 +1766,8 @@ class ProductionModelTrainer:
                             
                             # Recalculate score
                             if self.task_type == 'classification':
-                                new_score = f1_score(y_test, y_pred_opt, average='weighted', zero_division=0)
+                                # Use MACRO F1 (treats all classes equally!)
+                                new_score = f1_score(y_test, y_pred_opt, average='macro', zero_division=0)
                             else:
                                 new_score = r2_score(y_test, y_pred_opt)
                             
@@ -1568,16 +1944,42 @@ class ProductionModelTrainer:
         top_models = self.results[:top_n]
         
         # Filter models that have predict_proba for soft voting
+        # Also add sklearn compatibility wrapper for XGBoost/LightGBM
         soft_compatible = []
         hard_only = []
         
-        for r in top_models:
-            if hasattr(r['model'], 'predict_proba'):
-                soft_compatible.append((r['name'], r['model']))
-            else:
-                hard_only.append((r['name'], r['model']))
+        def is_sklearn_compatible(model):
+            """Check if model is compatible with sklearn 1.6+ VotingClassifier"""
+            try:
+                # Try to access tags - sklearn 1.6+ requirement
+                if hasattr(model, '__sklearn_tags__'):
+                    return True
+                if hasattr(model, '_get_tags'):
+                    return True
+                # Check if it's a standard sklearn estimator
+                from sklearn.base import is_classifier
+                return is_classifier(model)
+            except:
+                return False
         
+        for r in top_models:
+            model = r['model']
+            name = r['name']
+            
+            # Check sklearn compatibility
+            if not is_sklearn_compatible(model):
+                # Skip XGBoost/LightGBM for voting (they work with stacking)
+                print(f"   ⚠️ Skipping {name} from voting (sklearn 1.6+ incompatible)")
+                continue
+            
+            if hasattr(model, 'predict_proba'):
+                soft_compatible.append((name, model))
+            else:
+                hard_only.append((name, model))
+        
+        # For stacking, use all models (it handles compatibility internally)
         all_estimators = [(r['name'], r['model']) for r in top_models]
+        stacking_estimators = [(r['name'], r['model']) for r in top_models if hasattr(r['model'], 'predict_proba')]
         
         ensemble_results = []
         
