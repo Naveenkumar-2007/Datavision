@@ -259,44 +259,26 @@ def chat(
                 logger.error(f"Groq model failed with all {len(keys_to_try)} keys: {e}")
                 break 
                 
-    # All Groq keys exhausted - return user-friendly error
+    # All Groq keys exhausted - return clean user-friendly error (no technical details)
     e = last_error
     error_str = str(e).lower() if e else ''
-    if 'rate_limit' in error_str or 'rate limit' in error_str:
+    logger.error(f"All API keys exhausted. Last error: {e}")
+    
+    # Generic friendly message - don't expose technical details to users
+    if 'context' in error_str or 'too large' in error_str or 'token' in error_str:
         return (
-            "**Rate limit reached.** Please wait a moment and try again.\n\n"
-            "The AI service is temporarily busy."
-        )
-    elif 'organization' in error_str and ('restricted' in error_str or 'blocked' in error_str):
-        return (
-            "**Organization Restricted**\n\n"
-            "All Groq API keys have organization restrictions.\n\n"
-            "💡 **Solution:** Get new API keys from https://console.groq.com/keys"
-        )
-    elif 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str:
-        return (
-            "**API Key Error**\n\n"
-            "Please check your GROQ_API_KEY in the .env file.\n\n"
-            "💡 **Get FREE keys:** https://console.groq.com/keys"
+            "Your question is quite detailed! Could you try asking something more specific? "
+            "This will help me give you a better answer."
         )
     elif 'timeout' in error_str or 'connection' in error_str:
         return (
-            "**Connection Error**\n\n"
-            "Unable to reach AI service. Check your internet connection."
-        )
-    elif 'context' in error_str or 'too large' in error_str or 'token' in error_str:
-        return (
-            "**Request too large**\n\n"
-            "Your data or question exceeds the model's capacity. "
-            "Try asking a more specific question."
+            "I'm having trouble connecting right now. Please check your internet connection and try again."
         )
     else:
-        logger.error(f"Full error: {e}")
+        # Generic message for all other errors (rate limit, auth, org restricted, etc.)
         return (
-            f"**Error processing request**\n\n"
-            f"Model: {primary_model}\n"
-            f"Error: {str(e)[:200]}\n\n"
-            "Please try rephrasing your question or contact support."
+            "I'm temporarily unable to process your request. Please try again in a moment. "
+            "If this continues, the system administrator has been notified."
         )
 
 
