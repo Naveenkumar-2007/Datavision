@@ -175,6 +175,30 @@ async def startup_event():
     logger.info("🔮 Predictive Intelligence: ACTIVE")
     logger.info("⚡ Advanced MCPs: LOADED")
     logger.info("🏢 Enterprise Features: ENABLED")
+    
+    # 📧 Start Email Scheduler for Daily/Weekly Reports
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        from scheduler.scheduled_reporter import check_and_send_reports
+        
+        scheduler = AsyncIOScheduler()
+        
+        # Run every minute to check for scheduled email times
+        scheduler.add_job(
+            check_and_send_reports,
+            CronTrigger(minute="*"),  # Every minute
+            id="email_report_checker",
+            name="Check and send scheduled email reports",
+            replace_existing=True
+        )
+        
+        scheduler.start()
+        logger.info("📧 Email Scheduler: ACTIVE (checking every minute)")
+        
+    except Exception as e:
+        logger.warning(f"⚠️ Email scheduler not started: {e}")
+    
     logger.info("=" * 50)
     logger.info("📡 API v2 available at: /api/v2")
     logger.info("📚 Docs at: /docs")

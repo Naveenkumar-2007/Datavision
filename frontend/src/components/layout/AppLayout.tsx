@@ -1,8 +1,3 @@
-/**
- * App Layout - Premium UI v2.0 - ChatGPT Level Design
- * Features: Glassmorphism, smooth animations, enhanced mobile UX
- */
-
 import React, { useState, useEffect } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,6 +16,8 @@ import {
   Sparkles,
   LogOut,
   Brain,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserStore } from '@/store/userStore';
@@ -30,6 +27,7 @@ const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const { isDark, toggleTheme } = useUserStore();
 
   useEffect(() => {
@@ -77,37 +75,41 @@ const AppLayout: React.FC = () => {
       {/* Premium Sidebar */}
       <motion.aside
         initial={false}
-        animate={{
-          x: isMobileMenuOpen ? 0 : (typeof window !== 'undefined' && window.innerWidth < 1024 ? -280 : 0)
-        }}
-        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
         className={`
-          fixed lg:static inset-y-0 left-0 z-50
-          w-[280px] lg:w-64
-          flex flex-col
+          fixed inset-y-0 left-0 z-50 flex flex-col border-r transition-all duration-300
           ${isDark ? 'glass-premium' : 'bg-white/95 backdrop-blur-xl'}
-          border-r
+          md:static 
+          /* Slide logic handled by classes */
+          ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}
+          /* Widths */
+          w-[280px] md:w-20 
+          ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
         `}
         style={{
           borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-          boxShadow: isDark ? '4px 0 24px rgba(0,0,0,0.3)' : '4px 0 24px rgba(0,0,0,0.05)'
+          boxShadow: isDark && isMobileMenuOpen ? '4px 0 24px rgba(0,0,0,0.5)' : (isDark ? '4px 0 24px rgba(0,0,0,0.3)' : '4px 0 24px rgba(0,0,0,0.05)')
         }}
       >
         {/* Logo Section */}
         <div
-          className="h-16 flex items-center justify-between px-5 border-b"
+          className={`h-16 flex items-center justify-between px-5 border-b transition-all duration-300
+            md:justify-center 
+            ${isSidebarCollapsed ? 'lg:justify-center' : 'lg:justify-start'}
+          `}
           style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}
         >
           <div
             className="flex items-center gap-3 cursor-pointer group"
             onClick={() => navigate('/')}
           >
-            <div className="relative">
+            <div className="relative shrink-0">
               <img src="/logo.png" alt="DataVision" className="w-9 h-9 object-contain" />
               <div className="absolute inset-0 bg-teal-400/20 rounded-full blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             <span
-              className="text-lg font-semibold tracking-tight"
+              className={`text-lg font-semibold tracking-tight md:hidden whitespace-nowrap
+                ${isSidebarCollapsed ? 'lg:hidden' : 'lg:block'}
+              `}
               style={{ color: isDark ? '#f8fafc' : '#0f172a' }}
             >
               DataVision
@@ -115,14 +117,14 @@ const AppLayout: React.FC = () => {
           </div>
           <button
             onClick={() => setIsMobileMenuOpen(false)}
-            className="lg:hidden p-2 rounded-xl hover:bg-white/10 transition-colors touch-target"
+            className="md:hidden p-2 rounded-xl hover:bg-white/10 transition-colors touch-target"
           >
             <X className="w-5 h-5" style={{ color: isDark ? '#9ca3af' : '#64748b' }} />
           </button>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto overflow-x-hidden">
           {navItems.map((item) => {
             const active = isActive(item.path);
             return (
@@ -133,8 +135,11 @@ const AppLayout: React.FC = () => {
                 whileTap={{ scale: 0.98 }}
                 className={`
                   nav-item-premium w-full flex items-center gap-3 px-4 py-3
+                  md:justify-center md:px-0
+                  ${isSidebarCollapsed ? 'lg:justify-center lg:px-0' : 'lg:justify-start lg:px-4'}
                   ${active ? 'active' : ''}
                 `}
+                title={item.label} // Tooltip for tablet/collapsed
                 style={{
                   color: active
                     ? '#2dd4bf'
@@ -146,9 +151,13 @@ const AppLayout: React.FC = () => {
                 }}
               >
                 <item.icon className="w-5 h-5 flex-shrink-0" />
-                <span className="font-medium">{item.label}</span>
+                <span className={`font-medium md:hidden whitespace-nowrap
+                  ${isSidebarCollapsed ? 'lg:hidden' : 'lg:block'}
+                `}>{item.label}</span>
                 {item.path === '/chat' && (
-                  <Sparkles className="w-3.5 h-3.5 ml-auto text-teal-400 opacity-60" />
+                  <Sparkles className={`w-3.5 h-3.5 ml-auto text-teal-400 opacity-60 md:hidden
+                    ${isSidebarCollapsed ? 'lg:hidden' : 'lg:inline-block'}
+                  `} />
                 )}
               </motion.button>
             );
@@ -166,11 +175,17 @@ const AppLayout: React.FC = () => {
                 signOut();
               }
             }}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-red-500/10 group"
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-red-500/10 group
+              md:justify-center md:px-0 
+              ${isSidebarCollapsed ? 'lg:justify-center lg:px-0' : 'lg:justify-start lg:px-4'}
+            `}
             style={{ color: isDark ? '#9ca3af' : '#64748b' }}
+            title="Sign Out"
           >
-            <LogOut className="w-5 h-5 group-hover:text-red-400 transition-colors" />
-            <span className="font-medium group-hover:text-red-400 transition-colors">Sign Out</span>
+            <LogOut className="w-5 h-5 group-hover:text-red-400 transition-colors shrink-0" />
+            <span className={`font-medium group-hover:text-red-400 transition-colors md:hidden whitespace-nowrap
+              ${isSidebarCollapsed ? 'lg:hidden' : 'lg:block'}
+            `}>Sign Out</span>
           </button>
         </div>
       </motion.aside>
@@ -184,7 +199,7 @@ const AppLayout: React.FC = () => {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={() => setIsMobileMenuOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
           />
         )}
       </AnimatePresence>
@@ -210,8 +225,18 @@ const AppLayout: React.FC = () => {
             <Menu className="w-5 h-5" style={{ color: isDark ? '#9ca3af' : '#64748b' }} />
           </button>
 
-          {/* Page Title with Breadcrumb feel */}
-          <div className="flex items-center gap-2">
+          {/* Page Title with Breadcrumb feel + Desktop Toggle */}
+          <div className="flex items-center gap-4">
+            {/* Desktop Toggle Button */}
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="hidden lg:flex p-2 rounded-xl hover:bg-white/5 transition-colors"
+              style={{ color: isDark ? '#9ca3af' : '#64748b' }}
+              title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+            </button>
+
             <motion.h1
               key={location.pathname}
               initial={{ opacity: 0, y: -5 }}

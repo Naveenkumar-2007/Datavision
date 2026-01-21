@@ -1323,6 +1323,21 @@ class ProductionModelTrainer:
                     final_estimator=LogisticRegression(max_iter=1000, class_weight='balanced'),
                     cv=3, n_jobs=1
                 )
+                
+                # 🧠 DEEP LEARNING: TensorFlow DeepANN (Ultra Mode Only)
+                # Only add if TensorFlow is available and sufficient data
+                try:
+                    from ml.algorithm_selector import (
+                        create_deep_ann_classifier, 
+                        KerasClassifierWrapper
+                    )
+                    # DeepANN will be configured dynamically in train_all()
+                    # Store flag to create it with correct input_dim later
+                    self._use_deep_ann = True
+                    print("   🧠 DeepANN (TensorFlow) will be trained in Ultra Mode")
+                except ImportError:
+                    self._use_deep_ann = False
+                    print("   ⚠️ TensorFlow not available, skipping DeepANN")
         
         elif self.task_type == 'regression':
             # === FAST MODE: 8 Essential Models ===
@@ -1810,6 +1825,75 @@ class ProductionModelTrainer:
         
         # Sort by score
         self.results.sort(key=lambda x: x['score'], reverse=True)
+        
+        # 🧠 ULTRA MODE: Train DeepANN (TensorFlow) after sklearn models
+        if getattr(self, '_use_deep_ann', False) and self.task_type == 'classification':
+            try:
+                print("\n   🧠 Training DeepANN (TensorFlow)...")
+                from ml.algorithm_selector import (
+                    create_deep_ann_classifier,
+                    KerasClassifierWrapper
+                )
+                
+                # Create DeepANN with input shape from data
+                input_dim = X_train.shape[1]
+                n_classes = len(np.unique(y_train))
+                
+                keras_model = create_deep_ann_classifier(
+                    input_dim=input_dim,
+                    n_classes=n_classes,
+                    hidden_layers=(256, 128, 64, 32),
+                    dropout_rate=0.3
+                )
+                
+                if keras_model is not None:
+                    # Wrap for sklearn compatibility
+                    class_weight = 'balanced' if getattr(self, 'use_class_weight', False) else None
+                    deep_ann = KerasClassifierWrapper(
+                        model=keras_model,
+                        epochs=50,
+                        batch_size=32,
+                        class_weight=class_weight
+                    )
+                    
+                    # Train
+                    deep_ann.fit(X_train, y_train)
+                    
+                    # Evaluate
+                    y_pred_ann = deep_ann.predict(X_test)
+                    ann_accuracy = accuracy_score(y_test, y_pred_ann)
+                    ann_f1 = f1_score(y_test, y_pred_ann, average='macro', zero_division=0)
+                    
+                    # For imbalanced data, use blended score
+                    if getattr(self, 'imbalance_ratio', 1) > 5:
+                        minority_recall = recall_score(y_test, y_pred_ann, pos_label=1, zero_division=0)
+                        ann_score = (minority_recall * 0.6 + ann_f1 * 0.4)
+                        print(f"   ✅ DeepANN: accuracy={ann_accuracy:.3f}, minority_recall={minority_recall:.3f}, f1={ann_f1:.3f}")
+                    else:
+                        ann_score = ann_f1
+                        print(f"   ✅ DeepANN: accuracy={ann_accuracy:.3f}, f1={ann_f1:.3f}")
+                    
+                    # Add to results
+                    self.results.append({
+                        'name': 'DeepANN',
+                        'model': deep_ann,
+                        'metrics': {'accuracy': ann_accuracy, 'f1': ann_f1},
+                        'score': ann_score
+                    })
+                    self.models['DeepANN'] = deep_ann
+                    
+                    # Check if DeepANN is best
+                    if ann_score > self.best_score:
+                        self.best_score = ann_score
+                        self.best_model = deep_ann
+                        self.best_name = 'DeepANN'
+                        print(f"   🎉 DeepANN is new best model!")
+                    
+                    # Re-sort results
+                    self.results.sort(key=lambda x: x['score'], reverse=True)
+                    
+            except Exception as ann_err:
+                print(f"   ⚠️ DeepANN training failed: {str(ann_err)[:60]}")
         
         print(f"\n   🏆 Best Model: {self.best_name} (score: {self.best_score:.4f})")
         

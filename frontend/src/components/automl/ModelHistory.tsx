@@ -48,18 +48,11 @@ interface ModelMetadata {
 }
 
 interface ModelHistoryProps {
-    theme: {
-        isDark: boolean;
-        bgColor: string;
-        cardBg: string;
-        textPrimary: string;
-        textMuted: string;
-        borderColor: string;
-    };
     userId?: string;
+    onModelChange?: () => void;  // Callback when active model changes
 }
 
-const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }) => {
+const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModelChange }) => {
     const [models, setModels] = useState<ModelMetadata[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -106,6 +99,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
             if (data.success) {
                 setSuccessMessage(`Rolled back to version ${version}`);
                 await fetchModels();
+                onModelChange?.();  // Notify parent to refresh overview
             } else {
                 setError(data.detail || 'Rollback failed');
             }
@@ -164,7 +158,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
         return (
             <div className="flex flex-col items-center justify-center py-12">
                 <Loader className="w-8 h-8 animate-spin text-emerald-400 mb-4" />
-                <p style={{ color: theme.textMuted }}>Loading model history...</p>
+                <p style={{ color: 'var(--text-muted)' }}>Loading model history...</p>
             </div>
         );
     }
@@ -177,7 +171,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
                 <AlertCircle className="w-6 h-6 text-red-400" />
                 <div>
                     <p className="font-medium text-red-400">Error loading models</p>
-                    <p style={{ color: theme.textMuted }}>{error}</p>
+                    <p style={{ color: 'var(--text-muted)' }}>{error}</p>
                 </div>
                 <button
                     onClick={fetchModels}
@@ -193,13 +187,13 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
         return (
             <div
                 className="p-12 rounded-2xl border text-center"
-                style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
             >
-                <Database className="w-16 h-16 mx-auto mb-4" style={{ color: theme.textMuted }} />
-                <h3 className="text-xl font-semibold mb-2" style={{ color: theme.textPrimary }}>
+                <Database className="w-16 h-16 mx-auto mb-4" style={{ color: 'var(--text-muted)' }} />
+                <h3 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
                     No Trained Models
                 </h3>
-                <p style={{ color: theme.textMuted }}>
+                <p style={{ color: 'var(--text-muted)' }}>
                     Train a model in DataHub to see your model history here.
                 </p>
             </div>
@@ -218,10 +212,10 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
                         <History className="w-6 h-6 text-emerald-400" />
                     </div>
                     <div>
-                        <h2 className="text-xl font-bold" style={{ color: theme.textPrimary }}>
+                        <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
                             Model History
                         </h2>
-                        <p className="text-sm" style={{ color: theme.textMuted }}>
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                             {models.length} model version{models.length !== 1 ? 's' : ''} saved
                         </p>
                     </div>
@@ -229,7 +223,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
                 <button
                     onClick={fetchModels}
                     className="p-2 rounded-xl hover:bg-white/10 transition-colors"
-                    style={{ color: theme.textMuted }}
+                    style={{ color: 'var(--text-muted)' }}
                 >
                     <RefreshCw className="w-5 h-5" />
                 </button>
@@ -261,27 +255,27 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
                         <div className="px-3 py-1 bg-emerald-500 text-white text-xs font-bold rounded-full">
                             ACTIVE
                         </div>
-                        <span className="text-sm" style={{ color: theme.textMuted }}>
+                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
                             Version {activeModel.version}
                         </span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div>
-                            <p className="text-sm mb-1" style={{ color: theme.textMuted }}>Model</p>
+                            <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>Model</p>
                             <p className="font-bold text-emerald-400 text-lg">{activeModel.model_name}</p>
                         </div>
                         <div>
-                            <p className="text-sm mb-1" style={{ color: theme.textMuted }}>Task</p>
-                            <p className="font-medium" style={{ color: theme.textPrimary }}>{activeModel.task_type}</p>
+                            <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>Task</p>
+                            <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{activeModel.task_type}</p>
                         </div>
                         <div>
-                            <p className="text-sm mb-1" style={{ color: theme.textMuted }}>Target</p>
-                            <p className="font-medium" style={{ color: theme.textPrimary }}>{activeModel.target_column}</p>
+                            <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>Target</p>
+                            <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{activeModel.target_column}</p>
                         </div>
                         <div>
-                            <p className="text-sm mb-1" style={{ color: theme.textMuted }}>Trained</p>
-                            <p className="font-medium" style={{ color: theme.textPrimary }}>{formatDate(activeModel.training_date)}</p>
+                            <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>Trained</p>
+                            <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{formatDate(activeModel.training_date)}</p>
                         </div>
                     </div>
 
@@ -290,7 +284,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
                         {Object.entries(activeModel.metrics).slice(0, 4).map(([key, value]) => (
                             <div key={key} className="flex items-center gap-2">
                                 <TrendingUp className="w-4 h-4" style={{ color: getMetricColor(value) }} />
-                                <span style={{ color: theme.textMuted }}>{key.toUpperCase()}:</span>
+                                <span style={{ color: 'var(--text-muted)' }}>{key.toUpperCase()}:</span>
                                 <span className="font-bold" style={{ color: getMetricColor(value) }}>
                                     {key === 'mae' || key === 'rmse' ? value.toFixed(3) : `${(value * 100).toFixed(1)}%`}
                                 </span>
@@ -303,7 +297,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
             {/* Version History */}
             {historyModels.length > 0 && (
                 <div className="space-y-3">
-                    <h3 className="font-semibold flex items-center gap-2" style={{ color: theme.textPrimary }}>
+                    <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                         <Clock className="w-4 h-4" />
                         Previous Versions
                     </h3>
@@ -315,19 +309,19 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: index * 0.1 }}
                             className="p-4 rounded-xl border flex items-center gap-4"
-                            style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
                         >
                             <div className="w-10 h-10 rounded-full bg-gray-500/20 flex items-center justify-center">
-                                <span className="text-sm font-bold" style={{ color: theme.textMuted }}>
+                                <span className="text-sm font-bold" style={{ color: 'var(--text-muted)' }}>
                                     v{model.version}
                                 </span>
                             </div>
 
                             <div className="flex-1">
-                                <p className="font-medium" style={{ color: theme.textPrimary }}>
+                                <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
                                     {model.model_name}
                                 </p>
-                                <p className="text-sm" style={{ color: theme.textMuted }}>
+                                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                                     {formatDate(model.training_date)}
                                 </p>
                             </div>
@@ -335,7 +329,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
                             {/* Metrics preview */}
                             <div className="hidden md:flex items-center gap-4">
                                 {Object.entries(model.metrics).slice(0, 2).map(([key, value]) => (
-                                    <span key={key} className="text-sm" style={{ color: theme.textMuted }}>
+                                    <span key={key} className="text-sm" style={{ color: 'var(--text-muted)' }}>
                                         {key}: <span style={{ color: getMetricColor(value) }}>{(value * 100).toFixed(1)}%</span>
                                     </span>
                                 ))}
@@ -375,7 +369,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ theme, userId = 'default' }
 
             {/* Delete All */}
             {models.length > 1 && (
-                <div className="pt-4 border-t" style={{ borderColor: theme.borderColor }}>
+                <div className="pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
                     <button
                         onClick={() => handleDelete()}
                         disabled={deleting === -1}

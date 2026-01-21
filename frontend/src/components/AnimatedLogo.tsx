@@ -17,78 +17,51 @@ interface AnimatedLogoProps {
 const AnimatedLogo: React.FC<AnimatedLogoProps> = ({
     size = 'md',
     showText = false,
-    animate = true,
+    animate = false, // Keep disabled for professional feel
     isDark = true
 }) => {
+    // Sizes are adjusted for the ICON only
     const sizes = {
-        sm: { logo: 32, text: 'text-sm' },
-        md: { logo: 48, text: 'text-lg' },
-        lg: { logo: 72, text: 'text-2xl' },
-        xl: { logo: 96, text: 'text-4xl' },
+        sm: { logo: 32, text: 'text-lg' },
+        md: { logo: 48, text: 'text-2xl' },
+        lg: { logo: 64, text: 'text-3xl' },
+        xl: { logo: 80, text: 'text-4xl' },
     };
 
     const currentSize = sizes[size];
 
     return (
         <div className="flex items-center gap-3">
-            <motion.div
-                animate={animate ? {
-                    y: [0, -6, 0],
-                } : {}}
-                transition={{
-                    duration: 2.5,
-                    repeat: Infinity,
-                    ease: 'easeInOut',
-                }}
-                className="relative"
+            {/* Static Logo Icon */}
+            <div
+                className="relative select-none"
                 style={{
                     width: currentSize.logo,
                     height: currentSize.logo,
                 }}
             >
-                {/* Glow Effect Behind Logo */}
-                <motion.div
-                    animate={animate ? {
-                        scale: [1, 1.15, 1],
-                        opacity: [0.3, 0.5, 0.3],
-                    } : {}}
-                    transition={{
-                        duration: 2,
-                        repeat: Infinity,
-                        ease: 'easeInOut',
-                    }}
-                    className="absolute inset-0 rounded-full"
-                    style={{
-                        background: 'radial-gradient(circle, rgba(45, 212, 191, 0.4) 0%, transparent 70%)',
-                        filter: 'blur(12px)',
-                        transform: 'scale(1.5)',
-                    }}
-                />
-
-                {/* Logo Image with transparent background treatment */}
                 <img
-                    src="/logo.png"
-                    alt="DataVision"
-                    className="relative z-10 w-full h-full object-contain"
+                    src="/datavision_icon_v3.png"
+                    alt="DataVision Icon"
+                    className="w-full h-full object-contain"
                     style={{
-                        filter: isDark ? 'drop-shadow(0 0 8px rgba(45, 212, 191, 0.3))' : 'none',
-                        mixBlendMode: isDark ? 'normal' : 'multiply'
+                        // Icon is green, works on both. 
+                        // Optional: Add drop shadow in dark mode for pop
+                        filter: isDark ? 'drop-shadow(0 0 12px rgba(34, 197, 94, 0.4))' : 'none'
                     }}
                 />
-            </motion.div>
+            </div>
 
+            {/* Render Text in Code for Perfect Theme Contrast & Brand Match */}
             {showText && (
-                <motion.span
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.2, duration: 0.5 }}
-                    className={`font-bold tracking-tight ${currentSize.text}`}
-                    style={{
-                        color: isDark ? '#ffffff' : '#0f172a', // Solid text color for perfect visibility
-                    }}
-                >
-                    DataVision
-                </motion.span>
+                <div className={`font-bold tracking-tight ${currentSize.text} flex items-center`}>
+                    <span style={{ fontFamily: "'Outfit', sans-serif", color: isDark ? '#ffffff' : '#0f172a' }}>
+                        Data
+                    </span>
+                    <span style={{ fontFamily: "'Outfit', sans-serif", color: '#22c55e' }}>
+                        Vision
+                    </span>
+                </div>
             )}
         </div>
     );

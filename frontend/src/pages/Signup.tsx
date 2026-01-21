@@ -4,13 +4,16 @@
  * Supports both light and dark mode
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
+import { useUserStore } from '../store/userStore';
+import { Sun, Moon } from 'lucide-react';
 
 export default function Signup() {
     const { signUp, signInWithGoogle, signInWithGithub } = useAuth();
+    const { isDark, toggleTheme } = useUserStore();
 
     const [formData, setFormData] = useState({
         email: '',
@@ -22,22 +25,9 @@ export default function Signup() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
-    const [isDark, setIsDark] = useState(true);
 
-    useEffect(() => {
-        const saved = localStorage.getItem('theme');
-        setIsDark(saved !== 'light');
-        if (saved === 'light') {
-            document.documentElement.classList.add('light-theme');
-        }
-    }, []);
-
-    // Theme colors matching Landing page
-    const bgColor = isDark ? '#0F172A' : '#F8FAFC';
-    const cardBg = isDark ? '#1E293B' : '#FFFFFF';
-    const textPrimary = isDark ? '#F8FAFC' : '#0F172A';
-    const textMuted = isDark ? '#94A3B8' : '#64748B';
-    const borderColor = isDark ? '#334155' : '#E2E8F0';
+    // Theme colors matching Landing page (using global vars)
+    // Legacy theme logic removed - handled by App.tsx / userStore
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({
@@ -86,7 +76,7 @@ export default function Signup() {
         setError('');
         try {
             const { error } = await signInWithGoogle();
-            if (error) setError(error.message || 'Google signup failed');
+            if (error) throw error;
         } catch (err: any) {
             setError(err.message || 'An error occurred');
         } finally {
@@ -99,7 +89,7 @@ export default function Signup() {
         setError('');
         try {
             const { error } = await signInWithGithub();
-            if (error) setError(error.message || 'GitHub signup failed');
+            if (error) throw error;
         } catch (err: any) {
             setError(err.message || 'An error occurred');
         } finally {
@@ -109,93 +99,110 @@ export default function Signup() {
 
     if (success) {
         return (
-            <div className="min-h-screen flex items-center justify-center p-4 transition-colors duration-300" style={{ backgroundColor: bgColor }}>
+            <div className="min-h-screen flex items-center justify-center p-4 transition-colors duration-300 relative overflow-hidden bg-primary text-primary">
+                {/* Background Orbs */}
+                <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+                    <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full blur-[100px] opacity-20 bg-emerald-500/20" />
+                    <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] rounded-full blur-[120px] opacity-10 bg-teal-500/20" />
+                </div>
+
                 <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="max-w-md w-full rounded-2xl p-8 text-center border shadow-xl"
-                    style={{ backgroundColor: cardBg, borderColor }}
+                    className="max-w-md w-full rounded-2xl p-8 text-center glass-card shadow-2xl backdrop-blur-xl border border-white/10 relative z-10"
                 >
                     {/* Email Icon */}
-                    <div className="w-20 h-20 bg-teal-500/20 rounded-full flex items-center justify-center mx-auto mb-6 border border-teal-500/30">
-                        <svg className="w-10 h-10 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-500/20">
+                        <svg className="w-10 h-10 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                         </svg>
                     </div>
 
-                    <h2 className="text-2xl font-bold mb-2" style={{ color: textPrimary }}>Account Created!</h2>
+                    <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Account Created!</h2>
 
                     {/* Check Your Inbox - Prominent */}
-                    <div className="py-4 px-6 rounded-xl mb-4" style={{ backgroundColor: isDark ? 'rgba(20, 184, 166, 0.15)' : 'rgba(20, 184, 166, 0.1)', border: '1px solid rgba(20, 184, 166, 0.3)' }}>
-                        <p className="text-xl font-bold mb-1" style={{ color: '#14B8A6' }}>
+                    <div className="py-4 px-6 rounded-xl mb-4 glass-panel border border-emerald-500/20 bg-emerald-500/5">
+                        <p className="text-xl font-bold mb-1 text-emerald-500">
                             📧 Check your inbox
                         </p>
-                        <p className="text-sm" style={{ color: textMuted }}>
+                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                             We've sent a confirmation email to:
                         </p>
-                        <p className="font-medium mt-1" style={{ color: textPrimary }}>
+                        <p className="font-medium mt-1" style={{ color: 'var(--text-primary)' }}>
                             {formData.email}
                         </p>
                     </div>
 
-                    <div className="space-y-3 text-sm mb-6" style={{ color: textMuted }}>
-                        <p>
-                            <span className="inline-flex items-center gap-1">
-                                <span className="text-green-500">✓</span>
-                                Click the link in the email to verify your account
-                            </span>
+                    <div className="space-y-3 text-sm mb-8 text-left bg-white/5 p-4 rounded-xl border border-white/5">
+                        <p className="flex items-center gap-3">
+                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 text-xs">✓</span>
+                            <span style={{ color: 'var(--text-muted)' }}>Click the link in the email to verify</span>
                         </p>
-                        <p>
-                            <span className="inline-flex items-center gap-1">
-                                <span className="text-green-500">✓</span>
-                                After verification, you can sign in
-                            </span>
+                        <p className="flex items-center gap-3">
+                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 text-xs">✓</span>
+                            <span style={{ color: 'var(--text-muted)' }}>Sign in to access your dashboard</span>
                         </p>
                     </div>
 
-                    <p className="text-xs mb-6" style={{ color: textMuted }}>
-                        Didn't receive the email? Check your spam folder or{' '}
-                        <button
-                            onClick={() => setSuccess(false)}
-                            className="underline hover:no-underline"
-                            style={{ color: '#14B8A6' }}
-                        >
-                            try again
-                        </button>
-                    </p>
-
                     <Link
                         to="/login"
-                        className="inline-block px-8 py-3 font-semibold rounded-lg transition-all hover:opacity-90"
+                        className="block w-full px-8 py-3.5 font-semibold rounded-xl transition-all hover:scale-[1.02] shadow-lg shadow-emerald-500/20"
                         style={{
-                            background: 'linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)',
+                            background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
                             color: '#FFFFFF'
                         }}
                     >
                         Go to Login
                     </Link>
+
+                    <button
+                        onClick={() => setSuccess(false)}
+                        className="mt-4 text-sm hover:underline"
+                        style={{ color: 'var(--text-muted)' }}
+                    >
+                        Back to signup
+                    </button>
                 </motion.div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 transition-colors duration-300" style={{ backgroundColor: bgColor }}>
+        <div className="min-h-screen flex items-center justify-center p-4 transition-colors duration-300 relative overflow-hidden bg-primary text-primary">
+            {/* Background Orbs */}
+            <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+                <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full blur-[100px] opacity-20 bg-emerald-500/20" />
+                <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] rounded-full blur-[120px] opacity-10 bg-teal-500/20" />
+            </div>
+
+            {/* Theme Toggle */}
+            <button
+                onClick={toggleTheme}
+                className="absolute top-6 right-6 p-3 rounded-full shadow-lg transition-transform hover:scale-110 active:scale-95 z-50 glass-card border border-border"
+                aria-label="Toggle theme"
+            >
+                {isDark ? (
+                    <Sun className="w-6 h-6 text-amber-400" />
+                ) : (
+                    <Moon className="w-6 h-6 text-slate-500" />
+                )}
+            </button>
+
             <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="max-w-md w-full"
+                className="max-w-md w-full relative z-10"
             >
-                {/* Logo/Brand */}
+                {/* Logo Section */}
                 <div className="text-center mb-8">
-                    <Link to="/" className="inline-flex items-center gap-3">
-                        <img
-                            src="/logo.png"
-                            alt="DataVision Logo"
-                            className="w-12 h-12 object-contain"
-                        />
-                        <span className="text-2xl font-bold" style={{ color: textPrimary }}>
-                            DataVision
+                    <Link to="/" className="inline-flex items-center gap-3 group">
+                        <div className="relative">
+                            <div className="absolute inset-0 rounded-full blur-lg opacity-50 group-hover:opacity-100 transition-opacity bg-teal-500/30" />
+                            <img src="/logo.png" alt="DataVision" className="w-14 h-14 object-contain relative z-10 drop-shadow-lg" />
+                        </div>
+                        <span className="text-3xl font-bold tracking-tight">
+                            <span style={{ color: 'var(--text-primary)' }}>Data</span>
+                            <span className="text-emerald-500">Vision</span>
                         </span>
                     </Link>
                 </div>
@@ -205,132 +212,104 @@ export default function Signup() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.1 }}
-                    className="rounded-2xl p-8 shadow-xl border"
-                    style={{ backgroundColor: cardBg, borderColor }}
+                    className="p-8 md:p-10 rounded-3xl shadow-2xl glass-card backdrop-blur-xl border border-white/10"
                 >
-                    <h2 className="text-2xl font-bold text-center mb-2" style={{ color: textPrimary }}>
-                        Create an account
-                    </h2>
-                    <p className="text-center mb-8" style={{ color: textMuted }}>
-                        Start your journey with DataVision
-                    </p>
+                    <div className="text-center mb-8">
+                        <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+                            Create an account
+                        </h2>
+                        <p style={{ color: 'var(--text-muted)' }}>
+                            Start your journey with DataVision
+                        </p>
+                    </div>
 
                     {/* Error Message */}
                     {error && (
-                        <div className="mb-6 p-4 rounded-lg" style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                            <p className="text-sm text-red-400">{error}</p>
+                        <div className="mb-6 p-4 rounded-xl flex items-start gap-3 bg-red-500/10 border border-red-500/20">
+                            <div className="w-1 h-full bg-red-500 rounded-full" />
+                            <p className="text-sm text-red-500">{error}</p>
                         </div>
                     )}
 
                     {/* Signup Form */}
-                    <form onSubmit={handleSubmit}>
-                        <div className="space-y-4">
-                            <div>
-                                <label htmlFor="fullName" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
-                                    Full Name
-                                </label>
-                                <input
-                                    id="fullName"
-                                    name="fullName"
-                                    type="text"
-                                    value={formData.fullName}
-                                    onChange={handleChange}
-                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
-                                    style={{
-                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
-                                        border: `1px solid ${borderColor}`,
-                                        color: textPrimary,
-                                    }}
-                                    placeholder="John Doe"
-                                />
-                            </div>
-
-                            <div>
-                                <label htmlFor="email" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
-                                    Email
-                                </label>
-                                <input
-                                    id="email"
-                                    name="email"
-                                    type="email"
-                                    value={formData.email}
-                                    onChange={handleChange}
-                                    required
-                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
-                                    style={{
-                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
-                                        border: `1px solid ${borderColor}`,
-                                        color: textPrimary,
-                                    }}
-                                    placeholder="you@example.com"
-                                />
-                            </div>
-
-                            <div>
-                                <label htmlFor="password" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
-                                    Password
-                                </label>
-                                <input
-                                    id="password"
-                                    name="password"
-                                    type="password"
-                                    value={formData.password}
-                                    onChange={handleChange}
-                                    required
-                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
-                                    style={{
-                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
-                                        border: `1px solid ${borderColor}`,
-                                        color: textPrimary,
-                                    }}
-                                    placeholder="••••••••"
-                                />
-                            </div>
-
-                            <div>
-                                <label htmlFor="confirmPassword" className="block text-sm font-medium mb-2" style={{ color: textMuted }}>
-                                    Confirm Password
-                                </label>
-                                <input
-                                    id="confirmPassword"
-                                    name="confirmPassword"
-                                    type="password"
-                                    value={formData.confirmPassword}
-                                    onChange={handleChange}
-                                    required
-                                    className="w-full px-4 py-3 rounded-lg transition-all focus:outline-none"
-                                    style={{
-                                        backgroundColor: isDark ? '#0F172A' : '#F1F5F9',
-                                        border: `1px solid ${borderColor}`,
-                                        color: textPrimary,
-                                    }}
-                                    placeholder="••••••••"
-                                />
-                            </div>
-
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="w-full py-3 font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
-                                style={{
-                                    background: 'linear-gradient(135deg, #14B8A6 0%, #0D9488 100%)',
-                                    color: '#FFFFFF',
-                                }}
-                            >
-                                {loading ? 'Creating account...' : 'Create Account'}
-                            </button>
+                    <form onSubmit={handleSubmit} className="space-y-5">
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium ml-1" style={{ color: 'var(--text-secondary)' }}>
+                                Full Name
+                            </label>
+                            <input
+                                name="fullName"
+                                type="text"
+                                value={formData.fullName}
+                                onChange={handleChange}
+                                className="w-full px-5 py-3.5 rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/50 glass-input"
+                                placeholder="John Doe"
+                            />
                         </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium ml-1" style={{ color: 'var(--text-secondary)' }}>
+                                Email
+                            </label>
+                            <input
+                                name="email"
+                                type="email"
+                                value={formData.email}
+                                onChange={handleChange}
+                                required
+                                className="w-full px-5 py-3.5 rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/50 glass-input"
+                                placeholder="you@example.com"
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium ml-1" style={{ color: 'var(--text-secondary)' }}>
+                                Password
+                            </label>
+                            <input
+                                name="password"
+                                type="password"
+                                value={formData.password}
+                                onChange={handleChange}
+                                required
+                                className="w-full px-5 py-3.5 rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/50 glass-input"
+                                placeholder="••••••••"
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-sm font-medium ml-1" style={{ color: 'var(--text-secondary)' }}>
+                                Confirm Password
+                            </label>
+                            <input
+                                name="confirmPassword"
+                                type="password"
+                                value={formData.confirmPassword}
+                                onChange={handleChange}
+                                required
+                                className="w-full px-5 py-3.5 rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/50 glass-input"
+                                placeholder="••••••••"
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            className="w-full py-3.5 rounded-xl font-semibold text-white shadow-lg shadow-green-500/20 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
+                            style={{
+                                background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                            }}
+                        >
+                            {loading ? 'Creating account...' : 'Create Account'}
+                        </button>
                     </form>
 
-                    {/* Divider */}
-                    <div className="relative my-6">
-                        <div className="absolute inset-0 flex items-center">
-                            <div className="w-full" style={{ borderTop: `1px solid ${borderColor}` }}></div>
-                        </div>
-                        <div className="relative flex justify-center text-sm">
-                            <span className="px-4" style={{ backgroundColor: cardBg, color: textMuted }}>Or continue with</span>
-                        </div>
+                    <div className="my-8 flex items-center gap-4">
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" style={{ backgroundColor: 'var(--border-color)', opacity: 0.3 }} />
+                        <span className="text-xs font-medium uppercase tracking-wider opacity-60" style={{ color: 'var(--text-muted)' }}>Or continue with</span>
+                        <div className="h-px flex-1 bg-gradient-to-r from-transparent via-border to-transparent" style={{ backgroundColor: 'var(--border-color)', opacity: 0.3 }} />
                     </div>
+
 
                     <div className="grid grid-cols-2 gap-4">
                         <button
@@ -369,17 +348,24 @@ export default function Signup() {
                         </button>
                     </div>
 
-                    <p className="mt-8 text-xs text-center" style={{ color: textMuted }}>
+                    <p className="mt-8 text-xs text-center" style={{ color: 'var(--text-muted)' }}>
                         By creating an account, you agree to our{' '}
-                        <a href="#" style={{ color: '#14B8A6' }} className="hover:underline">Terms of Service</a>
+                        <Link to="/terms" style={{ color: '#22c55e' }} className="hover:underline">Terms of Service</Link>
                         {' '}and{' '}
-                        <a href="#" style={{ color: '#14B8A6' }} className="hover:underline">Privacy Policy</a>
+                        <Link to="/privacy" style={{ color: '#22c55e' }} className="hover:underline">Privacy Policy</Link>
                     </p>
 
-                    <div className="mt-6 text-center pt-6 border-t" style={{ borderColor }}>
-                        <p style={{ color: textMuted }}>
+                    {/* Footer Links */}
+                    <div className="mt-6 flex justify-center gap-6 text-xs" style={{ color: 'var(--text-muted)' }}>
+                        <Link to="/privacy" className="hover:text-emerald-400 transition-colors">Privacy Policy</Link>
+                        <Link to="/terms" className="hover:text-emerald-400 transition-colors">Terms of Service</Link>
+                        <Link to="/help" className="hover:text-emerald-400 transition-colors">Help Center</Link>
+                    </div>
+
+                    <div className="mt-6 text-center pt-6 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                        <p style={{ color: 'var(--text-muted)' }}>
                             Already have an account?{' '}
-                            <Link to="/login" className="font-medium transition-colors hover:opacity-80" style={{ color: '#14B8A6' }}>
+                            <Link to="/login" className="font-medium transition-colors hover:opacity-80" style={{ color: '#22c55e' }}>
                                 Sign in
                             </Link>
                         </p>
@@ -388,11 +374,12 @@ export default function Signup() {
 
                 {/* Back to Home */}
                 <div className="mt-6 text-center">
-                    <Link to="/" className="text-sm transition-colors hover:opacity-80" style={{ color: textMuted }}>
+                    <Link to="/" className="text-sm transition-colors hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
                         ← Back to home
                     </Link>
                 </div>
             </motion.div>
         </div>
     );
+
 }

@@ -53,13 +53,14 @@ const getUserId = (): string => {
 // API Service Methods
 export const apiService = {
   // File operations
-  uploadFiles: async (files: File[]) => {
+  uploadFiles: async (files: File[], signal?: AbortSignal) => {
     const formData = new FormData();
     files.forEach(file => formData.append('files', file));
 
     const userId = getUserId();
     return api.post(`/api/v1/files/upload/${userId}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      signal, // Pass abort signal to axios
     });
   },
 
@@ -257,13 +258,15 @@ export const apiService = {
   },
 
   // Report operations
-  generateReport: async (reportType: string, dateRange?: { start: string; end: string }) => {
+  generateReport: async (reportType: string, dateRange?: { start: string; end: string }, fallbackModel?: any) => {
     const userId = getUserId();
     return api.post('/api/v1/reports/generate', {
       userId: userId,
       reportType: reportType,
       dateRange: dateRange || 'all',
       format: 'json',
+      // Pass local model metadata as fallback if backend session is lost
+      fallbackModel: fallbackModel || null
     });
   },
 

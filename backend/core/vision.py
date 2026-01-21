@@ -1,199 +1,402 @@
 """
-Core Vision Module - FREE Image Analysis using OpenRouter
-Uses free vision models - no paid API required
-Updated Dec 2024 with current working models
+👁️ CORE VISION MODULE - Image Analysis Functions
+================================================
+
+Provides image analysis using multimodal LLMs (Groq Llama 3.2 Vision primary).
+
+Functions:
+- analyze_image: General image analysis
+- analyze_image_with_groq: Groq Llama 3.2 Vision
+- extract_chart_data: Extract data from chart images
+- extract_table_data: Extract data from table images
 """
 
 import os
 import base64
-import requests
-from typing import Optional
-from pathlib import Path
+import logging
+import json
+from typing import Dict, Any, Optional, List
 
-# Current FREE vision models on OpenRouter (verified Dec 2024)
-FREE_VISION_MODELS = [
-    "google/gemma-3-12b-it:free",             # Google Gemma 3 - FREE, multimodal
-    "google/gemma-3-27b-it:free",             # Google Gemma 3 27B - FREE
-    "meta-llama/llama-4-maverick:free",       # Meta Llama 4 - FREE, vision
-    "qwen/qwen2.5-vl-32b-instruct:free",      # Qwen 2.5 Vision - FREE
-    "moonshotai/kimi-vl-a3b-thinking:free",   # Moonshot Kimi - FREE
-    "amazon/nova-lite-v1:free",               # Amazon Nova Lite - FREE
-]
+logger = logging.getLogger(__name__)
+
+# Check for vision-capable APIs - Groq is primary
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+VISION_AVAILABLE = bool(GROQ_API_KEY or GOOGLE_API_KEY or OPENAI_API_KEY)
 
 
-def analyze_image(image_path: str, prompt: str = "Describe this image") -> str:
-    """
-    Analyze an image using FREE OpenRouter vision models.
-    Uses OPENROUTER_API_KEY from environment.
-    """
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    
-    if not api_key:
-        return "⚠️ OPENROUTER_API_KEY not configured. Add it to your .env file. Get free key at: https://openrouter.ai/"
-    
-    # Read and encode the image
+def _load_image_base64(image_path: str) -> Optional[str]:
+    """Load image and convert to base64."""
     try:
-        image_data = _encode_image(image_path)
-        if not image_data:
-            return f"⚠️ Could not read image file: {image_path}"
+        with open(image_path, 'rb') as f:
+            image_data = f.read()
+        return base64.b64encode(image_data).decode('utf-8')
     except Exception as e:
-        return f"⚠️ Error reading image: {str(e)}"
-    
-    # Get file extension to determine media type
-    ext = Path(image_path).suffix.lower()
-    media_types = {
+        logger.error(f"Failed to load image: {e}")
+        return None
+
+
+def _get_image_mime_type(image_path: str) -> str:
+    """Detect MIME type from image path."""
+    ext = os.path.splitext(image_path)[1].lower()
+    mime_types = {
         '.jpg': 'image/jpeg',
         '.jpeg': 'image/jpeg',
         '.png': 'image/png',
         '.gif': 'image/gif',
-        '.webp': 'image/webp'
+        '.webp': 'image/webp',
+        '.bmp': 'image/bmp'
     }
-    media_type = media_types.get(ext, 'image/jpeg')
-    
-    # Try each free model until one works
-    last_error = ""
-    for model in FREE_VISION_MODELS:
-        result = _try_openrouter_model(model, api_key, image_data, media_type, prompt)
-        if result and not result.startswith("⚠️"):
-            return result
-        last_error = result
-        print(f"⚠️ Model {model} failed, trying next...")
-    
-    return f"⚠️ All free vision models failed. Last error: {last_error}"
+    return mime_types.get(ext, 'image/jpeg')
 
 
-def _try_openrouter_model(model: str, api_key: str, image_data: str, media_type: str, prompt: str) -> str:
-    """Try a specific OpenRouter model."""
-    payload = {
-        "model": model,
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_data}"}}
-            ]
-        }],
-        "max_tokens": 4096,
-        "temperature": 0.3
-    }
+def analyze_image_with_groq(image_path: str, prompt: str = "Describe this image in detail.") -> str:
+    """
+    Analyze image using Groq's Llama 3.2 Vision API.
     
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://ai-business-analyst.app",
-        "X-Title": "AI Business Analyst - Vision"
-    }
+    Args:
+        image_path: Path to image file OR base64 data URL (data:image/...)
+        prompt: Analysis prompt
+        
+    Returns:
+        Analysis text
+    """
+    if not GROQ_API_KEY:
+        logger.warning("No GROQ_API_KEY found for vision")
+        return "❌ Vision analysis requires GROQ_API_KEY to be configured."
     
     try:
-        print(f"🔍 Trying FREE model: {model}")
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=90
+        import litellm
+        
+        # Handle image input - could be file path or data URL
+        if image_path.startswith('data:'):
+            # Already a data URL from frontend
+            image_url = image_path
+            logger.info(f"Using data URL for vision (length: {len(image_path)})")
+        elif os.path.exists(image_path):
+            # Load from file path
+            image_data = _load_image_base64(image_path)
+            if not image_data:
+                return "❌ Failed to load image file."
+            mime_type = _get_image_mime_type(image_path)
+            image_url = f"data:{mime_type};base64,{image_data}"
+            logger.info(f"Loaded image from file: {image_path}")
+        else:
+            # Maybe it's raw base64 without data: prefix
+            logger.warning(f"Unknown image format, trying as raw base64")
+            image_url = f"data:image/jpeg;base64,{image_path}"
+        
+        logger.info(f"Calling Groq Vision with model: groq/llama-3.2-11b-vision-preview")
+        
+        # Use Groq's Llama 3.2 Vision model via litellm
+        response = litellm.completion(
+            model="groq/llama-3.2-11b-vision-preview",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": image_url}
+                        }
+                    ]
+                }
+            ],
+            api_key=GROQ_API_KEY,
+            max_tokens=1500
         )
         
-        if response.status_code == 200:
-            data = response.json()
-            if "choices" in data and len(data["choices"]) > 0:
-                result = data["choices"][0]["message"]["content"]
-                print(f"✅ Success with FREE model: {model}")
-                return result
-            return "⚠️ Empty response"
-        else:
-            error = response.text[:300]
-            print(f"❌ {model} error ({response.status_code}): {error}")
-            return f"⚠️ {model}: {error}"
-            
-    except requests.Timeout:
-        return "⚠️ Vision analysis timed out."
+        result = response.choices[0].message.content
+        logger.info(f"Groq Vision success! Response length: {len(result)}")
+        return result
+        
     except Exception as e:
-        return f"⚠️ Error: {str(e)}"
+        error_msg = str(e)
+        logger.error(f"Groq Vision error: {error_msg}")
+        
+        # Check for specific errors
+        if "model" in error_msg.lower() and "not found" in error_msg.lower():
+            # Try fallback model
+            try:
+                logger.info("Trying fallback vision model: groq/llama-3.2-90b-vision-preview")
+                response = litellm.completion(
+                    model="groq/llama-3.2-90b-vision-preview",
+                    messages=[
+                        {
+                            "role": "user", 
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {"type": "image_url", "image_url": {"url": image_url}}
+                            ]
+                        }
+                    ],
+                    api_key=GROQ_API_KEY,
+                    max_tokens=1500
+                )
+                return response.choices[0].message.content
+            except Exception as e2:
+                logger.error(f"Fallback also failed: {e2}")
+        
+        return f"❌ Groq Vision error: {error_msg}"
 
 
-def analyze_image_with_gemini(image_path: str, prompt: str = "Analyze this image") -> str:
-    """Wrapper for backward compatibility."""
-    return analyze_image(image_path, prompt)
-
-
-def _encode_image(image_path: str) -> Optional[str]:
-    """Encode an image file to base64."""
+def analyze_image_with_gemini(image_path: str, prompt: str = "Describe this image in detail.") -> str:
+    """
+    Analyze image using Google Gemini Vision API.
+    (Fallback - use Groq first)
+    """
+    if not GOOGLE_API_KEY:
+        return "❌ Gemini requires GOOGLE_API_KEY."
+    
     try:
-        path = Path(image_path)
-        if not path.exists():
-            return None
-        with open(path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode("utf-8")
-    except Exception:
-        return None
+        import google.generativeai as genai
+        
+        genai.configure(api_key=GOOGLE_API_KEY)
+        
+        image_data = _load_image_base64(image_path)
+        if not image_data:
+            return "❌ Failed to load image file."
+        
+        mime_type = _get_image_mime_type(image_path)
+        
+        # Try different Gemini models
+        for model_name in ['gemini-pro-vision', 'gemini-1.5-pro']:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content([
+                    prompt,
+                    {"mime_type": mime_type, "data": image_data}
+                ])
+                return response.text
+            except:
+                continue
+        
+        return "❌ No Gemini Vision model available."
+        
+    except Exception as e:
+        logger.error(f"Gemini Vision error: {e}")
+        return f"❌ Gemini error: {str(e)}"
 
 
-def extract_chart_data(image_path: str) -> dict:
-    """Extract data from a chart image."""
-    prompt = """Analyze this chart/graph and extract ALL data.
+def analyze_image(image_path: str, query: str = "Describe this image.") -> str:
+    """
+    Analyze image using best available vision model.
+    
+    Priority: Groq Llama 3.2 Vision > OpenAI > Gemini
+    
+    Args:
+        image_path: Path to image file OR base64 data URL
+        query: User's question about the image
+        
+    Returns:
+        Analysis text
+    """
+    # Build comprehensive prompt
+    prompt = f"""Analyze this image and answer the user's question.
 
-Return as JSON:
+USER QUESTION: {query}
+
+Provide a detailed, accurate analysis. If this is a:
+- Chart/Graph: Extract data points, describe trends
+- Table: Extract rows and columns
+- Document: Extract key text and information
+- Photo: Describe content, objects, text visible
+
+Be specific and provide actual values when visible."""
+    
+    # Try Groq first (fastest and free)
+    if GROQ_API_KEY:
+        result = analyze_image_with_groq(image_path, prompt)
+        if not result.startswith("❌"):
+            return result
+    
+    # Try OpenAI GPT-4V
+    if OPENAI_API_KEY:
+        try:
+            import openai
+            
+            client = openai.OpenAI(api_key=OPENAI_API_KEY)
+            
+            # Handle both file path and data URL
+            if image_path.startswith('data:'):
+                image_url = image_path
+            else:
+                image_data = _load_image_base64(image_path)
+                if not image_data:
+                    return "❌ Failed to load image file."
+                mime_type = _get_image_mime_type(image_path)
+                image_url = f"data:{mime_type};base64,{image_data}"
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": image_url}}
+                        ]
+                    }
+                ],
+                max_tokens=1000
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.error(f"OpenAI Vision error: {e}")
+    
+    # Try Gemini as last resort
+    if GOOGLE_API_KEY:
+        return analyze_image_with_gemini(image_path, prompt)
+    
+    return """❌ **Vision Analysis Not Available**
+
+To enable image analysis, configure GROQ_API_KEY in your .env file.
+Groq provides FREE vision analysis with Llama 3.2 Vision."""
+
+
+def extract_chart_data(image_path: str) -> Dict[str, Any]:
+    """
+    Extract structured data from chart images.
+    
+    Args:
+        image_path: Path to chart image
+        
+    Returns:
+        Dict with extracted data series and metadata
+    """
+    prompt = """Analyze this chart image and extract the data.
+
+RESPOND IN JSON FORMAT ONLY:
 {
-    "chart_type": "bar/line/pie/donut/scatter",
-    "title": "Chart Title",
+    "chart_type": "bar|line|pie|scatter|area",
+    "title": "Chart title if visible",
+    "x_axis_label": "X axis label",
+    "y_axis_label": "Y axis label",
     "data_series": [
         {
-            "name": "Series Name",
+            "name": "Series name",
             "data": [
-                {"label": "Category1", "value": 100},
-                {"label": "Category2", "value": 200}
+                {"x": "label1", "y": 100},
+                {"x": "label2", "y": 200}
             ]
         }
     ],
-    "total": sum_of_all_values
+    "insights": ["Key observation 1", "Key observation 2"]
 }
 
-Be precise with all numbers."""
+Extract all visible data points accurately. If values aren't clear, provide estimates."""
     
     result = analyze_image(image_path, prompt)
     
-    import json
-    import re
-    
+    # Try to parse JSON from response
     try:
-        json_match = re.search(r'\{[\s\S]*\}', result)
-        if json_match:
-            return json.loads(json_match.group())
-    except:
-        pass
+        # Find JSON block in response
+        if "```json" in result:
+            json_str = result.split("```json")[1].split("```")[0].strip()
+        elif "```" in result:
+            json_str = result.split("```")[1].split("```")[0].strip()
+        elif result.strip().startswith("{"):
+            json_str = result.strip()
+        else:
+            return {"success": False, "raw_analysis": result}
+        
+        parsed = json.loads(json_str)
+        parsed["success"] = True
+        return parsed
+        
+    except json.JSONDecodeError:
+        return {"success": False, "raw_analysis": result}
+
+
+def extract_table_data(image_path: str, output_format: str = "markdown") -> Dict[str, Any]:
+    """
+    Extract table data from image.
     
-    return {"raw_analysis": result}
+    Args:
+        image_path: Path to table image
+        output_format: "markdown" or "json"
+        
+    Returns:
+        Dict with extracted tables
+    """
+    prompt = f"""Extract all tables from this image.
 
+OUTPUT FORMAT: {output_format.upper()}
 
-def extract_table_data(image_path: str) -> dict:
-    """Extract table data from an image."""
-    prompt = """Extract ALL tables from this image.
+If markdown:
+| Header1 | Header2 |
+|---------|---------|
+| Value1  | Value2  |
 
-Return as JSON:
-{
-    "tables": [
-        {
-            "headers": ["Column1", "Column2", "Column3"],
-            "rows": [
-                ["Row1Col1", "Row1Col2", "Row1Col3"],
-                ["Row2Col1", "Row2Col2", "Row2Col3"]
-            ]
-        }
-    ]
-}
+If JSON:
+{{"tables": [{{"headers": ["H1", "H2"], "rows": [["V1", "V2"]]}}]}}
 
-Preserve EXACT numbers and text."""
+Extract ALL visible data accurately."""
     
     result = analyze_image(image_path, prompt)
     
-    import json
-    import re
+    if output_format == "markdown":
+        return {"success": True, "tables": [result]}
     
+    # Try to parse JSON
     try:
-        json_match = re.search(r'\{[\s\S]*\}', result)
-        if json_match:
-            return json.loads(json_match.group())
-    except:
-        pass
+        if "```json" in result:
+            json_str = result.split("```json")[1].split("```")[0].strip()
+        elif result.strip().startswith("{"):
+            json_str = result.strip()
+        else:
+            return {"success": True, "tables": [result]}
+        
+        parsed = json.loads(json_str)
+        parsed["success"] = True
+        return parsed
+        
+    except json.JSONDecodeError:
+        return {"success": True, "tables": [result]}
+
+
+def vision_to_rag_context(image_path: str, query: str = "") -> Dict[str, Any]:
+    """
+    Extract text from image for RAG pipeline.
     
-    return {"raw_analysis": result}
+    Args:
+        image_path: Path to image
+        query: Optional context for extraction
+        
+    Returns:
+        Dict with extracted text ready for RAG
+    """
+    prompt = """Extract all text and data from this image.
+
+Provide structured output suitable for text search:
+1. All visible text (OCR)
+2. Data points and values
+3. Labels and captions
+4. Key information
+
+Format as clean searchable text."""
+    
+    result = analyze_image(image_path, prompt)
+    
+    return {
+        "success": True,
+        "extracted_text": result,
+        "ready_for_rag": True,
+        "source": os.path.basename(image_path)
+    }
+
+
+# Module exports
+__all__ = [
+    'analyze_image',
+    'analyze_image_with_gemini',
+    'extract_chart_data',
+    'extract_table_data',
+    'vision_to_rag_context',
+    'VISION_AVAILABLE'
+]

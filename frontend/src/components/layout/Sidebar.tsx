@@ -74,7 +74,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileMenuOpen = false, onClose }) 
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
-              `sidebar-item flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${isActive ? 'active' : ''}`
+              `sidebar-item flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${isActive ? 'active bg-primary-500/10' : 'hover:bg-dark-card'}`
             }
           >
             {({ isActive }) => (

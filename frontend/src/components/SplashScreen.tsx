@@ -1,220 +1,75 @@
-/**
- * Splash Screen Component - Premium Loading Experience
- * DataVision - Intelligent Data Analytics Platform
- */
-
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useState } from 'react';
 
 interface SplashScreenProps {
-    onComplete?: () => void;
+  onComplete?: () => void;
+  duration?: number;
 }
 
-const SplashScreen: React.FC<SplashScreenProps> = ({ onComplete }) => {
-    React.useEffect(() => {
-        const timer = setTimeout(() => {
-            onComplete?.();
-        }, 2500);
-        return () => clearTimeout(timer);
-    }, [onComplete]);
+const SplashScreen: React.FC<SplashScreenProps> = ({ onComplete, duration = 2000 }) => {
+  const [fadeOut, setFadeOut] = useState(false);
 
-    return (
-        <motion.div
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden"
-            style={{
-                background: 'linear-gradient(135deg, #0a0a0b 0%, #0f1419 25%, #1a1a2e 50%, #0f1419 75%, #0a0a0b 100%)',
-            }}
-        >
-            {/* Animated Background Elements */}
-            <div className="absolute inset-0 overflow-hidden">
-                {/* Primary Glow */}
-                <motion.div
-                    animate={{
-                        scale: [1, 1.2, 1],
-                        opacity: [0.3, 0.5, 0.3],
-                    }}
-                    transition={{
-                        duration: 4,
-                        repeat: Infinity,
-                        ease: 'easeInOut',
-                    }}
-                    className="absolute top-1/4 left-1/3 w-[500px] h-[500px] rounded-full"
-                    style={{
-                        background: 'radial-gradient(circle, rgba(45, 212, 191, 0.2) 0%, transparent 70%)',
-                        filter: 'blur(80px)',
-                    }}
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => {
+      setFadeOut(true);
+    }, duration - 500);
+
+    const completeTimer = setTimeout(() => {
+      onComplete?.();
+    }, duration);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(completeTimer);
+    };
+  }, [duration, onComplete]);
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 transition-opacity duration-500 ${
+        fadeOut ? 'opacity-0' : 'opacity-100'
+      }`}
+    >
+      <div className="text-center">
+        {/* Logo/Icon */}
+        <div className="mb-6 flex justify-center">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-2xl">
+              <svg
+                className="w-12 h-12 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
                 />
-
-                {/* Secondary Glow */}
-                <motion.div
-                    animate={{
-                        scale: [1.2, 1, 1.2],
-                        opacity: [0.2, 0.4, 0.2],
-                    }}
-                    transition={{
-                        duration: 5,
-                        repeat: Infinity,
-                        ease: 'easeInOut',
-                        delay: 0.5,
-                    }}
-                    className="absolute bottom-1/4 right-1/3 w-[400px] h-[400px] rounded-full"
-                    style={{
-                        background: 'radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 70%)',
-                        filter: 'blur(80px)',
-                    }}
-                />
-
-                {/* Particle Lines */}
-                {[...Array(6)].map((_, i) => (
-                    <motion.div
-                        key={i}
-                        initial={{ x: '-100%', opacity: 0 }}
-                        animate={{
-                            x: ['0%', '200%'],
-                            opacity: [0, 0.3, 0],
-                        }}
-                        transition={{
-                            duration: 3 + i * 0.5,
-                            repeat: Infinity,
-                            delay: i * 0.4,
-                            ease: 'linear',
-                        }}
-                        className="absolute h-[1px]"
-                        style={{
-                            top: `${20 + i * 12}%`,
-                            width: '150px',
-                            background: 'linear-gradient(90deg, transparent, rgba(45, 212, 191, 0.5), transparent)',
-                        }}
-                    />
-                ))}
+              </svg>
             </div>
+            {/* Animated ring */}
+            <div className="absolute inset-0 w-20 h-20 rounded-2xl border-2 border-blue-400/30 animate-ping" />
+          </div>
+        </div>
 
-            {/* Main Content */}
-            <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.8, ease: [0.4, 0, 0.2, 1] }}
-                className="relative flex flex-col items-center gap-8"
-            >
-                {/* Logo with Floating Animation */}
-                <motion.div
-                    animate={{
-                        y: [0, -12, 0],
-                    }}
-                    transition={{
-                        duration: 2.5,
-                        repeat: Infinity,
-                        ease: 'easeInOut',
-                    }}
-                    className="relative"
-                >
-                    {/* Logo Glow Effect */}
-                    <motion.div
-                        animate={{
-                            scale: [1, 1.2, 1],
-                            opacity: [0.4, 0.7, 0.4],
-                        }}
-                        transition={{
-                            duration: 2,
-                            repeat: Infinity,
-                            ease: 'easeInOut',
-                        }}
-                        className="absolute inset-0 -m-8"
-                        style={{
-                            background: 'radial-gradient(circle, rgba(45, 212, 191, 0.4) 0%, transparent 70%)',
-                            filter: 'blur(25px)',
-                        }}
-                    />
+        {/* Title */}
+        <h1 className="text-3xl font-bold text-white mb-2">
+          AI Business Analyst
+        </h1>
+        <p className="text-gray-400 text-sm mb-8">
+          Enterprise Analytics Platform
+        </p>
 
-                    {/* Actual Logo Image */}
-                    <img
-                        src="/logo.png"
-                        alt="DataVision"
-                        className="relative z-10 w-24 h-24 md:w-32 md:h-32 object-contain"
-                        style={{
-                            filter: 'drop-shadow(0 0 20px rgba(45, 212, 191, 0.5))',
-                        }}
-                    />
-                </motion.div>
-
-                {/* Brand Name with Gradient */}
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4, duration: 0.8 }}
-                    className="text-center"
-                >
-                    <h1
-                        className="text-4xl md:text-5xl font-bold tracking-tight mb-3"
-                        style={{
-                            background: 'linear-gradient(135deg, #f8fafc 0%, #2dd4bf 50%, #0d9488 100%)',
-                            WebkitBackgroundClip: 'text',
-                            WebkitTextFillColor: 'transparent',
-                            textShadow: '0 0 40px rgba(45, 212, 191, 0.3)',
-                        }}
-                    >
-                        DataVision
-                    </h1>
-                    <motion.p
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.7, duration: 0.6 }}
-                        className="text-gray-400 text-base tracking-wider uppercase"
-                        style={{ letterSpacing: '0.2em' }}
-                    >
-                        Intelligent Data Analytics
-                    </motion.p>
-                </motion.div>
-
-                {/* Premium Loading Indicator */}
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 1, duration: 0.5 }}
-                    className="mt-6"
-                >
-                    {/* Progress Bar */}
-                    <div className="relative w-48 h-1 bg-gray-800 rounded-full overflow-hidden">
-                        <motion.div
-                            initial={{ x: '-100%' }}
-                            animate={{ x: '100%' }}
-                            transition={{
-                                duration: 1.5,
-                                repeat: Infinity,
-                                ease: 'easeInOut',
-                            }}
-                            className="absolute inset-0 w-1/2"
-                            style={{
-                                background: 'linear-gradient(90deg, transparent, #2dd4bf, transparent)',
-                            }}
-                        />
-                    </div>
-
-                    {/* Loading Text */}
-                    <motion.p
-                        animate={{ opacity: [0.5, 1, 0.5] }}
-                        transition={{
-                            duration: 1.5,
-                            repeat: Infinity,
-                            ease: 'easeInOut',
-                        }}
-                        className="text-center text-gray-500 text-xs mt-4 tracking-widest uppercase"
-                    >
-                        Loading Experience
-                    </motion.p>
-                </motion.div>
-            </motion.div>
-
-            {/* Corner Accents */}
-            <div className="absolute top-8 left-8 w-16 h-16 border-l-2 border-t-2 border-teal-500/20 rounded-tl-lg" />
-            <div className="absolute top-8 right-8 w-16 h-16 border-r-2 border-t-2 border-teal-500/20 rounded-tr-lg" />
-            <div className="absolute bottom-8 left-8 w-16 h-16 border-l-2 border-b-2 border-teal-500/20 rounded-bl-lg" />
-            <div className="absolute bottom-8 right-8 w-16 h-16 border-r-2 border-b-2 border-teal-500/20 rounded-br-lg" />
-        </motion.div>
-    );
+        {/* Loading indicator */}
+        <div className="flex justify-center space-x-2">
+          <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+          <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+          <div className="w-2 h-2 bg-pink-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default SplashScreen;

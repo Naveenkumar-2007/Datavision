@@ -13,6 +13,11 @@ import {
   Clock,
   Calendar,
   Send,
+  Sparkles,
+  Brain,
+  FileText,
+  Loader,
+  KeyRound,
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useAuth } from '@/contexts/AuthContext';
@@ -24,7 +29,7 @@ const Settings: React.FC = () => {
 
 
   const { user: authUser } = useAuth();
-  const setStoreUser = useUserStore((state) => state.setUser);
+  const { isDark, toggleTheme, setUser: setStoreUser } = useUserStore();
 
   // Profile state - synced from auth on mount, saved per user
   const [profile, setProfile] = useState({
@@ -84,6 +89,74 @@ const Settings: React.FC = () => {
   const [emailPrefsLoading, setEmailPrefsLoading] = useState(false);
   const [testEmailSending, setTestEmailSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
+
+  // AI Email Agent State
+  const [aiEmailPrompt, setAiEmailPrompt] = useState('');
+  const [aiEmailGenerating, setAiEmailGenerating] = useState(false);
+  const [aiEmailSending, setAiEmailSending] = useState(false);
+  const [generatedEmail, setGeneratedEmail] = useState<{ subject: string; body: string } | null>(null);
+  const [dataContextUsed, setDataContextUsed] = useState<string>('');
+
+  // Data Management Stats
+  const [dataStats, setDataStats] = useState({
+    filesUploaded: 0,
+    mlModelsTrained: 0,
+    reportsSent: 0,
+    dashboards: 0
+  });
+
+  // Load data stats on mount
+  useEffect(() => {
+    const loadDataStats = async () => {
+      try {
+        const userId = authUser?.id || localStorage.getItem('userId') || 'default';
+        console.log('Loading stats for user:', userId);
+
+        // Get files count from correct API endpoint
+        let filesCount = 0;
+        try {
+          const filesRes = await fetch(`/api/v1/files/list/${userId}`);
+          if (filesRes.ok) {
+            const filesData = await filesRes.json();
+            filesCount = Array.isArray(filesData) ? filesData.length :
+              (filesData.files ? filesData.files.length : 0);
+          }
+        } catch (e) {
+          console.warn('Files API error:', e);
+        }
+
+        // Check ML model in localStorage - try multiple keys
+        let mlCount = 0;
+        const allKeys = Object.keys(localStorage);
+        for (const key of allKeys) {
+          if (key.includes('automl') || key.includes('ml_result') || key.includes('AutoML')) {
+            mlCount = 1;
+            break;
+          }
+        }
+
+        // Check for dashboards in localStorage
+        let dashboardCount = 0;
+        for (const key of allKeys) {
+          if (key.includes('dashboard') || key.includes('Dashboard')) {
+            dashboardCount = 1;
+            break;
+          }
+        }
+
+        setDataStats({
+          filesUploaded: filesCount,
+          mlModelsTrained: mlCount,
+          reportsSent: 0,
+          dashboards: dashboardCount
+        });
+      } catch (error) {
+        console.error('Failed to load data stats:', error);
+      }
+    };
+
+    loadDataStats();
+  }, [authUser]);
 
   // Auto-hide status message after 5 seconds
   useEffect(() => {
@@ -229,6 +302,87 @@ const Settings: React.FC = () => {
     }
   };
 
+  // AI Email Agent - Generate email using LLM with real data
+  const handleGenerateAIEmail = async () => {
+    if (!aiEmailPrompt || aiEmailPrompt.length < 5) {
+      setStatusMessage({ type: 'error', text: 'Please describe what the email should contain' });
+      return;
+    }
+    if (!emailPrefs.email_address) {
+      setStatusMessage({ type: 'error', text: 'Please enter your email address first' });
+      return;
+    }
+
+    setAiEmailGenerating(true);
+    setGeneratedEmail(null);
+    setStatusMessage(null);
+
+    try {
+      const userId = authUser?.id || localStorage.getItem('userId') || 'default';
+      const response = await fetch('/api/v1/settings/email-prefs/generate-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': userId
+        },
+        body: JSON.stringify({
+          prompt: aiEmailPrompt,
+          email_address: emailPrefs.email_address,
+          send_immediately: false
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setGeneratedEmail(data.email);
+        setDataContextUsed(data.data_context_used || '');
+        setStatusMessage({ type: 'success', text: 'Email generated! Review and send when ready.' });
+      } else {
+        throw new Error(data.detail || 'Failed to generate email');
+      }
+    } catch (error: any) {
+      console.error('AI email generation failed:', error);
+      setStatusMessage({ type: 'error', text: 'AI generation failed: ' + error.message });
+    } finally {
+      setAiEmailGenerating(false);
+    }
+  };
+
+  // Send the AI-generated email
+  const handleSendAIEmail = async () => {
+    if (!generatedEmail) return;
+
+    setAiEmailSending(true);
+    try {
+      const userId = authUser?.id || localStorage.getItem('userId') || 'default';
+      const response = await fetch('/api/v1/settings/email-prefs/send-custom-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': userId
+        },
+        body: JSON.stringify({
+          email_address: emailPrefs.email_address,
+          subject: generatedEmail.subject,
+          body: generatedEmail.body
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setStatusMessage({ type: 'success', text: '✅ Email sent successfully!' });
+        setGeneratedEmail(null);
+        setAiEmailPrompt('');
+      } else {
+        throw new Error(data.detail || 'Failed to send email');
+      }
+    } catch (error: any) {
+      setStatusMessage({ type: 'error', text: 'Send failed: ' + error.message });
+    } finally {
+      setAiEmailSending(false);
+    }
+  };
+
   const dayOptions = [
     { value: 0, label: 'Sunday' },
     { value: 1, label: 'Monday' },
@@ -281,15 +435,8 @@ const Settings: React.FC = () => {
     }
 
     // Apply theme immediately
-    if (preferences.theme === 'light') {
-      document.documentElement.classList.add('light-theme');
-      document.documentElement.classList.remove('dark');
-      document.body.classList.add('light-theme');
-    } else {
-      document.documentElement.classList.remove('light-theme');
-      document.documentElement.classList.add('dark');
-      document.body.classList.remove('light-theme');
-    }
+    // Theme is now managed globally by userStore, so we don't need to manually update the DOM here.
+    // DOM updates happen in App.tsx via userStore.
 
     // Small delay to let the user see the "Email preferences saved" message if it appeared
     setTimeout(() => {
@@ -398,6 +545,8 @@ const Settings: React.FC = () => {
     }
   };
 
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+
   const handleChangePassword = async () => {
     // Get password values from inputs
     const currentPasswordInput = document.getElementById('current-password') as HTMLInputElement;
@@ -442,6 +591,39 @@ const Settings: React.FC = () => {
     } catch (error: any) {
       console.error('Password change failed:', error);
       alert('❌ Failed to change password: ' + (error.message || 'Unknown error'));
+    }
+  };
+
+  // Send forgot password email
+  const handleForgotPassword = async () => {
+    const userEmail = profile.email || authUser?.email;
+    if (!userEmail) {
+      setStatusMessage({ type: 'error', text: 'No email address found for your account.' });
+      return;
+    }
+
+    setForgotPasswordLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
+        redirectTo: `${window.location.origin}/auth/update-password`,
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setStatusMessage({
+        type: 'success',
+        text: `Password reset email sent to ${userEmail}. Please check your inbox.`
+      });
+    } catch (error: any) {
+      console.error('Forgot password failed:', error);
+      setStatusMessage({
+        type: 'error',
+        text: 'Failed to send reset email: ' + (error.message || 'Unknown error')
+      });
+    } finally {
+      setForgotPasswordLoading(false);
     }
   };
 
@@ -497,12 +679,12 @@ const Settings: React.FC = () => {
         className="flex items-center gap-4 mb-2"
       >
         <img
-          src="/logo.png"
+          src="/logo_transparent.png"
           alt="DataVision Logo"
           className="w-12 h-12 object-contain rounded-xl shadow-lg"
         />
-        <div>
-          <h1 className="text-4xl font-bold text-white">Settings</h1>
+        <div className="mb-2">
+          <h1 className="text-4xl font-bold" style={{ color: 'var(--text-primary)' }}>Settings</h1>
           <p className="text-gray-400">Manage your account and preferences</p>
         </div>
       </motion.div>
@@ -516,7 +698,7 @@ const Settings: React.FC = () => {
       >
         <div className="flex items-center space-x-4 mb-6">
           <User className="w-6 h-6 text-teal-400" />
-          <h2 className="text-2xl font-semibold text-white">Profile</h2>
+          <h2 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>Profile</h2>
         </div>
 
         <div className="space-y-6">
@@ -525,7 +707,7 @@ const Settings: React.FC = () => {
               {profile.avatar ? (
                 <img src={profile.avatar} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <User className="w-12 h-12 text-white" />
+                <User className="w-12 h-12" style={{ color: 'var(--text-primary)' }} />
               )}
             </div>
             <div>
@@ -538,7 +720,7 @@ const Settings: React.FC = () => {
               />
               <button
                 onClick={handleChangeAvatar}
-                className="px-4 py-2 bg-teal-600 rounded-xl text-white font-medium hover:bg-orange-700 transition-colors shadow-md"
+                className="px-4 py-2 bg-primary-600 rounded-xl text-white font-medium hover:bg-amber-700 transition-colors shadow-md"
               >
                 Change Avatar
               </button>
@@ -546,14 +728,14 @@ const Settings: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             <div>
               <label className="block text-sm text-gray-400 mb-2">Full Name</label>
               <input
                 type="text"
                 value={profile.name}
                 onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
+                className="w-full px-4 py-3 glass-input rounded-xl text-gray-200 focus:outline-none"
               />
             </div>
             <div>
@@ -562,7 +744,7 @@ const Settings: React.FC = () => {
                 type="email"
                 value={profile.email}
                 disabled
-                className="w-full px-4 py-3 bg-dark-card/50 border border-dark-border rounded-xl text-gray-400 cursor-not-allowed"
+                className="w-full px-4 py-3 rounded-xl text-gray-400 cursor-not-allowed border border-[var(--border-color)] bg-[var(--bg-hover)]"
               />
               <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
             </div>
@@ -573,7 +755,7 @@ const Settings: React.FC = () => {
                 placeholder="Your Company"
                 value={profile.company}
                 onChange={(e) => setProfile({ ...profile, company: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
+                className="w-full px-4 py-3 glass-input rounded-xl text-gray-200 focus:outline-none"
               />
             </div>
             <div>
@@ -583,107 +765,14 @@ const Settings: React.FC = () => {
                 placeholder="Your Role"
                 value={profile.role}
                 onChange={(e) => setProfile({ ...profile, role: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
+                className="w-full px-4 py-3 glass-input rounded-xl text-gray-200 focus:outline-none"
               />
             </div>
           </div>
         </div>
       </motion.div>
 
-      {/* Company Intelligence */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
-        className="glass-card p-8"
-      >
-        <div className="flex items-center space-x-4 mb-6">
-          <svg className="w-6 h-6 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-          </svg>
-          <div>
-            <h2 className="text-2xl font-semibold text-white">Company Intelligence</h2>
-            <p className="text-sm text-gray-400">AI will adapt terminology and benchmarks to your company</p>
-          </div>
-        </div>
 
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Company Name */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Company Name</label>
-              <input
-                type="text"
-                placeholder="Your Company Inc"
-                value={profile.company}
-                onChange={(e) => setProfile({ ...profile, company: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
-              />
-              <p className="text-xs text-gray-500 mt-1">AI will reference this in responses</p>
-            </div>
-
-            {/* Industry */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Industry</label>
-              <select
-                value={preferences.industry || 'other'}
-                onChange={(e) => setPreferences({ ...preferences, industry: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
-              >
-                <option value="saas">SaaS / Software</option>
-                <option value="ecommerce">E-commerce / Retail</option>
-                <option value="fintech">Fintech / Banking</option>
-                <option value="healthcare">Healthcare</option>
-                <option value="manufacturing">Manufacturing</option>
-                <option value="consulting">Consulting / Services</option>
-                <option value="education">Education</option>
-                <option value="other">Other</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">For industry-specific benchmarks</p>
-            </div>
-
-            {/* Fiscal Year End */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Fiscal Year End Month</label>
-              <select
-                value={preferences.fiscalYearEnd || 12}
-                onChange={(e) => setPreferences({ ...preferences, fiscalYearEnd: parseInt(e.target.value) })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
-              >
-                <option value={1}>January</option>
-                <option value={2}>February</option>
-                <option value={3}>March</option>
-                <option value={4}>April</option>
-                <option value={5}>May</option>
-                <option value={6}>June</option>
-                <option value={7}>July</option>
-                <option value={8}>August</option>
-                <option value={9}>September</option>
-                <option value={10}>October</option>
-                <option value={11}>November</option>
-                <option value={12}>December</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">For accurate Q1-Q4 calculations</p>
-            </div>
-
-            {/* User Role */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Your Role</label>
-              <select
-                value={preferences.userRole || 'analyst'}
-                onChange={(e) => setPreferences({ ...preferences, userRole: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
-              >
-                <option value="executive">Executive (CEO/CFO/VP) - Quick summaries</option>
-                <option value="manager">Manager - Actionable insights</option>
-                <option value="analyst">Analyst - Detailed data tables</option>
-                <option value="operator">Operator - Quick facts</option>
-              </select>
-              <p className="text-xs text-gray-500 mt-1">AI adapts response format to your role</p>
-            </div>
-          </div>
-        </div>
-      </motion.div>
 
       {/* Preferences */}
       <motion.div
@@ -693,43 +782,32 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <Shield className="w-6 h-6 text-teal-400" />
+          <Shield className="w-6 h-6 text-primary-400" />
           <h2 className="text-2xl font-semibold text-white">Preferences</h2>
         </div>
 
         <div className="space-y-6">
           {/* Theme and Language Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             {/* Theme */}
             <div>
               <label className="block text-sm text-gray-400 mb-2">Theme</label>
               <select
                 value={preferences.theme}
                 onChange={(e) => setPreferences({ ...preferences, theme: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
+                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-primary-500 appearance-none cursor-pointer"
               >
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
               </select>
               <button
                 onClick={handleResetTheme}
-                className="text-teal-400 text-sm mt-2 hover:underline"
+                className="text-primary-400 text-sm mt-2 hover:underline"
               >
                 Reset to Dark Mode
               </button>
             </div>
 
-            {/* Language */}
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">Language</label>
-              <select
-                value={preferences.language || 'en'}
-                onChange={(e) => setPreferences({ ...preferences, language: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500 appearance-none cursor-pointer"
-              >
-                <option value="en">English (Only)</option>
-              </select>
-            </div>
           </div>
         </div>
       </motion.div>
@@ -742,7 +820,7 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <Mail className="w-6 h-6 text-teal-400" />
+          <Mail className="w-6 h-6 text-primary-400" />
           <h2 className="text-2xl font-semibold text-white">Email Reports</h2>
         </div>
 
@@ -755,7 +833,7 @@ const Settings: React.FC = () => {
               placeholder="your@email.com"
               value={emailPrefs.email_address || ''}
               onChange={(e) => setEmailPrefs({ ...emailPrefs, email_address: e.target.value })}
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
+              className="w-full px-4 py-3 glass-input rounded-xl text-gray-200 focus:outline-none"
             />
             <p className="text-xs text-gray-500 mt-1">Leave blank to use your account email</p>
           </div>
@@ -764,7 +842,7 @@ const Settings: React.FC = () => {
           <div className="p-4 bg-dark-card rounded-xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <Clock className="w-5 h-5 text-teal-400" />
+                <Clock className="w-5 h-5 text-primary-400" />
                 <div>
                   <div className="text-white font-medium">Daily Reports</div>
                   <div className="text-sm text-gray-400">Receive daily data insights from DataVision</div>
@@ -777,7 +855,7 @@ const Settings: React.FC = () => {
                   onChange={(e) => setEmailPrefs({ ...emailPrefs, daily_report_enabled: e.target.checked })}
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-teal-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-primary-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
               </label>
             </div>
 
@@ -788,7 +866,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.daily_report_hour}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, daily_report_hour: parseInt(e.target.value) })}
-                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
+                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-primary-500"
                   >
                     {Array.from({ length: 24 }, (_, i) => (
                       <option key={i} value={i}>{i.toString().padStart(2, '0')}</option>
@@ -801,7 +879,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.daily_report_minute}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, daily_report_minute: parseInt(e.target.value) })}
-                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
+                    className="px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-primary-500"
                   >
                     {[0, 15, 30, 45].map((m) => (
                       <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
@@ -816,7 +894,7 @@ const Settings: React.FC = () => {
           <div className="p-4 bg-dark-card rounded-xl space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <Calendar className="w-5 h-5 text-teal-400" />
+                <Calendar className="w-5 h-5 text-primary-400" />
                 <div>
                   <div className="text-white font-medium">Weekly Reports</div>
                   <div className="text-sm text-gray-400">Comprehensive weekly analysis from DataVision</div>
@@ -829,7 +907,7 @@ const Settings: React.FC = () => {
                   onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_enabled: e.target.checked })}
                   className="sr-only peer"
                 />
-                <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-teal-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-primary-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
               </label>
             </div>
 
@@ -840,7 +918,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.weekly_report_day}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_day: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-primary-500"
                   >
                     {dayOptions.map((day) => (
                       <option key={day.value} value={day.value}>{day.label}</option>
@@ -852,7 +930,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.weekly_report_hour}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_hour: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-primary-500"
                   >
                     {Array.from({ length: 24 }, (_, i) => (
                       <option key={i} value={i}>{i.toString().padStart(2, '0')}</option>
@@ -864,7 +942,7 @@ const Settings: React.FC = () => {
                   <select
                     value={emailPrefs.weekly_report_minute}
                     onChange={(e) => setEmailPrefs({ ...emailPrefs, weekly_report_minute: parseInt(e.target.value) })}
-                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-teal-500"
+                    className="w-full px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-gray-200 focus:outline-none focus:border-primary-500"
                   >
                     {[0, 15, 30, 45].map((m) => (
                       <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
@@ -880,7 +958,7 @@ const Settings: React.FC = () => {
             <button
               onClick={saveEmailPrefs}
               disabled={emailPrefsLoading}
-              className="px-6 py-3 bg-gradient-to-r from-teal-500 to-amber-600 rounded-xl text-white font-medium hover:shadow-glow transition-all disabled:opacity-50 flex items-center space-x-2"
+              className="px-6 py-3 bg-gradient-to-r from-primary-500 to-amber-600 rounded-xl text-white font-medium hover:shadow-glow transition-all disabled:opacity-50 flex items-center space-x-2"
             >
               <Save className="w-4 h-4" />
               <span>{emailPrefsLoading ? 'Saving...' : 'Save Email Preferences'}</span>
@@ -901,6 +979,34 @@ const Settings: React.FC = () => {
               <Mail className="w-4 h-4" />
               <span>{dailyReportSending ? 'Sending Report...' : '📊 Send Daily Report Now'}</span>
             </button>
+            <button
+              onClick={async () => {
+                setDailyReportSending(true);
+                try {
+                  const userId = authUser?.id || localStorage.getItem('userId') || 'default';
+                  const res = await fetch('/api/v1/settings/email-prefs/send-weekly-report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-User-ID': userId },
+                    body: JSON.stringify({ email_address: emailPrefs.email_address })
+                  });
+                  const data = await res.json();
+                  if (res.ok) {
+                    setStatusMessage({ type: 'success', text: data.message || 'Weekly report sent!' });
+                  } else {
+                    setStatusMessage({ type: 'error', text: data.detail || 'Failed to send weekly report' });
+                  }
+                } catch (e) {
+                  setStatusMessage({ type: 'error', text: 'Failed to send weekly report' });
+                } finally {
+                  setDailyReportSending(false);
+                }
+              }}
+              disabled={dailyReportSending}
+              className="px-6 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 rounded-xl text-white font-medium hover:shadow-lg hover:shadow-teal-500/20 transition-all disabled:opacity-50 flex items-center space-x-2"
+            >
+              <Mail className="w-4 h-4" />
+              <span>{dailyReportSending ? 'Sending...' : '📈 Send Weekly Report Now'}</span>
+            </button>
           </div>
         </div>
       </motion.div>
@@ -913,52 +1019,75 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <Database className="w-6 h-6 text-teal-400" />
-          <h2 className="text-2xl font-semibold text-white">Data Management</h2>
+          <Database className="w-6 h-6 text-primary-400" />
+          <div>
+            <h2 className="text-2xl font-semibold text-white">Data Management</h2>
+            <p className="text-sm text-gray-400">Manage your uploaded files and ML models</p>
+          </div>
         </div>
 
         <div className="space-y-4">
+          {/* Export All Data */}
           <button
             onClick={handleExportData}
-            className="w-full p-4 bg-dark-card border border-dark-border rounded-xl text-left hover:bg-dark-hover transition-colors flex items-center justify-between"
+            className="w-full p-4 bg-dark-card border border-dark-border rounded-xl text-left hover:bg-dark-hover hover:border-teal-500/30 transition-colors flex items-center justify-between group"
           >
             <div className="flex items-center space-x-3">
-              <Download className="w-5 h-5 text-gray-400" />
+              <div className="p-2 rounded-lg bg-teal-500/10 group-hover:bg-teal-500/20 transition-colors">
+                <Download className="w-5 h-5 text-teal-400" />
+              </div>
               <div>
                 <div className="text-white font-medium">Export All Data</div>
-                <div className="text-sm text-gray-400">Download your complete data archive</div>
+                <div className="text-sm text-gray-400">Download files, settings, and ML results as JSON</div>
               </div>
             </div>
-            <span className="text-teal-400 text-sm font-medium">Export</span>
+            <span className="text-teal-400 text-sm font-medium group-hover:translate-x-1 transition-transform">Export →</span>
           </button>
 
+          {/* Clear ML Models */}
           <button
-            onClick={handleRebuildIndexes}
-            className="w-full p-4 bg-dark-card border border-dark-border rounded-xl text-left hover:bg-dark-hover transition-colors flex items-center justify-between"
+            onClick={() => {
+              if (confirm('Clear all ML training history and models? Your uploaded files will remain.')) {
+                const userId = localStorage.getItem('userId') || 'default';
+                localStorage.removeItem(`automl_result_${userId}`);
+                alert('✅ ML models cleared! You can train fresh models now.');
+              }
+            }}
+            className="w-full p-4 bg-dark-card border border-dark-border rounded-xl text-left hover:bg-dark-hover hover:border-amber-500/30 transition-colors flex items-center justify-between group"
           >
             <div className="flex items-center space-x-3">
-              <RefreshCw className="w-5 h-5 text-teal-400" />
+              <div className="p-2 rounded-lg bg-amber-500/10 group-hover:bg-amber-500/20 transition-colors">
+                <RefreshCw className="w-5 h-5 text-amber-400" />
+              </div>
               <div>
-                <div className="text-white font-medium">Rebuild Indexes</div>
-                <div className="text-sm text-gray-400">Refresh FAISS and GraphRAG indexes</div>
+                <div className="text-white font-medium">Reset ML Models</div>
+                <div className="text-sm text-gray-400">Clear training history to start fresh (keeps your files)</div>
               </div>
             </div>
-            <span className="text-teal-400 text-sm font-medium">Rebuild</span>
+            <span className="text-amber-400 text-sm font-medium group-hover:translate-x-1 transition-transform">Reset →</span>
           </button>
 
-          <button
-            onClick={handleDeleteAllData}
-            className="w-full p-4 bg-accent-red/10 border border-accent-red/20 rounded-xl text-left hover:bg-accent-red/20 transition-colors flex items-center justify-between"
-          >
-            <div className="flex items-center space-x-3">
-              <Trash2 className="w-5 h-5 text-accent-red" />
-              <div>
-                <div className="text-accent-red font-medium">Delete All Data</div>
-                <div className="text-sm text-gray-400">Permanently remove all files and indexes</div>
+          {/* Delete All Data - Danger Zone */}
+          <div className="pt-4 border-t border-dark-border">
+            <p className="text-xs text-gray-500 mb-3 flex items-center gap-1">
+              <span className="text-red-400">⚠️</span> Danger Zone
+            </p>
+            <button
+              onClick={handleDeleteAllData}
+              className="w-full p-4 bg-red-500/5 border border-red-500/20 rounded-xl text-left hover:bg-red-500/10 hover:border-red-500/40 transition-colors flex items-center justify-between group"
+            >
+              <div className="flex items-center space-x-3">
+                <div className="p-2 rounded-lg bg-red-500/10 group-hover:bg-red-500/20 transition-colors">
+                  <Trash2 className="w-5 h-5 text-red-400" />
+                </div>
+                <div>
+                  <div className="text-red-400 font-medium">Delete All Data</div>
+                  <div className="text-sm text-gray-400">Permanently remove all files, models, and settings</div>
+                </div>
               </div>
-            </div>
-            <span className="text-accent-red text-sm font-medium">Delete</span>
-          </button>
+              <span className="text-red-400 text-sm font-medium">Delete</span>
+            </button>
+          </div>
         </div>
       </motion.div>
 
@@ -970,7 +1099,7 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <Key className="w-6 h-6 text-teal-400" />
+          <Key className="w-6 h-6 text-primary-400" />
           <h2 className="text-2xl font-semibold text-white">Security</h2>
         </div>
 
@@ -981,7 +1110,7 @@ const Settings: React.FC = () => {
               id="current-password"
               type="password"
               placeholder="Enter current password (optional)"
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-primary-500"
             />
             <p className="text-xs text-gray-500 mt-1">For OAuth users, leave this blank</p>
           </div>
@@ -991,7 +1120,7 @@ const Settings: React.FC = () => {
               id="new-password"
               type="password"
               placeholder="Enter new password (min 6 characters)"
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-primary-500"
             />
           </div>
           <div>
@@ -1000,15 +1129,29 @@ const Settings: React.FC = () => {
               id="confirm-password"
               type="password"
               placeholder="Confirm new password"
-              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-teal-500"
+              className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-primary-500"
             />
           </div>
-          <button
-            onClick={handleChangePassword}
-            className="px-6 py-3 bg-teal-600 rounded-xl text-white font-medium hover:bg-orange-700 transition-colors shadow-md"
-          >
-            Change Password
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleChangePassword}
+              className="px-6 py-3 bg-primary-600 rounded-xl text-white font-medium hover:bg-amber-700 transition-colors shadow-md flex items-center gap-2"
+            >
+              <Key className="w-4 h-4" />
+              Change Password
+            </button>
+            <button
+              onClick={handleForgotPassword}
+              disabled={forgotPasswordLoading}
+              className="px-6 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 font-medium hover:bg-dark-hover hover:border-primary-500/30 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              <KeyRound className="w-4 h-4" />
+              {forgotPasswordLoading ? 'Sending...' : 'Forgot Password? Send Reset Email'}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-3">
+            💡 Forgot your password? Click the button above to receive a reset link via email.
+          </p>
         </div>
       </motion.div>
 
@@ -1021,13 +1164,13 @@ const Settings: React.FC = () => {
       >
         <button
           onClick={handleCancel}
-          className="px-6 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-400 font-medium hover:bg-dark-hover hover:text-gray-200 transition-colors"
+          className="btn-secondary"
         >
           Cancel
         </button>
         <button
           onClick={handleSave}
-          className="px-8 py-3 bg-gradient-to-r from-teal-500 to-amber-600 rounded-xl text-white font-semibold hover:shadow-glow transition-all flex items-center space-x-2"
+          className="btn-primary flex items-center space-x-2"
         >
           <Save className="w-5 h-5" />
           <span>Save Changes</span>

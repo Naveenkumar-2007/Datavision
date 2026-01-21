@@ -62,43 +62,43 @@ CHART_TYPES = [
     'pie', 'donut', 'sunburst',
     'heatmap', 'treemap',
     'histogram', 'box', 'violin',
-    'funnel', 'waterfall',
+    'funnel', 'waterfall', 'pareto',  # Added Pareto for 80/20 analysis
     'radar', 'gauge', 'bullet',
     'sankey', 'candlestick', 'parcoords',
     'choropleth', 'scatter_3d', 'calendar_heatmap'
 ]
 
-# Color palettes for different domains
+# Color palettes for different domains - POWERBI-LEVEL PREMIUM COLORS
 COLOR_PALETTES = {
     'finance': {
         'primary': ['#10b981', '#059669', '#047857', '#065f46', '#064e3b'],
         'accent': ['#14b8a6', '#0d9488', '#0f766e', '#115e59'],
-        'chart': ['#10b981', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1']
+        'chart': ['#10b981', '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#22c55e', '#eab308', '#f59e0b', '#ef4444']
     },
     'sales': {
         'primary': ['#8b5cf6', '#7c3aed', '#6d28d9', '#5b21b6', '#4c1d95'],
         'accent': ['#a78bfa', '#c4b5fd', '#ddd6fe'],
-        'chart': ['#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#fb7185']
+        'chart': ['#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#f43f5e', '#fb7185', '#14b8a6', '#06b6d4', '#3b82f6', '#eab308', '#22c55e', '#f97316']
     },
     'marketing': {
         'primary': ['#f97316', '#ea580c', '#c2410c', '#9a3412', '#7c2d12'],
         'accent': ['#fb923c', '#fdba74', '#fed7aa'],
-        'chart': ['#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#14b8a6']
+        'chart': ['#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#ef4444', '#10b981']
     },
     'hr': {
         'primary': ['#06b6d4', '#0891b2', '#0e7490', '#155e75', '#164e63'],
         'accent': ['#22d3ee', '#67e8f9', '#a5f3fc'],
-        'chart': ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7']
+        'chart': ['#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#14b8a6', '#22c55e', '#f59e0b', '#ef4444']
     },
     'operations': {
         'primary': ['#3b82f6', '#2563eb', '#1d4ed8', '#1e40af', '#1e3a8a'],
         'accent': ['#60a5fa', '#93c5fd', '#bfdbfe'],
-        'chart': ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899']
+        'chart': ['#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#ec4899', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#06b6d4']
     },
     'general': {
         'primary': ['#14b8a6', '#0d9488', '#0f766e', '#115e59', '#134e4a'],
         'accent': ['#2dd4bf', '#5eead4', '#99f6e4'],
-        'chart': ['#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef']
+        'chart': ['#14b8a6', '#22c55e', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7', '#d946ef', '#f59e0b', '#ef4444', '#ec4899']
     }
 }
 
@@ -143,7 +143,7 @@ def analyze_column_relationships(df: pd.DataFrame) -> List[Dict]:
                     'numeric': num,
                     'categorical': cat,
                     'cardinality': cardinality,
-                    'best_charts': ['bar', 'horizontal_bar', 'pie', 'donut', 'treemap', 'funnel', 'radar', 'gauge'] if cardinality <= 8 else ['bar', 'horizontal_bar', 'treemap', 'funnel']
+                    'best_charts': ['bar', 'horizontal_bar', 'pie', 'donut', 'treemap', 'funnel', 'pareto', 'radar', 'gauge'] if cardinality <= 8 else ['bar', 'horizontal_bar', 'treemap', 'funnel', 'pareto']
                 })
     
     # Numeric vs Numeric (best for scatter, bubble)
@@ -325,44 +325,60 @@ def analyze_column_relationships(df: pd.DataFrame) -> List[Dict]:
         })
     
     # ===========================================
-    # CATEGORICAL-ONLY DATA SUPPORT
-    # When there are no numeric columns, create relationships for categorical analysis
+    # ADDITIONAL CHART RELATIONSHIPS FOR MORE VARIETY
     # ===========================================
-    if not numeric_cols and categorical_cols:
-        # Single category distribution (pie, donut, bar)
-        for cat in categorical_cols[:4]:
-            cardinality = df[cat].nunique()
-            if cardinality >= 2:
-                relationships.append({
-                    'type': 'category_distribution',
-                    'categorical': cat,
-                    'cardinality': cardinality,
-                    'best_charts': ['pie', 'donut', 'horizontal_bar', 'bar', 'treemap'] if cardinality <= 10 else ['horizontal_bar', 'bar', 'treemap']
-                })
-        
-        # Category vs Category (for cross-tabulation visualization)
-        if len(categorical_cols) >= 2:
-            for i, cat1 in enumerate(categorical_cols[:3]):
-                for cat2 in categorical_cols[i+1:4]:
-                    card1 = df[cat1].nunique()
-                    card2 = df[cat2].nunique()
-                    if 2 <= card1 <= 15 and 2 <= card2 <= 15:
-                        relationships.append({
-                            'type': 'category_comparison',
-                            'cat1': cat1,
-                            'cat2': cat2,
-                            'cardinality1': card1,
-                            'cardinality2': card2,
-                            'best_charts': ['stacked_bar', 'grouped_bar', 'sunburst', 'treemap', 'heatmap']
-                        })
-        
-        # Multi-category hierarchy (sunburst, treemap)
-        if len(categorical_cols) >= 2:
-            relationships.append({
-                'type': 'category_hierarchy',
-                'categories': categorical_cols[:3],
-                'best_charts': ['sunburst', 'treemap']
-            })
+    
+    # Comparison Bar (different from regular bar - shows comparison)
+    if categorical_cols and numeric_cols:
+        relationships.append({
+            'type': 'comparison_bar',
+            'categorical': categorical_cols[0],
+            'numeric': numeric_cols[0],
+            'best_charts': ['grouped_bar']
+        })
+    
+    # Stacked Area (for cumulative trends)
+    if len(numeric_cols) >= 2:
+        relationships.append({
+            'type': 'stacked_trend',
+            'values': numeric_cols[:3],
+            'best_charts': ['stacked_area']
+        })
+    
+    # Donut Breakdown (secondary category)
+    if len(categorical_cols) >= 2 and numeric_cols:
+        relationships.append({
+            'type': 'donut_breakdown',
+            'category': categorical_cols[1] if len(categorical_cols) > 1 else categorical_cols[0],
+            'value': numeric_cols[0],
+            'best_charts': ['donut']
+        })
+    
+    # Line Trend (for any numeric progression)
+    if numeric_cols:
+        relationships.append({
+            'type': 'line_trend',
+            'value': numeric_cols[0],
+            'best_charts': ['line']
+        })
+    
+    # Horizontal Ranking (top N items)
+    if categorical_cols and numeric_cols:
+        relationships.append({
+            'type': 'horizontal_ranking',
+            'category': categorical_cols[0],
+            'value': numeric_cols[0],
+            'best_charts': ['horizontal_bar']
+        })
+    
+    # Grouped Comparison (if multiple numeric cols)
+    if len(numeric_cols) >= 2 and categorical_cols:
+        relationships.append({
+            'type': 'grouped_comparison',
+            'category': categorical_cols[0],
+            'values': numeric_cols[:3],
+            'best_charts': ['stacked_bar']
+        })
     
     return relationships
 
@@ -372,10 +388,10 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
     ENHANCED AUTONOMOUS CHART SELECTION - AI decides everything!
     
     Strategy:
-    1. Prioritize complex charts (sankey, radar, sunburst, parallel) first
+    1. GUARANTEE advanced charts (radar, gauge, funnel, heatmap, box) first
     2. Score each relationship-chart combo based on data suitability
     3. Ensure variety - no repeated chart types
-    4. Select best 10 visualizations
+    4. Select best 12-15 visualizations
     """
     selected_charts = []
     used_chart_types = set()
@@ -386,6 +402,55 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
     MEDIUM_CHARTS = ['heatmap', 'stacked_bar', 'funnel', 'gauge', 'treemap', 'box', 'area']
     SIMPLE_CHARTS = ['bar', 'line', 'pie', 'scatter', 'histogram', 'horizontal_bar', 'donut']
     
+    # =============================================================
+    # PHASE 1: GUARANTEE ADVANCED CHARTS (User requested variety)
+    # =============================================================
+    must_have_advanced = ['radar', 'gauge', 'funnel', 'heatmap', 'box', 'violin']
+    
+    for adv_chart in must_have_advanced:
+        if adv_chart in used_chart_types:
+            continue
+        
+        # Find a suitable relationship for this chart type
+        for rel in relationships:
+            if adv_chart in rel.get('best_charts', []):
+                chart = generate_autonomous_chart(df, rel, adv_chart, palette)
+                if chart:
+                    selected_charts.append(chart)
+                    used_chart_types.add(adv_chart)
+                    break
+        
+        # If no direct match, try with compatible relationship types
+        if adv_chart not in used_chart_types:
+            for rel in relationships:
+                rel_type = rel.get('type', '')
+                compatible = False
+                
+                if adv_chart == 'radar' and rel_type in ['radar', 'multi_category', 'num_vs_cat']:
+                    compatible = True
+                elif adv_chart == 'gauge' and rel_type in ['gauge', 'distribution']:
+                    compatible = True
+                elif adv_chart == 'funnel' and rel_type in ['funnel', 'num_vs_cat']:
+                    compatible = True
+                elif adv_chart == 'heatmap' and rel_type in ['num_vs_num', 'multi_category', 'category_comparison']:
+                    compatible = True
+                elif adv_chart == 'box' and rel_type in ['distribution', 'violin']:
+                    compatible = True
+                elif adv_chart == 'violin' and rel_type in ['violin', 'distribution', 'num_vs_cat']:
+                    compatible = True
+                
+                if compatible:
+                    chart = generate_autonomous_chart(df, rel, adv_chart, palette)
+                    if chart:
+                        selected_charts.append(chart)
+                        used_chart_types.add(adv_chart)
+                        break
+    
+    logger.info(f"🌟 Phase 1: Guaranteed {len(selected_charts)} advanced charts: {list(used_chart_types)}")
+    
+    # =============================================================
+    # PHASE 2: SCORED SELECTION FOR REMAINING CHARTS
+    # =============================================================
     def calculate_chart_score(rel: Dict, chart_type: str) -> float:
         """Score how well a chart type fits the data relationship"""
         score = 0.0
@@ -447,14 +512,14 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
     # Sort by score descending (highest priority first)
     chart_options.sort(key=lambda x: x['score'], reverse=True)
     
-    # Select top charts ensuring variety
+    # Select top charts ensuring variety - MAXIMUM 15 UNIQUE CHARTS
     for option in chart_options:
-        if len(selected_charts) >= 10:
+        if len(selected_charts) >= 15:  # Increased for maximum variety
             break
         
         chart_type = option['chart_type']
         if chart_type in used_chart_types:
-            continue
+            continue  # STRICT: Never duplicate chart types
         
         # Generate chart
         chart = generate_autonomous_chart(df, option['rel'], chart_type, palette)
@@ -462,12 +527,13 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
             selected_charts.append(chart)
             used_chart_types.add(chart_type)
     
-    # If we have less than 6 charts, try adding more from simple types
-    if len(selected_charts) < 6:
+    # If we have less than 10 charts, try adding more from all tiers
+    if len(selected_charts) < 10:
+        all_chart_types = COMPLEX_CHARTS + MEDIUM_CHARTS + SIMPLE_CHARTS
         for rel in relationships:
-            if len(selected_charts) >= 8:
+            if len(selected_charts) >= 12:
                 break
-            for chart_type in SIMPLE_CHARTS:
+            for chart_type in all_chart_types:
                 if chart_type not in used_chart_types:
                     chart = generate_autonomous_chart(df, rel, chart_type, palette)
                     if chart:
@@ -475,7 +541,7 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
                         used_chart_types.add(chart_type)
                         break
     
-    logger.info(f"🎨 Selected {len(selected_charts)} charts with types: {list(used_chart_types)}")
+    logger.info(f"🎨 Generated {len(selected_charts)} UNIQUE charts: {list(used_chart_types)}")
     return selected_charts
 
 
@@ -504,6 +570,9 @@ def generate_autonomous_chart(df: pd.DataFrame, relationship: Dict, chart_type: 
             elif chart_type == 'funnel':
                 # Funnel needs special relationship, fallback to bar for num_vs_cat
                 return create_bar_chart(labels, values, num_col, cat_col, colors)
+            elif chart_type == 'pareto':
+                # Power BI-style Pareto (80/20) chart
+                return create_pareto_chart(df, {'category': cat_col, 'value': num_col}, colors)
             elif chart_type == 'radar':
                 # Radar needs multi-metrics, fallback to bar for single metric
                 return create_bar_chart(labels, values, num_col, cat_col, colors)
@@ -773,6 +842,99 @@ def generate_autonomous_chart(df: pd.DataFrame, relationship: Dict, chart_type: 
                 'donut',
                 colors
             )
+        
+        # ===========================================
+        # NEW CHART HANDLERS FOR ADDITIONAL VARIETY
+        # ===========================================
+        elif rel_type == 'comparison_bar':
+            cat_col = relationship['categorical']
+            num_col = relationship['numeric']
+            grouped = df.groupby(cat_col)[num_col].mean().nlargest(10)
+            labels = [str(l)[:20] for l in grouped.index]
+            values = [float(v) for v in grouped.values]
+            return {
+                'chart_id': f'comparison_{num_col}_{cat_col}',
+                'title': f'Average {num_col.replace("_", " ").title()} Comparison',
+                'type': 'grouped_bar',
+                'plotly_config': {
+                    'data': [{'type': 'bar', 'x': labels, 'y': values, 'marker': {'color': colors[:len(labels)]}}],
+                    'layout': get_layout()
+                }
+            }
+        
+        elif rel_type == 'stacked_trend':
+            values_cols = relationship['values']
+            n_points = min(15, len(df))
+            traces = []
+            for i, col in enumerate(values_cols[:3]):
+                segment_size = max(1, len(df) // n_points)
+                vals = [float(df[col].iloc[j*segment_size:(j+1)*segment_size].sum()) for j in range(n_points)]
+                traces.append({
+                    'type': 'scatter',
+                    'mode': 'lines',
+                    'fill': 'tonexty' if i > 0 else 'tozeroy',
+                    'name': col.replace('_', ' ').title()[:15],
+                    'x': list(range(1, n_points + 1)),
+                    'y': vals,
+                    'line': {'color': colors[i % len(colors)]}
+                })
+            return {
+                'chart_id': f'stacked_area_trend',
+                'title': 'Cumulative Trends',
+                'type': 'stacked_area',
+                'plotly_config': {'data': traces, 'layout': get_layout()}
+            }
+        
+        elif rel_type == 'donut_breakdown':
+            cat_col = relationship['category']
+            val_col = relationship['value']
+            grouped = df.groupby(cat_col)[val_col].sum().nlargest(8)
+            labels = [str(l)[:20] for l in grouped.index]
+            values = [float(v) for v in grouped.values]
+            return create_pie_chart(labels, values, val_col, cat_col, 'donut', colors)
+        
+        elif rel_type == 'line_trend':
+            val_col = relationship['value']
+            n_points = min(20, len(df))
+            segment_size = max(1, len(df) // n_points)
+            values = [float(df[val_col].iloc[i*segment_size:(i+1)*segment_size].mean()) for i in range(n_points)]
+            return create_line_chart(
+                [f'P{i+1}' for i in range(n_points)],
+                values,
+                val_col,
+                colors
+            )
+        
+        elif rel_type == 'horizontal_ranking':
+            cat_col = relationship['category']
+            val_col = relationship['value']
+            grouped = df.groupby(cat_col)[val_col].sum().nlargest(10)
+            labels = [str(l)[:20] for l in grouped.index]
+            values = [float(v) for v in grouped.values]
+            return create_horizontal_bar(labels, values, val_col, cat_col, colors)
+        
+        elif rel_type == 'grouped_comparison':
+            cat_col = relationship['category']
+            value_cols = relationship['values']
+            grouped = df.groupby(cat_col)[value_cols].mean().head(8)
+            traces = []
+            for i, col in enumerate(value_cols[:3]):
+                traces.append({
+                    'type': 'bar',
+                    'name': col.replace('_', ' ').title()[:15],
+                    'x': [str(idx)[:12] for idx in grouped.index],
+                    'y': [float(v) for v in grouped[col].values],
+                    'marker': {'color': colors[i % len(colors)]}
+                })
+            return {
+                'chart_id': f'grouped_{cat_col}',
+                'title': f'Metrics Comparison by {cat_col.replace("_", " ").title()}',
+                'type': 'stacked_bar',
+                'plotly_config': {
+                    'data': traces,
+                    'layout': {**get_layout(), 'barmode': 'group'}
+                }
+            }
         
     except Exception as e:
         logger.warning(f"Chart generation error: {e}")
@@ -1092,6 +1254,81 @@ def create_funnel_chart(df, rel, colors):
                 'marker': {'color': colors[:len(grouped)]}
             }],
             'layout': get_layout()
+        }
+    }
+
+
+def create_pareto_chart(df, rel, colors):
+    """
+    POWER BI PARETO CHART - 80/20 Analysis
+    Shows bars sorted by value with cumulative % line overlay
+    """
+    cat = rel.get('category') or rel.get('categorical')
+    val = rel.get('value') or rel.get('numeric')
+    
+    if not cat or not val or cat not in df.columns or val not in df.columns:
+        return None
+    
+    # Group and sort by value descending
+    grouped = df.groupby(cat)[val].sum().sort_values(ascending=False).head(15)
+    total = grouped.sum()
+    
+    if total == 0:
+        return None
+    
+    # Calculate cumulative percentage
+    cumsum = grouped.cumsum()
+    cum_pct = (cumsum / total * 100).tolist()
+    
+    labels = [str(l)[:20] for l in grouped.index]
+    values = [float(v) for v in grouped.values]
+    
+    return {
+        'chart_id': f'pareto_{cat}_{val}',
+        'title': f'Pareto Analysis: {val.replace("_", " ").title()} by {cat.replace("_", " ").title()}',
+        'type': 'pareto',
+        'analysis': 'power_bi_80_20',
+        'plotly_config': {
+            'data': [
+                # Bar chart (values)
+                {
+                    'type': 'bar',
+                    'name': val.replace('_', ' ').title(),
+                    'x': labels,
+                    'y': values,
+                    'marker': {'color': colors[0]},
+                    'yaxis': 'y'
+                },
+                # Cumulative line
+                {
+                    'type': 'scatter',
+                    'mode': 'lines+markers',
+                    'name': 'Cumulative %',
+                    'x': labels,
+                    'y': cum_pct,
+                    'line': {'color': colors[1], 'width': 3},
+                    'marker': {'size': 8, 'color': colors[1]},
+                    'yaxis': 'y2'
+                },
+                # 80% threshold line
+                {
+                    'type': 'scatter',
+                    'mode': 'lines',
+                    'name': '80% Threshold',
+                    'x': [labels[0], labels[-1]],
+                    'y': [80, 80],
+                    'line': {'color': '#ef4444', 'width': 2, 'dash': 'dash'},
+                    'yaxis': 'y2',
+                    'showlegend': True,
+                    'hoverinfo': 'skip'
+                }
+            ],
+            'layout': {
+                **get_layout(),
+                'yaxis': {'title': val.replace('_', ' ').title(), 'side': 'left'},
+                'yaxis2': {'title': 'Cumulative %', 'overlaying': 'y', 'side': 'right', 'range': [0, 105]},
+                'legend': {'orientation': 'h', 'y': -0.2}
+            }
         }
     }
 
@@ -1548,8 +1785,8 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
         charts = autonomous_chart_selection(df, domain, relationships)
         logger.info(f"📊 Generated {len(charts)} autonomous charts")
         
-        # Step 4: Calculate REAL KPIs
-        kpis = calculate_real_kpis(df, palette)
+        # Step 4: Calculate POWER BI-STYLE ADVANCED KPIs
+        kpis = calculate_advanced_kpis(df, palette)
         
         # Step 5: Generate insights from real data
         insights = generate_real_insights(df)
@@ -1590,6 +1827,364 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
+
+
+# ================= POWER BI ADVANCED CALCULATIONS =================
+
+def calculate_yoy_growth(df: pd.DataFrame, date_col: str, value_col: str) -> Dict:
+    """
+    Calculate Year-over-Year growth - Power BI style
+    Returns growth %, previous period value, current period value
+    """
+    try:
+        df_copy = df.copy()
+        df_copy[date_col] = pd.to_datetime(df_copy[date_col], errors='coerce')
+        df_copy = df_copy.dropna(subset=[date_col])
+        
+        if len(df_copy) < 2:
+            return {'growth': 0, 'current': 0, 'previous': 0, 'has_data': False}
+        
+        # Group by year
+        df_copy['_year'] = df_copy[date_col].dt.year
+        yearly = df_copy.groupby('_year')[value_col].sum()
+        
+        if len(yearly) >= 2:
+            current_year = yearly.iloc[-1]
+            previous_year = yearly.iloc[-2]
+            growth = ((current_year - previous_year) / previous_year * 100) if previous_year != 0 else 0
+            return {
+                'growth': round(growth, 1),
+                'current': float(current_year),
+                'previous': float(previous_year),
+                'has_data': True
+            }
+        return {'growth': 0, 'current': 0, 'previous': 0, 'has_data': False}
+    except:
+        return {'growth': 0, 'current': 0, 'previous': 0, 'has_data': False}
+
+
+def calculate_moving_average(df: pd.DataFrame, value_col: str, window: int = 7) -> Dict:
+    """
+    Calculate rolling moving average - Power BI style
+    """
+    try:
+        values = df[value_col].fillna(0)
+        if len(values) < window:
+            return {'ma': float(values.mean()), 'current': float(values.iloc[-1]) if len(values) > 0 else 0}
+        
+        ma = values.rolling(window=window).mean()
+        current_ma = float(ma.iloc[-1]) if not pd.isna(ma.iloc[-1]) else float(values.mean())
+        current_val = float(values.iloc[-1])
+        
+        return {
+            'ma': round(current_ma, 2),
+            'current': round(current_val, 2),
+            'above_ma': current_val > current_ma
+        }
+    except:
+        return {'ma': 0, 'current': 0, 'above_ma': False}
+
+
+def calculate_pareto_analysis(df: pd.DataFrame, cat_col: str, value_col: str) -> Dict:
+    """
+    Pareto (80/20) analysis - Power BI style
+    Identifies which categories contribute to 80% of value
+    """
+    try:
+        grouped = df.groupby(cat_col)[value_col].sum().sort_values(ascending=False)
+        total = grouped.sum()
+        
+        if total == 0:
+            return {'top_contributors': [], 'pareto_count': 0, 'pareto_pct': 0}
+        
+        cumsum = grouped.cumsum()
+        cumsum_pct = cumsum / total * 100
+        
+        # Find categories that make up 80%
+        pareto_mask = cumsum_pct <= 80
+        pareto_items = grouped[pareto_mask].index.tolist()
+        
+        # If no items under 80%, take top item
+        if not pareto_items:
+            pareto_items = [grouped.index[0]]
+        
+        return {
+            'top_contributors': pareto_items[:5],  # Top 5 contributors to 80%
+            'pareto_count': len(pareto_items),
+            'total_categories': len(grouped),
+            'pareto_pct': round(len(pareto_items) / len(grouped) * 100, 1),
+            'top_value': float(grouped.iloc[0]),
+            'top_name': str(grouped.index[0])
+        }
+    except:
+        return {'top_contributors': [], 'pareto_count': 0, 'pareto_pct': 0}
+
+
+def calculate_variance_analysis(df: pd.DataFrame, value_col: str) -> Dict:
+    """
+    Variance and statistical analysis - Power BI style
+    """
+    try:
+        values = df[value_col].dropna()
+        if len(values) == 0:
+            return {'variance': 0, 'std': 0, 'cv': 0, 'range': 0}
+        
+        mean = values.mean()
+        std = values.std()
+        variance = values.var()
+        cv = (std / mean * 100) if mean != 0 else 0  # Coefficient of variation
+        
+        q1 = values.quantile(0.25)
+        q3 = values.quantile(0.75)
+        iqr = q3 - q1
+        
+        # Outlier detection
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        outliers = values[(values < lower_bound) | (values > upper_bound)]
+        
+        return {
+            'mean': round(float(mean), 2),
+            'std': round(float(std), 2),
+            'variance': round(float(variance), 2),
+            'cv': round(cv, 1),  # Coefficient of variation %
+            'q1': round(float(q1), 2),
+            'median': round(float(values.median()), 2),
+            'q3': round(float(q3), 2),
+            'iqr': round(float(iqr), 2),
+            'min': round(float(values.min()), 2),
+            'max': round(float(values.max()), 2),
+            'range': round(float(values.max() - values.min()), 2),
+            'outlier_count': len(outliers),
+            'outlier_pct': round(len(outliers) / len(values) * 100, 1)
+        }
+    except:
+        return {'variance': 0, 'std': 0, 'cv': 0, 'range': 0}
+
+
+def calculate_contribution_percentage(df: pd.DataFrame, cat_col: str, value_col: str) -> List[Dict]:
+    """
+    Calculate each category's contribution to total - Power BI style
+    """
+    try:
+        grouped = df.groupby(cat_col)[value_col].sum().sort_values(ascending=False)
+        total = grouped.sum()
+        
+        if total == 0:
+            return []
+        
+        result = []
+        cumulative = 0
+        for name, val in grouped.head(10).items():
+            pct = val / total * 100
+            cumulative += pct
+            result.append({
+                'name': str(name),
+                'value': float(val),
+                'percentage': round(pct, 1),
+                'cumulative_pct': round(cumulative, 1)
+            })
+        
+        return result
+    except:
+        return []
+
+
+def calculate_trend_forecast(df: pd.DataFrame, value_col: str, periods: int = 3) -> Dict:
+    """
+    Linear regression forecast - Power BI style trend analysis
+    """
+    try:
+        values = df[value_col].fillna(0).values
+        if len(values) < 5:
+            return {'forecast': [], 'trend': 'neutral', 'slope': 0}
+        
+        # Simple linear regression
+        x = np.arange(len(values))
+        slope, intercept = np.polyfit(x, values, 1)
+        
+        # Forecast next periods
+        forecast_x = np.arange(len(values), len(values) + periods)
+        forecast_values = slope * forecast_x + intercept
+        
+        # Determine trend
+        if slope > 0.01 * np.mean(values):
+            trend = 'up'
+        elif slope < -0.01 * np.mean(values):
+            trend = 'down'
+        else:
+            trend = 'neutral'
+        
+        return {
+            'forecast': [round(float(v), 2) for v in forecast_values],
+            'trend': trend,
+            'slope': round(float(slope), 4),
+            'r_squared': round(float(np.corrcoef(x, values)[0, 1] ** 2) if len(values) > 2 else 0, 3),
+            'next_value': round(float(forecast_values[0]), 2),
+            'growth_rate': round(float(slope / np.mean(values) * 100), 1) if np.mean(values) != 0 else 0
+        }
+    except:
+        return {'forecast': [], 'trend': 'neutral', 'slope': 0}
+
+
+def calculate_period_comparison(df: pd.DataFrame, value_col: str) -> Dict:
+    """
+    Period-over-period comparison - Power BI style
+    Compares first half vs second half, quartiles, etc.
+    """
+    try:
+        values = df[value_col].fillna(0)
+        n = len(values)
+        
+        if n < 4:
+            return {'periods': [], 'best_period': '', 'worst_period': ''}
+        
+        # Split into 4 quarters
+        q_size = n // 4
+        quarters = []
+        for i in range(4):
+            start = i * q_size
+            end = (i + 1) * q_size if i < 3 else n
+            q_values = values.iloc[start:end]
+            quarters.append({
+                'name': f'Q{i+1}',
+                'sum': round(float(q_values.sum()), 2),
+                'avg': round(float(q_values.mean()), 2),
+                'count': len(q_values)
+            })
+        
+        # Find best and worst
+        best = max(quarters, key=lambda x: x['sum'])
+        worst = min(quarters, key=lambda x: x['sum'])
+        
+        # Calculate Q-over-Q growth
+        qoq_growth = []
+        for i in range(1, len(quarters)):
+            prev = quarters[i-1]['sum']
+            curr = quarters[i]['sum']
+            growth = ((curr - prev) / prev * 100) if prev != 0 else 0
+            qoq_growth.append(round(growth, 1))
+        
+        return {
+            'periods': quarters,
+            'best_period': best['name'],
+            'worst_period': worst['name'],
+            'qoq_growth': qoq_growth,
+            'avg_qoq_growth': round(np.mean(qoq_growth), 1) if qoq_growth else 0
+        }
+    except:
+        return {'periods': [], 'best_period': '', 'worst_period': ''}
+
+
+def calculate_advanced_kpis(df: pd.DataFrame, palette: Dict) -> List[Dict]:
+    """
+    POWER BI-STYLE ADVANCED KPIs - Goes beyond basic sum/avg
+    Includes: Growth rates, Moving Averages, Variance, Top Performer %, Quartile Analysis
+    """
+    kpis = []
+    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    datetime_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
+    
+    # Filter out ID-like columns
+    numeric_cols = [c for c in numeric_cols if not any(x in c.lower() for x in ['id', 'index', 'key', 'code'])]
+    
+    # 1. Total Records with growth insight
+    kpis.append({
+        'title': 'Total Records',
+        'value': len(df),
+        'format': 'number',
+        'trend': 'neutral',
+        'comparison': f'{len(df.columns)} dimensions analyzed',
+        'kpi_type': 'count'
+    })
+    
+    # 2-3. Primary metrics with variance analysis
+    for col in numeric_cols[:2]:
+        try:
+            variance = calculate_variance_analysis(df, col)
+            total = float(df[col].sum())
+            mean = float(df[col].mean())
+            
+            col_lower = col.lower()
+            is_currency = any(x in col_lower for x in ['price', 'amount', 'revenue', 'cost', 'sales', 'profit', 'budget'])
+            
+            # Calculate trend
+            trend_data = calculate_trend_forecast(df, col)
+            trend = trend_data.get('trend', 'neutral')
+            
+            kpis.append({
+                'title': f'Total {col.replace("_", " ").title()}',
+                'value': total,
+                'format': 'currency' if is_currency else 'number',
+                'trend': trend,
+                'comparison': f'CV: {variance["cv"]:.0f}% | Range: {variance["range"]:,.0f}',
+                'kpi_type': 'sum',
+                'variance': variance['cv'],
+                'growth_rate': trend_data.get('growth_rate', 0)
+            })
+        except:
+            pass
+    
+    # 4. Top Performer Contribution (Pareto)
+    if numeric_cols and categorical_cols:
+        try:
+            main_num = numeric_cols[0]
+            main_cat = categorical_cols[0]
+            pareto = calculate_pareto_analysis(df, main_cat, main_num)
+            
+            kpis.append({
+                'title': f'Top Performer ({main_cat})',
+                'value': pareto.get('top_name', 'N/A'),
+                'format': 'text',
+                'trend': 'up',
+                'comparison': f'{pareto.get("pareto_count", 0)} of {pareto.get("total_categories", 0)} drive 80%',
+                'kpi_type': 'pareto',
+                'pareto_pct': pareto.get('pareto_pct', 0)
+            })
+        except:
+            pass
+    
+    # 5. Moving Average Insight
+    if numeric_cols:
+        try:
+            main_col = numeric_cols[0]
+            ma_data = calculate_moving_average(df, main_col, window=7)
+            
+            trend = 'up' if ma_data.get('above_ma', False) else 'down'
+            kpis.append({
+                'title': f'7-Period MA ({main_col[:15]})',
+                'value': ma_data.get('ma', 0),
+                'format': 'number',
+                'trend': trend,
+                'comparison': f'Current: {ma_data.get("current", 0):,.0f} {"↑" if ma_data.get("above_ma") else "↓"} MA',
+                'kpi_type': 'moving_average'
+            })
+        except:
+            pass
+    
+    # 6. Period Comparison
+    if numeric_cols:
+        try:
+            main_col = numeric_cols[0]
+            period_data = calculate_period_comparison(df, main_col)
+            
+            if period_data.get('periods'):
+                avg_growth = period_data.get('avg_qoq_growth', 0)
+                trend = 'up' if avg_growth > 0 else ('down' if avg_growth < 0 else 'neutral')
+                
+                kpis.append({
+                    'title': 'Avg Q-o-Q Growth',
+                    'value': avg_growth,
+                    'format': 'percentage',
+                    'trend': trend,
+                    'comparison': f'Best: {period_data.get("best_period", "N/A")}',
+                    'kpi_type': 'growth'
+                })
+        except:
+            pass
+    
+    return kpis[:8]  # Return up to 8 advanced KPIs
 
 
 def calculate_real_kpis(df: pd.DataFrame, palette: Dict) -> List[Dict]:
@@ -1660,126 +2255,238 @@ def calculate_real_kpis(df: pd.DataFrame, palette: Dict) -> List[Dict]:
 
 
 def generate_real_insights(df: pd.DataFrame) -> List[str]:
-    """Generate SILICON VALLEY LEVEL insights from REAL data"""
+    """Generate LLM-POWERED insights from REAL data for Silicon Valley-level dashboards"""
     insights = []
     numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
     categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
     datetime_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
     
-    try:
-        # 1. Pareto Principle (80/20 Rule)
-        if categorical_cols and numeric_cols:
-            cat, num = categorical_cols[0], numeric_cols[0]
-            total_val = df[num].sum()
-            top_20_pct_count = int(len(df) * 0.2)
-            if top_20_pct_count > 0:
-                top_20_val = df.nlargest(top_20_pct_count, num)[num].sum()
-                contribution = (top_20_val / total_val) * 100
-                if contribution > 50:
-                    insights.append(f"Pareto Alert: Top 20% of {cat}s drive {contribution:.1f}% of total {num}")
-        
-        # 2. Key Drivers / Dominance
-        if categorical_cols and numeric_cols:
-            cat, num = categorical_cols[0], numeric_cols[0]
-            top_item = df.groupby(cat)[num].sum().idxmax()
-            top_val = df.groupby(cat)[num].sum().max()
-            total = df[num].sum()
-            share = (top_val / total) * 100
-            insights.append(f"Dominance: '{top_item}' commands {share:.1f}% market share of {num}")
-
-        # 3. Correlation Discovery
-        if len(numeric_cols) >= 2:
+    # First: Calculate REAL data metrics for context
+    data_context = f"""📊 DATASET ANALYSIS:
+- Records: {len(df):,}
+- Columns: {len(df.columns)} ({len(numeric_cols)} numeric, {len(categorical_cols)} categorical)
+"""
+    
+    # Add numeric column stats
+    if numeric_cols:
+        data_context += "\n📈 NUMERIC METRICS:\n"
+        for col in numeric_cols[:5]:
+            total = df[col].sum()
+            mean = df[col].mean()
+            std = df[col].std()
+            mx = df[col].max()
+            mn = df[col].min()
+            data_context += f"  • {col}: sum={total:,.0f}, avg={mean:,.2f}, std={std:,.2f}, range=[{mn:,.0f}-{mx:,.0f}]\n"
+    
+    # Add categorical column stats
+    if categorical_cols:
+        data_context += "\n📋 CATEGORICAL BREAKDOWN:\n"
+        for col in categorical_cols[:3]:
+            counts = df[col].value_counts().head(3)
+            top_items = ", ".join([f"{k}:{v:,}" for k, v in counts.items()])
+            data_context += f"  • {col} ({df[col].nunique()} unique): Top: {top_items}\n"
+    
+    # Add correlations
+    if len(numeric_cols) >= 2:
+        try:
             corr = df[numeric_cols].corr().abs()
-            # Find max correlation excluding diagonal
             mask = np.ones(corr.shape, dtype=bool)
             np.fill_diagonal(mask, 0)
-            max_corr = corr.where(mask).stack().idxmax() # (col1, col2)
-            max_val = corr.where(mask).stack().max()
-            
-            if max_val > 0.7:
-                insights.append(f"Strong Correlation: {max_corr[0]} and {max_corr[1]} move together (r={max_val:.2f})")
+            max_corr = corr.where(mask).stack()
+            if not max_corr.empty:
+                max_idx = max_corr.idxmax()
+                max_val = max_corr.max()
+                if max_val > 0.5:
+                    data_context += f"\n🔗 CORRELATION: {max_idx[0]} ↔ {max_idx[1]} (r={max_val:.2f})\n"
+        except:
+            pass
+    
+    # LLM to generate insights
+    try:
+        prompt = f"""You are a business intelligence expert. Analyze this data and provide exactly 4 KEY INSIGHTS.
 
-        # 4. Seasonality / Time Trends
-        if datetime_cols and numeric_cols:
-            dt_col = datetime_cols[0]
-            num_col = numeric_cols[0]
-            try:
-                # Convert to datetime if not already
-                if not pd.api.types.is_datetime64_any_dtype(df[dt_col]):
-                    df[dt_col] = pd.to_datetime(df[dt_col], errors='coerce')
-                
-                # Check for weekend vs weekday
-                df['day_type'] = df[dt_col].dt.dayofweek.map(lambda x: 'Weekend' if x >= 5 else 'Weekday')
-                avg_by_type = df.groupby('day_type')[num_col].mean()
-                if len(avg_by_type) == 2:
-                    diff = ((avg_by_type['Weekend'] - avg_by_type['Weekday']) / avg_by_type['Weekday']) * 100
-                    if abs(diff) > 20:
-                        trend = "higher" if diff > 0 else "lower"
-                        insights.append(f"Behavior Pattern: {num_col} is {abs(diff):.0f}% {trend} on Weekends")
-            except:
-                pass
+{data_context}
 
-        # 5. Volatility / Risk
-        if numeric_cols:
-            col = numeric_cols[0]
-            cv = (df[col].std() / df[col].mean()) * 100 # Coefficient of Variation
-            if cv > 100:
-                insights.append(f"High Volatility: {col} shows extreme variance (CV > 100%), indicating high risk/instability")
-            elif cv < 20:
-                insights.append(f"Stability: {col} is highly consistent and predictable")
+Rules:
+1. Each insight must reference SPECIFIC numbers from the data
+2. Focus on business-relevant patterns (Pareto, dominance, trends, risks)
+3. Each insight should be 1 sentence, max 15 words
+4. Start each with an emoji and bold keyword
 
+Format: 
+📊 **Keyword**: Insight text with specific numbers."""
+
+        response = chat(prompt, temperature=0.4, max_tokens=300)
+        
+        # Parse LLM response
+        if response and 'error' not in response.lower() and 'rate limit' not in response.lower():
+            lines = [l.strip() for l in response.split('\n') if l.strip() and (l.startswith('📊') or l.startswith('⚠️') or l.startswith('📈') or l.startswith('🎯') or l.startswith('💡') or '**' in l)]
+            if lines:
+                insights = lines[:4]
+            else:
+                # Try to parse differently
+                insights = [l.strip() for l in response.split('\n') if l.strip() and len(l) > 10][:4]
     except Exception as e:
-        logger.warning(f"Insight generation error: {e}")
+        logger.warning(f"LLM insight error: {e}")
+    
+    # Fallback to rule-based if LLM didn't return anything useful
+    if len(insights) < 2:
+        insights = []  # Reset and use rules
+        try:
+            # 1. Pareto Principle (80/20 Rule)
+            if categorical_cols and numeric_cols:
+                cat, num = categorical_cols[0], numeric_cols[0]
+                total_val = df[num].sum()
+                top_20_pct_count = int(len(df) * 0.2)
+                if top_20_pct_count > 0 and total_val > 0:
+                    top_20_val = df.nlargest(top_20_pct_count, num)[num].sum()
+                    contribution = (top_20_val / total_val) * 100
+                    if contribution > 50:
+                        insights.append(f"📊 **Pareto Alert**: Top 20% of {cat}s drive {contribution:.1f}% of total {num}")
+            
+            # 2. Key Drivers / Dominance
+            if categorical_cols and numeric_cols:
+                cat, num = categorical_cols[0], numeric_cols[0]
+                top_item = df.groupby(cat)[num].sum().idxmax()
+                top_val = df.groupby(cat)[num].sum().max()
+                total = df[num].sum()
+                if total > 0:
+                    share = (top_val / total) * 100
+                    insights.append(f"🎯 **Dominance**: '{top_item}' commands {share:.1f}% of total {num}")
 
-    # Fallback if sophisticated analysis yields nothing
-    if not insights:
-        if numeric_cols:
-             insights.append(f"Average {numeric_cols[0]} is {df[numeric_cols[0]].mean():,.2f}")
+            # 3. Correlation Discovery
+            if len(numeric_cols) >= 2:
+                corr = df[numeric_cols].corr().abs()
+                mask = np.ones(corr.shape, dtype=bool)
+                np.fill_diagonal(mask, 0)
+                max_corr_stack = corr.where(mask).stack()
+                if not max_corr_stack.empty:
+                    max_corr = max_corr_stack.idxmax()
+                    max_val = max_corr_stack.max()
+                    if max_val > 0.7:
+                        insights.append(f"🔗 **Strong Correlation**: {max_corr[0]} and {max_corr[1]} move together (r={max_val:.2f})")
+
+            # 4. Volatility / Risk
+            if numeric_cols:
+                col = numeric_cols[0]
+                mean_val = df[col].mean()
+                if mean_val != 0:
+                    cv = (df[col].std() / mean_val) * 100
+                    if cv > 100:
+                        insights.append(f"⚠️ **High Volatility**: {col} shows extreme variance (CV={cv:.0f}%), indicating risk")
+                    elif cv < 20:
+                        insights.append(f"✅ **Stability**: {col} is highly consistent and predictable (CV={cv:.0f}%)")
+
+        except Exception as e:
+            logger.warning(f"Insight generation error: {e}")
+
+        # Fallback if still empty
+        if not insights and numeric_cols:
+            insights.append(f"📊 **Summary**: Average {numeric_cols[0]} is {df[numeric_cols[0]].mean():,.2f}")
     
     return sanitize_for_json(insights[:5])
 
 
 def generate_recommendations(df: pd.DataFrame) -> List[str]:
-    """Generate STRATEGIC, ACTIONABLE recommendations"""
+    """Generate LLM-POWERED STRATEGIC, ACTIONABLE recommendations"""
     recs = []
     numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
     categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
     
+    # Build data context for LLM
+    data_context = f"""📊 DATA PROFILE:
+- Records: {len(df):,}
+- Numeric metrics: {', '.join(numeric_cols[:5]) if numeric_cols else 'None'}
+- Categories: {', '.join(categorical_cols[:3]) if categorical_cols else 'None'}
+"""
+    
+    # Find key patterns for recommendations
+    if numeric_cols and categorical_cols:
+        cat, num = categorical_cols[0], numeric_cols[0]
+        
+        # Top performer
+        top = df.groupby(cat)[num].sum().idxmax()
+        top_val = df.groupby(cat)[num].sum().max()
+        total = df[num].sum()
+        top_share = (top_val / total * 100) if total > 0 else 0
+        
+        # Underperformer
+        grouped = df.groupby(cat)[num].sum()
+        avg = grouped.mean()
+        underperformers = grouped[grouped < avg].sort_values(ascending=False)
+        underperformer = underperformers.index[0] if len(underperformers) > 0 else None
+        
+        data_context += f"""
+📈 KEY FINDINGS:
+- Top performer: '{top}' with {top_share:.1f}% share
+- Average per category: {avg:,.0f}
+- Underperformer to optimize: '{underperformer}' (below average)
+"""
+    
+    # LLM to generate recommendations
     try:
-        # 1. Growth Strategy
-        if categorical_cols and numeric_cols:
-            cat, num = categorical_cols[0], numeric_cols[0]
-            # Find underperformers with potential (below mean but > 0)
-            avg = df[num].mean()
-            underperformers = df[(df[num] < avg) & (df[num] > 0)]
-            if not underperformers.empty:
-                target = underperformers.nlargest(1, num)[cat].iloc[0]
-                recs.append(f"Growth Opportunity: optimize '{target}' to reach segment average")
+        prompt = f"""You are a management consultant. Based on this business data, provide exactly 4 STRATEGIC RECOMMENDATIONS.
+
+{data_context}
+
+Rules:
+1. Each recommendation must be actionable and specific
+2. Reference specific data points where possible
+3. Each recommendation should be 1 sentence, max 12 words
+4. Focus on: Growth, Optimization, Risk Mitigation, Efficiency
+
+Format: Start each with an action verb and use '→' to show expected impact."""
+
+        response = chat(prompt, temperature=0.4, max_tokens=250)
         
-        # 2. Risk Mitigation (Outliers)
-        if numeric_cols:
-            col = numeric_cols[0]
-            z_scores = ((df[col] - df[col].mean()) / df[col].std()).abs()
-            outliers = df[z_scores > 3]
-            if not outliers.empty:
-                pk_val = outliers[col].iloc[0]
-                recs.append(f"Risk Alert: Investigate extreme {col} value ({pk_val:,.0f}) for potential anomaly")
-
-        # 3. Resource Allocation
-        if len(numeric_cols) >= 2:
-            # Assuming first col is 'input' (cost/effort) and second is 'output' (result) - naive heuristic
-            pass 
-
-        # 4. Inventory/Efficiency (if operations)
-        is_ops = any('stock' in c.lower() or 'inventory' in c.lower() for c in df.columns)
-        if is_ops and numeric_cols:
-            recs.append(f"Efficiency: Review inventory turnover for low-velocity items")
-        
-        # 5. General Strategic
-        recs.append("Implement automated threshold alerts for real-time monitoring")
-        recs.append("Conduct deep-dive root cause analysis on top variance contributors")
-
+        # Parse LLM response
+        if response and 'error' not in response.lower() and 'rate limit' not in response.lower():
+            lines = [l.strip() for l in response.split('\n') if l.strip() and len(l) > 10]
+            # Filter out numbering and keep substantive lines
+            for line in lines:
+                clean = line.lstrip('0123456789.-) ').strip()
+                if clean and len(clean) > 15:
+                    recs.append(clean)
+                    if len(recs) >= 4:
+                        break
     except Exception as e:
-        pass
+        logger.warning(f"LLM recommendation error: {e}")
+    
+    # Fallback to rule-based if LLM didn't return enough
+    if len(recs) < 2:
+        recs = []  # Reset
+        try:
+            # 1. Growth Strategy
+            if categorical_cols and numeric_cols:
+                cat, num = categorical_cols[0], numeric_cols[0]
+                avg = df[num].mean()
+                underperformers = df[(df[num] < avg) & (df[num] > 0)]
+                if not underperformers.empty:
+                    target = underperformers.nlargest(1, num)[cat].iloc[0]
+                    recs.append(f"🚀 Optimize '{target}' → potential +{int((avg - underperformers[num].mean())):,} increase")
+            
+            # 2. Risk Mitigation (Outliers)
+            if numeric_cols:
+                col = numeric_cols[0]
+                std = df[col].std()
+                if std > 0:
+                    z_scores = ((df[col] - df[col].mean()) / std).abs()
+                    outliers = df[z_scores > 3]
+                    if not outliers.empty:
+                        recs.append(f"⚠️ Investigate {len(outliers)} extreme {col} values for anomalies")
+
+            # 3. Top Performer Focus
+            if categorical_cols and numeric_cols:
+                cat, num = categorical_cols[0], numeric_cols[0]
+                top = df.groupby(cat)[num].sum().idxmax()
+                recs.append(f"📈 Double down on '{top}' → current top performer")
+            
+            # 4. Automation
+            recs.append("🔔 Implement automated alerts for real-time threshold monitoring")
+            recs.append("📊 Set up weekly variance analysis on top contributors")
+
+        except Exception as e:
+            logger.warning(f"Recommendation error: {e}")
     
     return sanitize_for_json(recs[:4])
+

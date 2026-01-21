@@ -3,7 +3,7 @@ import {
     LayoutDashboard, TrendingUp, TrendingDown,
     BarChart3, PieChart, LineChart, Loader2,
     Database, Calendar, Layers, Activity, Target, Zap,
-    RefreshCw, Maximize2, Grid3X3, List
+    RefreshCw, Maximize2, Grid3X3, List, Upload
 } from 'lucide-react';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useUserStore } from '../store/userStore';
@@ -63,23 +63,24 @@ const VisualIntelligenceDashboard: React.FC = () => {
     const [expandedChart, setExpandedChart] = useState<string | null>(null);
 
     // Theme configuration
+    // Theme configuration - Using global consistency where possible
     const t = isDark ? {
-        bg: 'bg-[#0a0f1a]',
-        bgSecondary: 'bg-[#111827]',
-        card: 'bg-[#1a2332]/80',
-        cardHover: 'hover:bg-[#1f2a3d]/90',
-        border: 'border-[#2d3748]',
-        text: 'text-white',
-        textSecondary: 'text-gray-300',
-        textMuted: 'text-gray-500',
+        bg: 'bg-[var(--bg-primary)]',
+        bgSecondary: 'bg-[var(--bg-secondary)]',
+        card: isDark ? 'glass-card' : 'bg-white border border-slate-200 shadow-sm',
+        cardHover: 'hover-glow',
+        border: 'border-[var(--border-color)]',
+        text: 'text-[var(--text-primary)]',
+        textSecondary: 'text-[var(--text-secondary)]',
+        textMuted: 'text-[var(--text-muted)]',
         accent: '#14b8a6',
         accentSecondary: '#6366f1'
     } : {
-        bg: 'bg-gray-50',
-        bgSecondary: 'bg-white',
-        card: 'bg-white',
-        cardHover: 'hover:bg-gray-50',
-        border: 'border-gray-200',
+        bg: 'bg-[var(--bg-primary)]',
+        bgSecondary: 'bg-[var(--bg-secondary)]',
+        card: 'bg-white border border-slate-200 shadow-sm',
+        cardHover: 'hover:shadow-md',
+        border: 'border-[var(--border-color)]',
         text: 'text-gray-900',
         textSecondary: 'text-gray-700',
         textMuted: 'text-gray-500',
@@ -95,7 +96,28 @@ const VisualIntelligenceDashboard: React.FC = () => {
         try {
             const response = await api.post('/api/v1/dashboard/generate', { user_id: userId });
             if (response.data.success && response.data.dashboard) {
-                setDashboard(response.data.dashboard);
+                const dashboardData = response.data.dashboard;
+
+                // Deduplicate charts by type and title to prevent repeated charts
+                if (dashboardData.charts && Array.isArray(dashboardData.charts)) {
+                    const seenTypes = new Set<string>();
+                    const seenTitles = new Set<string>();
+                    dashboardData.charts = dashboardData.charts.filter((chart: ChartData) => {
+                        const typeKey = chart.type?.toLowerCase() || '';
+                        const titleKey = chart.title?.toLowerCase() || '';
+
+                        // Skip if we've already seen this chart type or exact title
+                        if (seenTypes.has(typeKey) || seenTitles.has(titleKey)) {
+                            return false;
+                        }
+
+                        seenTypes.add(typeKey);
+                        seenTitles.add(titleKey);
+                        return true;
+                    });
+                }
+
+                setDashboard(dashboardData);
             } else {
                 setError(response.data.error || 'Please upload data in DataHub first');
             }
@@ -215,9 +237,9 @@ const VisualIntelligenceDashboard: React.FC = () => {
     // Loading state with Skeleton
     if (loading) {
         return (
-            <div className={`min-h-screen ${t.bg}`}>
+            <div className={`min-h-screen`} style={{ backgroundColor: 'var(--bg-primary)' }}>
                 {/* Header Skeleton */}
-                <div className={`border-b ${t.border} ${isDark ? 'bg-[#0a0f1a]/90' : 'bg-white/90'} px-6 py-3`}>
+                <div className={`border-b border-[var(--border-color)] ${isDark ? 'glass-panel' : 'bg-white/90'} px-6 py-3`}>
                     <div className="flex justify-between items-center max-w-[1920px] mx-auto">
                         <div className="flex items-center gap-3">
                             <Skeleton className="w-10 h-10 rounded-xl" />
@@ -237,7 +259,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                     {/* KPIs Skeleton */}
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {[1, 2, 3, 4, 5, 6].map((i) => (
-                            <div key={i} className={`p-4 rounded-xl border ${t.border} ${t.card}`}>
+                            <div key={i} className={`p-4 rounded-xl border border-[var(--border-color)] ${t.card}`}>
                                 <Skeleton className="h-3 w-16 mb-2" />
                                 <Skeleton className="h-8 w-24 mb-2" />
                                 <Skeleton className="h-3 w-12" />
@@ -255,7 +277,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                     {/* Charts Grid Skeleton */}
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {[1, 2, 3, 4, 5, 6].map((i) => (
-                            <div key={i} className={`rounded-xl border ${t.border} ${t.card} p-4 h-[300px]`}>
+                            <div key={i} className={`rounded-xl border border-[var(--border-color)] ${t.card} p-4 h-[300px]`}>
                                 <div className="flex justify-between items-center mb-4">
                                     <div className="flex gap-2 items-center">
                                         <Skeleton className="w-4 h-4 rounded-full" />
@@ -279,32 +301,46 @@ const VisualIntelligenceDashboard: React.FC = () => {
                 <div className="text-center max-w-md px-6">
                     <Database className={`w-14 h-14 mx-auto mb-4 ${t.textMuted}`} />
                     <h2 className={`text-xl font-semibold ${t.text}`}>No Dashboard Data</h2>
-                    <p className={`mt-2 text-sm ${t.textMuted}`}>{error || 'Upload files in DataHub to generate your AI dashboard.'}</p>
-                    <button onClick={loadDashboard} className="mt-6 px-5 py-2.5 rounded-xl text-white font-medium transition-all hover:scale-105" style={{ background: `linear-gradient(135deg, ${t.accent}, ${t.accentSecondary})` }}>
-                        <RefreshCw className="w-4 h-4 inline mr-2" />Try Again
-                    </button>
+                    <p className={`mt-2 text-sm ${t.textMuted}`}>
+                        {error || 'Upload your data files in DataHub to generate AI-powered visualizations and insights.'}
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-3 justify-center mt-6">
+                        <button
+                            onClick={() => window.location.href = '/datahub'}
+                            className="px-5 py-2.5 rounded-xl text-white font-medium transition-all hover:scale-105"
+                            style={{ background: `linear-gradient(135deg, ${t.accent}, ${t.accentSecondary})` }}
+                        >
+                            <Upload className="w-4 h-4 inline mr-2" />Upload Data
+                        </button>
+                        <button
+                            onClick={loadDashboard}
+                            className={`px-5 py-2.5 rounded-xl font-medium transition-all border ${t.border} ${t.text}`}
+                        >
+                            <RefreshCw className="w-4 h-4 inline mr-2" />Try Again
+                        </button>
+                    </div>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className={`min-h-screen ${t.bg}`}>
+        <div className={`min-h-screen`} style={{ backgroundColor: 'var(--bg-primary)' }}>
             {/* Header */}
-            <header className={`sticky top-0 z-30 backdrop-blur-xl border-b ${t.border} ${isDark ? 'bg-[#0a0f1a]/90' : 'bg-white/90'}`}>
+            <header className={`sticky top-0 z-30 backdrop-blur-xl border-b border-[var(--border-color)] ${isDark ? 'glass-panel' : 'bg-white/90'}`}>
                 <div className="max-w-[1920px] mx-auto px-4 lg:px-6 py-3">
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3 min-w-0">
-                            <div className="p-2 rounded-xl" style={{ background: `linear-gradient(135deg, ${t.accent}, ${t.accentSecondary})` }}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
+                            <div className="p-2 rounded-xl flex-shrink-0" style={{ background: `linear-gradient(135deg, ${t.accent}, ${t.accentSecondary})` }}>
                                 <LayoutDashboard className="w-5 h-5 text-white" />
                             </div>
-                            <div className="min-w-0">
+                            <div className="min-w-0 flex-1">
                                 <h1 className={`text-lg font-bold truncate ${t.text}`}>{dashboard.dashboard_title}</h1>
                                 <p className={`text-xs ${t.textMuted} truncate`}>{dashboard.data_source} • {dashboard.domain || 'General'} Domain</p>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-end gap-2 w-full sm:w-auto">
                             {/* View Toggle */}
                             <div className={`hidden sm:flex items-center gap-1 p-1 rounded-lg ${isDark ? 'bg-gray-800' : 'bg-gray-100'}`}>
                                 <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? (isDark ? 'bg-gray-700 text-white' : 'bg-white text-gray-900 shadow') : t.textMuted}`}>
@@ -314,8 +350,6 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                     <List className="w-4 h-4" />
                                 </button>
                             </div>
-
-
 
                             <button onClick={loadDashboard} className={`p-2 rounded-lg transition-all ${isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                                 <RefreshCw className="w-5 h-5" />
@@ -328,25 +362,27 @@ const VisualIntelligenceDashboard: React.FC = () => {
             {/* Main Dashboard */}
             <main className="max-w-[1920px] mx-auto p-4 lg:p-6 space-y-5">
 
+
                 {/* Hero KPIs */}
                 <section>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                         {dashboard.kpis?.map((kpi, i) => {
-                            const gradients = [
-                                'from-teal-500 to-cyan-500', 'from-purple-500 to-indigo-500',
-                                'from-orange-500 to-amber-500', 'from-emerald-500 to-green-500',
-                                'from-pink-500 to-rose-500', 'from-blue-500 to-indigo-500'
+                            const kpiColors = [
+                                '#22c55e', '#8b5cf6', '#f97316', '#10b981', '#ec4899', '#3b82f6'
                             ];
 
                             return (
-                                <div key={i} className={`relative overflow-hidden rounded-xl p-4 border transition-all duration-300 hover:scale-[1.02] ${t.card} ${t.border}`}>
-                                    <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${gradients[i % 6]}`} />
-                                    <p className={`text-xs font-medium ${t.textMuted} mb-1 truncate`}>{kpi.title}</p>
-                                    <p className={`text-2xl lg:text-3xl font-bold ${t.text}`}>{formatValue(kpi.value, kpi.format)}</p>
+                                <div
+                                    key={i}
+                                    className={`kpi-card animate-fade-up stagger-${i + 1}`}
+                                    style={{ '--kpi-color': kpiColors[i % 6] } as React.CSSProperties}
+                                >
+                                    <p className={`kpi-label`}>{kpi.title}</p>
+                                    <p className={`kpi-value`}>{formatValue(kpi.value, kpi.format)}</p>
                                     {kpi.trend && (
-                                        <div className={`mt-1.5 flex items-center gap-1 text-xs ${kpi.trend === 'up' ? 'text-emerald-500' : kpi.trend === 'down' ? 'text-rose-500' : t.textMuted}`}>
-                                            {kpi.trend === 'up' && <TrendingUp className="w-3 h-3" />}
-                                            {kpi.trend === 'down' && <TrendingDown className="w-3 h-3" />}
+                                        <div className={`kpi-trend ${kpi.trend}`}>
+                                            {kpi.trend === 'up' && <TrendingUp className="w-3.5 h-3.5" />}
+                                            {kpi.trend === 'down' && <TrendingDown className="w-3.5 h-3.5" />}
                                             <span className="truncate">{kpi.comparison}</span>
                                         </div>
                                     )}
@@ -381,20 +417,19 @@ const VisualIntelligenceDashboard: React.FC = () => {
                             return (
                                 <div
                                     key={chart.chart_id || i}
-                                    className={`rounded-xl border overflow-hidden transition-all duration-300 ${t.card} ${t.border} ${t.cardHover} ${isExpanded ? 'md:col-span-2 xl:col-span-3' : ''}`}
+                                    className={`card-premium animate-fade-up overflow-hidden ${isExpanded ? 'md:col-span-2 xl:col-span-3' : ''}`}
+                                    style={{ animationDelay: `${i * 0.05}s`, padding: 0 }}
                                 >
                                     {/* Chart Header */}
                                     <div className={`flex items-center justify-between px-4 py-3 border-b ${t.border}`}>
                                         <div className="flex items-center gap-2 min-w-0">
                                             <Icon className="w-4 h-4 flex-shrink-0" style={{ color: t.accent }} />
                                             <h3 className={`text-sm font-semibold truncate ${t.text}`}>{chart.title}</h3>
-                                            <span className={`px-2 py-0.5 rounded-full text-xs ${isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
-                                                {chart.type}
-                                            </span>
+                                            <span className="badge-info text-xs">{chart.type}</span>
                                         </div>
                                         <button
                                             onClick={() => setExpandedChart(isExpanded ? null : chart.chart_id)}
-                                            className={`p-1.5 rounded-lg transition-all ${isDark ? 'hover:bg-gray-700 text-gray-500' : 'hover:bg-gray-100 text-gray-400'}`}
+                                            className="btn-icon"
                                         >
                                             <Maximize2 className="w-4 h-4" />
                                         </button>
@@ -414,7 +449,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                 <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {/* Key Insights */}
                     {dashboard.insights?.length > 0 && (
-                        <div className={`rounded-xl border p-5 ${t.card} ${t.border}`}>
+                        <div className={`rounded-xl border p-5 ${t.card} border-[var(--border-color)]`}>
                             <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${t.text}`}>
                                 <Zap className="w-4 h-4" style={{ color: '#f59e0b' }} />
                                 Key Insights
@@ -432,7 +467,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
 
                     {/* Recommendations */}
                     {dashboard.recommendations?.length > 0 && (
-                        <div className={`rounded-xl border p-5 ${t.card} ${t.border}`}>
+                        <div className={`rounded-xl border p-5 ${t.card} border-[var(--border-color)]`}>
                             <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${t.text}`}>
                                 <Target className="w-4 h-4" style={{ color: '#6366f1' }} />
                                 Recommendations
@@ -449,10 +484,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                     )}
                 </section>
 
-                {/* Footer */}
-                <footer className={`text-center py-4 text-xs ${t.textMuted}`}>
-                    Autonomous Visual Intelligence Engine • Generated {new Date(dashboard.generated_at).toLocaleString()}
-                </footer>
+
             </main>
 
             {/* Expanded Chart Modal */}

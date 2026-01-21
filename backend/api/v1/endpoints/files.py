@@ -6,7 +6,7 @@ With cache invalidation for data consistency
 SECURED: Uses JWT authentication for user isolation
 """
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Query, Header, Depends
+from fastapi import APIRouter, File, UploadFile, HTTPException, Query, Header, Depends, Request
 from fastapi.responses import JSONResponse, FileResponse
 from typing import List, Optional, Dict
 from pathlib import Path
@@ -33,6 +33,33 @@ except ImportError:
 
 router = APIRouter()
 
+# ============================================
+# UPLOAD CANCELLATION STATE MANAGEMENT
+# ============================================
+# In-memory store to track cancellation requests per user
+# This allows the cancel button to actually stop ongoing processing
+_upload_cancellation_flags: Dict[str, bool] = {}
+
+def request_cancellation(user_id: str) -> None:
+    """Set cancellation flag for a user's upload"""
+    _upload_cancellation_flags[user_id] = True
+    print(f"🛑 Cancellation requested for user: {user_id}")
+
+def clear_cancellation(user_id: str) -> None:
+    """Clear cancellation flag after upload completes or is cancelled"""
+    _upload_cancellation_flags.pop(user_id, None)
+
+def is_upload_cancelled(user_id: str) -> bool:
+    """Check if user has requested upload cancellation"""
+    return _upload_cancellation_flags.get(user_id, False)
+
+# Cancel upload endpoint - Frontend calls this when user clicks Cancel
+@router.post("/cancel-upload/{user_id}")
+async def cancel_upload(user_id: str):
+    """Cancel an ongoing upload for a user"""
+    request_cancellation(user_id)
+    return {"success": True, "message": "Cancellation requested"}
+
 def invalidate_user_cache(user_id: str):
     """Invalidate query cache when data changes"""
     try:
@@ -46,6 +73,7 @@ def invalidate_user_cache(user_id: str):
 
 @router.post("/upload/{user_id}")
 async def upload_files(
+    request: Request,  # Moved to first position for proper FastAPI injection
     user_id: str,
     files: List[UploadFile] = File(...),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
@@ -53,11 +81,38 @@ async def upload_files(
 ):
     """Upload and process files with REAL ingestion pipeline
     SECURED: Validates user identity from JWT token
+    CANCELLABLE: Stops processing if client disconnects or cancel is requested
     """
+    # Get the actual user_id first for cancellation checks
+    authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+    actual_user_id = authenticated_user if authenticated_user else user_id
+    
+    # Clear any previous cancellation flag at the start
+    clear_cancellation(actual_user_id)
+    
+    # Helper to check if client cancelled (checks BOTH disconnection AND explicit cancel flag)
+    async def is_cancelled() -> bool:
+        # Check explicit cancellation flag first (set by cancel-upload endpoint)
+        if is_upload_cancelled(actual_user_id):
+            return True
+        # Also check if HTTP connection was closed
+        try:
+            return await request.is_disconnected()
+        except:
+            return False
+    
+    # Helper to clean up files on cancellation
+    def cleanup_uploaded_files(file_list: list, paths_obj):
+        for file_info in file_list:
+            try:
+                file_path = paths_obj["files"] / file_info["name"]
+                if file_path.exists():
+                    file_path.unlink()
+                    print(f"🗑️ Cleaned up cancelled file: {file_info['name']}")
+            except Exception as e:
+                print(f"⚠️ Cleanup error: {e}")
+    
     try:
-        # SECURITY: Verify user is authenticated and matches URL
-        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
-        
         # For backwards compatibility, use URL user_id but log warning if mismatch
         if authenticated_user != user_id:
             print(f"⚠️ WARNING: Auth user {authenticated_user} ≠ URL user {user_id}")
@@ -70,8 +125,21 @@ async def upload_files(
         # Invalidate cache since data is changing
         invalidate_user_cache(user_id)
         
+        # Check for cancellation before file save
+        if await is_cancelled():
+            print("🛑 Upload cancelled by client before file save")
+            clear_cancellation(user_id)
+            return {"success": False, "cancelled": True, "message": "Upload cancelled by user"}
+        
         # Save uploaded files
         for file in files:
+            # Check cancellation for each file
+            if await is_cancelled():
+                print(f"🛑 Upload cancelled by client during file save ({file.filename})")
+                cleanup_uploaded_files(uploaded_files, paths)
+                clear_cancellation(user_id)
+                return {"success": False, "cancelled": True, "message": "Upload cancelled by user"}
+            
             file_path = paths["files"] / file.filename
             file.file.seek(0)
             
@@ -89,6 +157,13 @@ async def upload_files(
         
         # DETECT CURRENCY from uploaded files
         detected_currency = detect_and_save_user_currency(user_id, paths["files"], STORAGE_BASE)
+        
+        # Check for cancellation before pipeline processing
+        if await is_cancelled():
+            print("🛑 Upload cancelled by client before pipeline processing")
+            cleanup_uploaded_files(uploaded_files, paths)
+            clear_cancellation(user_id)
+            return {"success": False, "cancelled": True, "message": "Upload cancelled by user"}
         
         # Process with REAL pipeline - NO FAKE DATA
         try:
@@ -114,12 +189,26 @@ async def upload_files(
             
             print(f"📁 Reprocessing ALL {len(all_files_in_dir)} files after new upload")
             
+            # Check for cancellation before heavy processing
+            if await is_cancelled():
+                print("🛑 Upload cancelled by client before pipeline.process()")
+                cleanup_uploaded_files(uploaded_files, paths)
+                clear_cancellation(user_id)
+                return {"success": False, "cancelled": True, "message": "Upload cancelled by user"}
+            
             # Process ALL files with REAL pipeline
             result = pipeline.process(
                 all_files_in_dir,
                 user_id=user_id,
                 base_path=STORAGE_BASE
             )
+            
+            # Check for cancellation AFTER heavy processing - user may have cancelled during pipeline
+            if await is_cancelled():
+                print("🛑 Upload cancelled by client AFTER pipeline.process() - cleaning up")
+                cleanup_uploaded_files(uploaded_files, paths)
+                clear_cancellation(user_id)
+                return {"success": False, "cancelled": True, "message": "Upload cancelled by user"}
             
             # Map pipeline results back to file info
             for file_info in uploaded_files:
@@ -134,6 +223,11 @@ async def upload_files(
             for file_info in uploaded_files:
                 file_info["status"] = "failed"
                 file_info["error"] = str(e)
+        
+        # Check for cancellation before schema analysis
+        if await is_cancelled():
+            print("🛑 Upload cancelled by client before schema analysis")
+            return {"success": True, "files": uploaded_files, "message": "Partial upload - cancelled before schema analysis", "cancelled": True}
         
         # ============================================
         # 🧠 AI SCHEMA INTELLIGENCE - Auto-analyze upload
@@ -152,6 +246,11 @@ async def upload_files(
             print(f"📁 Files uploaded: {[f.filename for f in files]}")
             
             for file in files:
+                # Check cancellation for each file schema analysis
+                if await is_cancelled():
+                    print("🛑 Upload cancelled by client during schema analysis")
+                    break
+                
                 file_path = paths["files"] / file.filename
                 print(f"🔍 Checking file: {file_path}")
                 print(f"🔍 File suffix: {file_path.suffix.lower()}")
@@ -199,6 +298,9 @@ async def upload_files(
             import traceback
             traceback.print_exc()
         
+        # Clear cancellation flag on successful completion
+        clear_cancellation(user_id)
+        
         return {
             "success": True,
             "files": uploaded_files,
@@ -208,6 +310,8 @@ async def upload_files(
         }
         
     except Exception as e:
+        # Clear cancellation flag on error too
+        clear_cancellation(user_id)
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 

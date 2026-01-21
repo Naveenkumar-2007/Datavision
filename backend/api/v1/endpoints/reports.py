@@ -2518,11 +2518,30 @@ def get_user_currency(user_id: str, df: pd.DataFrame = None) -> str:
 
 @router.post("/generate")
 async def generate_report(request: ReportRequest):
-    """Generate INTELLIGENT report from uploaded data - works with ANY dataset."""
+    """Generate INTELLIGENT report with LLM insights and ML charts - works with ANY dataset."""
     try:
         user_id = request.userId
         report_type = request.reportType
         
+        # === USE NEW DYNAMIC REPORT GENERATOR WITH LLM ===
+        # This generator has:
+        # - LLM-powered AI insights for each report type
+        # - Real ML charts (Plotly) for predictive/anomaly reports
+        # - Consistent data loading with analytics endpoints
+        try:
+            from core.dynamic_report_generator import DynamicReportGenerator
+            generator = DynamicReportGenerator(user_id)
+            report = generator.generate(report_type)
+            return report
+        except ImportError as e:
+            print(f"DynamicReportGenerator not available: {e}")
+            # Fall back to old generators below
+        except Exception as e:
+            print(f"DynamicReportGenerator error: {e}, falling back to legacy")
+            import traceback
+            traceback.print_exc()
+        
+        # === FALLBACK: Old generators (without LLM) ===
         paths = get_user_paths(user_id)
         Settings.GRAPH_DIR = paths["graph"]
         

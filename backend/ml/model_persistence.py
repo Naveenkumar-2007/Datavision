@@ -192,6 +192,36 @@ class ModelPersistenceManager:
             logger.error(f"❌ Failed to save model for {user_id}: {e}")
             raise
     
+    def save_charts(self, user_id: str, charts: Dict[str, str]) -> bool:
+        """Save generated charts for persistent access"""
+        try:
+            user_dir = self._get_user_dir(user_id)
+            charts_path = user_dir / "active_charts.json"
+            
+            # Save new charts
+            with open(charts_path, 'w') as f:
+                json.dump(charts, f)
+                
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to save charts for {user_id}: {e}")
+            return False
+
+    def get_charts(self, user_id: str) -> Dict[str, str]:
+        """Get saved charts for a user"""
+        try:
+            user_dir = self._get_user_dir(user_id)
+            charts_path = user_dir / "active_charts.json"
+            
+            if not charts_path.exists():
+                return {}
+                
+            with open(charts_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"❌ Failed to load charts for {user_id}: {e}")
+            return {}
+    
     def load_model(self, user_id: str, version: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         Load a saved model for a user.
@@ -357,3 +387,8 @@ class ModelPersistenceManager:
 
 # Global instance
 model_persistence = ModelPersistenceManager()
+
+
+def get_model_persistence_manager() -> ModelPersistenceManager:
+    """Get the global ModelPersistenceManager instance"""
+    return model_persistence

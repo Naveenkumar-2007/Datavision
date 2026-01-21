@@ -60,21 +60,18 @@ interface UserState {
   // Theme
   isDark: boolean;
   toggleTheme: () => void;
+  setTheme: (isDark: boolean) => void;
 }
 
-const createWelcomeMessage = (): ChatMessage => ({
-  id: '1',
-  role: 'assistant',
-  content: 'Hello! I\'m your AI Data Analyst. Upload any data file and I\'ll help you analyze it. What would you like to know?',
-  timestamp: new Date().toISOString(),
-});
+// NOTE: Removed createWelcomeMessage - WelcomeScreen in AnalystChat handles empty state
+// This allows ChatGPT-style centered input to show on fresh chats
 
 const createNewConversation = (mode: string = 'rag'): Conversation => {
   const now = new Date();
   return {
     id: `conv_${Date.now()}`,
     title: 'New Chat',
-    messages: [createWelcomeMessage()],
+    messages: [],  // Empty - WelcomeScreen will display instead
     mode,
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -194,7 +191,8 @@ export const useUserStore = create<UserState>()(
             if (conv.id === state.currentConversationId) {
               return {
                 ...conv,
-                messages: [createWelcomeMessage()],
+                messages: [],  // Empty - shows WelcomeScreen
+                title: 'New Chat',
                 updatedAt: new Date().toISOString(),
               };
             }
@@ -218,9 +216,66 @@ export const useUserStore = create<UserState>()(
       setGraphStats: (stats) => set({ graphStats: stats }),
       setQueryStats: (stats) => set({ queryStats: stats }),
 
-      // Theme logic
-      isDark: true,
-      toggleTheme: () => set((state) => ({ isDark: !state.isDark })),
+      // Theme logic - Initialize from userPreferences if available
+      isDark: (() => {
+        try {
+          // Check userPreferences first (Settings page source of truth)
+          const savedPrefs = localStorage.getItem('userPreferences');
+          if (savedPrefs) {
+            const parsed = JSON.parse(savedPrefs);
+            if (parsed.preferences?.theme === 'light') return false;
+            if (parsed.preferences?.theme === 'dark') return true;
+          }
+          // Fallback to persisted store or default
+          return true;
+        } catch (e) {
+          return true;
+        }
+      })(),
+
+      toggleTheme: () => set((state) => {
+        const newIsDark = !state.isDark;
+
+        // Update DOM immediately
+        if (newIsDark) {
+          document.documentElement.classList.remove('light-theme');
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.add('light-theme');
+          document.documentElement.classList.remove('dark');
+        }
+
+        // Sync with userPreferences for persistence
+        try {
+          const userId = get().user?.id || localStorage.getItem('userId') || 'default';
+          // Update global pref
+          const saved = localStorage.getItem('userPreferences');
+          let prefs = saved ? JSON.parse(saved) : { preferences: {} };
+          if (!prefs.preferences) prefs.preferences = {};
+          prefs.preferences.theme = newIsDark ? 'dark' : 'light';
+          localStorage.setItem('userPreferences', JSON.stringify(prefs));
+
+          // Update user specific pref if possible
+          if (userId && userId !== 'default') {
+            localStorage.setItem(`userPreferences_${userId}`, JSON.stringify(prefs));
+          }
+        } catch (e) {
+          console.error("Failed to sync theme preference", e);
+        }
+
+        return { isDark: newIsDark };
+      }),
+
+      setTheme: (isDark) => set(() => {
+        if (isDark) {
+          document.documentElement.classList.remove('light-theme');
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.add('light-theme');
+          document.documentElement.classList.remove('dark');
+        }
+        return { isDark };
+      }),
     }),
     {
       name: 'ai-analyst-storage-v2',
@@ -230,6 +285,7 @@ export const useUserStore = create<UserState>()(
         currentConversationId: state.currentConversationId,
         graphStats: state.graphStats,
         queryStats: state.queryStats,
+        isDark: state.isDark, // Persist theme
       }),
     }
   )

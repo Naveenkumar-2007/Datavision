@@ -708,3 +708,88 @@ async def make_prediction(request: PredictRequest):
             "error": str(e)
         }
 
+
+@router.get("/charts/{user_id}")
+async def get_ml_charts(user_id: str):
+    """
+    📊 GET ML CHARTS - Retrieve saved ML charts for a user
+    
+    Returns the base64-encoded matplotlib charts generated during training.
+    Used by frontend to restore charts when navigating back to ML Predictions page.
+    """
+    try:
+        from ml.model_persistence import model_persistence
+        from ml.automl_engine import automl_engine
+        
+        charts = {}
+        
+        # 1. Try to get charts from model_persistence (primary source)
+        try:
+            saved_charts = model_persistence.get_charts(user_id)
+            if saved_charts:
+                charts = saved_charts
+                logger.info(f"✅ Loaded {len(charts)} charts from model_persistence for user {user_id}")
+        except Exception as e:
+            logger.debug(f"Could not load charts from model_persistence: {e}")
+        
+        # 2. If no charts in persistence, try to regenerate from loaded model
+        if not charts:
+            try:
+                if automl_engine.load(user_id) and automl_engine.model is not None:
+                    # Try to get charts from the engine
+                    if hasattr(automl_engine, 'get_charts'):
+                        charts = automl_engine.get_charts() or {}
+                    
+                    # If still no charts, generate new ones
+                    if not charts and hasattr(automl_engine, '_y_test') and automl_engine._y_test is not None:
+                        from ml.chart_generator import generate_ml_charts
+                        charts = generate_ml_charts(
+                            automl_engine.model,
+                            automl_engine._y_test,
+                            automl_engine._y_pred,
+                            automl_engine.task_type,
+                            automl_engine.feature_columns,
+                            getattr(automl_engine, '_get_importance', lambda m: [])(automl_engine.model)
+                        ) or {}
+                        
+                        # Save the regenerated charts for future use
+                        if charts:
+                            try:
+                                model_persistence.save_charts(user_id, charts)
+                                logger.info(f"✅ Regenerated and saved {len(charts)} charts for user {user_id}")
+                            except:
+                                pass
+            except Exception as e:
+                logger.debug(f"Could not regenerate charts: {e}")
+        
+        # 3. Also include model metadata for context
+        metadata = None
+        try:
+            meta = model_persistence.get_metadata(user_id)
+            if meta:
+                metadata = {
+                    "model_name": meta.model_name,
+                    "task_type": meta.task_type,
+                    "target_column": meta.target_column,
+                    "metrics": meta.metrics
+                }
+        except:
+            pass
+        
+        return {
+            "success": True,
+            "charts": charts,
+            "chart_count": len(charts),
+            "chart_keys": list(charts.keys()) if charts else [],
+            "metadata": metadata
+        }
+        
+    except Exception as e:
+        logger.error(f"Get charts error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "error": str(e),
+            "charts": {}
+        }

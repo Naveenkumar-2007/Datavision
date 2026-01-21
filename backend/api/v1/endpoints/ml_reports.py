@@ -47,8 +47,8 @@ def generate_predictive_report_v2(user_id: str, df, profiler) -> dict:
                 'metrics': metadata.metrics or {},
                 'version': metadata.version
             }
-            engine.load(user_id)
-            if engine.is_fitted:
+            # Load the model and check if it has a trained model
+            if engine.load(user_id) and engine.model is not None:
                 automl_engine = engine
     except Exception as e:
         print(f"AutoML load error: {e}")
@@ -77,45 +77,119 @@ Your Data: {n:,} records, {len(profiler.numeric_cols)} numeric, {len(profiler.ca
             "reportType": "predictive"
         }
     
-    # MODEL EXISTS
-    model_name = automl_info['model_name']
-    task_type = automl_info['task_type']
-    target_col = automl_info['target_column']
-    metrics = automl_info['metrics']
+    # MODEL EXISTS - Robust Data Extraction
+    model_name = automl_info.get('model_name', 'Unknown Model')
+    task_type = automl_info.get('task_type', 'unknown')
+    
+    # Robust target column extraction
+    target_col = automl_info.get('target_column')
+    if not target_col and automl_engine:
+        target_col = getattr(automl_engine, 'target_column', 'Unknown Target')
+    if not target_col:
+        target_col = "Unknown Target"
+        
+    metrics = automl_info.get('metrics') or {}
+    # Fallback to engine metrics if metadata empty
+    if not metrics and automl_engine:
+        metrics = getattr(automl_engine, 'metrics', {})
+    
+    # ---------------------------------------------
+    # PRE-LOAD REAL CHARTS (To decide on legacy sections)
+    # ---------------------------------------------
+    real_charts = {}
+    if automl_engine:
+        try:
+            from ml.model_persistence import model_persistence
+            # 1. Try to load saved charts
+            saved_charts = model_persistence.get_charts(user_id)
+            if saved_charts:
+                real_charts = saved_charts
+        except:
+            pass
+            
+    # ---------------------------------------------
+    # GENERATE DYNAMIC INSIGHTS (Natural Language)
+    # ---------------------------------------------
+    primary_metric = "Accuracy" if task_type == "classification" else "R² Score"
+    primary_score = metrics.get('accuracy', metrics.get('r2_score', 0))
+    
+    # Format score for display
+    if primary_metric == "R² Score" and primary_score < -1:
+        score_display = "(Negative R²)"
+    else:
+        score_display = f"{primary_score:.1%}"
+    
+    performance_text = "moderate"
+    if primary_score > 0.85: performance_text = "excellent"
+    elif primary_score > 0.7: performance_text = "good" 
+    elif primary_score < 0.5: performance_text = "poor"
+    
+    # Get top features for narrative
+    top_features_text = ""
+    if automl_engine and hasattr(automl_engine, '_get_importance'):
+        fi_list = automl_engine._get_importance(automl_engine.model)
+        if fi_list:
+            top_3 = [f.get('feature', '').replace('_', ' ').title() for f in fi_list[:3]]
+            if top_3:
+                top_features_text = f"The most influential factors driving these predictions are {', '.join(top_3)}."
+
+    # Section 0: Executive Summary
+    sections.append({
+        "title": "📝 Executive Summary",
+        "content": f"""The {model_name} model has been trained for {task_type.upper()} tasks on the target '{target_col}'.
+
+Performance Assessment:
+The model demonstrates {performance_text} performance with a {primary_metric} of {score_display}. {top_features_text}
+
+Recommendation:
+{("Reliable for automated decision making." if primary_score > 0.8 else "Use for guidance, but verify critical cases manually.")}""",
+        "data": {"model": model_name, "score": primary_score, "quality": performance_text}
+    })
     
     # Section 1: Model Overview
     sections.append({
-        "title": f"🤖 {model_name} Model",
-        "content": f"""Task: {task_type.upper()}
-Target: {target_col}
-Records: {n:,}
-Version: v{automl_info['version']}""",
+        "title": f"🤖 Model Configuration",
+        "content": f"""• Algorithm: {model_name}
+• Task Type: {task_type.title()}
+• Target Variable: {target_col}
+• Training Records: {n:,}
+• Model Version: v{automl_info.get('version', '1')}""",
         "data": {"model": model_name, "task": task_type, "target": target_col}
     })
     
-    # Section 2: Performance Metrics Chart
-    if metrics:
+    # Section 2: Performance Metrics Chart (Legacy - ONLY if no real charts, or if explicit metric charts missing)
+    # We hide this if we have the new visual charts to avoid duplication
+    if metrics and not real_charts:
         metrics_chart = []
+        metric_names = {
+            'accuracy': 'Accuracy', 'precision': 'Precision', 'recall': 'Recall', 'f1': 'F1 Score', 'f1_score': 'F1 Score',
+            'r2_score': 'R² Score', 'mae': 'MAE (Error)', 'rmse': 'RMSE (Error)'
+        }
+        
         for k, v in metrics.items():
-            if isinstance(v, (int, float)):
-                display_val = v * 100 if 0 <= v <= 1 else v
+            if isinstance(v, (int, float)) and k in metric_names:
+                display_val = v
+                # Normalize 0-1 metrics to percentages for display, keep errors as is
+                if k not in ['mae', 'rmse'] and 0 <= v <= 1:
+                     display_val = v * 100
+                
                 metrics_chart.append({
-                    "name": k.replace('_', ' ').title()[:12],
+                    "name": metric_names.get(k, k),
                     "value": round(display_val, 2),
                     "color": CHART_COLORS[len(metrics_chart) % len(CHART_COLORS)]
                 })
         
         if metrics_chart:
             sections.append({
-                "title": "📊 Model Metrics",
-                "content": "Performance from training:",
+                "title": "📊 Performance Metrics",
+                "content": f"Key performance indicators for {model_name}. Higher is better (except error metrics).",
                 "data": metrics_chart,
                 "chartType": "horizontal_bar"
             })
     
-    # Section 3: Feature Importance (Real)
+    # Section 3: Feature Importance (Legacy - ONLY if no real charts)
     feature_importance = None
-    if automl_engine:
+    if automl_engine and not real_charts:
         # Try to get feature importance from the model
         if hasattr(automl_engine, '_get_importance'):
             fi_list = automl_engine._get_importance(automl_engine.model)
@@ -132,146 +206,126 @@ Version: v{automl_info['version']}""",
                     })
                 if fi_chart:
                     sections.append({
-                        "title": "🎯 Feature Importance",
-                        "content": "Top features affecting predictions:",
+                        "title": "🎯 Key Drivers (Feature Importance)",
+                        "content": "These features have the strongest impact on the target variable. Focus on optimizing these factors to influence outcomes.",
                         "data": fi_chart,
                         "chartType": "horizontal_bar"
                     })
     
     # =============================================
-    # TASK-SPECIFIC ML CHARTS
+    # TASK-SPECIFIC REAL ML CHARTS (Images)
     # =============================================
     
-    if task_type == 'regression':
-        # REGRESSION CHARTS
-        if automl_engine:
-            try:
-                sample = df.head(20).copy()
-                preds = automl_engine.predict(sample)
-                
-                if target_col in sample.columns and preds is not None:
-                    actuals = sample[target_col].values[:len(preds)]
-                    scatter_data = []
-                    residual_data = []
-                    
-                    for i, (actual, pred) in enumerate(zip(actuals[:15], preds[:15])):
-                        try:
-                            if not np.isnan(float(actual)) and not np.isnan(float(pred)):
-                                scatter_data.append({
-                                    "name": f"Point {i+1}",
-                                    "actual": round(float(actual), 2),
-                                    "predicted": round(float(pred), 2),
-                                    "x": round(float(actual), 2),
-                                    "y": round(float(pred), 2),
-                                    "color": "#14B8A6"
-                                })
-                                residual = float(pred) - float(actual)
-                                residual_data.append({
-                                    "name": f"Sample {i+1}",
-                                    "value": round(residual, 2),
-                                    "color": "#EF4444" if residual < 0 else "#22C55E"
-                                })
-                        except:
-                            continue
-                    
-                    if scatter_data:
-                        sections.append({
-                            "title": "📈 Actual vs Predicted",
-                            "content": "Regression accuracy - points near diagonal = good fit:",
-                            "data": scatter_data,
-                            "chartType": "scatter"
-                        })
-                    
-                    if residual_data:
-                        sections.append({
-                            "title": "📉 Prediction Errors",
-                            "content": "Residuals (Predicted - Actual):",
-                            "data": residual_data[:10],
-                            "chartType": "bar"
-                        })
-            except Exception as e:
-                print(f"Regression chart error: {e}")
-    
-    elif task_type == 'classification':
-        # CLASSIFICATION CHARTS
-        if automl_engine:
-            try:
-                sample = df.head(50).copy()
-                preds = automl_engine.predict(sample)
-                
-                if preds is not None and len(preds) > 0:
-                    from collections import Counter
-                    class_counts = Counter([str(p) for p in preds])
-                    
-                    class_chart = []
-                    for i, (cls, count) in enumerate(class_counts.most_common()):
-                        class_chart.append({
-                            "name": str(cls)[:15],
-                            "value": count,
-                            "percentage": round(count / len(preds) * 100, 1),
-                            "color": CHART_COLORS[i % len(CHART_COLORS)]
-                        })
-                    
-                    sections.append({
-                        "title": "📊 Predicted Classes",
-                        "content": f"Classification distribution on {len(preds)} samples:",
-                        "data": class_chart,
-                        "chartType": "pie"
-                    })
-            except Exception as e:
-                print(f"Classification chart error: {e}")
-        
-        # Metrics comparison for classification
-        if metrics:
-            metric_comparison = []
-            for key in ['precision', 'recall', 'f1', 'f1_score', 'accuracy']:
-                if key in metrics:
-                    v = metrics[key]
-                    if isinstance(v, (int, float)):
-                        metric_comparison.append({
-                            "name": key.replace('_', ' ').title(),
-                            "value": round(v * 100, 1),
-                            "color": CHART_COLORS[len(metric_comparison) % len(CHART_COLORS)]
-                        })
-            
-            if metric_comparison:
-                sections.append({
-                    "title": "📋 Classification Metrics",
-                    "content": "Precision, Recall, F1 scores:",
-                    "data": metric_comparison,
-                    "chartType": "horizontal_bar"
-                })
-    
-    # Section: Sample Predictions
     if automl_engine:
         try:
-            sample = df.head(8).copy()
-            preds = automl_engine.predict(sample)
-            
-            if preds is not None and len(preds) > 0:
-                pred_chart = []
-                for i, p in enumerate(preds[:8]):
-                    val = p if isinstance(p, (int, float, str)) else str(p)
-                    pred_chart.append({
-                        "name": f"Row {i+1}",
-                        "value": float(p) if isinstance(p, (int, float)) else i,
-                        "label": str(val)[:15],
-                        "color": CHART_COLORS[i % len(CHART_COLORS)]
-                    })
+            # 2. Fallback: Regenerate if missing (Logic for legacy or prediction-only)
+            if not real_charts and target_col in df.columns:
+                # Use a larger sample for chart generation to ensure representative visuals
+                chart_sample_size = min(500, len(df))
+                sample = df.head(chart_sample_size).copy()
+                preds = automl_engine.predict(sample)
                 
-                sections.append({
-                    "title": f"📈 {target_col} Predictions",
-                    "content": f"Model predictions on sample data:",
-                    "data": pred_chart,
-                    "chartType": "bar"
-                })
+                # Get probabilities if available (for ROC/PR curves)
+                probs = None
+                if task_type == 'classification' and hasattr(automl_engine.model, 'predict_proba'):
+                    try:
+                        probs = automl_engine.model.predict_proba(sample)
+                    except:
+                        pass
+                
+                y_true = sample[target_col].values
+                from ml.chart_generator import generate_ml_charts
+                
+                # Generate comprehensive chart suite on the fly
+                real_charts = generate_ml_charts(
+                    task_type=task_type,
+                    y_test=y_true,
+                    y_pred=preds,
+                    y_proba=probs,
+                    model_name=model_name,
+                    class_names=automl_engine.classes_ if hasattr(automl_engine, 'classes_') else None
+                )
+            
+            # 3. Add charts to sections
+            # Map charts to friendly titles and descriptions
+            chart_descriptions = {
+                'confusion_matrix': ('Confusion Matrix', 'Visualizes how often the model confuses different classes. Diagonal values represent correct predictions.'),
+                'roc_curve': ('ROC Curve', 'Shows the trade-off between True Positive Rate and False Positive Rate. AUC score closer to 1.0 is better.'),
+                'feature_importance': ('Feature Importance', 'Ranks features by their influence on the model\'s decisions.'),
+                'actual_vs_predicted': ('Actual vs Predicted', 'Comparison of model predictions against real values. Points along the diagonal line indicate perfect accuracy.'),
+                'residuals_analysis': ('Residuals Analysis', 'Analyzes prediction errors to check for bias or patterns.'),
+                'class_distribution': ('Class Distribution', 'Compare predicted class frequencies against actual frequencies.'),
+                'precision_recall': ('Precision-Recall Curve', 'Trade-off between Precision and Recall, crucial for imbalanced datasets.'),
+                'prediction_overview': ('Prediction Overview', 'Visualizes predictions against actual values across the dataset.'),
+                'error_distribution': ('Error Distribution', 'Histogram of prediction errors. Narrower distribution centered at 0 means better accuracy.'),
+                'distribution_grid': ('Feature Distributions', 'Histograms showing the spread of data for top numeric features.'),
+                'boxplot_grid': ('Feature Box Plots', 'Box plots showing outliers and quartiles for numeric features.'),
+                'correlation_heatmap': ('Correlation Heatmap', 'Heatmap showing how features correlate with each other.'),
+                'model_comparison': ('Model Comparison', 'Performance comparison of all trained models.')
+            }
+            
+            for chart_key, base64_img in real_charts.items():
+                if chart_key in chart_descriptions:
+                    title, desc = chart_descriptions[chart_key]
+                    sections.append({
+                        "title": f"📊 {title}",
+                        "content": desc,
+                        "data": {"image": base64_img},
+                        "chartType": "image"
+                    })
+            
+            # 4. Handle Prediction-Only Mode (No Target Column AND No Saved Charts)
+            if not real_charts and target_col not in df.columns:
+                # No ground truth - Prediction Only Mode
+                if preds is not None:
+                    # Add Prediction Distribution (Pie Chart)
+                    if task_type == 'classification':
+                        from collections import Counter
+                        class_counts = Counter([str(p) for p in preds])
+                        class_chart = [{"name": str(k)[:15], "value": v, "color": CHART_COLORS[i % len(CHART_COLORS)]} 
+                                      for i, (k, v) in enumerate(class_counts.most_common(10))]
+                        sections.append({
+                            "title": "📊 Predicted Class Distribution",
+                            "content": f"Distribution of predicted classes for the {len(preds)} analyzed records.",
+                            "data": class_chart,
+                            "chartType": "pie"
+                        })
+                    
+                    # Add Sample Predictions
+                    pred_chart = []
+                    for i, p in enumerate(preds[:10]):
+                        val = p if isinstance(p, (int, float, str)) else str(p)
+                        pred_chart.append({
+                            "name": f"Rec {i+1}",
+                            "value": float(p) if isinstance(p, (int, float)) else i,
+                            "label": str(val)[:15],
+                            "color": CHART_COLORS[i % len(CHART_COLORS)]
+                        })
+                    sections.append({
+                        "title": "🔎 Prediction Samples",
+                        "content": "A glimpse of the model's output on your data.",
+                        "data": pred_chart,
+                        "chartType": "bar"
+                    })
+
         except Exception as e:
-            print(f"Prediction error: {e}")
+            print(f"Real ML Chart Generation Error: {e}")
+            import traceback
+            traceback.print_exc()
     
+    # Section: Strategic Recommendations (Action Item for Frontend)
+    sections.append({
+        "title": "⚡ Strategic Recommendations",
+        "content": f"""1. Verify the model's predictions on new data using the 'Predict' tab.
+2. Focus on the key drivers ({top_3[0] if 'top_3' in locals() and top_3 else 'identified features'}) to influence outcomes.
+3. {("Since the model is highly accurate, consider automating workflows." if primary_score > 0.8 else "Use these predictions as a support tool for human subject matter experts.")}""",
+        "data": []
+    })
+
     return {
-        "title": f"🔮 {task_type.title()} Report - {model_name}",
+        "title": f"🔮 AI Predictive Report - {model_name}",
         "generatedAt": datetime.now().isoformat(),
-        "dataSource": "uploaded_files",
+        "dataSource": "AutoML Engine",
         "sections": sections,
         "reportType": "predictive"
     }
@@ -446,6 +500,73 @@ Issues Found:
 • Duplicates: {dup_count}""",
         "data": [{"name": "Quality", "value": quality_score, "max": 100, "color": "#22C55E" if quality_score >= 70 else "#F59E0B"}],
         "chartType": "gauge"
+    })
+    
+    # Section 7: Recommended Actions
+    actions = []
+    
+    # ===========================================
+    # SECTION 8: ML Anomaly Visualization (Isolation Forest)
+    # ===========================================
+    if len(profiler.numeric_cols) >= 2 and n >= 10:
+        try:
+            from sklearn.ensemble import IsolationForest
+            from ml.chart_generator import generate_ml_charts
+            
+            # Prepare data
+            X = df[profiler.numeric_cols].dropna().values
+            # Run Isolation Forest
+            iso = IsolationForest(contamination=0.05, random_state=42)
+            y_pred = iso.fit_predict(X) # 1 for normal, -1 for anomaly
+            
+            # Convert to cluster labels (0=Anomaly, 1=Normal)
+            # IsolationForest returns -1 for anomaly, 1 for normal
+            # Let's map -1 -> 0 (Anomaly), 1 -> 1 (Normal) for better visualization colors
+            cluster_labels = np.where(y_pred == -1, 0, 1)
+            
+            charts = generate_ml_charts(
+                task_type='clustering',
+                y_test=cluster_labels, # Dummy ground truth (same as pred) to satisfy signature
+                y_pred=cluster_labels,
+                X_test=X,
+                feature_names=profiler.numeric_cols,
+                class_names=['Anomaly', 'Normal']
+            )
+            
+            if 'cluster_scatter' in charts:
+                sections.append({
+                    "title": "📊 Anomaly Visualization (PCA)",
+                    "content": "2D projection of data using Principal Component Analysis (PCA). Points in Cluster 0 (Anomaly) are statistically distinct from normal patterns.",
+                    "data": {"image": charts['cluster_scatter']},
+                    "chartType": "image"
+                })
+                
+                # Check for other useful charts like 'cluster_box_plots'
+                if 'cluster_box_plots' in charts:
+                    sections.append({
+                        "title": "📦 Feature Distribution by Anomaly Status",
+                        "content": "Comparison of feature distributions between Normal (1) and Anomalous (0) records.",
+                        "data": {"image": charts['cluster_box_plots']},
+                        "chartType": "image"
+                    })
+                    
+        except Exception as e:
+            print(f"Anomaly ML visual error: {e}")
+
+    if total_outliers > 0:
+        actions.append(f"1. Investigate the {total_outliers} detected outliers in the 'Outliers Found' section.")
+    if total_missing > 0:
+        actions.append(f"2. Consider imputing or removing the {total_missing} missing values.")
+    if dup_count > 0:
+        actions.append(f"3. Remove {dup_count} duplicate records to prevent data leakage.")
+    
+    if not actions:
+        actions.append("1. Data quality is excellent. Proceed with analysis or modeling.")
+        
+    sections.append({
+        "title": "⚡ Recommended Actions",
+        "content": "\n".join(actions),
+        "data": []
     })
     
     return {

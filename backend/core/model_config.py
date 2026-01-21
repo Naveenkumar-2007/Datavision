@@ -30,7 +30,7 @@ class ModelConfig:
 
 
 # ============================================================================
-# MODEL REGISTRY - Best Models for AI Business Analyst
+# MODEL REGISTRY - Best Models for DataVision
 # Each model has specific strengths for different types of queries
 # ============================================================================
 

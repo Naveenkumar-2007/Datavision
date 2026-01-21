@@ -2254,24 +2254,42 @@ What would you like to explore today?"""
     is_hypothetical = _detect_hypothetical(question)
     
     if not _is_data_related_query(question) and not is_language_only and followup_type == 'new_query':
-        # This is a general knowledge question - REFUSE to answer
-        refusal_response = f"""🚫 **I can only answer questions about YOUR business data.**
+        # =================================================================
+        # HYBRID KNOWLEDGE: General questions get 🌐 AI Knowledge response
+        # =================================================================
+        try:
+            from core.llm import chat as llm_chat
+            
+            ai_prompt = f"""You are a helpful AI assistant. Answer this general question clearly and concisely.
 
-I noticed you're asking a general knowledge question. As your Business Analyst AI, I'm designed to analyze YOUR uploaded files, not provide general information.
+Question: {question}
 
-**Try asking:**
-• "What is my total revenue?"
-• "Who are my top 5 customers?"
-• "Show me sales trends"
-• "Which products perform best?"
+Provide a helpful, accurate response. Format nicely with bullet points if appropriate."""
 
-*Need to upload data? Go to **Data Hub** first.*"""
-        state.answer = refusal_response
-        state.route = "rag"
-        state.sources = []
-        _save_chat_message(user_id, "assistant", refusal_response)
-        _store_conversation_turn(session_id, "assistant", refusal_response)
-        return state
+            ai_response = llm_chat(ai_prompt, temperature=0.7, max_tokens=500)
+            
+            # Add source badge to show this is AI knowledge, not user data
+            hybrid_response = f"""🌐 **AI Knowledge**
+
+{ai_response}
+
+---
+*💡 This is general AI knowledge. For analysis of YOUR data, ask questions like "What is my total revenue?" or "Show my top customers."*"""
+            
+            state.answer = hybrid_response
+            state.route = "ai_knowledge"
+            state.sources = ["AI Knowledge"]
+            _save_chat_message(user_id, "assistant", hybrid_response)
+            _store_conversation_turn(session_id, "assistant", hybrid_response)
+            return state
+            
+        except Exception as e:
+            # Fallback if LLM fails
+            logger.error(f"AI Knowledge response failed: {e}")
+            state.answer = f"I can help with that! {question} is an interesting topic. For detailed answers, please try asking about your uploaded data."
+            state.route = "rag"
+            state.sources = []
+            return state
     
     # =========================================================================
     # STEP 3: MEMORY - Get chat history for context

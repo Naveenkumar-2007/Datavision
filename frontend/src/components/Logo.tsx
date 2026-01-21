@@ -13,29 +13,32 @@ interface LogoProps {
 
 const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '' }) => {
   const sizes = {
-    sm: { icon: 28, text: 'text-sm', subtitle: 'text-[10px]' },
-    md: { icon: 40, text: 'text-lg', subtitle: 'text-xs' },
-    lg: { icon: 48, text: 'text-xl', subtitle: 'text-sm' },
-    xl: { icon: 64, text: 'text-2xl', subtitle: 'text-base' },
+    sm: { icon: 28, text: 'text-sm' },
+    md: { icon: 36, text: 'text-xl' },
+    lg: { icon: 48, text: 'text-2xl' },
+    xl: { icon: 64, text: 'text-3xl' },
   };
 
   const { icon, text } = sizes[size];
 
   return (
-    <div className={`flex items-center space-x-3 ${className}`}>
-      {/* Logo Image */}
+    <div className={`flex items-center gap-3 ${className}`}>
+      {/* Logo Icon Only */}
       <img
-        src="/logo.png"
-        alt="DataVision Logo"
-        className="flex-shrink-0 object-contain"
+        src="/datavision_icon_v3.png"
+        alt="DataVision"
+        className="object-contain"
         style={{ width: icon, height: icon }}
       />
 
-      {/* Text */}
+      {/* Dynamic Text - Data(Theme) + Vision(Green) */}
       {showText && (
-        <div className="flex flex-col">
-          <span className={`font-bold text-gray-900 dark:text-gray-100 ${text} leading-tight`}>
-            DataVision
+        <div className={`font-bold ${text} tracking-tight flex items-center`}>
+          <span style={{ color: 'var(--text-primary)', fontFamily: "'Outfit', sans-serif" }}>
+            Data
+          </span>
+          <span className="text-emerald-500" style={{ fontFamily: "'Outfit', sans-serif" }}>
+            Vision
           </span>
         </div>
       )}

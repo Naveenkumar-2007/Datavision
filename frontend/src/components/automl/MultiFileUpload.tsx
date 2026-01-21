@@ -21,18 +21,13 @@ import {
 } from 'lucide-react';
 import apiService from '@/services/api';
 
-interface ThemeContext {
-    isDark: boolean;
-    bgColor: string;
-    cardBg: string;
-    textPrimary: string;
-    textMuted: string;
-    borderColor: string;
-}
+// Theme interface removed
+
 
 interface MultiFileUploadProps {
-    theme: ThemeContext;
     onTrainingComplete: (result: any) => void;
+    ultraMode?: boolean;
+    onUltraModeChange?: (mode: boolean) => void;
 }
 
 interface FileInfo {
@@ -43,7 +38,7 @@ interface FileInfo {
     error: string | null;
 }
 
-const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComplete }) => {
+const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ onTrainingComplete, ultraMode: parentUltraMode, onUltraModeChange }) => {
     const [trainFile, setTrainFile] = useState<FileInfo>({ file: null, name: '', rows: null, columns: null, error: null });
     const [testFile, setTestFile] = useState<FileInfo>({ file: null, name: '', rows: null, columns: null, error: null });
     const [targetColumn, setTargetColumn] = useState<string>('');
@@ -51,7 +46,20 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
     const [isTraining, setIsTraining] = useState(false);
     const [trainingProgress, setTrainingProgress] = useState('');
     const [error, setError] = useState<string | null>(null);
-    const [ultraMode, setUltraMode] = useState(false); // Fast mode by default for multi-file
+
+    // Use parent's ultraMode if provided, otherwise use local state
+    const [localUltraMode, setLocalUltraMode] = useState(false);
+    const ultraMode = parentUltraMode !== undefined ? parentUltraMode : localUltraMode;
+    const setUltraMode = (mode: boolean) => {
+        if (onUltraModeChange) {
+            onUltraModeChange(mode);
+        } else {
+            setLocalUltraMode(mode);
+        }
+    };
+
+    // AbortController for stopping training
+    const [abortController, setAbortController] = useState<AbortController | null>(null);
 
     const trainInputRef = useRef<HTMLInputElement>(null);
     const testInputRef = useRef<HTMLInputElement>(null);
@@ -160,9 +168,14 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
                 setTrainingProgress(`⚡ ${modeLabel} Training (1-2 minutes)...`);
             }
 
+            // Create AbortController for this request
+            const controller = new AbortController();
+            setAbortController(controller);
+
             const response = await fetch(endpoint, {
                 method: 'POST',
                 body: trainFormData,
+                signal: controller.signal,
             });
 
             setTrainingProgress('Processing results...');
@@ -214,10 +227,38 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
                 setError(result.detail || result.error || 'Training failed');
             }
         } catch (err: any) {
-            console.error('Training error:', err);
-            setError(err.message || 'Failed to connect to server');
+            if (err.name === 'AbortError') {
+                setError('Training stopped by user');
+            } else {
+                console.error('Training error:', err);
+                setError(err.message || 'Failed to connect to server');
+            }
         } finally {
             setIsTraining(false);
+            setAbortController(null);
+        }
+    };
+
+    // Stop training handler
+    const handleStopTraining = async () => {
+        if (abortController) {
+            abortController.abort();
+        }
+        setIsTraining(false);
+        setAbortController(null);
+        setTrainingProgress('');
+
+        // Signal backend to stop
+        try {
+            const userId = localStorage.getItem('userId') || 'default';
+            const formData = new FormData();
+            formData.append('user_id', userId);
+            await fetch('/api/v2/automl/stop_training', {
+                method: 'POST',
+                body: formData
+            });
+        } catch (e) {
+            console.error('Failed to signal stop to backend', e);
         }
     };
 
@@ -271,7 +312,7 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
                     fileInfo.file ? 'border-emerald-500/30 bg-emerald-500/5' : 'hover:border-emerald-500/50'
                     }`}
                 style={{
-                    borderColor: isDragActive ? '#10b981' : fileInfo.file ? 'rgba(16, 185, 129, 0.3)' : theme.borderColor,
+                    borderColor: isDragActive ? '#10b981' : fileInfo.file ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-color)',
                     transform: isDragActive ? 'scale(1.02)' : 'scale(1)'
                 }}
             >
@@ -290,8 +331,8 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
                                 <FileSpreadsheet className="w-8 h-8 text-emerald-400" />
                             </div>
                             <div className="text-center">
-                                <p className="font-medium" style={{ color: theme.textPrimary }}>{fileInfo.name}</p>
-                                <p className="text-sm" style={{ color: theme.textMuted }}>
+                                <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{fileInfo.name}</p>
+                                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                                     {fileInfo.rows?.toLocaleString()} rows × {fileInfo.columns} columns
                                 </p>
                             </div>
@@ -304,14 +345,14 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
                         </>
                     ) : (
                         <>
-                            <div className={`p-3 rounded-xl transition-all ${isDragActive ? 'bg-emerald-500/20' : ''}`} style={{ backgroundColor: !isDragActive ? (theme.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)') : undefined }}>
-                                <Upload className={`w-8 h-8 ${isDragActive ? 'text-emerald-400' : ''}`} style={{ color: isDragActive ? '#10b981' : theme.textMuted }} />
+                            <div className={`p-3 rounded-xl transition-all ${isDragActive ? 'bg-emerald-500/20' : ''}`} style={{ backgroundColor: !isDragActive ? 'var(--bg-secondary)' : undefined }}>
+                                <Upload className={`w-8 h-8 ${isDragActive ? 'text-emerald-400' : ''}`} style={{ color: isDragActive ? '#10b981' : 'var(--text-muted)' }} />
                             </div>
                             <div className="text-center">
-                                <p className="font-medium" style={{ color: isDragActive ? '#10b981' : theme.textPrimary }}>
+                                <p className="font-medium" style={{ color: isDragActive ? '#10b981' : 'var(--text-primary)' }}>
                                     {isDragActive ? 'Drop here!' : `Drop ${type === 'train' ? 'Training' : 'Test'} File`}
                                 </p>
-                                <p className="text-sm" style={{ color: theme.textMuted }}>
+                                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                                     CSV or Excel
                                 </p>
                             </div>
@@ -333,9 +374,9 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="p-6 rounded-2xl border"
-            style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
         >
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                 <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
                 Multi-File Training
                 <span className="ml-2 px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-xs">
@@ -345,7 +386,7 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
 
             <div className="flex items-center gap-2 mb-6 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
                 <Info className="w-5 h-5 text-blue-400 flex-shrink-0" />
-                <p className="text-sm" style={{ color: theme.textMuted }}>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                     Use separate train and test files for unbiased model evaluation. The test set will NOT be used for training.
                 </p>
             </div>
@@ -368,17 +409,17 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
             {/* Target Column Selection */}
             {columns.length > 0 && (
                 <div className="mb-6">
-                    <label className="block text-sm font-medium mb-2" style={{ color: theme.textMuted }}>
+                    <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-muted)' }}>
                         Target Column
                     </label>
                     <select
                         value={targetColumn}
                         onChange={(e) => setTargetColumn(e.target.value)}
                         className="w-full p-3 rounded-xl border bg-transparent outline-none focus:border-emerald-500"
-                        style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                     >
                         {columns.map((col) => (
-                            <option key={col} value={col} style={{ backgroundColor: theme.cardBg }}>
+                            <option key={col} value={col} style={{ backgroundColor: 'var(--bg-card)' }}>
                                 {col}
                             </option>
                         ))}
@@ -396,15 +437,15 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
                             ? 'border-emerald-500 bg-emerald-500/10'
                             : 'border-transparent hover:border-gray-500/30'
                             }`}
-                        style={{ backgroundColor: !ultraMode ? 'rgba(16, 185, 129, 0.1)' : theme.cardBg }}
+                        style={{ backgroundColor: !ultraMode ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-card)' }}
                     >
                         <div className="flex items-center gap-3">
                             <Zap className={`w-6 h-6 ${!ultraMode ? 'text-emerald-400' : 'text-gray-500'}`} />
                             <div className="text-left">
-                                <p className="font-semibold" style={{ color: !ultraMode ? '#10b981' : theme.textPrimary }}>
+                                <p className="font-semibold" style={{ color: !ultraMode ? '#10b981' : 'var(--text-primary)' }}>
                                     ⚡ Fast Mode
                                 </p>
-                                <p className="text-xs" style={{ color: theme.textMuted }}>
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                     1-2 min • 7 models
                                 </p>
                             </div>
@@ -418,15 +459,15 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
                             ? 'border-purple-500 bg-purple-500/10'
                             : 'border-transparent hover:border-gray-500/30'
                             }`}
-                        style={{ backgroundColor: ultraMode ? 'rgba(139, 92, 246, 0.1)' : theme.cardBg }}
+                        style={{ backgroundColor: ultraMode ? 'rgba(139, 92, 246, 0.1)' : 'var(--bg-card)' }}
                     >
                         <div className="flex items-center gap-3">
                             <Brain className={`w-6 h-6 ${ultraMode ? 'text-purple-400' : 'text-gray-500'}`} />
                             <div className="text-left">
-                                <p className="font-semibold" style={{ color: ultraMode ? '#a78bfa' : theme.textPrimary }}>
+                                <p className="font-semibold" style={{ color: ultraMode ? '#a78bfa' : 'var(--text-primary)' }}>
                                     🚀 Ultra Mode
                                 </p>
-                                <p className="text-xs" style={{ color: theme.textMuted }}>
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                                     5-10 min • 20+ models
                                 </p>
                             </div>
@@ -444,41 +485,54 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ theme, onTrainingComp
             )}
 
             {/* Train Button */}
-            <button
-                onClick={handleTrain}
-                disabled={!trainFile.file || !testFile.file || isTraining}
-                className={`w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-3 transition-all ${trainFile.file && testFile.file && !isTraining
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:opacity-90'
-                    : 'bg-gray-500/20 text-gray-500 cursor-not-allowed'
-                    }`}
-            >
-                {isTraining ? (
-                    <>
-                        <Loader className="w-5 h-5 animate-spin" />
-                        {trainingProgress}
-                    </>
-                ) : (
-                    <>
-                        <CheckCircle className="w-5 h-5" />
-                        Train with Separate Test Set
-                    </>
+            <div className="flex gap-3">
+                <button
+                    onClick={handleTrain}
+                    disabled={!trainFile.file || !testFile.file || isTraining}
+                    className={`flex-1 py-4 rounded-xl font-semibold flex items-center justify-center gap-3 transition-all ${trainFile.file && testFile.file && !isTraining
+                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:opacity-90'
+                        : 'bg-gray-500/20 text-gray-500 cursor-not-allowed'
+                        }`}
+                >
+                    {isTraining ? (
+                        <>
+                            <Loader className="w-5 h-5 animate-spin" />
+                            {trainingProgress}
+                        </>
+                    ) : (
+                        <>
+                            <CheckCircle className="w-5 h-5" />
+                            Train with Separate Test Set
+                        </>
+                    )}
+                </button>
+
+                {/* Stop Training Button - Only visible during training */}
+                {isTraining && (
+                    <button
+                        onClick={handleStopTraining}
+                        className="px-6 py-4 rounded-xl font-semibold bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-all flex items-center gap-2"
+                    >
+                        <XCircle className="w-5 h-5" />
+                        Stop
+                    </button>
                 )}
-            </button>
+            </div>
 
             {/* Summary Stats */}
             {trainFile.file && testFile.file && (
                 <div className="mt-4 grid grid-cols-3 gap-4 text-center">
                     <div>
                         <p className="text-2xl font-bold text-blue-400">{trainFile.rows?.toLocaleString()}</p>
-                        <p className="text-xs" style={{ color: theme.textMuted }}>Training Samples</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Training Samples</p>
                     </div>
                     <div>
                         <p className="text-2xl font-bold text-purple-400">{testFile.rows?.toLocaleString()}</p>
-                        <p className="text-xs" style={{ color: theme.textMuted }}>Test Samples</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Test Samples</p>
                     </div>
                     <div>
                         <p className="text-2xl font-bold text-emerald-400">{trainFile.columns}</p>
-                        <p className="text-xs" style={{ color: theme.textMuted }}>Features</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Features</p>
                     </div>
                 </div>
             )}

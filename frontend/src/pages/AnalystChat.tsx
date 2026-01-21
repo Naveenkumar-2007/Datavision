@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send,
   FileText,
@@ -34,6 +35,100 @@ import { useUserStore } from '@/store/userStore';
 
 // Lazy load PlotlyChart for performance
 const PlotlyChart = React.lazy(() => import('@/components/PlotlyChart'));
+
+// ============================================================================
+// 🛡️ USER-FRIENDLY ERROR MESSAGE FORMATTER
+// Shows nice messages like Claude/ChatGPT instead of raw API errors
+// ============================================================================
+const formatUserFriendlyError = (error: string | any): string => {
+  const errorStr = typeof error === 'string' ? error.toLowerCase() : 
+    (error?.message || error?.response?.data?.detail || String(error)).toLowerCase();
+  
+  // Rate limit / Service busy errors
+  if (errorStr.includes('rate') || errorStr.includes('limit') || errorStr.includes('429') || 
+      errorStr.includes('quota') || errorStr.includes('too many requests')) {
+    return `⏳ **Service Temporarily Busy**
+
+Our AI service is experiencing high demand. Please wait a moment and try again.
+
+💡 **Tips:**
+• Wait 30 seconds before retrying
+• Try asking a simpler question
+• Your data is safe and ready`;
+  }
+  
+  // API Key / Auth errors
+  if (errorStr.includes('api_key') || errorStr.includes('unauthorized') || 
+      errorStr.includes('authentication') || errorStr.includes('401') || errorStr.includes('invalid key')) {
+    return `🔑 **Configuration Required**
+
+The AI service needs to be configured. Please contact your administrator.
+
+_This is a server-side configuration issue._`;
+  }
+  
+  // Connection / Timeout errors
+  if (errorStr.includes('timeout') || errorStr.includes('connection') || 
+      errorStr.includes('network') || errorStr.includes('fetch') || errorStr.includes('econnrefused')) {
+    return `🌐 **Connection Issue**
+
+Unable to reach the AI service. Please check your internet connection and try again.
+
+💡 **Tips:**
+• Check your internet connection
+• Refresh the page
+• Try again in a few moments`;
+  }
+  
+  // Context too large
+  if (errorStr.includes('context') || errorStr.includes('too large') || 
+      errorStr.includes('token') || errorStr.includes('length') || errorStr.includes('maximum')) {
+    return `📏 **Request Too Large**
+
+Your question or data exceeds the model's capacity.
+
+💡 **Tips:**
+• Try asking a more specific question
+• Break down complex queries into smaller parts
+• Focus on specific columns or time periods`;
+  }
+  
+  // Server errors
+  if (errorStr.includes('500') || errorStr.includes('502') || errorStr.includes('503') || 
+      errorStr.includes('504') || errorStr.includes('internal server')) {
+    return `🔧 **Service Maintenance**
+
+Our AI service is temporarily unavailable. We're working on it!
+
+Please try again in a few minutes.`;
+  }
+  
+  // Model not found
+  if (errorStr.includes('model') && (errorStr.includes('not found') || errorStr.includes('unavailable'))) {
+    return `🤖 **AI Model Unavailable**
+
+The requested AI model is temporarily unavailable. Trying alternative models...
+
+Please try again in a moment.`;
+  }
+  
+  // Generic fallback - don't show raw technical errors
+  if (errorStr.includes('error') || errorStr.includes('exception') || errorStr.includes('failed')) {
+    return `⚠️ **Something Went Wrong**
+
+I encountered an issue processing your request. Please try again.
+
+💡 **Tips:**
+• Rephrase your question
+• Try a simpler query
+• If the problem persists, refresh the page`;
+  }
+  
+  // If nothing matches, return a clean generic message
+  return `⚠️ **Unable to Process Request**
+
+Please try again in a moment. If the issue persists, try refreshing the page.`;
+};
 
 // Helper function to format inline text (bold, italic, code)
 const formatInlineText = (text: string): string => {
@@ -83,13 +178,13 @@ const ChartImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
       <img
         src={src}
         alt={alt}
-        className="max-w-full rounded-xl border border-dark-border shadow-lg transition-transform duration-300 group-hover:scale-[1.02]"
+        className="max-w-full rounded-xl border border-[var(--border-color)] shadow-lg transition-transform duration-300 group-hover:scale-[1.02]"
         style={{ maxHeight: '450px' }}
       />
       <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={handleDownload}
-          className="p-2 bg-dark-surface/90 hover:bg-teal-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-dark-border"
+          className="p-2 bg-[var(--bg-card)]/90 hover:bg-teal-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-[var(--border-color)]"
           title="Download Chart"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -99,7 +194,7 @@ const ChartImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
         </button>
         <button
           onClick={handleCopy}
-          className="p-2 bg-dark-surface/90 hover:bg-teal-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-dark-border"
+          className="p-2 bg-[var(--bg-card)]/90 hover:bg-teal-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-[var(--border-color)]"
           title="Copy Chart"
         >
           {copied ? (
@@ -132,7 +227,7 @@ const ForecastChartBlock: React.FC<{ payload: Record<string, unknown> }> = ({ pa
 
   return (
     <React.Suspense fallback={
-      <div className="animate-pulse bg-dark-surface rounded-xl h-64 flex items-center justify-center">
+      <div className="animate-pulse bg-[var(--bg-card)] rounded-xl h-64 flex items-center justify-center">
         <span className="text-gray-500">Loading chart...</span>
       </div>
     }>
@@ -145,11 +240,11 @@ const ForecastChartBlock: React.FC<{ payload: Record<string, unknown> }> = ({ pa
 const PlotlyChartBlock: React.FC<{ data: any[]; layout: any }> = ({ data, layout }) => {
   return (
     <React.Suspense fallback={
-      <div className="animate-pulse bg-dark-surface rounded-xl h-64 flex items-center justify-center">
+      <div className="animate-pulse bg-[var(--bg-card)] rounded-xl h-64 flex items-center justify-center">
         <span className="text-gray-500">Loading interactive chart...</span>
       </div>
     }>
-      <div className="my-4 p-4 bg-dark-surface/50 rounded-xl border border-dark-border">
+      <div className="my-4 p-4 glass-card rounded-xl border border-[var(--border-color)]">
         <PlotlyChart data={data} layout={layout} />
       </div>
     </React.Suspense>
@@ -174,7 +269,7 @@ const MLChartBlock: React.FC<{
   if (!chart.image) return null;
 
   return (
-    <div className="my-4 p-4 bg-gradient-to-br from-dark-surface to-dark-bg rounded-xl border border-dark-border shadow-lg">
+    <div className="my-4 p-4 glass-card rounded-xl border border-[var(--border-color)] shadow-lg">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg">{icon}</span>
         <span className="text-sm font-medium text-teal-400">
@@ -498,7 +593,7 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
             } catch (e) {
               console.error('Plotly chart parse error:', e, 'JSON sample:', chartJson.substring(0, 200));
               return (
-                <div key={idx} className="my-3 p-4 bg-red-900/20 border border-red-500/50 rounded-xl">
+                <div key={idx} className="my-3 p-4 bg-red-500/10 border border-red-500/50 rounded-xl">
                   <p className="text-red-400 text-sm">⚠️ Interactive chart rendering failed. Check console for details.</p>
                 </div>
               );
@@ -509,8 +604,8 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
         // Regular code block
         const codeContent = para.replace(/^```\w*\n?/, '').replace(/```$/, '');
         return (
-          <pre key={idx} className="my-3 p-4 bg-dark-surface rounded-xl overflow-x-auto border border-dark-border">
-            <code className="text-sm text-gray-100 font-mono">{codeContent}</code>
+          <pre key={idx} className="my-3 p-4 glass-panel rounded-xl overflow-x-auto border border-[var(--border-color)]">
+            <code className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>{codeContent}</code>
           </pre>
         );
       }
@@ -538,20 +633,20 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
           return (
             <div key={idx} className="my-4 overflow-x-auto rounded-xl border border-dark-border animate-fade-in">
               <table className="min-w-full">
-                <thead className="bg-dark-surface/50">
+                <thead className="bg-[var(--bg-secondary)]/50">
                   <tr>
                     {headers.map((header, i) => (
-                      <th key={i} className="px-4 py-3 text-left text-sm font-semibold text-white border-b border-dark-border">
+                      <th key={i} className="px-4 py-3 text-left text-sm font-semibold border-b border-[var(--border-color)]" style={{ color: 'var(--text-primary)' }}>
                         <InlineFormattedText text={header} />
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-dark-border">
+                <tbody className="divide-y divide-[var(--border-color)]">
                   {rows.map((row, i) => (
-                    <tr key={i} className="hover:bg-dark-hover/50 transition-colors">
+                    <tr key={i} className="hover:bg-[var(--bg-hover)]/50 transition-colors">
                       {row.map((cell, j) => (
-                        <td key={j} className="px-4 py-3 text-sm text-gray-300">
+                        <td key={j} className="px-4 py-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
                           <InlineFormattedText text={cell} />
                         </td>
                       ))}
@@ -649,16 +744,16 @@ const AnimatedBotIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
   </div>
 );
 
-// Mode-specific thinking messages for ChatGPT-like experience (5 POWERFUL MODES)
+// Mode-specific thinking messages (Clean & Simple)
 const getModeThinkingText = (modeId: string): string => {
   const thinkingTexts: Record<string, string> = {
-    'analyst': 'Analyzing your data...',
-    'deep': 'Deep thinking...',
-    'vision': 'Processing image...',
-    'predict': 'Generating forecast...',
-    'agent': 'Planning actions...',
+    'analyst': 'Analyzing data...',
+    'deep': 'Thinking deeply...',
+    'vision': 'Analyzing image...',
+    'predict': 'Running prediction...',
+    'agent': 'Taking action...',
   };
-  return thinkingTexts[modeId] || 'Thinking...';
+  return thinkingTexts[modeId] || 'Processing...';
 };
 
 // Typing Indicator - ChatGPT Style with mode-specific thinking
@@ -680,69 +775,121 @@ const TypingIndicator: React.FC<{ mode?: string }> = ({ mode = 'rag' }) => (
   </div>
 );
 
-// Premium Enterprise Welcome Screen
-const WelcomeScreen: React.FC<{ onSuggestionClick: (text: string) => void }> = ({ onSuggestionClick }) => {
-  // Universal suggestions that work for ANY domain
-  const suggestions = [
-    { icon: TrendingUp, text: "Analyze trends in my data", description: "Discover patterns over time" },
-    { icon: FileText, text: "Summarize my uploaded data", description: "Get key insights" },
-    { icon: Network, text: "Find relationships in data", description: "Discover connections" },
-    { icon: Sparkles, text: "What data do I have?", description: "See available columns" },
-  ];
+// ChatGPT-Style Welcome Screen with Centered Input (includes Mode & MCP controls)
+interface WelcomeScreenProps {
+  onSuggestionClick: (text: string) => void;
+  input: string;
+  setInput: (val: string) => void;
+  onSend: () => void;
+  isLoading: boolean;
+  onFileClick: () => void;
+  currentMode: { id: string; label: string; icon: any };
+  onModeClick: () => void;
+  onMcpClick: () => void;
+  mcpCount: { active: number; total: number };
+}
 
-  // Universal quick prompts that work with any domain
-  const quickPrompts = [
-    "What columns are in my data?",
-    "Show top 10 records",
-    "Calculate totals by category",
-    "Find the highest values",
-    "Compare categories",
-    "Show data distribution",
+const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
+  onSuggestionClick,
+  input,
+  setInput,
+  onSend,
+  isLoading,
+  onFileClick,
+  currentMode,
+  onModeClick,
+  onMcpClick,
+  mcpCount
+}) => {
+  const suggestions = [
+    { icon: TrendingUp, text: "Analyze trends in my data" },
+    { icon: FileText, text: "Summarize my uploaded data" },
+    { icon: Sparkles, text: "What insights can you find?" },
+    { icon: Network, text: "Find patterns and correlations" },
   ];
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] welcome-animate">
-      {/* Logo with premium floating animation */}
-      <div className="w-20 h-20 mb-6 flex items-center justify-center float-animation">
-        <img src="/logo.png" alt="DataVision Logo" className="w-full h-full object-contain drop-shadow-2xl" />
+    <div className="flex flex-col items-center justify-center h-full px-4">
+      {/* Logo */}
+      <div className="w-14 h-14 mb-4">
+        <img src="/logo.png" alt="DataVision" className="w-full h-full object-contain" />
       </div>
 
-      {/* Title with slide-up */}
-      <h1 className="text-3xl font-bold text-gray-100 mb-2 slide-up">
-        Your DataVision Assistant
+      {/* Title - ChatGPT style */}
+      <h1 className="text-2xl md:text-3xl font-semibold text-white mb-8 text-center">
+        How can I help you today?
       </h1>
-      <p className="text-gray-400 mb-8 text-sm slide-up slide-up-delay-1">
-        Enterprise Intelligence • ₹40 Lakh/Year Value
-      </p>
 
-      {/* Suggestion Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-xl w-full px-4 mb-8 stagger-children">
+      {/* Centered Search Box - ChatGPT Style with Mode & MCP */}
+      <div className="w-full max-w-3xl mb-10">
+        <div className="relative flex items-center glass-input rounded-2xl transition-colors">
+          {/* MCP Button */}
+          <button
+            onClick={onMcpClick}
+            className="p-3 text-gray-400 hover:text-gray-200 transition-colors relative"
+            title="MCP Servers"
+          >
+            <Database className="w-5 h-5" />
+            <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${mcpCount.active === mcpCount.total ? 'bg-green-500' : 'bg-yellow-500'}`} />
+          </button>
+
+          {/* File Attach Button */}
+          <button
+            onClick={onFileClick}
+            className="p-3 text-gray-400 hover:text-gray-200 transition-colors"
+            title="Attach file"
+          >
+            <Paperclip className="w-5 h-5" />
+          </button>
+
+          {/* Input Field */}
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); } }}
+            placeholder="Ask anything about your data..."
+            className="flex-1 bg-transparent text-white placeholder-gray-500 py-4 px-2 outline-none text-base"
+          />
+
+          {/* Mode Selector Button */}
+          <button
+            onClick={onModeClick}
+            className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg-hover)] hover:bg-[var(--bg-secondary)] rounded-lg transition-colors text-sm font-medium whitespace-nowrap mr-1"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            {currentMode.label}
+            <ChevronDown className="w-4 h-4" />
+          </button>
+
+          {/* Send Button */}
+          <button
+            onClick={onSend}
+            disabled={!input.trim() || isLoading}
+            className={`m-2 p-3 rounded-xl transition-all ${input.trim() && !isLoading
+              ? 'bg-teal-500 hover:bg-teal-600 text-white'
+              : 'bg-[var(--bg-hover)] text-gray-400 cursor-not-allowed'
+              }`}
+          >
+            <Send className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Suggestion Cards - 2x2 Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full">
         {suggestions.map((suggestion, i) => (
           <button
             key={i}
             onClick={() => onSuggestionClick(suggestion.text)}
-            className="premium-card flex items-start gap-3 p-4 text-left group"
+            className="flex items-center gap-3 p-4 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)]/30 hover:bg-[var(--bg-hover)] hover:border-gray-500 transition-all duration-200 text-left group"
           >
             <div className="p-2 rounded-lg bg-teal-500/10 group-hover:bg-teal-500/20 transition-colors">
               <suggestion.icon className="w-5 h-5 text-teal-400" />
             </div>
-            <div>
-              <p className="font-medium text-gray-200 text-sm group-hover:text-white">{suggestion.text}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{suggestion.description}</p>
-            </div>
-          </button>
-        ))}
-      </div>
-
-      {/* Quick Prompt Chips */}
-      <div className="flex flex-wrap gap-2 justify-center max-w-2xl px-4 slide-up slide-up-delay-3">
-        {quickPrompts.map((prompt, i) => (
-          <button
-            key={i}
-            onClick={() => onSuggestionClick(prompt)}
-            className="suggestion-chip"
-          >
-            {prompt}
+            <span className="text-sm transition-colors group-hover:text-[var(--text-primary)]" style={{ color: 'var(--text-secondary)' }}>
+              {suggestion.text}
+            </span>
           </button>
         ))}
       </div>
@@ -911,17 +1058,17 @@ const AnalystChat: React.FC = () => {
     },
   ];
 
-  // Mode definitions - 5 UNIQUE POWERFUL MODES (Like OpenAI's Model Lineup)
-  // Each mode is a DISTINCT POWERHOUSE with unique capabilities
+  // Mode definitions - 5 CORE MODES (Clean & Professional)
+  // Each mode has a specific purpose
   const modes = [
-    // 📊 ANALYST - Default mode, smart data analysis with Query Intent Detection
+    // 📊 ANALYST - Default mode, smart data analysis
     {
       id: 'analyst',
-      label: 'Analyst',
+      label: '📊 Analyst',
       icon: FileText,
-      description: 'Query intent detection • Auto-visualization • Fast answers',
-      fullDescription: 'Intelligent data analysis with automatic chart selection based on your question',
-      features: ['Query Intent Detection', 'Auto-Visualization', 'RAG Router'],
+      description: 'Smart data analysis with charts & insights',
+      fullDescription: 'Upload data and ask questions - get instant analysis with visualizations',
+      features: ['Data Analysis', 'Auto Charts', 'Insights', 'Summaries'],
       badge: null,
       isAI: false,
       category: 'core',
@@ -929,14 +1076,14 @@ const AnalystChat: React.FC = () => {
       supportsCharts: true,
       color: 'from-blue-500 to-cyan-500'
     },
-    // 🧠 DEEP THINK - Complex reasoning with Fact Verification
+    // 🧠 DEEP THINK - Complex reasoning
     {
       id: 'deep',
-      label: 'Deep Think',
+      label: '🧠 Deep Think',
       icon: Sparkles,
-      description: 'Fact verification • Evidence extraction • Chain-of-thought',
-      fullDescription: 'Multi-step reasoning with data citations and verification ✅/❌',
-      features: ['Fact Verification', 'Evidence Citations', 'Confidence Scoring'],
+      description: 'Multi-step reasoning for complex questions',
+      fullDescription: 'Think deeper - breaks down complex problems step by step',
+      features: ['Deep Research', 'Multi-Step', 'Reasoning', 'Analysis'],
       badge: 'Pro',
       isAI: true,
       category: 'core',
@@ -944,14 +1091,14 @@ const AnalystChat: React.FC = () => {
       supportsCharts: true,
       color: 'from-purple-500 to-pink-500'
     },
-    // 🔭 VISION - Image analysis with specialized extraction modes
+    // 👁️ VISION - Image analysis
     {
       id: 'vision',
-      label: 'Vision',
+      label: '👁️ Vision',
       icon: Eye,
-      description: 'Chart extraction • Table OCR • Document reading',
-      fullDescription: 'Specialized modes for charts, tables, documents, and diagrams',
-      features: ['Chart Mode', 'Table Mode', 'Document Mode', 'Diagram Mode'],
+      description: 'Analyze images, charts, documents & screenshots',
+      fullDescription: 'Upload any image and ask questions about it',
+      features: ['Image Analysis', 'Chart Reading', 'OCR', 'Document Scan'],
       badge: null,
       isAI: false,
       category: 'core',
@@ -960,14 +1107,14 @@ const AnalystChat: React.FC = () => {
       supportsImages: true,
       color: 'from-green-500 to-emerald-500'
     },
-    // 🔮 PREDICT - ML-Powered forecasting with scikit-learn
+    // 📈 PREDICT - ML forecasting
     {
       id: 'predict',
-      label: 'Predict',
+      label: '📈 Predict',
       icon: TrendingUp,
-      description: 'ML algorithms • 95% confidence • Feature importance',
-      fullDescription: 'Real scikit-learn predictions with confidence intervals and matplotlib charts',
-      features: ['Linear/Forest/Gradient', '95% Confidence', 'Matplotlib Charts'],
+      description: 'ML predictions, forecasts & trend analysis',
+      fullDescription: 'Predict future trends using machine learning',
+      features: ['ML Forecasts', 'Trends', 'Predictions', 'Confidence'],
       badge: 'ML',
       isAI: true,
       category: 'core',
@@ -975,14 +1122,14 @@ const AnalystChat: React.FC = () => {
       supportsCharts: true,
       color: 'from-amber-500 to-orange-500'
     },
-    // 🤖 AGENT - Autonomous AI with tool orchestration
+    // 🤖 AGENT - Autonomous AI
     {
       id: 'agent',
-      label: 'Agent',
+      label: '🤖 Agent',
       icon: Bot,
-      description: 'Tool orchestration • Error recovery • Web research',
-      fullDescription: 'Full autonomous agent with 8 tools, planning, and error recovery',
-      features: ['8 Tools', 'Error Recovery', 'Web Research'],
+      description: 'Autonomous AI that takes actions on your data',
+      fullDescription: 'Let AI plan and execute multi-step data tasks',
+      features: ['Auto Actions', 'Multi-Step', 'Tools', 'Planning'],
       badge: 'Pro',
       isAI: true,
       category: 'core',
@@ -1129,8 +1276,8 @@ const AnalystChat: React.FC = () => {
         setImagePreviewUrl(e.target?.result as string);
       };
       reader.readAsDataURL(file);
-      setMode('vision');
-      setInput(prev => prev || 'Analyze this image');
+      // Claude-style: Keep current mode, don't auto-switch
+      setInput(prev => prev || 'What can you see in this image?');
     }
   };
 
@@ -1152,8 +1299,8 @@ const AnalystChat: React.FC = () => {
             setImagePreviewUrl(e.target?.result as string);
           };
           reader.readAsDataURL(file);
-          setMode('vision');
-          setInput(prev => prev || 'Analyze this image');
+          // Claude-style: Keep current mode, don't auto-switch
+          setInput(prev => prev || 'What can you see in this image?');
         }
         break;
       }
@@ -1232,9 +1379,11 @@ const AnalystChat: React.FC = () => {
             console.error('Streaming error:', error);
             const currentConv = getCurrentConversation();
             if (currentConv) {
+              // Format error as user-friendly message
+              const friendlyError = formatUserFriendlyError(error);
               const updatedMessages = currentConv.messages.map(m =>
                 m.id === assistantMsgId
-                  ? { ...m, content: fullContent || `Error: ${error}` }
+                  ? { ...m, content: fullContent || friendlyError }
                   : m
               );
               updateConversationMessages(convId, updatedMessages);
@@ -1356,6 +1505,7 @@ const AnalystChat: React.FC = () => {
           role: 'assistant' as const,
           content: String(responseContent),
           timestamp: new Date().toISOString(),
+
           sources: Array.isArray(responseSources) ? responseSources.map(s => String(s)) : [],
           // 🏆 Competition-winning features
           suggestions: responseSuggestions,
@@ -1369,10 +1519,13 @@ const AnalystChat: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Error processing message:', error);
+      // Format error as user-friendly message
+      const rawError = error.response?.data?.detail || error.message || 'Unknown error';
+      const friendlyError = formatUserFriendlyError(rawError);
       const errorMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant' as const,
-        content: `Sorry, I encountered an error: ${error.response?.data?.detail || error.message || 'Unknown error'}`,
+        content: friendlyError,
         timestamp: new Date().toISOString(),
       };
       addMessageToConversation(convId, errorMessage);
@@ -1605,22 +1758,69 @@ const AnalystChat: React.FC = () => {
 
   const currentMode = modes.find(m => m.id === mode) || modes[0]; // Safe fallback to analyst
 
+  // Refs for click-outside detection
+  const mcpMenuRef = useRef<HTMLDivElement>(null);
+  const modeMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (mcpDropdownOpen && mcpMenuRef.current && !mcpMenuRef.current.contains(event.target as Node)) {
+        // Check if the click was on the toggle button - if so, let the button handle it
+        const target = event.target as Element;
+        if (!target.closest('button[title="MCP Servers"]')) {
+          setMcpDropdownOpen(false);
+        }
+      }
+      if (modeDropdownOpen && modeMenuRef.current && !modeMenuRef.current.contains(event.target as Node)) {
+        // Check if the click was on the toggle button
+        const target = event.target as Element;
+        if (
+          !target.closest('button[title="Analysis Modes"]') &&
+          !target.closest('.mode-selector-btn') // Add class to mode buttons to be safe
+        ) {
+          setModeDropdownOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [mcpDropdownOpen, modeDropdownOpen]);
+
   return (
-    <div className="flex h-screen bg-dark-bg overflow-hidden" {...getRootProps()}>
+    <div className="flex h-screen sm:h-[100dvh] overflow-hidden bg-[var(--bg-primary)] w-full" {...getRootProps()}>
       <input {...getInputProps()} />
 
-      {/* Left Sidebar - Chat History */}
+      {/* Mobile Sidebar Overlay */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setSidebarOpen(false)}
+            className="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Sidebar - Desktop Fixed / Mobile Drawer */}
       <aside className={`
-        fixed inset-y-0 left-0 z-50 w-72 bg-dark-card border-r border-dark-border flex flex-col transition-transform duration-300 ease-in-out
-        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        fixed md:static inset-y-0 left-0 z-50 w-[260px] bg-[var(--bg-card)] border-r border-[var(--border-color)] flex flex-col transition-transform duration-300 transform
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:w-0 md:border-none md:overflow-hidden'}
       `}>
         {/* Sidebar Header */}
-        <div className="p-4 border-b border-dark-border flex items-center justify-between min-w-[256px]">
+        <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between min-w-[256px]">
           <h2 className="text-lg font-semibold text-white">Chat History</h2>
           {/* Mobile close button */}
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden p-1 hover:bg-dark-hover rounded-lg transition-colors"
+            className="lg:hidden p-1 hover:bg-[var(--bg-hover)] rounded-lg transition-colors"
             title="Close"
           >
             <X className="w-5 h-5 text-gray-400" />
@@ -1689,58 +1889,53 @@ const AnalystChat: React.FC = () => {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-dark-border space-y-1">
+        <div className="p-3 border-t border-[var(--border-color)] space-y-1">
           <button
             onClick={() => navigate('/settings')}
-            className="flex items-center gap-2 w-full p-2 rounded-lg hover:bg-dark-hover text-gray-400 hover:text-gray-200 transition-colors text-sm"
+            className="flex items-center gap-2 w-full p-2 rounded-lg hover:bg-[var(--bg-hover)] text-gray-400 hover:text-gray-200 transition-colors text-sm"
           >
             <Settings className="w-4 h-4" />
             Settings
           </button>
           <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center gap-2 w-full p-2 rounded-lg hover:bg-dark-hover text-gray-400 hover:text-gray-200 transition-colors text-sm"
+            onClick={() => navigate('/datahub')}
+            className="flex items-center gap-2 w-full p-2 rounded-lg hover:bg-[var(--bg-hover)] text-gray-400 hover:text-gray-200 transition-colors text-sm"
           >
             <ArrowLeft className="w-4 h-4" />
-            Back to Dashboard
+            Back to DataHub
           </button>
         </div>
       </aside>
 
-      {/* Mobile backdrop */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Main Chat Area */}
-      <div className={`flex-1 flex flex-col min-w-0 bg-dark-bg transition-all duration-300 overflow-hidden ${sidebarOpen ? 'lg:ml-72' : ''}`}>
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col relative min-w-0 bg-[var(--bg-primary)]">
 
         {/* Top Navigation Bar - Now visible on Desktop too */}
-        <div className="h-16 border-b border-dark-border flex items-center justify-between px-4 bg-dark-card/50 backdrop-blur-sm sticky top-0 z-20">
+        <div className="h-16 border-b border-[var(--border-color)] flex items-center justify-between px-4 bg-[var(--bg-card)]/50 backdrop-blur-sm sticky top-0 z-20">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 hover:bg-dark-hover rounded-lg transition-colors text-gray-400 hover:text-white"
+              className="p-2 hover:bg-[var(--bg-hover)] rounded-lg transition-colors text-gray-400 hover:text-white"
               title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
             >
               <Menu className="w-5 h-5" />
             </button>
-            <div className="flex flex-col">
-              <h1 className="text-base font-semibold text-white leading-tight">Analyst Chat</h1>
-              <p className="text-xs text-gray-500">
-                {currentMode.label} Mode • {Object.values(enabledMcps).filter(Boolean).length} Active Tools
-              </p>
-            </div>
+            {/* Only show title when there are messages */}
+            {messages.length > 0 && (
+              <div className="flex flex-col">
+                <h1 className="text-base font-semibold text-white leading-tight">Analyst Chat</h1>
+                <p className="text-xs text-gray-500">
+                  {currentMode.label} Mode • {Object.values(enabledMcps).filter(Boolean).length} Active Tools
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Top Right Actions */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setUseStreaming(!useStreaming)}
-              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${useStreaming ? 'bg-teal-500/10 text-teal-400' : 'bg-dark-hover text-gray-500'
+              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${useStreaming ? 'bg-teal-500/10 text-teal-400' : 'bg-[var(--bg-hover)] text-gray-500'
                 }`}
               title="Toggle Streaming"
             >
@@ -1751,17 +1946,27 @@ const AnalystChat: React.FC = () => {
         </div>
 
         {/* Messages Container - Scrollable with ChatGPT-like experience */}
-        <div ref={chatContainerRef} className="flex-1 overflow-y-auto scroll-smooth chat-scroll">
-          <div className="max-w-5xl mx-auto px-4 py-6">
+        <div ref={chatContainerRef} className="flex-1 overflow-y-auto custom-scrollbar">
+          <div className={`max-w-3xl mx-auto px-4 ${messages.length === 0 ? 'h-full flex flex-col justify-center py-8' : 'py-6 pb-40'}`}>
             {messages.length === 0 ? (
-              <WelcomeScreen onSuggestionClick={handleSuggestionClick} />
+              <WelcomeScreen
+                onSuggestionClick={handleSuggestionClick}
+                input={input}
+                setInput={setInput}
+                onSend={handleSend}
+                isLoading={isLoading}
+                onFileClick={() => fileInputRef.current?.click()}
+                currentMode={currentMode}
+                onModeClick={() => setModeDropdownOpen(true)}
+                onMcpClick={() => setMcpDropdownOpen(true)}
+                mcpCount={{ active: Object.values(enabledMcps).filter(Boolean).length, total: mcpServers.length }}
+              />
             ) : (
-              <div className="space-y-6">
-                {messages.filter(msg => msg && msg.id && msg.content).map((message, index) => (
+              <div className="space-y-4">
+                {messages.filter(msg => msg && msg.id && msg.content).map((message) => (
                   <div
                     key={message.id}
-                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} message-slide-up group`}
-                    style={{ animationDelay: `${Math.min(index * 0.05, 0.3)}s` }}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}
                   >
                     {message.role === 'user' ? (
                       // User Message - Right side, contained bubble
@@ -1782,7 +1987,7 @@ const AnalystChat: React.FC = () => {
                                   handleCancelEdit();
                                 }
                               }}
-                              className="w-full p-4 bg-dark-card border border-accent-primary rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary text-gray-100"
+                              className="w-full p-4 bg-[var(--bg-card)] border border-accent-primary rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-accent-primary text-gray-100"
                               rows={3}
                               autoFocus
                             />
@@ -1808,10 +2013,10 @@ const AnalystChat: React.FC = () => {
                               )}
                             </div>
                             <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => handleCopyMessage(message.id, message.content)} className="p-1 hover:bg-dark-hover rounded text-gray-500 hover:text-gray-300">
+                              <button onClick={() => handleCopyMessage(message.id, message.content)} className="p-1 hover:bg-[var(--bg-hover)] rounded text-gray-500 hover:text-gray-300">
                                 {copiedMessageId === message.id ? <CheckCheck className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
                               </button>
-                              <button onClick={() => handleEditMessage(message.id, message.content)} className="p-1 hover:bg-dark-hover rounded text-gray-500 hover:text-gray-300">
+                              <button onClick={() => handleEditMessage(message.id, message.content)} className="p-1 hover:bg-[var(--bg-hover)] rounded text-gray-500 hover:text-gray-300">
                                 <Pencil className="w-4 h-4" />
                               </button>
                             </div>
@@ -1834,7 +2039,7 @@ const AnalystChat: React.FC = () => {
                             />
 
                             {message.sources && Array.isArray(message.sources) && message.sources.length > 0 && (
-                              <div className="mt-4 pt-4 border-t border-dark-border">
+                              <div className="mt-4 pt-4 border-t border-[var(--border-color)]">
                                 <p className="text-xs font-semibold text-gray-500 mb-2 flex items-center gap-1">
                                   <FileText className="w-3 h-3" /> Sources
                                 </p>
@@ -1849,12 +2054,12 @@ const AnalystChat: React.FC = () => {
                             )}
                           </div>
                           <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => handleCopyMessage(message.id, message.content)} className="p-1.5 hover:bg-dark-hover rounded-lg text-gray-500 hover:text-gray-300 transition-colors" title="Copy">
+                            <button onClick={() => handleCopyMessage(message.id, message.content)} className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-gray-500 hover:text-gray-300 transition-colors" title="Copy">
                               {copiedMessageId === message.id ? <CheckCheck className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
                             </button>
                             <button
                               onClick={() => handleFeedback(message.id, 'up')}
-                              className={`p-1.5 hover:bg-dark-hover rounded-lg transition-colors ${messageFeedback[message.id] === 'up'
+                              className={`p-1.5 hover:bg-[var(--bg-hover)] rounded-lg transition-colors ${messageFeedback[message.id] === 'up'
                                 ? 'text-green-400 bg-green-400/10'
                                 : 'text-gray-500 hover:text-green-400'
                                 }`}
@@ -1867,7 +2072,7 @@ const AnalystChat: React.FC = () => {
                             </button>
                             <button
                               onClick={() => handleFeedback(message.id, 'down')}
-                              className={`p-1.5 hover:bg-dark-hover rounded-lg transition-colors ${messageFeedback[message.id] === 'down'
+                              className={`p-1.5 hover:bg-[var(--bg-hover)] rounded-lg transition-colors ${messageFeedback[message.id] === 'down'
                                 ? 'text-red-400 bg-red-400/10'
                                 : 'text-gray-500 hover:text-red-400'
                                 }`}
@@ -1880,7 +2085,7 @@ const AnalystChat: React.FC = () => {
                             </button>
                             <button
                               onClick={() => handleRegenerate(message.id)}
-                              className="p-1.5 hover:bg-dark-hover rounded-lg text-gray-500 hover:text-teal-400 transition-colors"
+                              className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-gray-500 hover:text-teal-400 transition-colors"
                               title="Regenerate response"
                             >
                               <RefreshCw className="w-4 h-4" />
@@ -1889,7 +2094,7 @@ const AnalystChat: React.FC = () => {
 
                           {/* 🏆 Dynamic Follow-up Suggestions - Competition Winner Feature */}
                           {message.suggestions && message.suggestions.length > 0 && (
-                            <div className="mt-4 pt-3 border-t border-dark-border/50 animate-fadeIn">
+                            <div className="mt-4 pt-3 border-t border-[var(--border-color)]/50 animate-fadeIn">
                               <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
                                 <Sparkles className="w-3 h-3 text-teal-400" /> Follow-up questions
                               </p>
@@ -1902,7 +2107,7 @@ const AnalystChat: React.FC = () => {
                                       const inputEl = document.querySelector('textarea');
                                       inputEl?.focus();
                                     }}
-                                    className="px-3 py-1.5 bg-gradient-to-r from-teal-500/10 to-indigo-500/10 hover:from-teal-500/20 hover:to-indigo-500/20 border border-teal-500/30 hover:border-teal-400/50 rounded-full text-xs text-teal-300 hover:text-teal-200 transition-all duration-200 hover:scale-105"
+                                    className="px-3 py-1.5 bg-teal-50 dark:bg-teal-500/10 hover:bg-teal-100 dark:hover:bg-teal-500/20 border border-teal-200 dark:border-teal-500/30 rounded-full text-xs text-teal-700 dark:text-teal-300 transition-colors duration-200"
                                   >
                                     {suggestion}
                                   </button>
@@ -1932,13 +2137,13 @@ const AnalystChat: React.FC = () => {
                           {/* 🤖 ML Charts - Matplotlib/Seaborn Visualizations from Predict Mode */}
                           {(message as any).mlCharts && Array.isArray((message as any).mlCharts) && (message as any).mlCharts.length > 0 && (
                             <div className="mt-4 space-y-4">
-                              <div className="flex items-center gap-2 text-sm text-teal-400 border-t border-dark-border pt-3">
+                              <div className="flex items-center gap-2 text-sm text-teal-400 border-t border-[var(--border-color)] pt-3">
                                 <Zap className="w-4 h-4" />
                                 <span>ML Visualizations • Real scikit-learn analysis</span>
                               </div>
                               {(message as any).mlCharts.map((chart: { type: string; image: string; title?: string }, i: number) => (
                                 chart.image && (
-                                  <div key={i} className="p-4 bg-gradient-to-br from-dark-surface to-dark-bg rounded-xl border border-dark-border shadow-lg">
+                                  <div key={i} className="p-4 bg-gradient-to-br from-[var(--bg-secondary)] to-[var(--bg-primary)] rounded-xl border border-[var(--border-color)] shadow-lg">
                                     <div className="flex items-center gap-2 mb-3">
                                       <span className="text-lg">
                                         {chart.type === 'ml_forecast' ? '📈' :
@@ -1972,7 +2177,7 @@ const AnalystChat: React.FC = () => {
                     <div className="w-8 h-8 flex-shrink-0 mt-1 flex items-center justify-center">
                       <span className="text-xl">🔧</span>
                     </div>
-                    <div className="flex-1 bg-dark-card border border-amber-500/50 rounded-xl p-4 shadow-xl">
+                    <div className="flex-1 bg-[var(--bg-card)] border border-amber-500/50 rounded-xl p-4 shadow-xl">
                       <div className="flex items-center gap-2 mb-3">
                         <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
                         <span className="text-sm text-amber-500 font-medium">Permission Required</span>
@@ -1984,7 +2189,7 @@ const AnalystChat: React.FC = () => {
                         {mcpPermissionDialog.pendingTools.map((tool) => (
                           <div
                             key={tool.name}
-                            className="flex items-center gap-3 px-3 py-2 bg-dark-hover/50 border border-dark-border rounded-lg"
+                            className="flex items-center gap-3 px-3 py-2 bg-[var(--bg-hover)]/50 border border-[var(--border-color)] rounded-lg"
                           >
                             <span className="text-lg">{tool.icon}</span>
                             <div className="flex-1">
@@ -1997,7 +2202,7 @@ const AnalystChat: React.FC = () => {
                       <div className="flex gap-2 justify-end">
                         <button
                           onClick={() => mcpPermissionDialog.onDeny?.()}
-                          className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 bg-dark-hover hover:bg-dark-border rounded-lg transition-colors border border-transparent hover:border-dark-border"
+                          className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 bg-[var(--bg-hover)] hover:bg-[var(--border-color)] rounded-lg transition-colors border border-transparent hover:border-[var(--border-color)]"
                         >
                           Deny
                         </button>
@@ -2020,7 +2225,7 @@ const AnalystChat: React.FC = () => {
                         <div className="w-8 h-8 flex-shrink-0 mt-1 flex items-center justify-center">
                           <div className="animate-spin text-xl">⚙️</div>
                         </div>
-                        <div className="flex-1 bg-dark-card/80 backdrop-blur-sm border border-accent-primary/30 rounded-xl p-4">
+                        <div className="flex-1 bg-[var(--bg-card)]/80 backdrop-blur-sm border border-accent-primary/30 rounded-xl p-4">
                           <div className="flex items-center gap-2 mb-3">
                             <div className="w-2 h-2 bg-accent-primary rounded-full animate-pulse"></div>
                             <span className="text-sm text-accent-primary font-medium">Running MCP Tools</span>
@@ -2033,7 +2238,7 @@ const AnalystChat: React.FC = () => {
                                   ? 'bg-accent-primary/20 border border-accent-primary/40'
                                   : tool.status === 'success'
                                     ? 'bg-green-500/20 border border-green-500/40'
-                                    : 'bg-dark-hover/50 border border-dark-border'
+                                    : 'bg-[var(--bg-hover)]/50 border border-[var(--border-color)]'
                                   }`}
                               >
                                 <span className={`text-lg ${tool.status === 'running' ? 'animate-bounce' : ''}`}>
@@ -2070,321 +2275,349 @@ const AnalystChat: React.FC = () => {
           </div>
         </div>
 
-        {/* Claude-style Input Bar */}
-        {/* Claude-style Input Bar - FIXED AT BOTTOM */}
-        <div className="flex-shrink-0 border-t border-dark-border bg-dark-bg p-4">
-          <div className="max-w-3xl mx-auto">
-            {/* Attached Files Preview */}
-            {attachedFiles.length > 0 && (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {attachedFiles.map((file, index) => (
-                  <div key={index} className="flex items-center gap-2 px-3 py-2 bg-dark-card border border-dark-border rounded-lg text-sm">
-                    <FileText className="w-4 h-4 text-teal-400" />
-                    <span className="text-gray-300 truncate max-w-[200px]">{file.name}</span>
-                    <button
-                      onClick={() => removeAttachedFile(index)} className="text-gray-500 hover:text-red-400">
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
+        {/* ========== GLOBAL DROPDOWNS - Both appear CENTERED below search box ========== */}
+
+        {/* Global MCP Dropdown */}
+        <AnimatePresence>
+          {mcpDropdownOpen && (
+            <motion.div
+              ref={mcpMenuRef}
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className={`fixed z-50 left-4 md:left-[calc(50%-384px)] w-80 max-w-[calc(100vw-2rem)] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl overflow-hidden ${messages.length === 0 ? 'top-1/2 mt-16' : 'bottom-28'}`}
+            >
+              <div className="p-3 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-secondary)]/50">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">MCP Servers</p>
+                <span className="text-xs text-teal-400 font-medium">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length} active</span>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {mcpServers.map((mcp) => (
+                  <button
+                    key={mcp.id}
+                    onClick={() => setEnabledMcps(prev => ({ ...prev, [mcp.id]: !prev[mcp.id] }))}
+                    className="flex items-center gap-3 w-full p-3 hover:bg-[var(--bg-hover)] transition-colors"
+                  >
+                    <span className="text-lg">{mcp.icon}</span>
+                    <div className="flex-1 text-left">
+                      <p className={`text-sm font-medium ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
+                      <p className="text-xs text-gray-500 line-clamp-1">{mcp.description}</p>
+                    </div>
+                    <div className={`w-9 h-5 rounded-full transition-all duration-200 ${enabledMcps[mcp.id] ? 'bg-teal-500' : 'bg-gray-700'} flex items-center`}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${enabledMcps[mcp.id] ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                    </div>
+                  </button>
                 ))}
               </div>
-            )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-            {/* Image Preview - Shows separately from attached files */}
-            {selectedImage && imagePreviewUrl && (
-              <div className="mb-3 flex flex-wrap gap-2">
-                <div className="relative group inline-block">
-                  {/* ChatGPT-style Image Preview Thumbnail */}
-                  <div className="relative w-32 h-24 rounded-xl overflow-hidden border-2 border-indigo-500/50 shadow-lg bg-dark-card transition-all duration-200 hover:border-indigo-400">
-                    <img
-                      src={imagePreviewUrl}
-                      alt="Preview"
-                      className="w-full h-full object-cover"
-                    />
-                    {/* Overlay with actions */}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-200 flex items-center justify-center">
-                      {/* Edit/View button - top left */}
-                      <button
-                        className="absolute top-1 left-1 p-1 bg-black/50 hover:bg-black/70 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="View image"
-                      >
-                        <Pencil className="w-3 h-3 text-white" />
-                      </button>
+        {/* Global Mode Dropdown */}
+        <AnimatePresence>
+          {modeDropdownOpen && (
+            <motion.div
+              ref={modeMenuRef}
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className={`fixed z-50 right-4 md:right-[calc(50%-384px)] w-80 max-w-[calc(100vw-2rem)] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto ${messages.length === 0 ? 'top-1/2 mt-16' : 'bottom-28'}`}
+            >
+              {/* RAG Modes */}
+              <div className="p-2 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/50">
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2">📊 Data Modes</span>
+              </div>
+              {modes.filter(m => !m.isAI).map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
+                  className={`flex items-center gap-3 w-full p-3 hover:bg-[var(--bg-hover)] transition-colors ${mode === m.id ? 'bg-[var(--bg-hover)]' : ''}`}
+                >
+                  <div className="flex-1 text-left">
+                    <div className="flex items-center gap-2">
+                      <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
+                      {m.badge && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/20 text-teal-400 rounded">
+                          {m.badge}
+                        </span>
+                      )}
                     </div>
-                    {/* Dismiss button - top right */}
+                    <p className="text-xs text-gray-500">{m.description}</p>
+                  </div>
+                  {mode === m.id && <Check className="w-4 h-4 text-teal-400" />}
+                </button>
+              ))}
+
+              {/* AI Models Divider */}
+              <div className="p-2 border-t border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/50">
+                <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider px-2">� AI Models</span>
+              </div>
+              {modes.filter(m => m.isAI).map((m: any) => (
+                <button
+                  key={m.id}
+                  onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
+                  className={`flex items-center gap-3 w-full p-3 hover:bg-[var(--bg-hover)] transition-colors ${mode === m.id ? 'bg-[var(--bg-hover)]' : ''}`}
+                >
+                  {m.logo && (
+                    <img
+                      src={m.logo}
+                      alt={m.label}
+                      className="w-6 h-6 rounded object-contain bg-white/10 p-0.5"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  )}
+                  <div className="flex-1 text-left">
+                    <div className="flex items-center gap-2">
+                      <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
+                      {m.badge && (
+                        <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${m.badge === 'New' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>
+                          {m.badge}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500">{m.description}</p>
+                  </div>
+                  {mode === m.id && <Check className="w-4 h-4 text-green-400" />}
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Global Hidden File Input - Always in DOM for WelcomeScreen and bottom input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,.pdf,.xlsx,.xls,.csv"
+          onChange={handleImageSelect}
+          className="hidden"
+        />
+
+        {/* Claude-style Input Bar - Only show when there are messages */}
+        {/* Floating Input Area - Fixed at Bottom Center (hidden on empty state) */}
+        {
+          messages.length > 0 && (
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-dark-bg via-dark-bg to-transparent pt-10 pb-6 px-4 z-20">
+              <div className="max-w-3xl mx-auto">
+                {/* Attached Files Preview */}
+                {attachedFiles.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {attachedFiles.map((file, index) => (
+                      <div key={index} className="flex items-center gap-2 px-3 py-2 bg-dark-card border border-dark-border rounded-lg text-sm">
+                        <FileText className="w-4 h-4 text-teal-400" />
+                        <span className="text-gray-300 truncate max-w-[200px]">{file.name}</span>
+                        <button
+                          onClick={() => removeAttachedFile(index)} className="text-gray-500 hover:text-red-400">
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Image Preview - Shows separately from attached files */}
+                {selectedImage && imagePreviewUrl && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    <div className="relative group inline-block">
+                      {/* ChatGPT-style Image Preview Thumbnail */}
+                      <div className="relative w-32 h-24 rounded-xl overflow-hidden border-2 border-indigo-500/50 shadow-lg bg-dark-card transition-all duration-200 hover:border-indigo-400">
+                        <img
+                          src={imagePreviewUrl}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                        />
+                        {/* Overlay with actions */}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-200 flex items-center justify-center">
+                          {/* Edit/View button - top left */}
+                          <button
+                            className="absolute top-1 left-1 p-1 bg-black/50 hover:bg-black/70 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="View image"
+                          >
+                            <Pencil className="w-3 h-3 text-white" />
+                          </button>
+                        </div>
+                        {/* Dismiss button - top right */}
+                        <button
+                          onClick={() => {
+                            setSelectedImage(null);
+                            setImagePreviewUrl(null);
+                          }}
+                          className="absolute top-1 right-1 p-1 bg-gray-800/80 hover:bg-red-600 rounded-md text-white transition-colors"
+                          title="Remove image"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Input Bar Container - Premium ChatGPT Style */}
+                <div className="glass-input w-full flex items-end gap-2 sm:gap-3 p-3 sm:p-4 rounded-2xl transition-all">
+
+                  {/* Left side buttons - Hidden on mobile, shown on desktop */}
+                  <div className="hidden sm:flex items-center gap-2">
+                    {/* MCP Servers Toggle - Uses unified dropdown below */}
                     <button
-                      onClick={() => {
-                        setSelectedImage(null);
-                        setImagePreviewUrl(null);
-                      }}
-                      className="absolute top-1 right-1 p-1 bg-gray-800/80 hover:bg-red-600 rounded-md text-white transition-colors"
-                      title="Remove image"
+                      onClick={() => setMcpDropdownOpen(!mcpDropdownOpen)}
+                      className="p-2 hover:bg-dark-hover rounded-lg transition-colors text-gray-400 hover:text-gray-200 relative"
+                      title="MCP Servers"
                     >
-                      <X className="w-3 h-3" />
+                      <Database className="w-5 h-5" />
+                      <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${Object.values(enabledMcps).every(Boolean) ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                    </button>
+
+                    {/* File Upload */}
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2 hover:bg-dark-hover rounded-lg transition-colors text-gray-400 hover:text-gray-200"
+                      title="Attach File"
+                    >
+                      <Paperclip className="w-5 h-5" />
                     </button>
                   </div>
-                </div>
-              </div>
-            )}
 
-            {/* Input Bar Container - Premium ChatGPT Style */}
-            <div className="chat-input-premium flex items-end gap-2 sm:gap-3 p-3 sm:p-4">
+                  {/* Mobile: Plus button with menu */}
+                  <div className="relative sm:hidden">
+                    {plusMenuOpen && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setPlusMenuOpen(false)} />
+                        <div className="absolute bottom-full mb-2 left-0 w-64 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden z-50">
+                          {/* Upload Files */}
+                          <button
+                            onClick={() => {
+                              fileInputRef.current?.click();
+                              setPlusMenuOpen(false);
+                            }}
+                            className="flex items-center gap-3 w-full p-4 hover:bg-dark-hover transition-colors text-left"
+                          >
+                            <div className="p-2 bg-blue-500/10 rounded-lg">
+                              <Paperclip className="w-5 h-5 text-blue-400" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-200">Add photos & files</p>
+                              <p className="text-xs text-gray-500">Upload documents or images</p>
+                            </div>
+                          </button>
 
-              {/* Left side buttons - Hidden on mobile, shown on desktop */}
-              <div className="hidden sm:flex items-center gap-2">
-                {/* MCP Servers Toggle - Uses unified dropdown below */}
-                <button
-                  onClick={() => setMcpDropdownOpen(!mcpDropdownOpen)}
-                  className="p-2 hover:bg-dark-hover rounded-lg transition-colors text-gray-400 hover:text-gray-200 relative"
-                  title="MCP Servers"
-                >
-                  <Database className="w-5 h-5" />
-                  <span className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${Object.values(enabledMcps).every(Boolean) ? 'bg-green-500' : 'bg-yellow-500'}`} />
-                </button>
+                          {/* MCPs Submenu */}
+                          <button
+                            onClick={() => {
+                              setMcpDropdownOpen(true);
+                              setPlusMenuOpen(false);
+                            }}
+                            className="flex items-center gap-3 w-full p-4 hover:bg-dark-hover transition-colors text-left border-t border-dark-border"
+                          >
+                            <div className="p-2 bg-green-500/10 rounded-lg">
+                              <Database className="w-5 h-5 text-green-400" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-200">MCP Servers</p>
+                              <p className="text-xs text-gray-500">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length} active</p>
+                            </div>
+                            <ChevronDown className="w-4 h-4 text-gray-500 -rotate-90" />
+                          </button>
 
-                {/* File Upload */}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-2 hover:bg-dark-hover rounded-lg transition-colors text-gray-400 hover:text-gray-200"
-                  title="Attach File"
-                >
-                  <Paperclip className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Mobile: Plus button with menu */}
-              <div className="relative sm:hidden">
-                {plusMenuOpen && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setPlusMenuOpen(false)} />
-                    <div className="absolute bottom-full mb-2 left-0 w-64 bg-dark-card border border-dark-border rounded-xl shadow-xl overflow-hidden z-50">
-                      {/* Upload Files */}
-                      <button
-                        onClick={() => {
-                          fileInputRef.current?.click();
-                          setPlusMenuOpen(false);
-                        }}
-                        className="flex items-center gap-3 w-full p-4 hover:bg-dark-hover transition-colors text-left"
-                      >
-                        <div className="p-2 bg-blue-500/10 rounded-lg">
-                          <Paperclip className="w-5 h-5 text-blue-400" />
+                          {/* Modes Submenu */}
+                          <button
+                            onClick={() => {
+                              setModeDropdownOpen(true);
+                              setPlusMenuOpen(false);
+                            }}
+                            className="flex items-center gap-3 w-full p-4 hover:bg-dark-hover transition-colors text-left border-t border-dark-border"
+                          >
+                            <div className="p-2 bg-purple-500/10 rounded-lg">
+                              <Sparkles className="w-5 h-5 text-purple-400" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-gray-200">AI Modes</p>
+                              <p className="text-xs text-gray-500">Current: {currentMode.label}</p>
+                            </div>
+                            <ChevronDown className="w-4 h-4 text-gray-500 -rotate-90" />
+                          </button>
                         </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-200">Add photos & files</p>
-                          <p className="text-xs text-gray-500">Upload documents or images</p>
-                        </div>
-                      </button>
-
-                      {/* MCPs Submenu */}
-                      <button
-                        onClick={() => {
-                          setMcpDropdownOpen(true);
-                          setPlusMenuOpen(false);
-                        }}
-                        className="flex items-center gap-3 w-full p-4 hover:bg-dark-hover transition-colors text-left border-t border-dark-border"
-                      >
-                        <div className="p-2 bg-green-500/10 rounded-lg">
-                          <Database className="w-5 h-5 text-green-400" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-200">MCP Servers</p>
-                          <p className="text-xs text-gray-500">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length} active</p>
-                        </div>
-                        <ChevronDown className="w-4 h-4 text-gray-500 -rotate-90" />
-                      </button>
-
-                      {/* Modes Submenu */}
-                      <button
-                        onClick={() => {
-                          setModeDropdownOpen(true);
-                          setPlusMenuOpen(false);
-                        }}
-                        className="flex items-center gap-3 w-full p-4 hover:bg-dark-hover transition-colors text-left border-t border-dark-border"
-                      >
-                        <div className="p-2 bg-purple-500/10 rounded-lg">
-                          <Sparkles className="w-5 h-5 text-purple-400" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-200">AI Modes</p>
-                          <p className="text-xs text-gray-500">Current: {currentMode.label}</p>
-                        </div>
-                        <ChevronDown className="w-4 h-4 text-gray-500 -rotate-90" />
-                      </button>
-                    </div>
-                  </>
-                )}
-                <button
-                  onClick={() => setPlusMenuOpen(!plusMenuOpen)}
-                  className="p-3 hover:bg-dark-hover rounded-xl transition-colors text-gray-400 hover:text-gray-200"
-                  title="More options"
-                >
-                  <Plus className="w-6 h-6" />
-                </button>
-              </div>
-
-              {/* MCP Dropdown - Unified for desktop and mobile with animation */}
-              {mcpDropdownOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setMcpDropdownOpen(false)} />
-                  <div className="fixed bottom-20 left-4 right-4 sm:absolute sm:bottom-full sm:left-0 sm:right-auto sm:mb-2 w-auto sm:w-72 bg-dark-card border border-dark-border rounded-xl shadow-2xl overflow-hidden z-50 message-slide-up">
-                    <div className="p-3 border-b border-dark-border flex items-center justify-between bg-dark-surface/50">
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">MCP Servers</p>
-                      <span className="text-xs text-teal-400 font-medium">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length} active</span>
-                    </div>
-                    <div className="max-h-80 overflow-y-auto chat-scroll">
-                      {mcpServers.map((mcp, index) => (
-                        <button
-                          key={mcp.id}
-                          onClick={() => setEnabledMcps(prev => ({ ...prev, [mcp.id]: !prev[mcp.id] }))}
-                          className="flex items-center gap-3 w-full p-3 hover:bg-dark-hover transition-all duration-200 group"
-                          style={{ animationDelay: `${index * 0.03}s` }}
-                        >
-                          <span className="text-lg group-hover:scale-110 transition-transform">{mcp.icon}</span>
-                          <div className="flex-1 text-left">
-                            <p className={`text-sm font-medium transition-colors ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
-                            <p className="text-xs text-gray-500 line-clamp-1">{mcp.description}</p>
-                          </div>
-                          <div className={`w-9 h-5 rounded-full transition-all duration-300 ${enabledMcps[mcp.id] ? 'bg-teal-500' : 'bg-gray-700'} flex items-center`}>
-                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-300 ${enabledMcps[mcp.id] ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                          </div>
-                        </button>
-                      ))}
-                    </div>
+                      </>
+                    )}
+                    <button
+                      onClick={() => setPlusMenuOpen(!plusMenuOpen)}
+                      className="p-3 hover:bg-dark-hover rounded-xl transition-colors text-gray-400 hover:text-gray-200"
+                      title="More options"
+                    >
+                      <Plus className="w-6 h-6" />
+                    </button>
                   </div>
-                </>
-              )}
 
-              {/* Text Input - Large and prominent */}
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                onPaste={handlePaste}
-                placeholder="Ask anything..."
-                rows={1}
-                className="flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-base text-gray-100 placeholder-gray-400 py-3 px-3 sm:py-2 sm:px-2 max-h-32 min-h-[44px]"
-                style={{ lineHeight: '1.5' }}
-              />
 
-              {/* Hidden file input */}
-              <input ref={fileInputRef} type="file" accept="image/*,.pdf,.xlsx,.xls,.csv" onChange={handleImageSelect} className="hidden" />
 
-              {/* Right side: Voice + Mode + Send */}
-              <div className="flex items-center gap-2">
-                {/* Voice Input */}
-                <button
-                  onClick={handleVoiceInput}
-                  className={`p-3 sm:p-2 rounded-xl sm:rounded-lg transition-colors ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'hover:bg-dark-hover text-gray-400 hover:text-gray-200'}`}
-                  title="Voice Input"
-                >
-                  <Mic className="w-6 h-6 sm:w-5 sm:h-5" />
-                </button>
+                  {/* Text Input - Large and prominent */}
+                  <textarea
+                    ref={textareaRef}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                    onPaste={handlePaste}
+                    placeholder="Ask anything..."
+                    rows={1}
+                    className="flex-1 min-w-0 bg-transparent border-none outline-none resize-none text-base text-gray-100 placeholder-gray-400 py-3 px-3 sm:py-2 sm:px-2 max-h-32 min-h-[44px]"
+                    style={{ lineHeight: '1.5' }}
+                  />
 
-                {/* Mode Selector - Works on mobile and desktop */}
-                <div className="relative">
-                  {modeDropdownOpen && (
-                    <>
-                      <div className="fixed inset-0 z-40" onClick={() => setModeDropdownOpen(false)} />
-                      <div className="fixed bottom-20 left-4 right-4 sm:absolute sm:bottom-full sm:left-auto sm:right-0 sm:mb-2 w-auto sm:w-72 bg-dark-card border border-dark-border rounded-xl shadow-2xl overflow-hidden z-50 max-h-[70vh] overflow-y-auto chat-scroll message-slide-up">
-                        {/* RAG Modes */}
-                        <div className="p-2 border-b border-dark-border bg-dark-surface/50">
-                          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2">Analysis Modes</span>
-                        </div>
-                        {modes.filter(m => !m.isAI).map((m) => (
-                          <button
-                            key={m.id}
-                            onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
-                            className={`flex items-center gap-3 w-full p-3 hover:bg-dark-hover transition-colors ${mode === m.id ? 'bg-dark-hover' : ''}`}
-                          >
-                            <div className="flex-1 text-left">
-                              <div className="flex items-center gap-2">
-                                <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
-                                {m.badge && (
-                                  <span className="px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/20 text-teal-400 rounded">
-                                    {m.badge}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500">{m.description}</p>
-                            </div>
-                            {mode === m.id && <Check className="w-4 h-4 text-teal-400" />}
-                          </button>
-                        ))}
+                  {/* Hidden file input */}
 
-                        {/* AI Models Divider */}
-                        <div className="p-2 border-t border-b border-dark-border bg-dark-surface/50">
-                          <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider px-2">🤖 AI Models</span>
-                        </div>
-                        {modes.filter(m => m.isAI).map((m: any) => (
-                          <button
-                            key={m.id}
-                            onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
-                            className={`flex items-center gap-3 w-full p-3 hover:bg-dark-hover transition-colors ${mode === m.id ? 'bg-dark-hover' : ''}`}
-                          >
-                            {/* Company Logo */}
-                            {m.logo && (
-                              <img
-                                src={m.logo}
-                                alt={m.label}
-                                className="w-6 h-6 rounded object-contain bg-white/10 p-0.5"
-                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                              />
-                            )}
-                            <div className="flex-1 text-left">
-                              <div className="flex items-center gap-2">
-                                <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
-                                {m.badge && (
-                                  <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${m.badge === 'New' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
-                                    }`}>
-                                    {m.badge}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500">{m.description}</p>
-                            </div>
-                            {mode === m.id && <Check className="w-4 h-4 text-green-400" />}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  <button
-                    onClick={() => setModeDropdownOpen(!modeDropdownOpen)}
-                    className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-dark-hover hover:bg-dark-surface rounded-lg transition-colors text-gray-200 text-sm font-medium whitespace-nowrap"
-                  >
-                    {currentMode.label}
-                    <ChevronDown className={`w-4 h-4 transition-transform ${modeDropdownOpen ? 'rotate-180' : ''}`} />
-                  </button>
+                  {/* Right side: Voice + Mode + Send */}
+                  <div className="flex items-center gap-2">
+                    {/* Voice Input */}
+                    <button
+                      onClick={handleVoiceInput}
+                      className={`p-3 sm:p-2 rounded-xl sm:rounded-lg transition-colors ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'hover:bg-dark-hover text-gray-400 hover:text-gray-200'}`}
+                      title="Voice Input"
+                    >
+                      <Mic className="w-6 h-6 sm:w-5 sm:h-5" />
+                    </button>
+
+                    {/* Mode Selector - Works on mobile and desktop */}
+                    <div className="relative">
+
+                      <button
+                        onClick={() => setModeDropdownOpen(!modeDropdownOpen)}
+                        className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-dark-hover hover:bg-dark-surface rounded-lg transition-colors text-gray-200 text-sm font-medium whitespace-nowrap"
+                      >
+                        {currentMode.label}
+                        <ChevronDown className={`w-4 h-4 transition-transform ${modeDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+
+                    {/* Send/Stop Button - Transforms like ChatGPT */}
+                    {isLoading ? (
+                      <button
+                        onClick={handleStopGeneration}
+                        className="p-3 sm:p-2.5 bg-gray-600 hover:bg-red-600 text-white rounded-xl transition-all duration-200"
+                        title="Stop generating"
+                      >
+                        <Square className="w-5 h-5 sm:w-4 sm:h-4 fill-current" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleSend}
+                        disabled={!input.trim() && !selectedImage && attachedFiles.length === 0}
+                        className="chat-send-btn touch-target"
+                      >
+                        <Send className="w-5 h-5 text-gray-900" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {/* Send/Stop Button - Transforms like ChatGPT */}
-                {isLoading ? (
-                  <button
-                    onClick={handleStopGeneration}
-                    className="p-3 sm:p-2.5 bg-gray-600 hover:bg-red-600 text-white rounded-xl transition-all duration-200"
-                    title="Stop generating"
-                  >
-                    <Square className="w-5 h-5 sm:w-4 sm:h-4 fill-current" />
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleSend}
-                    disabled={!input.trim() && !selectedImage && attachedFiles.length === 0}
-                    className="chat-send-btn touch-target"
-                  >
-                    <Send className="w-5 h-5 text-gray-900" />
-                  </button>
-                )}
+                {/* Disclaimer */}
+                <p className="text-center text-xs text-gray-500 mt-3">
+                  DataVision can make mistakes. Please double-check responses.
+                </p>
               </div>
-            </div>
-
-            {/* Disclaimer */}
-            <p className="text-center text-xs text-gray-500 mt-3">
-              DataVision can make mistakes. Please double-check responses.
-            </p>
-          </div>
-        </div >
+            </div >
+          )
+        }
       </div >
     </div >
   );

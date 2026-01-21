@@ -83,7 +83,6 @@ try:
 except ImportError:
     CHARTS_AVAILABLE = False
 
-# Import smart_chart for LLM-driven chart generation with ALL chart types
 try:
     from agents.smart_chart import smart_chart
     SMART_CHART_AVAILABLE = True
@@ -91,6 +90,15 @@ try:
 except ImportError:
     SMART_CHART_AVAILABLE = False
     print("⚠️ Smart Chart not available in chat.py")
+
+# Smart MCP - Claude-style auto-selected tools
+try:
+    from core.smart_mcp import smart_mcp_execute, format_mcp_response
+    SMART_MCP_AVAILABLE = True
+    print("✅ Smart MCP loaded - Claude-style tool execution active")
+except ImportError:
+    SMART_MCP_AVAILABLE = False
+    print("⚠️ Smart MCP not available")
 
 
 # Import memory engine for chart context storage - USE SHARED SINGLETON
@@ -2223,10 +2231,18 @@ Please upload a data file first, then ask me any question about your data.
         # ========================================
         
         # Check if we should use the new mode engines
-        NEW_MODE_ENGINES = ['analyst', 'deep', 'predict', 'agent']  # vision is handled separately
+        NEW_MODE_ENGINES = ['analyst', 'deep', 'predict', 'agent', 'vision']  # All modes unified
         
         if mode in NEW_MODE_ENGINES and MODE_ENGINES_AVAILABLE:
             print(f"🚀 USING NEW MODE ENGINE: {mode}")
+            
+            # Get DataFrame for charts/analysis (SHARED for all modes)
+            df = None
+            try:
+                from api.v1.endpoints.charts import get_user_data
+                df = get_user_data(user_id)
+            except Exception as e:
+                print(f"⚠️ Failed to load user dataframe: {e}")
             
             # Get context from RAG
             try:
@@ -2239,17 +2255,66 @@ Please upload a data file first, then ask me any question about your data.
                 context = ""
                 rag_sources = []
             
+            # =========================================================
+            # 🖼️ CLAUDE-STYLE: Extract image context for ANY mode
+            # Images work in all modes, not just Vision
+            # =========================================================
+            image_context = ""
+            
+            # Convert request.attachedFiles to processed_files format
+            processed_files = []
+            if request.attachedFiles:
+                for att_file in request.attachedFiles:
+                    processed_files.append({
+                        'name': att_file.get('name', 'image'),
+                        'type': att_file.get('type', 'image/png'),
+                        'content': att_file.get('content', '')  # Base64 data URL
+                    })
+                print(f"🖼️ Prepared {len(processed_files)} files for vision processing")
+            
+            if processed_files:
+                for file_info in processed_files:
+                    file_content = file_info.get('content', '')
+                    file_name = file_info.get('name', 'image')
+                    
+                    # Check if it's an image (base64 data URL)
+                    if file_content.startswith('data:image'):
+                        print(f"🖼️ Found image attachment: {file_name}")
+                        try:
+                            from core.vision import analyze_image_with_groq
+                            
+                            # Quick vision analysis
+                            analysis = analyze_image_with_groq(
+                                file_content,
+                                f"Describe this image. User asks: {query}"
+                            )
+                            
+                            if not analysis.startswith("❌"):
+                                image_context += f"\n\n## 🖼️ Image Analysis ({file_name})\n{analysis}\n"
+                                print(f"✅ Image analyzed: {len(analysis)} chars")
+                            else:
+                                print(f"⚠️ Image analysis failed: {analysis[:100]}")
+                        except Exception as e:
+                            print(f"⚠️ Vision processing error: {e}")
+            
+            # Combine RAG context with image context
+            full_context = context
+            if image_context:
+                full_context = f"{context}\n\n{image_context}" if context else image_context
+            
             try:
                 if mode == 'analyst':
                     # 📊 ANALYST - Smart data analysis with auto RAG routing
-                    response = analyst_response_sync(user_id, query, context)
-                    sources = ["Analyst Engine"] + rag_sources
+                    result = analyst_response_sync(user_id, query, full_context, df=df)
+                    response = result.get('answer', str(result)) if isinstance(result, dict) else str(result)
+                    sources = result.get('sources', ["Analyst Engine"]) if isinstance(result, dict) else ["Analyst Engine"]
                     print(f"📊 ANALYST ENGINE returned: {len(response)} chars")
                     
                 elif mode == 'deep':
                     # 🧠 DEEP THINK - Chain of thought reasoning
-                    response = deepthink_response_sync(user_id, query, context)
-                    sources = ["Deep Think Engine", "Chain of Thought"]
+                    result = deepthink_response_sync(user_id, query, full_context, df=df)
+                    response = result.get('answer', str(result)) if isinstance(result, dict) else str(result)
+                    sources = result.get('sources', ["Deep Think Engine"]) if isinstance(result, dict) else ["Deep Think Engine"]
                     print(f"🧠 DEEP THINK ENGINE returned: {len(response)} chars")
                     
                 elif mode == 'predict':
@@ -2258,16 +2323,8 @@ Please upload a data file first, then ask me any question about your data.
                     try:
                         from core.mode_engines.predict_engine import predict_response_sync
                         
-                        # Get DataFrame for prediction
-                        df = None
-                        try:
-                            from api.v1.endpoints.charts import get_user_data
-                            df = get_user_data(user_id)
-                        except:
-                            pass
-                        
-                        # Run SYNC prediction with real ML (avoids asyncio.run issues)
-                        result = predict_response_sync(user_id, query, context, df)
+                        # Run SYNC prediction with real ML
+                        result = predict_response_sync(user_id, query, full_context, df)
                         response = result.get('answer', 'Error making prediction')
                         
                         if result.get('ml_used'):
@@ -2286,13 +2343,22 @@ Please upload a data file first, then ask me any question about your data.
                     
                 elif mode == 'agent':
                     # 🤖 AGENT - Full autonomous with web search
-                    response = agent_response_sync(user_id, query, context)
-                    sources = ["Agent Engine", "Web Search", "Multi-Tool"]
+                    result = agent_response_sync(user_id, query, full_context, df=df)
+                    response = result.get('answer', str(result)) if isinstance(result, dict) else str(result)
+                    sources = result.get('sources', ["Agent Engine"]) if isinstance(result, dict) else ["Agent Engine"]
                     print(f"🤖 AGENT ENGINE returned: {len(response)} chars")
                 
-                # Add chart if visualization requested - SKIP for predict mode (has own charts)
-                if mode != 'predict':
-                    response = append_chart_if_needed(response, query, user_id)
+                elif mode == 'vision':
+                    # 👁️ VISION - Specialized image analysis
+                    result = vision_response_sync(user_id, query, full_context, df=df)
+                    response = result.get('answer', str(result)) if isinstance(result, dict) else str(result)
+                    sources = result.get('sources', ["Vision Engine"]) if isinstance(result, dict) else ["Vision Engine"]
+                    print(f"👁️ VISION ENGINE returned: {len(response)} chars")
+                
+                # Add chart if visualization requested - SKIP for engines that add it themselves
+                # All engines now append their own charts if df is passed
+                # if mode != 'predict':
+                #    response = append_chart_if_needed(response, query, user_id)
                 
                 # Save and return
                 history.append(Message(role="user", content=query, timestamp=datetime.now().isoformat()))

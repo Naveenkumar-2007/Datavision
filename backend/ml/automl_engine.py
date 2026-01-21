@@ -315,6 +315,13 @@ class ProductionMLEngine:
         self.scaler: Optional[RobustScaler] = None
         self.numeric_fill_values: Dict[str, float] = {}
         self.feature_metadata: List[Dict] = []
+        
+        # Stored test data for predict mode access
+        self._y_test = None
+        self._y_pred = None
+        self._y_proba = None
+        self._confusion_matrix = None
+        self._training_data = None  # Store sample of training data
     
     @property
     def feature_importance(self) -> Dict[str, float]:
@@ -328,6 +335,131 @@ class ProductionMLEngine:
         
         # Convert list of dicts to dictionary
         return {item['feature']: item['importance'] for item in importance_list}
+    
+    def get_model_metrics(self) -> Dict[str, Any]:
+        """
+        Get comprehensive model metrics for predict mode.
+        Returns stored y_test, y_pred, confusion_matrix, and all metrics.
+        """
+        result = {
+            'model_name': self.model_name if hasattr(self, 'model_name') else 'Unknown',
+            'task_type': self.task_type,
+            'target': self.target_column,
+            'n_features': len(self.feature_columns) if self.feature_columns else 0,
+            'features': self.feature_columns[:20] if self.feature_columns else [],
+            'metrics': self.metrics if hasattr(self, 'metrics') else {},
+            'n_classes': self.n_classes,
+        }
+        
+        # Add stored test data for charts
+        if hasattr(self, '_y_test') and self._y_test is not None:
+            result['y_test'] = self._y_test.tolist() if hasattr(self._y_test, 'tolist') else list(self._y_test)
+        
+        if hasattr(self, '_y_pred') and self._y_pred is not None:
+            result['y_pred'] = self._y_pred.tolist() if hasattr(self._y_pred, 'tolist') else list(self._y_pred)
+        
+        if hasattr(self, '_y_proba') and self._y_proba is not None:
+            result['y_proba'] = self._y_proba.tolist() if hasattr(self._y_proba, 'tolist') else list(self._y_proba)
+        
+        if hasattr(self, '_confusion_matrix') and self._confusion_matrix is not None:
+            result['confusion_matrix'] = self._confusion_matrix.tolist() if hasattr(self._confusion_matrix, 'tolist') else self._confusion_matrix
+        
+        # Add class labels
+        if hasattr(self, 'target_encoder') and self.target_encoder is not None:
+            result['class_names'] = self.target_encoder.classes_.tolist()
+        
+        # Add feature metadata for distribution charts
+        if hasattr(self, 'feature_metadata') and self.feature_metadata:
+            result['feature_metadata'] = self.feature_metadata
+        
+        # Add data profile
+        if hasattr(self, 'data_profile') and self.data_profile:
+            result['data_profile'] = self.data_profile
+        
+        return result
+    
+    def get_error_distribution(self) -> Dict[str, Any]:
+        """
+        Get error distribution data for regression tasks.
+        Returns residuals, MAE, RMSE, etc.
+        """
+        if not hasattr(self, '_y_test') or self._y_test is None:
+            return {'available': False, 'reason': 'No test data stored'}
+        
+        if not hasattr(self, '_y_pred') or self._y_pred is None:
+            return {'available': False, 'reason': 'No predictions stored'}
+        
+        try:
+            y_test = np.array(self._y_test)
+            y_pred = np.array(self._y_pred)
+            
+            # Calculate residuals
+            residuals = y_test - y_pred
+            
+            result = {
+                'available': True,
+                'residuals': residuals.tolist(),
+                'y_test': y_test.tolist(),
+                'y_pred': y_pred.tolist(),
+                'mae': float(np.mean(np.abs(residuals))),
+                'rmse': float(np.sqrt(np.mean(residuals**2))),
+                'std': float(np.std(residuals)),
+                'min_error': float(np.min(residuals)),
+                'max_error': float(np.max(residuals)),
+                'mean_error': float(np.mean(residuals)),
+                'median_error': float(np.median(residuals)),
+            }
+            
+            return result
+            
+        except Exception as e:
+            return {'available': False, 'reason': str(e)}
+    
+    def get_data_statistics(self, column_name: str = None) -> Dict[str, Any]:
+        """
+        Get statistics for a specific column or all columns.
+        Used by predict mode for data analysis.
+        """
+        result = {}
+        
+        if hasattr(self, '_training_data') and self._training_data is not None:
+            df = self._training_data
+            
+            if column_name and column_name in df.columns:
+                col = df[column_name]
+                if pd.api.types.is_numeric_dtype(col):
+                    result = {
+                        'column': column_name,
+                        'type': 'numeric',
+                        'count': int(col.count()),
+                        'mean': float(col.mean()),
+                        'std': float(col.std()),
+                        'min': float(col.min()),
+                        'max': float(col.max()),
+                        'median': float(col.median()),
+                        'q25': float(col.quantile(0.25)),
+                        'q75': float(col.quantile(0.75)),
+                    }
+                else:
+                    result = {
+                        'column': column_name,
+                        'type': 'categorical',
+                        'count': int(col.count()),
+                        'unique': int(col.nunique()),
+                        'top': str(col.mode().iloc[0]) if not col.mode().empty else None,
+                        'frequency': int(col.value_counts().iloc[0]) if not col.value_counts().empty else 0,
+                    }
+            else:
+                # Return summary for all columns
+                result = {
+                    'n_rows': len(df),
+                    'n_columns': len(df.columns),
+                    'columns': list(df.columns[:20]),
+                    'numeric_columns': list(df.select_dtypes(include=[np.number]).columns),
+                    'categorical_columns': list(df.select_dtypes(include=['object']).columns),
+                }
+        
+        return result
     
     # =========================================================================
     # COLUMN ANALYSIS & SELECTION
@@ -2314,6 +2446,9 @@ class ProductionMLEngine:
         logger.info(f"📊 Data: {df.shape[0]} rows, {df.shape[1]} columns")
         logger.info(f"🎯 Target: {target_col}")
         
+        # CRITICAL: Store target column for metadata persistence
+        self.target_column = target_col
+        
         # 1. Clean data
         cleaner = ProductionDataCleaner()
         df_clean = cleaner.clean(df, target_col)
@@ -2640,7 +2775,7 @@ class ProductionMLEngine:
         
         # CRITICAL: Save model for predictions
         try:
-            self._save(user_id)
+            self._save(user_id, charts=charts)
             print(f"💾 Model saved for user: {user_id}")
         except Exception as save_err:
             logger.warning(f"⚠️ Model save error: {save_err}")
@@ -3387,7 +3522,7 @@ class ProductionMLEngine:
         # Use the unified transform method
         return self.production_engineer.transform_single(data)
     
-    def _save(self, user_id: str):
+    def _save(self, user_id: str, charts: Optional[Dict[str, str]] = None):
         """Save model and preprocessors with enhanced persistence"""
         save_dir = os.path.join(STORAGE_PATH, user_id)
         os.makedirs(save_dir, exist_ok=True)
@@ -3446,6 +3581,12 @@ class ProductionMLEngine:
                     'is_nlp_task': getattr(self, 'is_nlp_task', False)
                 }
             )
+            
+            # Save charts if provided
+            if charts:
+                model_persistence.save_charts(user_id, charts)
+                logger.info(f"📊 Saved {len(charts)} charts to persistence")
+                
             logger.info(f"💾 Saved with versioning to model persistence manager")
         except Exception as e:
             logger.warning(f"⚠️ Persistence manager save failed: {e}")
@@ -3728,21 +3869,39 @@ class ProductionMLEngine:
         """Find optimal number of clusters using elbow method + silhouette"""
         logger.info("🔍 Finding optimal number of clusters...")
         
-        max_k = min(max_k, len(X) - 1)
+        # CRITICAL: Sample for silhouette calculation (O(n²) complexity!)
+        # 10K samples is max to keep computation reasonable
+        MAX_SILHOUETTE_SAMPLES = 10000
+        if len(X) > MAX_SILHOUETTE_SAMPLES:
+            logger.info(f"   ⚠️ Sampling {MAX_SILHOUETTE_SAMPLES} rows for silhouette (dataset has {len(X)})")
+            sample_idx = np.random.choice(len(X), MAX_SILHOUETTE_SAMPLES, replace=False)
+            X_sample = X[sample_idx]
+        else:
+            X_sample = X
+            sample_idx = None
+        
+        max_k = min(max_k, len(X_sample) - 1)
         k_range = range(2, max_k + 1)
         
         inertias = []
         silhouettes = []
         
         for k in k_range:
+            # Fit on full data for accurate inertia
             kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-            labels = kmeans.fit_predict(X)
+            full_labels = kmeans.fit_predict(X)
             inertias.append(kmeans.inertia_)
-            silhouettes.append(silhouette_score(X, labels))
+            
+            # Calculate silhouette on SAMPLE only (to avoid O(n²) on full data)
+            if sample_idx is not None:
+                sample_labels = full_labels[sample_idx]
+                silhouettes.append(silhouette_score(X_sample, sample_labels))
+            else:
+                silhouettes.append(silhouette_score(X, full_labels))
         
         # Best k by silhouette score
         best_k = list(k_range)[np.argmax(silhouettes)]
-        logger.info(f"   Optimal K = {best_k} (silhouette = {max(silhouettes):.3f})")
+        logger.info(f"   ✅ Optimal K = {best_k} (silhouette = {max(silhouettes):.3f})")
         
         return best_k
     

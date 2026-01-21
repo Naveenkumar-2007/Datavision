@@ -7,23 +7,27 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Sun, Moon, ArrowRight, Check, Upload,
     Home, BarChart2, Database, FileText, MessageSquare, Settings,
     ChevronRight, ChevronDown, TrendingUp, Search, Mic, Download,
     Shield, RefreshCw, Layers, GitBranch, Zap, Clock,
-    PieChart, Activity, Users, Loader2, LayoutDashboard, BrainCircuit, Target
+    PieChart, Activity, Users, Loader2, LayoutDashboard, BrainCircuit, Target,
+    PanelLeftClose, PanelLeftOpen, LogOut
 } from 'lucide-react';
 import AnimatedLogo from '../components/AnimatedLogo';
 
+import { useUserStore } from '@/store/userStore';
+
 const Landing: React.FC = () => {
     const navigate = useNavigate();
-    const [isDark, setIsDark] = useState(true);
+    const { isDark, toggleTheme } = useUserStore();
     const [scene, setScene] = useState(1); // Start at Dashboard
     const [cursorPos, setCursorPos] = useState({ x: 300, y: 250 });
     const [cursorClick, setCursorClick] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [hoveredPage, setHoveredPage] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState('Overview'); // For ML Predictions
     const [typing, setTyping] = useState('');
@@ -45,13 +49,8 @@ const Landing: React.FC = () => {
 
 **Data Quality Score: 100/100** - No issues found`;
 
-    useEffect(() => {
-        const saved = localStorage.getItem('theme');
-        setIsDark(saved !== 'light');
-        if (saved === 'light') {
-            document.documentElement.classList.add('light-theme');
-        }
-    }, []);
+    // Theme is now managed globally by userStore and App.tsx
+    // No local useEffect needed for theme initialization
 
     const triggerClick = () => {
         setCursorClick(true);
@@ -76,6 +75,9 @@ const Landing: React.FC = () => {
         const timers: NodeJS.Timeout[] = [];
 
         const runDemo = () => {
+            // Disable demo animation on mobile/tablet as layout changes
+            // if (typeof window !== 'undefined' && window.innerWidth < 1024) return;
+
             // Reset all states
             setScene(1);
             setActiveTab('Overview');
@@ -205,23 +207,14 @@ const Landing: React.FC = () => {
         return () => timers.forEach(t => clearTimeout(t));
     }, []);
 
-    const toggleTheme = () => {
-        const newIsDark = !isDark;
-        setIsDark(newIsDark);
-        if (newIsDark) {
-            document.documentElement.classList.remove('light-theme');
-            localStorage.setItem('theme', 'dark');
-        } else {
-            document.documentElement.classList.add('light-theme');
-            localStorage.setItem('theme', 'light');
-        }
-    };
+    // Local toggleTheme removed in favor of store action
 
     // Colors
-    const accent = '#14b8a6';
+    const accent = '#22c55e'; // Vibrant Green Brand Color
     const bg = isDark ? '#0a0a0f' : '#fafafa';
     const text = isDark ? '#fafafa' : '#0f172a';
     const textMuted = isDark ? '#71717a' : '#64748b';
+    const textSecondary = isDark ? '#d1d5db' : '#374151'; // Much brighter for dark mode visibility
     const border = isDark ? '#27272a' : '#e4e4e7';
 
     // Demo colors
@@ -246,6 +239,14 @@ const Landing: React.FC = () => {
     };
 
     const activePage = getActivePage();
+
+    // Auto-scroll mobile nav
+    useEffect(() => {
+        const activeEl = document.getElementById(`demo-nav-${activePage}`);
+        if (activeEl) {
+            activeEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+    }, [activePage]);
 
     return (
         <div className="min-h-screen" style={{ backgroundColor: bg, color: text }}>
@@ -275,13 +276,14 @@ const Landing: React.FC = () => {
                 </div>
             </nav>
 
-            {/* Hero Section - Premium Copy */}
-            <section className="pt-28 pb-12 px-6">
+            {/* Hero Section - Premium $5M Copy */}
+            <section className="pt-24 md:pt-28 pb-8 md:pb-12 px-4 md:px-6">
                 <div className="max-w-4xl mx-auto text-center">
+
                     <motion.h1
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={{ opacity: 1, y: 0 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-6"
+                        className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-4 md:mb-6"
                     >
                         Your data doesn't need dashboards.
                         <br />
@@ -289,29 +291,30 @@ const Landing: React.FC = () => {
                     </motion.h1>
 
                     <motion.p
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={{ opacity: 1, y: 0 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.1 }}
-                        className="text-lg md:text-xl leading-relaxed mb-6 max-w-3xl mx-auto"
-                        style={{ color: textMuted }}
+                        className="text-base sm:text-lg md:text-xl leading-relaxed mb-4 md:mb-6 max-w-3xl mx-auto px-2"
+                        style={{ color: textSecondary }}
                     >
-                        A self-learning system that continuously understands any data, reasons autonomously
-                        using multiple internal capabilities, and delivers actionable decisions — without manual configuration.
+                        A self-learning system that autonomously generates 15+ intelligent visualizations,
+                        trains production-ready ML models with one click, and delivers LLM-powered insights —
+                        all without writing a single line of code.
                     </motion.p>
 
                     <motion.p
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={{ opacity: 1, y: 0 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.15 }}
-                        className="text-base leading-relaxed mb-10 max-w-2xl mx-auto"
-                        style={{ color: textMuted }}
+                        className="text-sm sm:text-base leading-relaxed mb-8 md:mb-10 max-w-2xl mx-auto px-2"
+                        style={{ color: textSecondary }}
                     >
-                        Upload any data. Ask any question. The system automatically interprets structure, context,
-                        and relationships to produce reliable insights, explanations, and outcomes — in real time.
+                        Upload any CSV or Excel file. Get autonomous dashboards, Ultra AutoML predictions,
+                        executive reports, and an AI analyst that understands your data context — in real time.
                     </motion.p>
 
                     <motion.div
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={{ opacity: 1, y: 0 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2 }}
                     >
@@ -323,17 +326,36 @@ const Landing: React.FC = () => {
                             Start with your data <ArrowRight className="w-4 h-4" />
                         </button>
                     </motion.div>
+
+                    {/* Trust Indicators - Real Features */}
+                    <motion.div
+                        initial={{ opacity: 1 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.4 }}
+                        className="flex items-center justify-center gap-6 mt-8 flex-wrap"
+                    >
+                        {[
+                            { icon: Zap, text: 'Ultra AutoML Training' },
+                            { icon: LayoutDashboard, text: '15+ Auto Charts' },
+                            { icon: BrainCircuit, text: 'LLM-Powered Insights' },
+                        ].map((item, i) => (
+                            <div key={i} className="flex items-center gap-2 text-xs" style={{ color: textSecondary }}>
+                                <item.icon className="w-4 h-4" style={{ color: accent }} />
+                                <span>{item.text}</span>
+                            </div>
+                        ))}
+                    </motion.div>
                 </div>
             </section>
 
             {/* Product Demo */}
-            <section className="pb-20 px-6">
+            <section className="pb-20 px-4 md:px-6 overflow-hidden">
                 <div className="max-w-5xl mx-auto">
                     <motion.div
                         initial={{ opacity: 0, y: 40 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.3 }}
-                        className="rounded-2xl overflow-hidden shadow-2xl relative"
+                        className="rounded-2xl overflow-hidden shadow-2xl relative max-w-full"
                         style={{
                             backgroundColor: demoBg,
                             border: `1px solid ${demoBorder}`,
@@ -348,13 +370,13 @@ const Landing: React.FC = () => {
                                 <div className="w-3 h-3 rounded-full bg-[#28c840]" />
                             </div>
                             <div className="flex-1 text-center">
-                                <span className="text-xs font-medium" style={{ color: demoMuted }}>DataVision - Enterprise Analytics</span>
+                                <span className="text-xs font-medium" style={{ color: demoMuted }}>DataVision</span>
                             </div>
                         </div>
 
                         {/* App Content */}
-                        <div className="flex h-[520px] relative">
-                            {/* Cursor */}
+                        <div className="flex flex-col md:flex-row h-auto md:h-[520px] relative">
+                            {/* Cursor - Hidden on mobile/tablet */}
                             <motion.div
                                 animate={{
                                     left: cursorPos.x,
@@ -362,7 +384,7 @@ const Landing: React.FC = () => {
                                     scale: cursorClick ? 0.8 : 1
                                 }}
                                 transition={{ type: 'spring', damping: 20, stiffness: 200 }}
-                                className="absolute z-50 pointer-events-none"
+                                className="absolute z-50 pointer-events-none hidden lg:block"
                                 style={{ marginLeft: -6, marginTop: -2 }}
                             >
                                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
@@ -384,16 +406,38 @@ const Landing: React.FC = () => {
                                 )}
                             </motion.div>
 
-                            {/* Sidebar */}
-                            <div className="w-40 flex-shrink-0 border-r flex flex-col" style={{ backgroundColor: demoSidebar, borderColor: demoBorder }}>
-                                <div className="p-3 border-b" style={{ borderColor: demoBorder }}>
-                                    <div className="flex items-center gap-2">
-                                        <img src="/logo.png" alt="" className="w-5 h-5 rounded-sm" />
-                                        <span className="text-sm font-semibold" style={{ color: demoText }}>DataVision</span>
+                            {/* Sidebar - Responsive Nav on Mobile / Collapsible on Desktop */}
+                            <motion.div
+                                className={`flex-shrink-0 border-r-0 border-b md:border-r md:border-b-0 flex flex-row md:flex-col justify-between md:justify-start w-full transition-all duration-300 ${isSidebarOpen ? 'md:w-40' : 'md:w-16'}`}
+                                style={{ backgroundColor: demoSidebar, borderColor: demoBorder }}
+                            >
+                                <div className="p-3 border-b-0 md:border-b border-r md:border-r-0 flex items-center justify-between" style={{ borderColor: demoBorder }}>
+                                    <div className="flex items-center gap-2 overflow-hidden">
+                                        <img src="/logo.png" alt="" className="w-5 h-5 rounded-sm flex-shrink-0" />
+                                        {isSidebarOpen && (
+                                            <motion.span
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 1 }}
+                                                className="text-sm font-semibold whitespace-nowrap hidden md:inline"
+                                                style={{ color: demoText }}
+                                            >
+                                                DataVision
+                                            </motion.span>
+                                        )}
+                                        <span className="text-sm font-semibold whitespace-nowrap md:hidden" style={{ color: demoText }}>DataVision</span>
                                     </div>
+                                    {/* Desktop Toggle Button */}
+                                    <button
+                                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                                        className="hidden md:flex p-1 hover:bg-white/10 rounded ml-1 transition-colors"
+                                        style={{ color: demoMuted }}
+                                        title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
+                                    >
+                                        {isSidebarOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
+                                    </button>
                                 </div>
 
-                                <div className="flex-1 py-2">
+                                <div className="flex-1 py-0 md:py-2 flex flex-row md:flex-col items-center md:items-stretch overflow-x-auto md:overflow-visible no-scrollbar">
                                     {[
                                         { icon: Home, label: 'Home', path: 'home' },
                                         { icon: Database, label: 'Data Hub', path: 'data-hub' },
@@ -407,34 +451,37 @@ const Landing: React.FC = () => {
                                         const isActive = activePage === item.path;
                                         return (
                                             <div
+                                                id={`demo-nav-${item.path}`}
                                                 key={item.label}
                                                 onMouseEnter={() => setHoveredPage(item.path)}
                                                 onMouseLeave={() => setHoveredPage(null)}
-                                                className="flex items-center gap-2 px-3 py-2 mx-2 rounded-lg text-xs cursor-pointer transition-all"
+                                                className={`flex items-center gap-2 px-3 py-2 mx-1 md:mx-2 rounded-lg text-xs cursor-pointer transition-all whitespace-nowrap flex-shrink-0 ${!isSidebarOpen ? 'md:justify-center md:px-0' : ''}`}
                                                 style={{
                                                     backgroundColor: isActive ? `${accent}15` : 'transparent',
                                                     color: isActive ? accent : demoMuted,
-                                                    borderLeft: isActive ? `2px solid ${accent}` : '2px solid transparent'
+                                                    borderLeft: isActive && isSidebarOpen ? `2px solid ${accent}` : '2px solid transparent'
                                                 }}
+                                                title={!isSidebarOpen ? item.label : ''}
                                             >
-                                                <item.icon className="w-4 h-4" />
-                                                {item.label}
+                                                <item.icon className="w-4 h-4 flex-shrink-0" />
+                                                <span className="md:hidden">{item.label}</span>
+                                                {isSidebarOpen && <span className="hidden md:inline">{item.label}</span>}
                                             </div>
                                         );
                                     })}
                                 </div>
 
-                                <div className="p-3 border-t text-xs" style={{ borderColor: demoBorder, color: demoMuted }}>
-                                    Sign Out
+                                <div className="hidden md:block p-3 border-t text-xs overflow-hidden whitespace-nowrap" style={{ borderColor: demoBorder, color: demoMuted }}>
+                                    {isSidebarOpen ? 'Sign Out' : <div className="flex justify-center"><LogOut size={14} /></div>}
                                 </div>
-                            </div>
+                            </motion.div>
 
                             {/* Main Content */}
-                            <div className="flex-1 overflow-hidden relative">
+                            <div className="flex-1 overflow-visible md:overflow-hidden relative">
                                 <AnimatePresence mode="wait">
                                     {/* Data Hub - REMOVED */}{/* Dashboard (Autonomous) */}
                                     {activePage === 'dashboard' && (
-                                        <motion.div key="dashboard" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
+                                        <motion.div key="dashboard" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-auto md:h-full p-4 overflow-visible md:overflow-auto">
                                             <div className="flex items-center justify-between mb-4">
                                                 <div>
                                                     <h2 className="text-base font-semibold" style={{ color: demoText }}>Social Media Insights</h2>
@@ -446,8 +493,8 @@ const Landing: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            {/* KPI Cards - EXACT MATCH */}
-                                            <div className="grid grid-cols-6 gap-2 mb-4">
+                                            {/* KPI Cards - FAVORITE FEATURE: Responsive Grid */}
+                                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
                                                 {[
                                                     { label: 'Total Records', value: '732', sub: '16 dimensions', color: '#10b981' },
                                                     { label: 'Avg Unnamed: 0.1', value: '366', sub: '+199.6% vs past avg', color: '#3b82f6' },
@@ -464,8 +511,8 @@ const Landing: React.FC = () => {
                                                 ))}
                                             </div>
 
-                                            {/* Charts Grid - EXACT MATCH rows */}
-                                            <div className="grid grid-cols-3 gap-3 h-32 mb-3">
+                                            {/* Charts Grid - Responsive */}
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 h-auto md:h-32 mb-3">
                                                 {/* Text Sunburst */}
                                                 <div className="p-2 rounded-lg border relative" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
                                                     <div className="flex justify-between items-center mb-1">
@@ -500,7 +547,7 @@ const Landing: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            <div className="grid grid-cols-3 gap-3 h-32 mb-3">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 h-auto md:h-32 mb-3">
                                                 {/* Bubble/Scatter */}
                                                 <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
                                                     <div className="flex justify-between items-center mb-1">
@@ -543,7 +590,7 @@ const Landing: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            <div className="grid grid-cols-3 gap-3 h-32">
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 h-auto md:h-32">
                                                 {/* Stacked Bar 2 */}
                                                 <div className="p-2 rounded-lg border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
                                                     <div className="flex justify-between items-center mb-1">
@@ -587,7 +634,7 @@ const Landing: React.FC = () => {
 
                                     {/* AutoML */}
                                     {activePage === 'automl' && (
-                                        <motion.div key="automl" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
+                                        <motion.div key="automl" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-auto md:h-full p-4 overflow-visible md:overflow-auto">
                                             <div className="flex items-center justify-between mb-4">
                                                 <div>
                                                     <h2 className="text-base font-semibold" style={{ color: demoText }}>AutoML Training</h2>
@@ -635,7 +682,7 @@ const Landing: React.FC = () => {
 
                                     {/* ML Predictions */}
                                     {activePage === 'ml-predictions' && (
-                                        <motion.div key="predictions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-4 overflow-auto">
+                                        <motion.div key="predictions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-auto md:h-full p-4 overflow-visible md:overflow-auto">
                                             <div className="flex items-center gap-2 mb-4">
                                                 <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${accent}20` }}>
                                                     <BrainCircuit className="w-4 h-4" style={{ color: accent }} />
@@ -648,7 +695,7 @@ const Landing: React.FC = () => {
                                             </div>
 
                                             {/* Top Cards */}
-                                            <div className="grid grid-cols-4 gap-3 mb-4">
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                                                 <div className="p-3 rounded-xl border relative overflow-hidden" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
                                                     <div className="flex items-center gap-2 mb-2">
                                                         <div className="w-1 h-3 rounded-full" style={{ backgroundColor: accent }} />
@@ -698,7 +745,7 @@ const Landing: React.FC = () => {
 
                                             {/* Overview Tab Content (Image 2) */}
                                             {activeTab === 'Overview' && (
-                                                <div className="grid grid-cols-2 gap-4">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     {/* All Models Performance */}
                                                     <div className="p-3 rounded-xl border" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
                                                         <p className="text-[10px] font-medium mb-3" style={{ color: demoText }}>All Models Performance</p>
@@ -751,7 +798,7 @@ const Landing: React.FC = () => {
 
                                             {/* ML Charts Tab Content (Image 3) */}
                                             {activeTab === 'ML Charts' && (
-                                                <div className="grid grid-cols-2 gap-4 h-64">
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-auto md:h-64">
                                                     {/* Model Comparison Chart */}
                                                     <div className="p-2 rounded-xl border flex flex-col" style={{ backgroundColor: demoCard, borderColor: demoBorder }}>
                                                         <span className="text-[9px] mb-1" style={{ color: demoText }}>Model Comparison</span>
@@ -931,13 +978,13 @@ const Landing: React.FC = () => {
 
                                     {/* Chat */}
                                     {activePage === 'chat' && (
-                                        <motion.div key="chat" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full flex flex-col">
+                                        <motion.div key="chat" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-auto md:h-full flex flex-col">
                                             <div className="px-5 py-3 border-b" style={{ borderColor: demoBorder }}>
                                                 <p className="text-sm font-semibold" style={{ color: demoText }}>Analyst Chat</p>
                                                 <p className="text-[10px]" style={{ color: demoMuted }}>RAG Mode • 10 Active Tools</p>
                                             </div>
 
-                                            <div className="flex-1 p-5 overflow-auto relative">
+                                            <div className="p-5 md:flex-1 overflow-visible md:overflow-auto relative">
                                                 {/* MCP Panel */}
                                                 <AnimatePresence>
                                                     {showMCPPanel && (
@@ -1107,7 +1154,7 @@ const Landing: React.FC = () => {
 
                                     {/* Reports */}
                                     {activePage === 'reports' && (
-                                        <motion.div key="reports" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-5 overflow-auto">
+                                        <motion.div key="reports" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-auto md:h-full p-5 overflow-visible md:overflow-auto">
                                             <div className="mb-4">
                                                 <h2 className="text-base font-semibold" style={{ color: demoText }}>Data Reports</h2>
                                                 <p className="text-xs" style={{ color: accent }}>Automatic reports generated from your uploaded data</p>
@@ -1169,7 +1216,7 @@ const Landing: React.FC = () => {
 
                                     {/* Settings */}
                                     {activePage === 'settings' && (
-                                        <motion.div key="settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full p-6 overflow-auto">
+                                        <motion.div key="settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-auto md:h-full p-6 overflow-visible md:overflow-auto">
                                             <h2 className="text-lg font-semibold mb-6" style={{ color: demoText }}>Settings</h2>
 
                                             {/* Preferences */}
@@ -1236,36 +1283,162 @@ const Landing: React.FC = () => {
                         </div>
                     </motion.div>
                 </div>
-            </section>
+            </section >
+
+            {/* Core Capabilities - Premium Style (Compact) */}
+            < section className="py-20 px-6 relative overflow-hidden" >
+                <div className="max-w-7xl mx-auto relative z-10">
+                    <motion.div
+                        initial={{ opacity: 0, y: 30 }}
+                        whileInView={{ opacity: 1, y: 0 }}
+                        viewport={{ once: true }}
+                        className="text-center mb-16"
+                    >
+                        <h2 className="text-3xl md:text-4xl lg:text-5xl font-extrabold tracking-tight mb-4 text-white">
+                            One Platform. <span style={{ color: accent }}>Infinite Intelligence.</span>
+                        </h2>
+                        <p className="text-lg md:text-xl max-w-3xl mx-auto font-medium" style={{ color: isDark ? '#e2e8f0' : '#475569' }}>
+                            From raw spreadsheet to production-ready ML model in <span className="text-white">under 60 seconds.</span>
+                        </p>
+                    </motion.div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Capability 1: AutoML Engine */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            className="group p-8 rounded-[1.5rem] border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl flex flex-col"
+                            style={{
+                                backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                                borderColor: border ? border : 'rgba(255,255,255,0.1)',
+                            }}
+                        >
+                            <div className="w-12 h-12 rounded-lg flex items-center justify-center mb-6 border" style={{ borderColor: `${accent}40`, backgroundColor: `${accent}10` }}>
+                                <BrainCircuit className="w-6 h-6" style={{ color: accent }} />
+                            </div>
+
+                            <h3 className="text-xl font-bold mb-3 text-white">Ultra AutoML Engine</h3>
+
+                            <p className="text-sm font-bold mb-2 text-white">
+                                One click. 15+ algorithms. Best model selected.
+                            </p>
+                            <p className="text-sm leading-relaxed mb-6 flex-1" style={{ color: textMuted }}>
+                                Upload any CSV or Excel file and watch the system automatically train XGBoost, LightGBM, Random Forest, Neural Networks, and 10+ other algorithms — then select the champion model with production-ready metrics.
+                            </p>
+
+                            <div className="flex flex-wrap gap-2 mt-auto">
+                                <span className="px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider border" style={{ borderColor: `${accent}30`, color: accent, backgroundColor: `${accent}05` }}>
+                                    One-Click Training
+                                </span>
+                                <span className="px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider border" style={{ borderColor: `${accent}30`, color: accent, backgroundColor: `${accent}05` }}>
+                                    Auto Feature Engineering
+                                </span>
+                            </div>
+                        </motion.div>
+
+                        {/* Capability 2: Predictive Analytics */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ delay: 0.1 }}
+                            className="group p-8 rounded-[1.5rem] border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl flex flex-col"
+                            style={{
+                                backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                                borderColor: border ? border : 'rgba(255,255,255,0.1)',
+                            }}
+                        >
+                            <div className="w-12 h-12 rounded-lg flex items-center justify-center mb-6 border" style={{ borderColor: '#f59e0b40', backgroundColor: '#f59e0b10' }}>
+                                <Target className="w-6 h-6 text-amber-500" />
+                            </div>
+
+                            <h3 className="text-xl font-bold mb-3 text-white">Autonomous Dashboards</h3>
+
+                            <p className="text-sm font-bold mb-2 text-white">
+                                15+ visualizations. Zero configuration.
+                            </p>
+                            <p className="text-sm leading-relaxed mb-6 flex-1" style={{ color: textMuted }}>
+                                The system analyzes your data structure and automatically generates the perfect mix of charts — scatter plots, heatmaps, sunbursts, trend lines, correlation matrices — tailored to reveal the insights that matter most.
+                            </p>
+
+                            <div className="flex flex-wrap gap-2 mt-auto">
+                                <span className="px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider border" style={{ borderColor: '#f59e0b30', color: '#f59e0b', backgroundColor: '#f59e0b05' }}>
+                                    Auto-Generated
+                                </span>
+                                <span className="px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider border" style={{ borderColor: '#f59e0b30', color: '#f59e0b', backgroundColor: '#f59e0b05' }}>
+                                    Real-Time KPIs
+                                </span>
+                            </div>
+                        </motion.div>
+
+                        {/* Capability 3: Smart Reporting */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ delay: 0.2 }}
+                            className="group p-8 rounded-[1.5rem] border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl flex flex-col"
+                            style={{
+                                backgroundColor: isDark ? '#0f172a' : '#ffffff',
+                                borderColor: border ? border : 'rgba(255,255,255,0.1)',
+                            }}
+                        >
+                            <div className="w-12 h-12 rounded-lg flex items-center justify-center mb-6 border" style={{ borderColor: '#8b5cf640', backgroundColor: '#8b5cf610' }}>
+                                <Zap className="w-6 h-6 text-violet-500" />
+                            </div>
+
+                            <h3 className="text-xl font-bold mb-3 text-white">LLM-Powered Analyst</h3>
+
+                            <p className="text-sm font-bold mb-2 text-white">
+                                Ask anything. Get executive answers.
+                            </p>
+                            <p className="text-sm leading-relaxed mb-6 flex-1" style={{ color: textMuted }}>
+                                A conversational AI analyst that understands your data context. Generate 6 types of reports, get anomaly detection, predictive insights, and executive summaries — all through natural language.
+                            </p>
+
+                            <div className="flex flex-wrap gap-2 mt-auto">
+                                <span className="px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider border" style={{ borderColor: '#8b5cf630', color: '#8b5cf6', backgroundColor: '#8b5cf605' }}>
+                                    Natural Language
+                                </span>
+                                <span className="px-2.5 py-1 rounded-md text-[10px] font-semibold uppercase tracking-wider border" style={{ borderColor: '#8b5cf630', color: '#8b5cf6', backgroundColor: '#8b5cf605' }}>
+                                    6 Report Types
+                                </span>
+                            </div>
+                        </motion.div>
+                    </div>
+                </div>
+            </section >
 
             {/* Why Different Section - Premium Copy */}
-            <section className="py-20 px-6" style={{ backgroundColor: isDark ? 'rgba(20, 184, 166, 0.03)' : 'rgba(20, 184, 166, 0.05)' }}>
+            < section className="py-20 px-6" style={{ backgroundColor: isDark ? 'rgba(20, 184, 166, 0.03)' : 'rgba(20, 184, 166, 0.05)' }}>
                 <div className="max-w-4xl mx-auto">
                     <h2 className="text-2xl md:text-3xl font-bold text-center mb-4">
                         Why This Is <span style={{ color: accent }}>Different</span>
                     </h2>
 
                     <p className="text-center mb-6 max-w-3xl mx-auto leading-relaxed" style={{ color: textMuted }}>
-                        DataVision is built as a continuously learning intelligence system — not a reporting layer.
+                        DataVision isn't another BI tool that requires weeks of setup. It's an autonomous intelligence system
+                        that starts working the moment you upload your first file.
                     </p>
 
                     <p className="text-center mb-12 max-w-3xl mx-auto leading-relaxed" style={{ color: textMuted }}>
-                        It understands data of any kind, adapts as information changes, and produces reliable intelligence
-                        without manual setup, configuration, or predefined logic. The system operates autonomously in the background,
-                        maintaining context, updating understanding, and delivering decision-ready outputs whenever they are needed.
+                        No data engineering. No model configuration. No dashboard building.
+                        The system handles everything — from data cleaning to ML training to executive reporting —
+                        so you can focus on decisions, not infrastructure.
                     </p>
 
                     <h3 className="text-xl font-semibold text-center mb-8" style={{ color: text }}>
-                        What the Platform Delivers
+                        What You Get Out of the Box
                     </h3>
 
                     <div className="space-y-4 max-w-2xl mx-auto">
                         {[
-                            'Continuous understanding of structured and unstructured data',
-                            'Autonomous reasoning across evolving datasets',
-                            'Zero-configuration ingestion and interpretation',
-                            'Always-up-to-date intelligence, not point-in-time results',
-                            'Clear, explainable outputs designed for real decisions',
+                            'Ultra AutoML: Train 15+ algorithms with one click, get the champion model',
+                            'Autonomous Dashboards: 15+ intelligent visualizations generated automatically',
+                            'LLM-Powered Analyst: Ask questions in natural language, get executive answers',
+                            '6 Report Types: Metrics, Breakdown, Summary, Executive, Predictive, Anomaly',
+                            'Production-Ready Predictions: Make real predictions on new data instantly',
                         ].map((item, i) => (
                             <motion.div
                                 key={i}
@@ -1282,10 +1455,10 @@ const Landing: React.FC = () => {
                         ))}
                     </div>
                 </div>
-            </section>
+            </section >
 
             {/* Final Statement */}
-            <section className="py-24 px-6">
+            < section className="py-24 px-6" >
                 <div className="max-w-3xl mx-auto text-center">
                     <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold leading-tight mb-12">
                         This is an <span style={{ color: accent }}>autonomous intelligence system</span> that continuously understands your data.
@@ -1308,20 +1481,25 @@ const Landing: React.FC = () => {
                         </button>
                     </div>
                 </div>
-            </section>
+            </section >
 
             {/* Footer */}
-            <footer className="py-8 px-6 border-t" style={{ borderColor: border }}>
+            < footer className="py-8 px-6 border-t" style={{ borderColor: border }}>
                 <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                         <AnimatedLogo size="sm" showText={true} isDark={isDark} />
                     </div>
+                    <div className="flex items-center gap-6 text-sm" style={{ color: textMuted }}>
+                        <Link to="/privacy" className="hover:text-teal-400 transition-colors">Privacy Policy</Link>
+                        <Link to="/terms" className="hover:text-teal-400 transition-colors">Terms of Service</Link>
+                        <Link to="/help" className="hover:text-teal-400 transition-colors">Help Center</Link>
+                    </div>
                     <p className="text-xs text-center" style={{ color: textMuted }}>
-                        © 2025 DataVision. The future of autonomous data intelligence.
+                        © 2026 DataVision. Enterprise Analytics Platform.
                     </p>
                 </div>
-            </footer>
-        </div>
+            </footer >
+        </div >
     );
 };
 

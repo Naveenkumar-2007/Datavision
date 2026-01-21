@@ -37,15 +37,7 @@ import {
     Database,
 } from 'lucide-react';
 import ModelHistory from '@/components/automl/ModelHistory';
-
-interface ThemeContext {
-    isDark: boolean;
-    bgColor: string;
-    cardBg: string;
-    textPrimary: string;
-    textMuted: string;
-    borderColor: string;
-}
+import { useUserStore } from '@/store/userStore';
 
 interface ModelResult {
     name: string;
@@ -104,7 +96,7 @@ interface AutoMLResult {
     all_models: ModelResult[];
     feature_importance: FeatureImportance[];
     feature_columns: string[];
-    feature_metadata?: Record<string, FeatureMetadata>;
+    feature_metadata?: FeatureMetadata[];
     bias_reports: BiasReport[];
     insights: string[];
     recommendations: string[];
@@ -121,16 +113,21 @@ interface AutoMLResult {
     is_nlp_task?: boolean;
     primary_text_col?: string;
     cleaned_file?: string;
+    pipeline?: 'SILICON_VALLEY_GRADE' | 'ULTRA_AUTOML';  // Fast vs Ultra mode
+    mode?: string;  // Additional mode info from backend
 }
 
 const AutoML: React.FC = () => {
-    const theme = useOutletContext<ThemeContext>() || {
-        isDark: true,
-        bgColor: '#0F172A',
-        cardBg: '#1E293B',
-        textPrimary: '#F8FAFC',
-        textMuted: '#94A3B8',
-        borderColor: '#334155',
+    const { isDark } = useUserStore();
+
+    // Derived theme object for JS-side libraries (Charts) and legacy inline styles
+    const theme = {
+        isDark,
+        bgColor: isDark ? '#0a0a0f' : '#f8fafc',
+        cardBg: isDark ? '#18181b' : '#ffffff',
+        textPrimary: isDark ? '#ffffff' : '#0f172a',
+        textMuted: isDark ? '#a1a1aa' : '#64748b',
+        borderColor: isDark ? '#3f3f46' : '#cbd5e1',
     };
 
     const navigate = useNavigate();
@@ -427,13 +424,24 @@ const AutoML: React.FC = () => {
                         <h1 className="text-2xl font-bold flex items-center gap-3" style={{ color: theme.textPrimary }}>
                             <Brain className="w-8 h-8 text-emerald-400" />
                             AutoML Results
+                            {/* Mode Badge - Fast vs Ultra */}
+                            {result.pipeline && (
+                                <span className={`ml-2 px-3 py-1 text-sm font-medium rounded-full ${result.pipeline === 'ULTRA_AUTOML'
+                                    ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-400 border border-purple-500/30'
+                                    : 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/30'
+                                    }`}>
+                                    {result.pipeline === 'ULTRA_AUTOML' ? '🎼 Ultra Mode' : '🚀 Fast Mode'}
+                                </span>
+                            )}
                         </h1>
-                        <p className="text-sm" style={{ color: theme.textMuted }}>
+                        <p className="text-sm flex flex-wrap items-center gap-2" style={{ color: theme.textMuted }}>
                             Target: <span className="text-emerald-400 font-medium">{result.target_column}</span>
-                            {' • '}
+                            <span className="opacity-50">•</span>
                             Task: <span className="text-blue-400 font-medium">{result.task_type}</span>
-                            {' • '}
-                            Processed in <span className="text-amber-400 font-medium">{result.processing_time_seconds.toFixed(1)}s</span>
+                            <span className="opacity-50">•</span>
+                            <span className="text-purple-400 font-medium">{result.all_models.length} models</span> tested
+                            <span className="opacity-50">•</span>
+                            <span className="text-amber-400 font-medium">{result.processing_time_seconds.toFixed(1)}s</span>
                         </p>
                     </div>
                 </div>
@@ -635,6 +643,50 @@ const AutoML: React.FC = () => {
                                 </div>
                             )}
                         </div>
+
+                        {/* Training Info - Mode Aware */}
+                        <div
+                            className="p-6 rounded-2xl border col-span-full"
+                            style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                        >
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
+                                <Zap className="w-5 h-5 text-amber-400" />
+                                Training Information
+                                {result.pipeline && (
+                                    <span className={`ml-2 px-2 py-1 text-xs rounded-full ${result.pipeline === 'ULTRA_AUTOML'
+                                            ? 'bg-purple-500/20 text-purple-400'
+                                            : 'bg-emerald-500/20 text-emerald-400'
+                                        }`}>
+                                        {result.pipeline === 'ULTRA_AUTOML' ? '🎼 Ultra Mode' : '🚀 Fast Mode'}
+                                    </span>
+                                )}
+                            </h3>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="p-3 rounded-xl" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                    <p className="text-xs" style={{ color: theme.textMuted }}>Models Tested</p>
+                                    <p className="text-xl font-bold text-purple-400">{result.all_models.length}</p>
+                                </div>
+                                <div className="p-3 rounded-xl" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                    <p className="text-xs" style={{ color: theme.textMuted }}>Features Used</p>
+                                    <p className="text-xl font-bold text-blue-400">{result.data_summary.features_engineered}</p>
+                                </div>
+                                <div className="p-3 rounded-xl" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                    <p className="text-xs" style={{ color: theme.textMuted }}>Training Time</p>
+                                    <p className="text-xl font-bold text-amber-400">{result.processing_time_seconds.toFixed(1)}s</p>
+                                </div>
+                                <div className="p-3 rounded-xl" style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                    <p className="text-xs" style={{ color: theme.textMuted }}>Data Rows</p>
+                                    <p className="text-xl font-bold text-emerald-400">{result.data_summary.rows.toLocaleString()}</p>
+                                </div>
+                            </div>
+                            {result.pipeline === 'ULTRA_AUTOML' && (
+                                <div className="mt-4 p-3 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                                    <p className="text-sm text-purple-400">
+                                        <span className="font-medium">🎼 Ultra Mode:</span> Trained with 20+ algorithms including Stacking Ensembles, Deep Learning, and advanced hyperparameter optimization.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 
@@ -764,41 +816,157 @@ const AutoML: React.FC = () => {
                     </div>
                 )}
 
-                {activeTab === 'features' && featureImportance && (
-                    <div
-                        className="p-6 rounded-2xl border"
-                        style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
-                    >
-                        <Plot
-                            data={featureImportance.data}
-                            layout={featureImportance.layout as any}
-                            config={{ displayModeBar: false, responsive: true }}
-                            style={{ width: '100%' }}
-                        />
-                        <div className="mt-6">
-                            <h4 className="font-semibold mb-4" style={{ color: theme.textPrimary }}>Feature Details</h4>
-                            <div className="space-y-2">
-                                {result.feature_importance.slice(0, 10).map((f, i) => (
-                                    <div
-                                        key={i}
-                                        className="flex items-center gap-4 p-3 rounded-xl"
-                                        style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
-                                    >
-                                        <span className="w-8 h-8 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 flex items-center justify-center text-white font-bold">
-                                            {f.rank}
-                                        </span>
-                                        <div className="flex-1">
-                                            <span className="font-medium" style={{ color: theme.textPrimary }}>{f.feature}</span>
-                                            <div className="w-full bg-gray-700 rounded-full h-2 mt-1">
-                                                <div
-                                                    className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
-                                                    style={{ width: `${f.importance * 100}%` }}
-                                                />
+                {activeTab === 'features' && (
+                    <div className="space-y-6">
+                        {/* Feature Importance Chart */}
+                        {featureImportance && (
+                            <div
+                                className="p-6 rounded-2xl border"
+                                style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                            >
+                                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
+                                    <TrendingUp className="w-5 h-5 text-emerald-400" />
+                                    Feature Importance
+                                    {result.pipeline === 'ULTRA_AUTOML' && (
+                                        <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-purple-500/20 text-purple-400">Ultra Analysis</span>
+                                    )}
+                                </h3>
+                                <Plot
+                                    data={featureImportance.data}
+                                    layout={featureImportance.layout as any}
+                                    config={{ displayModeBar: false, responsive: true }}
+                                    style={{ width: '100%' }}
+                                />
+                            </div>
+                        )}
+
+                        {/* Feature Details with Metadata */}
+                        <div
+                            className="p-6 rounded-2xl border"
+                            style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
+                        >
+                            <h4 className="font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
+                                <Layers className="w-5 h-5 text-blue-400" />
+                                Feature Details
+                                <span className="ml-auto text-sm font-normal" style={{ color: theme.textMuted }}>
+                                    {result.feature_columns?.length || result.feature_importance.length} features
+                                </span>
+                            </h4>
+                            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                                {/* Use feature_metadata if available, otherwise fall back to feature_importance */}
+                                {(result.feature_metadata && result.feature_metadata.length > 0) ? (
+                                    result.feature_metadata.map((meta, i) => {
+                                        const importance = result.feature_importance.find(f => f.feature === meta.name);
+                                        return (
+                                            <div
+                                                key={i}
+                                                className="p-4 rounded-xl border"
+                                                style={{
+                                                    backgroundColor: theme.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)',
+                                                    borderColor: theme.borderColor
+                                                }}
+                                            >
+                                                <div className="flex items-start justify-between gap-4">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <span className="font-medium" style={{ color: theme.textPrimary }}>{meta.name}</span>
+                                                            {/* Type Badge */}
+                                                            <span className={`px-2 py-0.5 text-xs rounded-full ${meta.type === 'numeric'
+                                                                ? 'bg-blue-500/20 text-blue-400'
+                                                                : meta.type === 'categorical'
+                                                                    ? 'bg-purple-500/20 text-purple-400'
+                                                                    : 'bg-amber-500/20 text-amber-400'
+                                                                }`}>
+                                                                {meta.type}
+                                                            </span>
+                                                            {importance && importance.rank <= 3 && (
+                                                                <span className="px-2 py-0.5 text-xs rounded-full bg-emerald-500/20 text-emerald-400">
+                                                                    🏆 Top {importance.rank}
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Stats for Numeric */}
+                                                        {meta.type === 'numeric' && (
+                                                            <div className="flex flex-wrap gap-3 text-sm">
+                                                                {meta.min !== undefined && (
+                                                                    <span style={{ color: theme.textMuted }}>
+                                                                        Min: <span className="text-blue-400 font-medium">{meta.min.toLocaleString()}</span>
+                                                                    </span>
+                                                                )}
+                                                                {meta.max !== undefined && (
+                                                                    <span style={{ color: theme.textMuted }}>
+                                                                        Max: <span className="text-blue-400 font-medium">{meta.max.toLocaleString()}</span>
+                                                                    </span>
+                                                                )}
+                                                                {meta.mean !== undefined && (
+                                                                    <span style={{ color: theme.textMuted }}>
+                                                                        Mean: <span className="text-blue-400 font-medium">{meta.mean.toFixed(2)}</span>
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Sample values for Categorical */}
+                                                        {meta.type === 'categorical' && meta.sample_values && meta.sample_values.length > 0 && (
+                                                            <div className="text-sm" style={{ color: theme.textMuted }}>
+                                                                Values: {meta.sample_values.slice(0, 5).map((v, vi) => (
+                                                                    <span key={vi} className="inline-block px-2 py-0.5 mr-1 mb-1 rounded bg-purple-500/10 text-purple-400 text-xs">
+                                                                        {String(v)}
+                                                                    </span>
+                                                                ))}
+                                                                {meta.sample_values.length > 5 && (
+                                                                    <span className="text-xs opacity-60">+{meta.sample_values.length - 5} more</span>
+                                                                )}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Text indicator */}
+                                                        {meta.type === 'text' && (
+                                                            <span className="text-sm text-amber-400">📝 Free-form text input</span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Importance bar */}
+                                                    {importance && (
+                                                        <div className="w-24 text-right">
+                                                            <span className="font-bold text-emerald-400">{(importance.importance * 100).toFixed(1)}%</span>
+                                                            <div className="w-full bg-gray-700 rounded-full h-1.5 mt-1">
+                                                                <div
+                                                                    className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                                                                    style={{ width: `${importance.importance * 100}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
+                                        );
+                                    })
+                                ) : (
+                                    /* Fallback to feature_importance only */
+                                    result.feature_importance.slice(0, 15).map((f, i) => (
+                                        <div
+                                            key={i}
+                                            className="flex items-center gap-4 p-3 rounded-xl"
+                                            style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
+                                        >
+                                            <span className="w-8 h-8 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 flex items-center justify-center text-white font-bold">
+                                                {f.rank}
+                                            </span>
+                                            <div className="flex-1">
+                                                <span className="font-medium" style={{ color: theme.textPrimary }}>{f.feature}</span>
+                                                <div className="w-full bg-gray-700 rounded-full h-2 mt-1">
+                                                    <div
+                                                        className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                                                        style={{ width: `${f.importance * 100}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <span className="font-bold text-emerald-400">{(f.importance * 100).toFixed(1)}%</span>
                                         </div>
-                                        <span className="font-bold text-emerald-400">{(f.importance * 100).toFixed(1)}%</span>
-                                    </div>
-                                ))}
+                                    ))
+                                )}
                             </div>
                         </div>
                     </div>
@@ -920,69 +1088,149 @@ const AutoML: React.FC = () => {
                                     Enter feature values to predict <span className="text-emerald-400 font-medium">{result.target_column}</span>
                                 </p>
 
-                                {/* Feature Inputs - Use feature_columns for ALL features */}
-                                <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                                    {(result.feature_columns || result.feature_importance.map(f => f.feature)).map((feature, i) => {
-                                        const importance = result.feature_importance.find(f => f.feature === feature);
-                                        const isImportant = importance && importance.rank <= 3;
+                                {/* Feature Inputs - Type-Aware using feature_metadata */}
+                                <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
+                                    {(result.feature_metadata && result.feature_metadata.length > 0) ? (
+                                        /* Use feature_metadata for proper type-aware inputs */
+                                        result.feature_metadata.map((meta, i) => {
+                                            const importance = result.feature_importance.find(f => f.feature === meta.name);
+                                            const isImportant = importance && importance.rank <= 3;
 
-                                        // Robust Text Detection Logic
-                                        // 1. Explicit backend flag
-                                        const isExplicitText = (result as any).is_nlp_task && (result as any).primary_text_col === feature;
-
-                                        // 2. Heuristic fallback (for older results or missed flags)
-                                        const lowerFeat = feature.toLowerCase();
-                                        const isHeuristicText = lowerFeat.includes('text') ||
-                                            lowerFeat.includes('content') ||
-                                            lowerFeat.includes('body') ||
-                                            lowerFeat.includes('email') ||
-                                            lowerFeat.includes('review') ||
-                                            lowerFeat.includes('description') ||
-                                            lowerFeat.includes('summary') ||
-                                            lowerFeat.includes('message');
-
-                                        const shouldUseTextArea = isExplicitText || isHeuristicText;
-
-                                        return (
-                                            <div key={i}>
-                                                <label className="text-sm font-medium mb-1 flex items-center gap-2" style={{ color: theme.textMuted }}>
-                                                    {feature}
-                                                    {isImportant && (
-                                                        <span className="px-1.5 py-0.5 text-xs rounded bg-amber-500/20 text-amber-400">
-                                                            Top Feature
+                                            return (
+                                                <div key={i} className="space-y-1">
+                                                    <label className="text-sm font-medium flex items-center gap-2" style={{ color: theme.textMuted }}>
+                                                        {meta.name}
+                                                        {/* Type Badge */}
+                                                        <span className={`px-1.5 py-0.5 text-xs rounded ${meta.type === 'numeric'
+                                                            ? 'bg-blue-500/20 text-blue-400'
+                                                            : meta.type === 'categorical'
+                                                                ? 'bg-purple-500/20 text-purple-400'
+                                                                : 'bg-amber-500/20 text-amber-400'
+                                                            }`}>
+                                                            {meta.type}
                                                         </span>
-                                                    )}
-                                                    {/* NLP Badge */}
-                                                    {shouldUseTextArea && (
-                                                        <span className="px-1.5 py-0.5 text-xs rounded bg-blue-500/20 text-blue-400">
-                                                            Text Input
-                                                        </span>
-                                                    )}
-                                                </label>
+                                                        {isImportant && (
+                                                            <span className="px-1.5 py-0.5 text-xs rounded bg-emerald-500/20 text-emerald-400">
+                                                                🏆 Top Feature
+                                                            </span>
+                                                        )}
+                                                    </label>
 
-                                                {/* Text Area for NLP/Text columns */}
-                                                {shouldUseTextArea ? (
-                                                    <textarea
-                                                        value={predictionInputs[feature] || ''}
-                                                        onChange={(e) => handleInputChange(feature, e.target.value)}
-                                                        placeholder={`Enter text content for ${feature}... (e.g. Email body, Review text)`}
-                                                        rows={6}
-                                                        className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition resize-none"
-                                                        style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
-                                                    />
-                                                ) : (
-                                                    <input
-                                                        type="text"
-                                                        value={predictionInputs[feature] || ''}
-                                                        onChange={(e) => handleInputChange(feature, e.target.value)}
-                                                        placeholder={`Enter ${feature}...`}
-                                                        className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition"
-                                                        style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
-                                                    />
-                                                )}
-                                            </div>
-                                        );
-                                    })}
+                                                    {/* NUMERIC: Number input with range hints */}
+                                                    {meta.type === 'numeric' && (
+                                                        <div>
+                                                            <input
+                                                                type="number"
+                                                                value={predictionInputs[meta.name] || ''}
+                                                                onChange={(e) => handleInputChange(meta.name, e.target.value)}
+                                                                placeholder={meta.min !== undefined && meta.max !== undefined
+                                                                    ? `Range: ${meta.min.toLocaleString()} - ${meta.max.toLocaleString()}`
+                                                                    : `Enter ${meta.name}...`
+                                                                }
+                                                                step="any"
+                                                                className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition"
+                                                                style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+                                                            />
+                                                            {meta.mean !== undefined && (
+                                                                <p className="text-xs mt-1 opacity-60" style={{ color: theme.textMuted }}>
+                                                                    Typical value: ~{meta.mean.toFixed(2)}
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* CATEGORICAL: Dropdown select with sample values */}
+                                                    {meta.type === 'categorical' && meta.sample_values && meta.sample_values.length > 0 && (
+                                                        <select
+                                                            value={predictionInputs[meta.name] || ''}
+                                                            onChange={(e) => handleInputChange(meta.name, e.target.value)}
+                                                            className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition cursor-pointer"
+                                                            style={{ borderColor: theme.borderColor, color: theme.textPrimary, backgroundColor: theme.cardBg }}
+                                                        >
+                                                            <option value="">Select {meta.name}...</option>
+                                                            {meta.sample_values.map((val, vi) => (
+                                                                <option key={vi} value={String(val)}>{String(val)}</option>
+                                                            ))}
+                                                        </select>
+                                                    )}
+
+                                                    {/* CATEGORICAL without sample values: Text input fallback */}
+                                                    {meta.type === 'categorical' && (!meta.sample_values || meta.sample_values.length === 0) && (
+                                                        <input
+                                                            type="text"
+                                                            value={predictionInputs[meta.name] || ''}
+                                                            onChange={(e) => handleInputChange(meta.name, e.target.value)}
+                                                            placeholder={`Enter ${meta.name}...`}
+                                                            className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition"
+                                                            style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+                                                        />
+                                                    )}
+
+                                                    {/* TEXT: Textarea for free-form text */}
+                                                    {meta.type === 'text' && (
+                                                        <textarea
+                                                            value={predictionInputs[meta.name] || ''}
+                                                            onChange={(e) => handleInputChange(meta.name, e.target.value)}
+                                                            placeholder={`Enter text for ${meta.name}... (e.g., review, description, comments)`}
+                                                            rows={4}
+                                                            className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-amber-500/50 transition resize-none"
+                                                            style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+                                                        />
+                                                    )}
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        /* Fallback: Use feature_columns with heuristic detection */
+                                        (result.feature_columns || result.feature_importance.map(f => f.feature)).map((feature, i) => {
+                                            const importance = result.feature_importance.find(f => f.feature === feature);
+                                            const isImportant = importance && importance.rank <= 3;
+
+                                            // Heuristic text detection
+                                            const lowerFeat = feature.toLowerCase();
+                                            const isText = lowerFeat.includes('text') || lowerFeat.includes('content') ||
+                                                lowerFeat.includes('body') || lowerFeat.includes('review') ||
+                                                lowerFeat.includes('description') || lowerFeat.includes('message');
+
+                                            return (
+                                                <div key={i} className="space-y-1">
+                                                    <label className="text-sm font-medium flex items-center gap-2" style={{ color: theme.textMuted }}>
+                                                        {feature}
+                                                        {isImportant && (
+                                                            <span className="px-1.5 py-0.5 text-xs rounded bg-amber-500/20 text-amber-400">
+                                                                Top Feature
+                                                            </span>
+                                                        )}
+                                                        {isText && (
+                                                            <span className="px-1.5 py-0.5 text-xs rounded bg-blue-500/20 text-blue-400">
+                                                                Text
+                                                            </span>
+                                                        )}
+                                                    </label>
+
+                                                    {isText ? (
+                                                        <textarea
+                                                            value={predictionInputs[feature] || ''}
+                                                            onChange={(e) => handleInputChange(feature, e.target.value)}
+                                                            placeholder={`Enter text for ${feature}...`}
+                                                            rows={4}
+                                                            className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition resize-none"
+                                                            style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+                                                        />
+                                                    ) : (
+                                                        <input
+                                                            type="text"
+                                                            value={predictionInputs[feature] || ''}
+                                                            onChange={(e) => handleInputChange(feature, e.target.value)}
+                                                            placeholder={`Enter ${feature}...`}
+                                                            className="w-full px-4 py-2.5 rounded-xl border bg-transparent focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition"
+                                                            style={{ borderColor: theme.borderColor, color: theme.textPrimary }}
+                                                        />
+                                                    )}
+                                                </div>
+                                            );
+                                        })
+                                    )}
                                 </div>
 
                                 {/* Prediction Error */}
@@ -1180,7 +1428,7 @@ const AutoML: React.FC = () => {
                         className="p-6 rounded-2xl border"
                         style={{ backgroundColor: theme.cardBg, borderColor: theme.borderColor }}
                     >
-                        <ModelHistory theme={theme} userId="default" />
+                        <ModelHistory userId="default" />
                     </div>
                 )}
 
@@ -1210,7 +1458,7 @@ const AutoML: React.FC = () => {
                                 <div className="space-y-4">
                                     <a
                                         href={`/api/v1/files/${localStorage.getItem('userId') || 'default'}/${result.cleaned_file}/download`}
-                                        className="inline-flex items-center gap-3 px-8 py-4 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-blue-500/20 transition-all hover:scale-105"
+                                        className="inline-flex items-center gap-3 px-8 py-4 bg-primary-500 hover:bg-primary-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-primary-500/20 transition-all hover:scale-105"
                                     >
                                         <Download className="w-6 h-6" />
                                         Download Cleaned CSV

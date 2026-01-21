@@ -6,7 +6,7 @@ ChatGPT Pro-level visualizations with premium styling
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 import json
 import pandas as pd
 import numpy as np
@@ -125,16 +125,55 @@ class ChartResponse(BaseModel):
     data_points: int
 
 
+# ============================================================================
+# ⚡ DATAFRAME CACHE - Prevents reloading on every query
+# ============================================================================
+import time as _time
+
+_df_cache: Dict[str, Tuple[pd.DataFrame, float]] = {}
+_DF_CACHE_TTL = 300  # 5 minutes cache TTL
+
+def _get_cached_df(user_id: str) -> Optional[pd.DataFrame]:
+    """Get DataFrame from cache if not expired."""
+    if user_id in _df_cache:
+        df, timestamp = _df_cache[user_id]
+        if _time.time() - timestamp < _DF_CACHE_TTL:
+            print(f"[CACHE] ⚡ Using cached DataFrame for user {user_id}")
+            return df
+        else:
+            print(f"[CACHE] Cache expired for user {user_id}")
+            del _df_cache[user_id]
+    return None
+
+def _set_cached_df(user_id: str, df: pd.DataFrame):
+    """Store DataFrame in cache."""
+    _df_cache[user_id] = (df, _time.time())
+    print(f"[CACHE] Cached DataFrame for user {user_id} ({len(df)} rows)")
+
+def clear_user_cache(user_id: str):
+    """Clear cache for a specific user (call when they upload new files)."""
+    if user_id in _df_cache:
+        del _df_cache[user_id]
+        print(f"[CACHE] Cleared cache for user {user_id}")
+
+
 def get_user_data(user_id: str) -> pd.DataFrame:
     """
     Get user's uploaded data - PRESERVES ORIGINAL COLUMNS for ANY domain.
     Works with HR data, Sales data, Finance data, or any structured data.
+    
+    ⚡ CACHED: Uses in-memory cache to avoid reloading on every query.
     
     Returns the raw DataFrame with original column names like:
     - HR: Department, Salary, Employee
     - Sales: Customer, Product, Amount
     - Finance: Category, Value, Date
     """
+    # ⚡ Check cache first
+    cached_df = _get_cached_df(user_id)
+    if cached_df is not None:
+        return cached_df
+    
     try:
         from utils.paths import STORAGE_BASE
         
@@ -171,23 +210,30 @@ def get_user_data(user_id: str) -> pd.DataFrame:
         if all_dfs:
             # If multiple files, try to combine
             if len(all_dfs) == 1:
-                return all_dfs[0]
+                result_df = all_dfs[0]
             else:
                 # Check if they have same columns
                 first_cols = set(all_dfs[0].columns)
                 can_concat = all(set(df.columns) == first_cols for df in all_dfs)
                 
                 if can_concat:
-                    return pd.concat(all_dfs, ignore_index=True)
+                    result_df = pd.concat(all_dfs, ignore_index=True)
                 else:
                     # Return largest file
-                    return max(all_dfs, key=len)
+                    result_df = max(all_dfs, key=len)
+            
+            # ⚡ Cache the result
+            _set_cached_df(user_id, result_df)
+            return result_df
         
         # Fallback to revenue_dataframe for backward compatibility
         print(f"[DATA] No files found, falling back to revenue_dataframe")
         paths = get_user_paths(user_id)
         Settings.GRAPH_DIR = paths["graph"]
-        return revenue_dataframe(user_id)
+        fallback_df = revenue_dataframe(user_id)
+        if not fallback_df.empty:
+            _set_cached_df(user_id, fallback_df)
+        return fallback_df
         
     except Exception as e:
         print(f"[DATA] Error getting user data: {e}")

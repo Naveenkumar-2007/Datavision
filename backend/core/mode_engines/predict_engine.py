@@ -1,15 +1,21 @@
 """
-🤖 PREDICT ENGINE v5.0 - SILICON VALLEY ML CHAT ASSISTANT
-==========================================================
+🤖 PREDICT ENGINE v6.0 - SENIOR AIML ENGINEER ASSISTANT
+=========================================================
 
-ChatGPT-like intelligent ML assistant that:
-- Uses trained AutoML models for REAL predictions
-- Understands natural language ML queries
-- Generates dynamic explanations with LLM
-- Creates real Plotly charts from actual data
-- Handles any ML-related question intelligently
+A ChatGPT-like intelligent ML assistant designed by a Senior AIML Engineer.
 
-NO HARDCODING - Everything is based on real trained model + live data!
+Features:
+- 🧠 Senior AIML Engineer level explanations
+- 📊 Live integration with trained ML model charts
+- 🎯 Real predictions from your trained AutoML model
+- 💡 Statistical insights and technical depth
+- 🔗 Connects with ML Predictions page for charts
+- 🌐 Conversational memory within session
+
+NO HARDCODING - Everything based on real trained model + actual data!
+
+Author: DataVision Team
+Version: 6.0.0
 """
 
 import logging
@@ -18,12 +24,18 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from enum import Enum
+from dataclasses import dataclass
 import re
 import json
+import os
 
 logger = logging.getLogger(__name__)
 
-# Import AutoML Engine
+# =============================================================================
+# IMPORTS & DEPENDENCIES
+# =============================================================================
+
+# AutoML Engine
 try:
     from ml.automl_engine import automl_engine
     AUTOML_AVAILABLE = True
@@ -31,7 +43,7 @@ except ImportError:
     AUTOML_AVAILABLE = False
     logger.warning("AutoML engine not available")
 
-# Import LLM for intelligent explanations
+# LLM for intelligent explanations
 try:
     from core.llm import chat as llm_chat
     LLM_AVAILABLE = True
@@ -39,197 +51,384 @@ except ImportError:
     LLM_AVAILABLE = False
     logger.warning("LLM not available")
 
+# Chart Generator
+try:
+    from ml.chart_generator import generate_ml_charts
+    CHARTS_AVAILABLE = True
+except ImportError:
+    CHARTS_AVAILABLE = False
+
+# Intelligent Query Processor (Claude-style)
+try:
+    from core.intelligent_processor import IntelligentQueryProcessor, intelligent_process
+    INTELLIGENT_PROCESSOR_AVAILABLE = True
+except ImportError:
+    INTELLIGENT_PROCESSOR_AVAILABLE = False
+
+
+# =============================================================================
+# QUERY TYPES - What the user is asking about
+# =============================================================================
 
 class QueryType(Enum):
-    """Types of ML queries the assistant can handle"""
-    PREDICTION = "prediction"           # Make prediction for given features
-    METRICS = "metrics"                 # Show model performance
-    FEATURE_IMPORTANCE = "importance"   # What features matter most
-    DATA_ANALYSIS = "data_analysis"     # Analyze data distribution
-    FEATURE_SPECIFIC = "feature_specific" # Specific feature analysis
-    MODEL_INFO = "model_info"           # Info about trained model
-    COMPARISON = "comparison"           # Compare values or scenarios
-    GENERAL_ML = "general_ml"           # General ML/AI questions
-    HELP = "help"                       # Help using the system
-    # NEW: Enhanced NLU Query Types
-    WHAT_IF = "what_if"                 # "What if X was Y?" scenarios
-    EXPLAIN = "explain"                 # "Why did the model predict X?"
-    HISTORY = "history"                 # "What was my last prediction?"
-    DASHBOARD = "dashboard"             # "Show me all charts/metrics"
+    """All types of ML queries the assistant can handle"""
+    # Core ML Operations
+    PREDICTION = "prediction"               # "Predict for age=60"
+    BATCH_PREDICTION = "batch_prediction"   # "Predict all rows"
+    
+    # Model Understanding
+    MODEL_INFO = "model_info"               # "What model is trained?"
+    METRICS = "metrics"                     # "Show accuracy/F1"
+    FEATURE_IMPORTANCE = "importance"       # "What features matter?"
+    FEATURE_SPECIFIC = "feature_specific"   # "How does age affect..."
+    
+    # Data Analysis
+    DATA_ANALYSIS = "data_analysis"         # "Analyze the data"
+    DATA_DISTRIBUTION = "distribution"      # "Show distribution of X"
+    CORRELATION = "correlation"             # "What correlates with..."
+    
+    # Visualizations - Direct Chart Requests
+    SHOW_CHART = "show_chart"               # "Show confusion matrix"
+    CONFUSION_MATRIX = "confusion_matrix"   # Direct confusion matrix
+    ROC_CURVE = "roc_curve"                 # ROC curve
+    PRECISION_RECALL = "precision_recall"   # PR curve
+    ACTUAL_VS_PREDICTED = "actual_vs_pred"  # Actual vs Predicted
+    
+    # Advanced Analysis
+    WHAT_IF = "what_if"                     # Scenario analysis
+    EXPLAIN = "explain"                     # "Why did model predict X?"
+    SHAP = "shap"                           # SHAP explanation
+    THRESHOLD = "threshold"                 # Threshold tuning
+    
+    # Meta
+    COMPARISON = "comparison"               # Compare scenarios
+    DASHBOARD = "dashboard"                 # Full dashboard
+    HELP = "help"                           # How to use
+    GENERAL_ML = "general_ml"               # General ML questions
 
 
-def detect_query_type(query: str) -> Tuple[QueryType, float]:
+# =============================================================================
+# CONVERSATION MEMORY - Remember context within session
+# =============================================================================
+
+@dataclass
+class ConversationContext:
+    """Stores conversation context for multi-turn interactions"""
+    last_prediction: Dict = None
+    last_features: Dict = None
+    last_query_type: QueryType = None
+    chart_shown: List[str] = None
+    session_start: datetime = None
+    
+    def __post_init__(self):
+        self.chart_shown = []
+        self.session_start = datetime.now()
+
+
+# Session memory - persists during conversation
+_session_memory: Dict[str, ConversationContext] = {}
+
+def get_session(user_id: str) -> ConversationContext:
+    """Get or create session for user"""
+    if user_id not in _session_memory:
+        _session_memory[user_id] = ConversationContext()
+    return _session_memory[user_id]
+
+
+# =============================================================================
+# SENIOR AIML ENGINEER PROMPTS
+# =============================================================================
+
+SENIOR_AIML_SYSTEM_PROMPT = """You are a Senior AI/ML Engineer at a top tech company.
+When explaining ML concepts:
+- Be precise with technical terminology
+- Include statistical context (p-values, confidence intervals when relevant)
+- Give actionable recommendations
+- Acknowledge model limitations
+- Use analogies for complex concepts
+- Be concise but thorough
+
+Your explanations should sound like a Staff ML Engineer in a code review, 
+not a marketing person. Be real about what the model can and cannot do."""
+
+
+def generate_senior_explanation(
+    topic: str,
+    context: Dict[str, Any],
+    question: str = ""
+) -> str:
+    """Generate Senior AIML Engineer quality explanation"""
+    if not LLM_AVAILABLE:
+        return _fallback_explanation(topic, context)
+    
+    prompt = f"""{SENIOR_AIML_SYSTEM_PROMPT}
+
+Context:
+- Model: {context.get('model_name', 'Unknown')}
+- Task: {context.get('task_type', 'Unknown')}
+- Target: {context.get('target', 'Unknown')}
+- Key Metrics: {context.get('metrics', {})}
+
+Topic to explain: {topic}
+User question: {question}
+
+Provide a concise but technically accurate explanation (2-4 sentences).
+Focus on what a data scientist would want to know."""
+
+    try:
+        return llm_chat(prompt, temperature=0.3, max_tokens=200)
+    except Exception as e:
+        logger.error(f"LLM error: {e}")
+        return _fallback_explanation(topic, context)
+
+
+def _fallback_explanation(topic: str, context: Dict) -> str:
+    """Fallback when LLM is unavailable"""
+    target = context.get('target', 'the outcome')
+    model = context.get('model_name', 'the model')
+    
+    explanations = {
+        'prediction': f"The {model} predicts {target} based on the input features. Higher confidence indicates stronger prediction certainty.",
+        'metrics': f"These metrics show how well {model} generalizes to unseen data. F1 balances precision and recall.",
+        'importance': f"Feature importance shows which inputs have the most predictive power for {target}.",
+        'default': f"This analysis helps understand how {model} makes predictions for {target}."
+    }
+    return explanations.get(topic, explanations['default'])
+
+
+# =============================================================================
+# QUERY DETECTION - Understand what user is asking
+# =============================================================================
+
+def detect_query_type(query: str, user_id: str = "") -> Tuple[QueryType, float, Dict]:
     """
-    Intelligently detect what type of ML query the user is asking.
-    Returns (query_type, confidence_score)
+    Intelligently detect query type with confidence and extracted parameters.
+    Returns: (QueryType, confidence, extracted_params)
     """
     q = query.lower().strip()
+    params = {}
     
-    # specific feature patterns - Check first!
-    if AUTOML_AVAILABLE:
-        try:
-            features = automl_engine.feature_columns
-            for feat in features:
-                feat_clean = feat.lower().replace('_', ' ')
-                # Check for exact feature name matching or cleaned version
-                if re.search(r'\b' + re.escape(feat.lower()) + r'\b', q) or \
-                   re.search(r'\b' + re.escape(feat_clean) + r'\b', q):
-                    # If asking about how it works, analysis, distribution
-                    if any(x in q for x in ['work', 'how', 'explain', 'analyze', 'what is', 'distribution', 'stats', 'mean']):
-                        return QueryType.FEATURE_SPECIFIC, 0.98
-        except:
-            pass
-            
-    # Prediction patterns
+    # === CHART REQUESTS (High Priority) ===
+    chart_patterns = {
+        QueryType.CONFUSION_MATRIX: [
+            r'confusion\s*matrix', r'confusion\s+matrix', r'show\s+confusion'
+        ],
+        QueryType.ROC_CURVE: [
+            r'roc\s*curve', r'roc\s+curve', r'receiver\s+operating'
+        ],
+        QueryType.PRECISION_RECALL: [
+            r'precision.+recall', r'pr\s+curve', r'precision\s+recall\s+curve'
+        ],
+        QueryType.ACTUAL_VS_PREDICTED: [
+            r'actual\s*(vs?|versus)\s*predicted', r'predicted\s+vs\s+actual',
+            r'scatter\s+plot', r'residual'
+        ],
+        QueryType.SHOW_CHART: [
+            r'show\s+(me\s+)?(the\s+)?(chart|graph|plot|visualization)',
+            r'display\s+(the\s+)?(chart|graph)',
+            r'(feature\s+)?importance\s+(chart|plot)',
+            r'(class\s+)?distribution\s+(chart|plot)',
+            r'calibration\s+(curve|plot)',
+            r'correlation\s+heatmap'
+        ]
+    }
+    
+    for qtype, patterns in chart_patterns.items():
+        for pattern in patterns:
+            if re.search(pattern, q):
+                # Extract specific chart name if present
+                chart_keywords = ['confusion', 'roc', 'precision', 'recall', 'feature', 
+                                 'importance', 'distribution', 'calibration', 'correlation']
+                for kw in chart_keywords:
+                    if kw in q:
+                        params['chart_name'] = kw
+                        break
+                return qtype, 0.95, params
+    
+    # === PREDICTION REQUESTS ===
     prediction_patterns = [
-        r'predict\s+(for|if|when|what)',
-        r'what\s+(is|will|would)\s+.+\s+(be|happen)',
-        r'(age|ejection|creatinine|sodium|time)\s*[=:]\s*\d+',
+        r'predict\s+(for|if|when|what|with)',
+        r'what\s+(is|will|would)\s+.+\s+(be|happen|predict)',
         r'classify\s+',
         r'estimate\s+',
-        r'forecast\s+',
-        r'will\s+.+\s+(survive|die|default|churn)',
+        r'will\s+.+\s+(survive|die|default|churn|happen)',
+        r'[a-z_]+\s*[=:]\s*\d+',  # feature=value pattern
     ]
     for pattern in prediction_patterns:
         if re.search(pattern, q):
-            return QueryType.PREDICTION, 0.95
+            params['features'] = _extract_feature_values(q)
+            return QueryType.PREDICTION, 0.95, params
     
-    # Metrics patterns
+    # === METRICS/PERFORMANCE ===
     metrics_patterns = [
-        r'(accuracy|precision|recall|f1|performance|confusion)',
-        r'how\s+(good|accurate|well)\s+(is|does)',
+        r'(accuracy|precision|recall|f1|f2|auc|performance)',
+        r'how\s+(good|accurate|well)',
         r'model\s+(metrics|performance|score)',
-        r'show\s+.*(accuracy|metrics|performance)',
-        r'(actual\s+vs\s+predicted|roc|curve|residuals|plot\s+prediction)',
+        r'(show|display)\s+.*(accuracy|metrics|performance)'
     ]
     for pattern in metrics_patterns:
         if re.search(pattern, q):
-            return QueryType.METRICS, 0.95
+            return QueryType.METRICS, 0.90, params
     
-    # Feature importance patterns
+    # === FEATURE IMPORTANCE ===
     importance_patterns = [
         r'(what|which)\s+(affects?|influences?|matters?|important)',
-        r'feature\s+(importance|ranking|contribution)',
+        r'feature\s+(importance|ranking)',
         r'(most|least)\s+important',
-        r'(key|top|main)\s+(factors?|features?|variables?)',
-        r'why\s+(did|does)\s+.+\s+predict',
+        r'(key|top|main)\s+(factors?|features?)'
     ]
     for pattern in importance_patterns:
         if re.search(pattern, q):
-            return QueryType.FEATURE_IMPORTANCE, 0.90
+            return QueryType.FEATURE_IMPORTANCE, 0.90, params
     
-    # Data analysis patterns
-    data_patterns = [
-        r'(distribution|histogram|spread)\s+of',
-        r'(average|mean|median|std|min|max)\s+',
-        r'(how\s+many|count|total)\s+',
-        r'(show|display|visualize)\s+.*(data|distribution)',
-        r'analyze\s+(the\s+)?(data|dataset)',
-    ]
-    for pattern in data_patterns:
-        if re.search(pattern, q):
-            return QueryType.DATA_ANALYSIS, 0.85
-    
-    # Model info patterns
-    model_patterns = [
-        r'(what|which)\s+(model|algorithm)',
-        r'model\s+(type|name|info)',
-        r'(target|predicting|training)',
-        r'what\s+.+\s+trained\s+on',
-        r'features?\s+(used|available)',
-    ]
-    for pattern in model_patterns:
-        if re.search(pattern, q):
-            return QueryType.MODEL_INFO, 0.85
-    
-    # Comparison patterns
-    comparison_patterns = [
-        r'compare\s+',
-        r'(difference|vs|versus)\s+between',
-        r'if\s+.+\s+(instead|vs|or)',
-        r'(higher|lower|better|worse)\s+(than|if)',
-    ]
-    for pattern in comparison_patterns:
-        if re.search(pattern, q):
-            return QueryType.COMPARISON, 0.80
-    
-    # Help patterns
-    help_patterns = [
-        r'^(help|how\s+to\s+use|what\s+can)',
-        r'(example|examples)\s+',
-        r'how\s+does\s+this\s+work',
-    ]
-    for pattern in help_patterns:
-        if re.search(pattern, q):
-            return QueryType.HELP, 0.90
-    
-    # NEW: What-if scenario patterns
-    what_if_patterns = [
+    # === WHAT-IF SCENARIOS ===
+    whatif_patterns = [
         r'what\s+(if|would\s+happen)',
-        r'what\s+happens\s+if',
-        r'if\s+i\s+(change|increase|decrease|set)',
-        r'hypothetically',
-        r'scenario\s+where',
-        r'suppose\s+',
-        r'imagine\s+',
+        r'if\s+i\s+(change|increase|decrease)',
+        r'scenario',
+        r'suppose',
+        r'hypothetically'
     ]
-    for pattern in what_if_patterns:
+    for pattern in whatif_patterns:
         if re.search(pattern, q):
-            return QueryType.WHAT_IF, 0.92
+            params['scenario'] = q
+            return QueryType.WHAT_IF, 0.88, params
     
-    # NEW: Explain patterns
+    # === EXPLANATION REQUESTS ===
     explain_patterns = [
-        r'why\s+(did|does|was)',
+        r'why\s+(did|does|was|is)',
         r'explain\s+(this|the|why|how)',
-        r'reasoning\s+behind',
-        r'interpret\s+this',
+        r'interpret',
         r'understand\s+(why|this)',
-        r'break\s*(it)?\s*down',
-        r'what\s+does\s+this\s+(mean|show)',
+        r'what\s+does\s+this\s+(mean|show)'
     ]
     for pattern in explain_patterns:
         if re.search(pattern, q):
-            return QueryType.EXPLAIN, 0.88
+            return QueryType.EXPLAIN, 0.85, params
     
-    # NEW: History/Memory patterns
-    history_patterns = [
-        r'(my\s+)?(last|previous|recent)\s+(prediction|result)',
-        r'what\s+did\s+(i|you)\s+(predict|say)',
-        r'history',
-        r'remember',
-        r'earlier\s+prediction',
+    # === MODEL INFO ===
+    model_patterns = [
+        r'(what|which)\s+(model|algorithm)',
+        r'model\s+(type|name|info)',
+        r'what\s+.+\s+trained',
+        r'features?\s+(used|available)'
     ]
-    for pattern in history_patterns:
+    for pattern in model_patterns:
         if re.search(pattern, q):
-            return QueryType.HISTORY, 0.90
+            return QueryType.MODEL_INFO, 0.85, params
     
-    # NEW: Dashboard patterns
-    dashboard_patterns = [
-        r'(show|display|give)\s+(me\s+)?(all|full|complete)\s+(charts?|metrics?|results?)',
-        r'dashboard',
-        r'comprehensive\s+(view|analysis)',
-        r'full\s+report',
-        r'all\s+(visualizations?|plots?)',
-    ]
-    for pattern in dashboard_patterns:
-        if re.search(pattern, q):
-            return QueryType.DASHBOARD, 0.88
+    # === DASHBOARD ===
+    if any(x in q for x in ['dashboard', 'all charts', 'full report', 'comprehensive']):
+        return QueryType.DASHBOARD, 0.88, params
     
-    # Default to general ML question
-    return QueryType.GENERAL_ML, 0.70
+    # === HELP ===
+    if any(x in q for x in ['help', 'how to use', 'what can you do', 'example']):
+        return QueryType.HELP, 0.90, params
+    
+    # Default to general ML
+    return QueryType.GENERAL_ML, 0.70, params
 
+
+def _extract_feature_values(query: str) -> Dict[str, Any]:
+    """Extract feature=value pairs from query"""
+    features = {}
+    
+    # Pattern: feature_name=value or feature_name: value
+    pattern = r'([a-z_]+)\s*[=:]\s*([0-9.]+|true|false|yes|no|male|female|[a-z]+)'
+    matches = re.findall(pattern, query.lower())
+    
+    for name, value in matches:
+        # Try to convert to appropriate type
+        try:
+            if '.' in value:
+                features[name] = float(value)
+            elif value.isdigit():
+                features[name] = int(value)
+            elif value in ['true', 'yes']:
+                features[name] = True
+            elif value in ['false', 'no']:
+                features[name] = False
+            else:
+                features[name] = value
+        except:
+            features[name] = value
+    
+    return features
+
+
+# =============================================================================
+# CHART RETRIEVAL - Get stored charts from trained model
+# =============================================================================
+
+def get_stored_charts(user_id: str) -> Dict[str, Any]:
+    """
+    Retrieve charts generated during model training.
+    These are stored in storage/automl/{user_id}/
+    """
+    charts = {}
+    
+    try:
+        base_path = f"storage/automl/{user_id}"
+        
+        # Try to load from automl state
+        state_path = f"{base_path}/automl_state.pkl"
+        if os.path.exists(state_path):
+            import pickle
+            with open(state_path, 'rb') as f:
+                state = pickle.load(f)
+                if 'charts' in state:
+                    charts = state['charts']
+        
+        # Also check for chart JSON files
+        chart_dir = f"{base_path}/charts"
+        if os.path.exists(chart_dir):
+            for fname in os.listdir(chart_dir):
+                if fname.endswith('.json'):
+                    with open(f"{chart_dir}/{fname}") as f:
+                        chart_name = fname.replace('.json', '')
+                        charts[chart_name] = json.load(f)
+        
+        logger.info(f"📊 Retrieved {len(charts)} stored charts for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Chart retrieval error: {e}")
+    
+    return charts
+
+
+def get_chart_by_name(user_id: str, chart_name: str) -> Optional[Dict]:
+    """Get a specific chart by name (fuzzy matching)"""
+    charts = get_stored_charts(user_id)
+    
+    # Direct match
+    if chart_name in charts:
+        return charts[chart_name]
+    
+    # Fuzzy match
+    chart_name_lower = chart_name.lower().replace(' ', '_')
+    for key, value in charts.items():
+        if chart_name_lower in key.lower() or key.lower() in chart_name_lower:
+            return value
+    
+    # Partial match
+    for key, value in charts.items():
+        if any(part in key.lower() for part in chart_name_lower.split('_')):
+            return value
+    
+    return None
+
+
+# =============================================================================
+# MAIN RESPONSE FUNCTION
+# =============================================================================
 
 def predict_response_sync(user_id: str, query: str, context: str = "", df=None) -> Dict[str, Any]:
     """
-    🤖 SILICON VALLEY ML CHAT ASSISTANT
+    🤖 SENIOR AIML ENGINEER ML ASSISTANT
     
-    Intelligently handles ANY ML/prediction query with:
-    - Real trained model predictions
-    - LLM-powered natural language explanations
-    - Dynamic Plotly charts from actual data
-    - ChatGPT-like conversational responses
-    
-    NO HARDCODING - All responses based on real model + data!
+    Main entry point for all ML queries. Routes to appropriate handler
+    and returns ChatGPT-like responses with charts and explanations.
+    Uses DYNAMIC routing - ML queries use ML, general queries use AI.
     """
     result = {
         "answer": "",
@@ -237,93 +436,214 @@ def predict_response_sync(user_id: str, query: str, context: str = "", df=None) 
         "confidence": 0.5,
         "sources": [],
         "ml_used": False,
-        "chart": None
+        "chart": None,
+        "charts": []  # Multiple charts support
     }
     
     start_time = datetime.now()
+    session = get_session(user_id)
     
-    # Check AutoML availability
+    # =================================================================
+    # 🔄 DYNAMIC ROUTING: Check if query relates to ML/predictions
+    # =================================================================
+    q_lower = query.lower()
+    
+    # Get column names from data
+    column_names = [col.lower() for col in df.columns] if df is not None and hasattr(df, 'columns') else []
+    column_names_spaced = [col.replace('_', ' ') for col in column_names]
+    
+    # ML-related terms
+    ml_terms = [
+        'predict', 'forecast', 'model', 'train', 'accuracy', 'feature',
+        'classification', 'regression', 'ml', 'machine learning',
+        'precision', 'recall', 'f1', 'confusion', 'roc', 'auc'
+    ]
+    
+    # Data terms
+    data_terms = column_names + column_names_spaced + [
+        'my data', 'my ', 'our ', 'the data', 'uploaded', 'dataset',
+        'total', 'sum', 'average', 'count', 'revenue', 'sales', 'customer'
+    ]
+    
+    query_is_about_ml = any(term in q_lower for term in ml_terms)
+    query_is_about_data = any(term in q_lower for term in data_terms if term)
+    
+    # If NOT about ML or data, use pure AI Knowledge
+    if not query_is_about_ml and not query_is_about_data:
+        logger.info("🌐 Predict: Routing to AI KNOWLEDGE (query not about ML/data)")
+        
+        if LLM_AVAILABLE:
+            try:
+                ai_prompt = f"""You are an AI with machine learning expertise.
+
+Answer this question using your knowledge:
+
+{query}
+
+Provide a helpful, accurate response. If it's about ML concepts, explain clearly."""
+
+                llm_response = llm_chat(ai_prompt, temperature=0.7, max_tokens=600)
+                
+                result["answer"] = f"""## 🔮 Predict
+
+🌐 **AI Knowledge**
+
+{llm_response}
+
+---
+*💡 This is general AI knowledge. For predictions on YOUR data, train a model first and ask about predictions.*"""
+                result["sources"] = ["AI Knowledge"]
+                
+                exec_time = (datetime.now() - start_time).total_seconds()
+                result["execution_time"] = f"{exec_time:.2f}s"
+                return result
+                
+            except Exception as e:
+                logger.error(f"AI Knowledge error: {e}")
+    
+    # =================================================================
+    # 📊 ML PATH - Query IS about ML or user's data
+    # =================================================================
+    logger.info("📊 Predict: Routing to ML ANALYSIS")
+    
+    # === CHECK AUTOML ===
     if not AUTOML_AVAILABLE:
-        result["answer"] = "⚠️ ML Engine not available. Please check installation."
+        result["answer"] = "⚠️ ML Engine not available. Please ensure the backend is properly configured."
         return result
     
-    # Load model with enhanced logging
+    # === LOAD MODEL ===
     try:
         model_loaded = automl_engine.load(user_id)
         if model_loaded:
-            logger.info(f"✅ Model loaded for user {user_id}")
-            logger.info(f"   Model: {automl_engine.model_name}")
-            logger.info(f"   Target: {automl_engine.target_column}")
-            logger.info(f"   Features ({len(automl_engine.feature_columns)}): {automl_engine.feature_columns[:5]}...")
-            logger.info(f"   Task type: {automl_engine.task_type}")
+            logger.info(f"✅ Model loaded: {automl_engine.model_name}")
         else:
-            logger.warning(f"⚠️ No trained model found for user {user_id}")
-            logger.info(f"   User should train a model via AutoML first")
+            logger.warning(f"⚠️ No model found for user {user_id}")
     except Exception as e:
-        logger.error(f"❌ Model load error for user {user_id}: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Model load error: {e}")
         model_loaded = False
     
-    # Detect query type
-    query_type, type_confidence = detect_query_type(query)
-    logger.info(f"🔍 Query type: {query_type.value} (confidence: {type_confidence:.0%})")
+    # === DETECT QUERY TYPE ===
+    query_type, type_confidence, params = detect_query_type(query, user_id)
+    logger.info(f"🔍 Query: {query_type.value} (confidence: {type_confidence:.0%})")
     
-    # Route to appropriate handler
+    result["confidence"] = type_confidence
+    
+    # === ROUTE TO HANDLER ===
     if not model_loaded:
         result = _handle_no_model(query, query_type, df, user_id)
     else:
         handlers = {
+            # Core predictions
             QueryType.PREDICTION: _handle_prediction,
+            QueryType.BATCH_PREDICTION: _handle_batch_prediction,
+            
+            # Model understanding
+            QueryType.MODEL_INFO: _handle_model_info,
             QueryType.METRICS: _handle_metrics,
             QueryType.FEATURE_IMPORTANCE: _handle_feature_importance,
-            QueryType.DATA_ANALYSIS: _handle_data_analysis,
             QueryType.FEATURE_SPECIFIC: _handle_feature_specific,
-            QueryType.MODEL_INFO: _handle_model_info,
-            QueryType.COMPARISON: _handle_comparison,
-            QueryType.GENERAL_ML: _handle_general_ml,
-            QueryType.HELP: _handle_help,
-            # NEW: Enhanced NLU handlers
+            
+            # Chart requests
+            QueryType.SHOW_CHART: _handle_show_chart,
+            QueryType.CONFUSION_MATRIX: lambda q, d: _handle_specific_chart(q, d, user_id, 'confusion_matrix'),
+            QueryType.ROC_CURVE: lambda q, d: _handle_specific_chart(q, d, user_id, 'roc_curve'),
+            QueryType.PRECISION_RECALL: lambda q, d: _handle_specific_chart(q, d, user_id, 'precision_recall'),
+            QueryType.ACTUAL_VS_PREDICTED: lambda q, d: _handle_specific_chart(q, d, user_id, 'actual_vs_predicted'),
+            
+            # Advanced
             QueryType.WHAT_IF: _handle_what_if,
             QueryType.EXPLAIN: _handle_explain,
-            QueryType.HISTORY: _handle_history,
-            QueryType.DASHBOARD: _handle_dashboard,
+            QueryType.DASHBOARD: lambda q, d: _handle_dashboard(q, d, user_id),
+            
+            # Meta
+            QueryType.COMPARISON: _handle_comparison,
+            QueryType.HELP: _handle_help,
+            QueryType.GENERAL_ML: _handle_general_ml,
         }
         
         handler = handlers.get(query_type, _handle_general_ml)
         
-        if handler == _handle_general_ml:
-            result = handler(query, df, context)
-        else:
-            result = handler(query, df)
+        try:
+            if query_type in [QueryType.CONFUSION_MATRIX, QueryType.ROC_CURVE, 
+                             QueryType.PRECISION_RECALL, QueryType.ACTUAL_VS_PREDICTED,
+                             QueryType.DASHBOARD]:
+                result = handler(query, df)
+            elif query_type == QueryType.GENERAL_ML:
+                result = handler(query, df, context)
+            else:
+                result = handler(query, df)
+        except Exception as e:
+            logger.error(f"Handler error: {e}")
+            import traceback
+            traceback.print_exc()
+            result["answer"] = f"⚠️ Error processing your request: {str(e)[:100]}"
+    
+    # Update session memory
+    session.last_query_type = query_type
+    
+    # Check for custom chart requests (radar, scatter, etc.) using LLM visualizer
+    q_lower = query.lower()
+    custom_chart_keywords = ['radar', 'spider', 'sunburst', 'treemap', 'bubble', 'scatter', 'heatmap', 'pink', 'blue', 'green']
+    wants_custom_chart = any(term in q_lower for term in custom_chart_keywords)
+    
+    if wants_custom_chart and df is not None and not df.empty and "chart" not in result:
+        try:
+            from core.llm_visualizer import llm_visualize
+            import json
+            viz_result = llm_visualize(df, query, user_id)
+            if viz_result.get("success") and viz_result.get("chart"):
+                chart = viz_result.get("chart")
+                if isinstance(chart, dict) and 'data' in chart and 'layout' in chart:
+                    chart_json = json.dumps(chart, default=str)
+                    result["answer"] += f"\n\n```plotly_chart\n{chart_json}\n```"
+                    result["chart"] = chart
+                    result["visualization"] = chart
+        except Exception as e:
+            logger.warning(f"Predict custom chart failed: {e}")
     
     # Add execution time
     exec_time = (datetime.now() - start_time).total_seconds()
     result["execution_time"] = f"{exec_time:.2f}s"
+    result["query_type"] = query_type.value
     
     return result
 
 
+# =============================================================================
+# HANDLER: NO MODEL TRAINED
+# =============================================================================
+
 def _handle_no_model(query: str, query_type: QueryType, df=None, user_id: str = "") -> Dict[str, Any]:
     """Handle queries when no model is trained yet"""
     
-    response = """## 🤖 ML Prediction Assistant
+    response = """## 🤖 Senior AIML Engineer Assistant
 
-Welcome! I'm your intelligent ML assistant, but I don't have a trained model yet.
+Welcome! I'm your AI/ML assistant with senior engineer expertise.
 
-### 🚀 To Get Started:
+### 🚀 Getting Started
 
-1. **Go to AutoML Tab** in the sidebar
-2. **Upload your dataset** (CSV, Excel)
-3. **Train a model** - I'll automatically select the best algorithm!
+To unlock my full capabilities, you need to train a model first:
 
-### 💡 Once trained, you can ask me:
+1. **Go to the AutoML tab** in the sidebar
+2. **Upload your dataset** (CSV, Excel, or JSON)
+3. **Select your target variable** 
+4. **Click Train** - I'll automatically:
+   - Clean and preprocess your data
+   - Try 15+ algorithms (including neural networks in Ultra mode)
+   - Optimize hyperparameters
+   - Select the best model
 
-- **"Predict for age=60, ejection_fraction=35"** - Get predictions
-- **"What affects survival most?"** - Feature importance
-- **"Show model accuracy"** - Performance metrics
-- **"Compare male vs female outcomes"** - Analysis
-- **Any ML question!** - I'll explain using your data
+### 💡 Once trained, ask me:
+
+| Query Type | Example |
+|------------|---------|
+| **Predictions** | "Predict for age=60, income=50000" |
+| **Model Info** | "What model was trained?" |
+| **Performance** | "Show accuracy and confusion matrix" |
+| **Feature Analysis** | "What features matter most?" |
+| **Visualizations** | "Show me the ROC curve" |
+| **What-If** | "What if age was 30 instead of 60?" |
+| **Explanations** | "Why did the model predict this?" |
 
 ---
 
@@ -339,105 +659,266 @@ Welcome! I'm your intelligent ML assistant, but I don't have a trained model yet
     }
 
 
+# =============================================================================
+# HANDLER: PREDICTIONS
+# =============================================================================
+
 def _handle_prediction(query: str, df=None) -> Dict[str, Any]:
-    """
-    Handle prediction requests with real ML model.
-    Returns prediction + confidence + explanation + chart.
-    """
+    """Handle prediction requests with real ML model"""
     result = {
         "answer": "",
         "mode": "predict",
-        "confidence": 0.8,
+        "confidence": 0.85,
         "sources": ["Trained ML Model", automl_engine.model_name],
         "ml_used": True
     }
     
-    # Extract feature values from query
-    feature_values = _extract_features(query, df)
+    # Extract features from query
+    feature_values = _extract_features_from_query(query, df)
     
     if not feature_values:
-        # Show what features are available
         result["answer"] = _get_prediction_help()
         return result
     
-    # Make REAL prediction
     try:
+        # Make real prediction
         pred = automl_engine.predict(feature_values)
         prediction = pred.get('prediction')
         confidence = pred.get('confidence', 0.8)
+        probabilities = pred.get('probabilities', {})
         
-        result["confidence"] = confidence if confidence else 0.8
-        
-        # Get model context
+        # Get context
         task_type = automl_engine.task_type
         target = automl_engine.target_column
         model_name = automl_engine.model_name
         is_classification = 'classification' in task_type
         
-        # Generate LLM explanation
-        explanation = _generate_llm_explanation(
-            query=query,
-            prediction=prediction,
-            confidence=confidence,
-            features=feature_values,
-            target=target,
-            task_type=task_type
-        )
+        # Generate senior-level explanation
+        ml_context = {
+            'model_name': model_name,
+            'task_type': task_type,
+            'target': target,
+            'prediction': prediction,
+            'confidence': confidence,
+            'features': feature_values
+        }
+        explanation = generate_senior_explanation('prediction', ml_context, query)
         
         # Build response
+        conf_pct = int(confidence * 100) if confidence else 75
+        
         if is_classification:
-            pred_emoji = "✅" if str(prediction) in ["0", "False", "No", "Negative"] else "⚠️"
-            pred_text = _interpret_classification(prediction, target, confidence)
+            pred_emoji = "✅" if str(prediction) in ["0", "False", "No", "Negative", "Survived"] else "⚠️"
+            pred_display = _format_classification_prediction(prediction, target, probabilities)
         else:
             pred_emoji = "📊"
-            pred_text = f"**{target}**: {prediction}"
+            pred_display = f"**{target}**: {prediction:,.2f}" if isinstance(prediction, float) else f"**{target}**: {prediction}"
         
-        conf_pct = int(confidence * 100) if confidence else 75
-        conf_bar = "🟢" if conf_pct > 70 else "🟡" if conf_pct > 50 else "🔴"
+        conf_bar = "🟢" if conf_pct > 80 else "🟡" if conf_pct > 60 else "🔴"
         
         response = f"""## {pred_emoji} ML Prediction Result
 
-### {pred_text}
+### {pred_display}
 
-**Confidence**: {conf_bar} {conf_pct}%
-**Model**: {model_name}
+| Metric | Value |
+|--------|-------|
+| **Confidence** | {conf_bar} {conf_pct}% |
+| **Model** | {model_name} |
+| **Task** | {task_type.replace('_', ' ').title()} |
 
 ---
 
-### 💡 Analysis
+### 💡 Senior ML Engineer Analysis
 
 {explanation}
 
 ---
 
-### 📥 Input Features Used
+### 📥 Input Features
+
 """
-        # Show features used
-        for feat, val in list(feature_values.items())[:8]:
+        # Show input features
+        for feat, val in list(feature_values.items())[:10]:
             if isinstance(val, float):
-                response += f"- **{feat}**: {val:,.2f}\n"
+                response += f"- `{feat}`: {val:,.2f}\n"
             else:
-                response += f"- **{feat}**: {val}\n"
+                response += f"- `{feat}`: {val}\n"
         
-        response += "\n---\n*🤖 Real ML prediction from your trained model*\n"
+        # Add probability breakdown for classification
+        if probabilities and is_classification:
+            response += "\n### 📊 Class Probabilities\n\n"
+            for cls, prob in probabilities.items():
+                bar_len = int(prob * 20)
+                bar = "█" * bar_len + "░" * (20 - bar_len)
+                response += f"- **{cls}**: `{bar}` {prob*100:.1f}%\n"
         
-        # Generate chart
-        chart = _generate_prediction_chart(prediction, confidence, feature_values)
-        response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
+        # Generate prediction chart
+        chart = _generate_prediction_confidence_chart(prediction, confidence, probabilities, target)
+        if chart:
+            response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
         
         result["answer"] = response
+        result["confidence"] = confidence
         
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         import traceback
         traceback.print_exc()
-        result["answer"] = f"⚠️ Prediction error: {str(e)}"
+        result["answer"] = f"⚠️ Prediction failed: {str(e)}\n\nPlease check that your input features match the training data format."
     
     return result
 
 
+def _extract_features_from_query(query: str, df=None) -> Dict[str, Any]:
+    """Extract feature values from natural language query"""
+    features = {}
+    
+    # Get expected features
+    expected_features = automl_engine.feature_columns if hasattr(automl_engine, 'feature_columns') else []
+    metadata = automl_engine.feature_metadata if hasattr(automl_engine, 'feature_metadata') else []
+    meta_dict = {m.get('name', ''): m for m in metadata} if metadata else {}
+    
+    q_lower = query.lower()
+    
+    # Pattern: feature=value, feature:value, feature is value
+    patterns = [
+        r'([a-z_]+)\s*[=:]\s*([0-9.]+)',
+        r'([a-z_]+)\s*[=:]\s*([a-z]+)',
+        r'([a-z_]+)\s+is\s+([0-9.]+)',
+        r'([a-z_]+)\s+of\s+([0-9.]+)',
+    ]
+    
+    for pattern in patterns:
+        matches = re.findall(pattern, q_lower)
+        for name, value in matches:
+            # Match to expected feature
+            matched_feature = None
+            for feat in expected_features:
+                if name in feat.lower() or feat.lower() in name:
+                    matched_feature = feat
+                    break
+            
+            if matched_feature:
+                # Convert value
+                meta = meta_dict.get(matched_feature, {})
+                if meta.get('type') == 'numeric':
+                    try:
+                        features[matched_feature] = float(value)
+                    except:
+                        features[matched_feature] = value
+                else:
+                    features[matched_feature] = value
+    
+    # Fill missing features with defaults
+    for feat in expected_features:
+        if feat not in features:
+            meta = meta_dict.get(feat, {})
+            if 'default' in meta:
+                features[feat] = meta['default']
+            elif 'mean' in meta:
+                features[feat] = meta['mean']
+    
+    return features if len(features) >= len(expected_features) * 0.3 else {}
+
+
+def _get_prediction_help() -> str:
+    """Return help message for predictions"""
+    features = automl_engine.feature_columns[:8] if hasattr(automl_engine, 'feature_columns') else []
+    target = automl_engine.target_column if hasattr(automl_engine, 'target_column') else 'target'
+    
+    response = f"""## 🎯 Making Predictions
+
+To predict **{target}**, provide values for these features:
+
+"""
+    
+    for feat in features:
+        response += f"- `{feat}`\n"
+    
+    response += f"""
+### Example Queries:
+
+1. **Simple**: "Predict for {features[0] if features else 'age'}=50"
+2. **Multiple**: "{features[0] if features else 'age'}=50, {features[1] if len(features) > 1 else 'income'}=60000"
+3. **Natural**: "What would happen if {features[0] if features else 'age'} is 30?"
+
+---
+
+*Tip: I'll fill in missing values with defaults from training data.*
+"""
+    return response
+
+
+def _format_classification_prediction(prediction, target: str, probabilities: Dict) -> str:
+    """Format classification prediction for display"""
+    if 'death' in target.lower() or 'survive' in target.lower():
+        if str(prediction) in ['0', 'False', 'No']:
+            return "🟢 **Predicted: SURVIVED**"
+        else:
+            return "🔴 **Predicted: DEATH EVENT**"
+    elif 'fraud' in target.lower():
+        if str(prediction) in ['1', 'True', 'Yes']:
+            return "🚨 **Predicted: FRAUD DETECTED**"
+        else:
+            return "✅ **Predicted: LEGITIMATE**"
+    elif 'churn' in target.lower():
+        if str(prediction) in ['1', 'True', 'Yes']:
+            return "⚠️ **Predicted: WILL CHURN**"
+        else:
+            return "✅ **Predicted: WILL STAY**"
+    else:
+        return f"**Predicted {target}**: {prediction}"
+
+
+def _generate_prediction_confidence_chart(prediction, confidence, probabilities, target) -> Dict:
+    """Generate confidence visualization chart"""
+    if probabilities and len(probabilities) > 0:
+        # Multi-class probability bar chart
+        classes = list(probabilities.keys())
+        probs = [probabilities[c] * 100 for c in classes]
+        
+        return {
+            "data": [{
+                "type": "bar",
+                "x": classes,
+                "y": probs,
+                "marker": {"color": ["#22c55e" if str(prediction) == str(c) else "#94a3b8" for c in classes]}
+            }],
+            "layout": {
+                "title": {"text": f"Class Probabilities for {target}", "font": {"size": 14}},
+                "yaxis": {"title": "Probability (%)", "range": [0, 100]},
+                "paper_bgcolor": "#f8fafc",
+                "height": 300
+            }
+        }
+    else:
+        # Simple gauge for confidence
+        return {
+            "data": [{
+                "type": "indicator",
+                "mode": "gauge+number",
+                "value": confidence * 100,
+                "title": {"text": "Prediction Confidence"},
+                "gauge": {
+                    "axis": {"range": [0, 100]},
+                    "bar": {"color": "#3b82f6"},
+                    "steps": [
+                        {"range": [0, 60], "color": "#fee2e2"},
+                        {"range": [60, 80], "color": "#fef3c7"},
+                        {"range": [80, 100], "color": "#dcfce7"}
+                    ]
+                }
+            }],
+            "layout": {"paper_bgcolor": "#f8fafc", "height": 250}
+        }
+
+
+# =============================================================================
+# HANDLER: METRICS
+# =============================================================================
+
 def _handle_metrics(query: str, df=None) -> Dict[str, Any]:
-    """Handle model performance/metrics queries"""
+    """Handle model metrics/performance queries"""
     result = {
         "answer": "",
         "mode": "predict",
@@ -449,7 +930,7 @@ def _handle_metrics(query: str, df=None) -> Dict[str, Any]:
     try:
         metrics_data = automl_engine.get_model_metrics()
     except Exception as e:
-        result["answer"] = f"Error getting metrics: {e}"
+        result["answer"] = f"⚠️ Error retrieving metrics: {e}"
         return result
     
     model = metrics_data.get('model_name', 'Unknown')
@@ -457,248 +938,112 @@ def _handle_metrics(query: str, df=None) -> Dict[str, Any]:
     target = metrics_data.get('target', 'Unknown')
     metrics = metrics_data.get('metrics', {})
     cm = metrics_data.get('confusion_matrix')
-    n_features = metrics_data.get('n_features', 0)
     
     response = f"""## 📊 Model Performance Dashboard
 
 ### 🤖 Model: **{model}**
-- **Task**: {task.replace('_', ' ').title()}
-- **Target**: {target}
-- **Features**: {n_features}
+
+| Property | Value |
+|----------|-------|
+| **Task Type** | {task.replace('_', ' ').title()} |
+| **Target** | {target} |
+| **Features** | {metrics_data.get('n_features', 'N/A')} |
 
 ---
 
 ### 🎯 Performance Metrics
-"""
-    
-    # Check if metrics available
-    has_metrics = any([metrics.get(k) for k in ['accuracy', 'f1', 'precision', 'recall', 'r2', 'mae']])
-    
-    if has_metrics:
-        if metrics.get('accuracy'):
-            acc = metrics['accuracy'] * 100
-            acc_emoji = "🟢" if acc > 80 else "🟡" if acc > 60 else "🔴"
-            response += f"- **Accuracy**: {acc_emoji} {acc:.1f}%\n"
-        if metrics.get('f1'):
-            f1 = metrics['f1'] * 100
-            response += f"- **F1 Score**: {f1:.1f}%\n"
-        if metrics.get('precision'):
-            prec = metrics['precision'] * 100
-            response += f"- **Precision**: {prec:.1f}%\n"
-        if metrics.get('recall'):
-            rec = metrics['recall'] * 100
-            response += f"- **Recall**: {rec:.1f}%\n"
-        if metrics.get('r2'):
-            response += f"- **R² Score**: {metrics['r2']:.4f}\n"
-        if metrics.get('mae'):
-            response += f"- **MAE**: {metrics['mae']:.4f}\n"
-        if metrics.get('rmse'):
-            response += f"- **RMSE**: {metrics['rmse']:.4f}\n"
-        
-        # LLM interpretation
-        interpretation = _interpret_metrics(metrics, task)
-        response += f"\n---\n\n### 💡 Interpretation\n\n{interpretation}\n"
-    else:
-        # Try live evaluation if data available
-        evaluated = False
-        if df is not None and target in df.columns:
-            try:
-                from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
-                import numpy as np
-                import pandas as pd
-                
-                # Limit rows for performance
-                eval_df = df.head(1000)
-                y_true = eval_df[target]
-                
-                # Preprocess all rows
-                X_list = []
-                valid_indices = []
-                
-                for idx, row in eval_df.iterrows():
-                    try:
-                        row_dict = row.to_dict()
-                        # _preprocess_single returns (1, n_features) array
-                        X_list.append(automl_engine._preprocess_single(row_dict))
-                        valid_indices.append(idx)
-                    except:
-                        continue
-                
-                if X_list and len(X_list) > 10:
-                    X_eval = np.vstack(X_list)
-                    y_pred = automl_engine.model.predict(X_eval)
-                    
-                    # Convert y_true to numeric if needed
-                    y_true_subset = y_true.loc[valid_indices]
-                    
-                    if hasattr(automl_engine, 'target_encoder') and automl_engine.target_encoder:
-                         # Transform y_true using the same encoder
-                         try:
-                             y_true_enc = automl_engine.target_encoder.transform(y_true_subset.astype(str).str.strip())
-                         except:
-                             # Fallback to numeric if encoding fails
-                             y_true_enc = pd.to_numeric(y_true_subset, errors='coerce').fillna(0)
-                    else:
-                         y_true_enc = pd.to_numeric(y_true_subset, errors='coerce').fillna(0)
-                    
-                    # Compute metrics
-                    acc = accuracy_score(y_true_enc, y_pred) * 100
-                    f1 = f1_score(y_true_enc, y_pred, average='weighted', zero_division=0) * 100
-                    cm = confusion_matrix(y_true_enc, y_pred).tolist()
-                    
-                    acc_emoji = "🟢" if acc > 80 else "🟡" if acc > 60 else "🔴"
-                    
-                    response += f"### ⚡ Live Evaluation Status\n"
-                    response += f"*Metrics calculated on {len(X_list)} rows from current data*\n\n"
-                    response += f"- **Accuracy**: {acc_emoji} {acc:.1f}%\n"
-                    response += f"- **F1 Score**: {f1:.1f}%\n"
-                    
-                    evaluated = True
-                    # IMPORTANT: Set metrics dictionary for interpretation if needed, though specific interpretation checks dict keys
-                    metrics['accuracy'] = acc / 100
-                    metrics['f1'] = f1 / 100
-                    
-            except Exception as e:
-                logger.error(f"Live eval failed: {e}")
-        
-        if not evaluated:
-            response += """
-> ⚠️ **Detailed metrics not available**
 
-> This model was trained before metrics storage was enabled.
-> **Retrain the model** to get accuracy, F1, confusion matrix, etc.
 """
+    
+    # Classification metrics
+    if metrics.get('accuracy'):
+        acc = metrics['accuracy'] * 100
+        acc_emoji = "🟢" if acc > 85 else "🟡" if acc > 70 else "🔴"
+        response += f"| **Accuracy** | {acc_emoji} {acc:.1f}% |\n"
+    
+    if metrics.get('f1'):
+        f1 = metrics['f1'] * 100
+        response += f"| **F1 Score** | {f1:.1f}% |\n"
+    
+    if metrics.get('precision'):
+        response += f"| **Precision** | {metrics['precision']*100:.1f}% |\n"
+    
+    if metrics.get('recall'):
+        response += f"| **Recall** | {metrics['recall']*100:.1f}% |\n"
+    
+    if metrics.get('minority_recall'):
+        response += f"| **Minority Recall** | {metrics['minority_recall']*100:.1f}% |\n"
+    
+    if metrics.get('auc_pr'):
+        response += f"| **AUC-PR** | {metrics['auc_pr']:.4f} |\n"
+    
+    # Regression metrics
+    if metrics.get('r2'):
+        response += f"| **R² Score** | {metrics['r2']:.4f} |\n"
+    
+    if metrics.get('mae'):
+        response += f"| **MAE** | {metrics['mae']:.4f} |\n"
+    
+    if metrics.get('rmse'):
+        response += f"| **RMSE** | {metrics['rmse']:.4f} |\n"
+    
+    # Senior ML Engineer interpretation
+    ml_context = {
+        'model_name': model,
+        'task_type': task,
+        'target': target,
+        'metrics': metrics
+    }
+    interpretation = generate_senior_explanation('metrics', ml_context, query)
+    response += f"\n---\n\n### 💡 Senior ML Engineer Analysis\n\n{interpretation}\n"
     
     # Add confusion matrix chart if available
     if cm:
-        try:
-            labels = ['Class 0', 'Class 1'] if len(cm) == 2 else [f'Class {i}' for i in range(len(cm))]
-            if 'death' in target.lower() and len(cm) == 2:
-                labels = ['Survived', 'Death']
-            
-            chart = {
-                "data": [{
-                    "type": "heatmap",
-                    "z": cm,
-                    "x": labels,
-                    "y": labels,
-                    "colorscale": [[0, "#dcfce7"], [0.5, "#22c55e"], [1, "#15803d"]],
-                    "showscale": True,
-                    "text": [[str(int(v)) for v in row] for row in cm],
-                    "texttemplate": "%{text}",
-                    "textfont": {"size": 18, "color": "#1f2937"}
-                }],
-                "layout": {
-                    "title": {"text": "📊 Confusion Matrix", "font": {"size": 18, "color": "#1f2937"}},
-                    "xaxis": {"title": "Predicted", "tickfont": {"size": 12}},
-                    "yaxis": {"title": "Actual", "autorange": "reversed", "tickfont": {"size": 12}},
-                    "paper_bgcolor": "#f8fafc",
-                    "plot_bgcolor": "#ffffff",
-                    "font": {"color": "#1f2937"},
-                    "width": 500,
-                    "height": 450
-                }
-            }
-            response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
-        except Exception as e:
-            logger.error(f"Confusion matrix chart error: {e}")
-            
-    # 📈 Actual vs Predicted / Deep Analysis Chart
-    # Determine data source (Live vs Stored)
-    plot_actuals = None
-    plot_preds = None
-    
-    if locals().get('evaluated', False):
-        try:
-            plot_actuals = locals().get('y_true_enc').tolist()
-            plot_preds = locals().get('y_pred').tolist()
-        except: pass
-    elif metrics_data.get('y_test') is not None:
-        plot_actuals = metrics_data.get('y_test')
-        plot_preds = metrics_data.get('y_pred')
+        labels = ['Class 0', 'Class 1'] if len(cm) == 2 else [f'Class {i}' for i in range(len(cm))]
+        if 'death' in target.lower() and len(cm) == 2:
+            labels = ['Survived', 'Death']
         
-    if plot_actuals and plot_preds:
-        try:
-            is_classification = 'classification' in str(task).lower()
-            
-            if is_classification:
-                # Grouped Bar: Actual vs Predicted Counts
-                import pandas as pd
-                df_res = pd.DataFrame({'Actual': plot_actuals, 'Predicted': plot_preds})
-                
-                # Get counts
-                act_counts = df_res['Actual'].value_counts().sort_index()
-                pred_counts = df_res['Predicted'].value_counts().sort_index()
-                
-                # Labels
-                labels = [str(i) for i in act_counts.index]
-                if 'death' in str(target).lower() and len(labels) <= 2:
-                    labels = ['Survived', 'Death']
-                elif len(labels) > 10: # Limit labels
-                     labels = labels[:10]
-                
-                chart_ap = {
-                    "data": [
-                        {"type": "bar", "name": "Actual", "x": labels, "y": act_counts.values.tolist(), "marker": {"color": "#94a3b8"}},
-                        {"type": "bar", "name": "Predicted", "x": labels, "y": pred_counts.values.tolist(), "marker": {"color": "#3b82f6"}}
-                    ],
-                    "layout": {
-                        "title": {"text": "📊 Actual vs Predicted Distribution", "font": {"size": 16}},
-                        "barmode": "group",
-                        "xaxis": {"title": "Class"},
-                        "yaxis": {"title": "Count"},
-                        "paper_bgcolor": "#f8fafc",
-                         "margin": {"l": 50, "r": 20, "t": 40, "b": 40}
-                    }
-                }
-            else:
-                # Regression Scatter
-                chart_ap = {
-                    "data": [{
-                        "type": "scatter",
-                        "mode": "markers",
-                        "x": plot_actuals,
-                        "y": plot_preds,
-                        "marker": {"color": "#3b82f6", "opacity": 0.6, "size": 8},
-                        "name": "Data"
-                    }, {
-                        "type": "scatter",
-                        "mode": "lines",
-                        "x": [min(plot_actuals), max(plot_actuals)],
-                        "y": [min(plot_actuals), max(plot_actuals)],
-                        "line": {"color": "#ef4444", "dash": "dash"},
-                        "name": "Ideal"
-                    }],
-                    "layout": {
-                        "title": {"text": "Actual vs Predicted", "font": {"size": 16}},
-                        "xaxis": {"title": "Actual Values"},
-                        "yaxis": {"title": "Predicted Values"},
-                        "paper_bgcolor": "#f8fafc",
-                        "showlegend": True
-                    }
-                }
-
-            response += f"\n\n```plotly_chart\n{json.dumps(chart_ap)}\n```"
-            
-        except Exception as e:
-            logger.error(f"AvP chart error: {e}")
+        chart = {
+            "data": [{
+                "type": "heatmap",
+                "z": cm,
+                "x": labels,
+                "y": labels,
+                "colorscale": [[0, "#dcfce7"], [0.5, "#22c55e"], [1, "#15803d"]],
+                "showscale": True,
+                "text": [[str(int(v)) for v in row] for row in cm],
+                "texttemplate": "%{text}",
+                "textfont": {"size": 18, "color": "#1f2937"}
+            }],
+            "layout": {
+                "title": {"text": "📊 Confusion Matrix", "font": {"size": 16}},
+                "xaxis": {"title": "Predicted"},
+                "yaxis": {"title": "Actual", "autorange": "reversed"},
+                "paper_bgcolor": "#f8fafc",
+                "height": 400, "width": 450
+            }
+        }
+        response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
     
     result["answer"] = response
     return result
 
+
+# =============================================================================
+# HANDLER: FEATURE IMPORTANCE
+# =============================================================================
 
 def _handle_feature_importance(query: str, df=None) -> Dict[str, Any]:
     """Handle feature importance queries"""
     result = {
         "answer": "",
         "mode": "predict",
-        "confidence": 0.9,
+        "confidence": 0.92,
         "sources": ["Feature Analysis", automl_engine.model_name],
         "ml_used": True
     }
     
-    # Get feature importance from model
-    importance = _get_feature_importance()
+    importance = _get_feature_importance_data()
     target = automl_engine.target_column
     model = automl_engine.model_name
     
@@ -708,27 +1053,32 @@ def _handle_feature_importance(query: str, df=None) -> Dict[str, Any]:
     
     response = f"""## 🔑 Feature Importance Analysis
 
-### What Affects **{target}** Most?
+### What Drives **{target}** Predictions?
 
-Based on the trained **{model}** model, here are the most influential features:
+Based on the **{model}** model, these features have the highest predictive power:
 
 """
     
-    # Show top features with bars
-    total_importance = sum(f['importance'] for f in importance)
+    # Top features with bars
+    total_imp = sum(f['importance'] for f in importance)
     for i, feat in enumerate(importance[:10], 1):
         imp = feat['importance']
-        pct = (imp / total_importance * 100) if total_importance > 0 else 0
-        bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
+        pct = (imp / total_imp * 100) if total_imp > 0 else 0
+        bar = "█" * int(pct / 3) + "░" * (30 - int(pct / 3))
         response += f"**{i}. {feat['feature']}**\n`{bar}` {pct:.1f}%\n\n"
     
-    # LLM interpretation
-    top_features = [f['feature'] for f in importance[:3]]
-    interpretation = _interpret_feature_importance(top_features, target)
-    response += f"---\n\n### 💡 Insight\n\n{interpretation}\n"
+    # Senior interpretation
+    top_3 = [f['feature'] for f in importance[:3]]
+    ml_context = {
+        'model_name': model,
+        'target': target,
+        'top_features': top_3
+    }
+    interpretation = generate_senior_explanation('importance', ml_context, query)
+    response += f"---\n\n### 💡 Senior ML Engineer Analysis\n\n{interpretation}\n"
     
     # Generate bar chart
-    feats = [f['feature'][:15] for f in importance[:8]]
+    feats = [f['feature'][:20] for f in importance[:8]]
     vals = [f['importance'] * 100 for f in importance[:8]]
     
     chart = {
@@ -737,15 +1087,14 @@ Based on the trained **{model}** model, here are the most influential features:
             "y": feats[::-1],
             "x": vals[::-1],
             "orientation": "h",
-            "marker": {"color": ["#3b82f6"] * 7 + ["#1d4ed8"]}
+            "marker": {"color": ["#3b82f6"] * (len(feats)-1) + ["#1d4ed8"]}
         }],
         "layout": {
-            "title": {"text": f"🔑 Feature Importance for {target}", "font": {"size": 16}},
+            "title": {"text": f"🔑 Feature Importance", "font": {"size": 16}},
             "xaxis": {"title": "Importance (%)"},
-            "yaxis": {"tickfont": {"size": 11}},
             "paper_bgcolor": "#f8fafc",
-            "font": {"color": "#1f2937"},
-            "margin": {"l": 120}
+            "margin": {"l": 150},
+            "height": 400
         }
     }
     response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
@@ -754,207 +1103,204 @@ Based on the trained **{model}** model, here are the most influential features:
     return result
 
 
-def _handle_data_analysis(query: str, df=None) -> Dict[str, Any]:
-    """Handle data exploration and analysis queries"""
-    result = {
-        "answer": "",
-        "mode": "predict",
-        "confidence": 0.85,
-        "sources": ["Data Analysis", "Training Data"],
-        "ml_used": True
-    }
-    
-    target = automl_engine.target_column
-    features = automl_engine.feature_columns
-    metadata = automl_engine.feature_metadata
-    
-    response = f"""## 📊 Data Analysis
-
-### Dataset Overview
-
-- **Target Variable**: {target}
-- **Features**: {len(features)}
-- **Task**: {automl_engine.task_type.replace('_', ' ').title()}
-
----
-
-### 📈 Feature Statistics
-"""
-    
-    # Show feature metadata
-    for i, meta in enumerate(metadata[:10], 1):
-        name = meta.get('name', f'Feature {i}')
-        ftype = meta.get('type', 'unknown')
+def _get_feature_importance_data() -> List[Dict]:
+    """Get feature importance from trained model"""
+    try:
+        model = automl_engine.model
+        feature_names = automl_engine.feature_columns
         
-        if ftype == 'numeric':
-            min_val = meta.get('min', 0)
-            max_val = meta.get('max', 100)
-            mean_val = meta.get('mean', 50)
-            response += f"**{i}. {name}** (numeric)\n"
-            response += f"   - Range: {min_val:.1f} - {max_val:.1f}\n"
-            response += f"   - Mean: {mean_val:.1f}\n\n"
-        elif ftype == 'categorical':
-            options = meta.get('options', [])[:5]
-            n_cats = meta.get('n_categories', len(options))
-            response += f"**{i}. {name}** (categorical)\n"
-            response += f"   - Categories: {n_cats}\n"
-            response += f"   - Examples: {', '.join(str(o) for o in options)}\n\n"
-    
-    # Generate distribution chart for numeric features
-    numeric_meta = [m for m in metadata if m.get('type') == 'numeric'][:6]
-    if numeric_meta:
-        feats = [m['name'][:12] for m in numeric_meta]
-        means = [m.get('mean', 0) for m in numeric_meta]
+        # Try tree-based importance
+        if hasattr(model, 'feature_importances_'):
+            importances = model.feature_importances_
+        elif hasattr(model, 'coef_'):
+            importances = np.abs(model.coef_).flatten()
+        elif hasattr(model, 'estimators_'):
+            # Ensemble - average importances
+            importances = np.mean([
+                getattr(e, 'feature_importances_', np.zeros(len(feature_names)))
+                for e in model.estimators_ if hasattr(e, 'feature_importances_')
+            ], axis=0) if len(model.estimators_) > 0 else None
+        else:
+            return []
         
-        chart = {
-            "data": [{
-                "type": "bar",
-                "x": feats,
-                "y": means,
-                "marker": {"color": "#8b5cf6"}
-            }],
-            "layout": {
-                "title": {"text": "📊 Feature Mean Values", "font": {"size": 16}},
-                "xaxis": {"title": "Features", "tickangle": -45},
-                "yaxis": {"title": "Mean Value"},
-                "paper_bgcolor": "#f8fafc",
-                "font": {"color": "#1f2937"}
-            }
-        }
-        response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
-    
-    result["answer"] = response
-    return result
+        if importances is None or len(importances) == 0:
+            return []
+        
+        # Normalize
+        importances = importances / np.sum(importances) if np.sum(importances) > 0 else importances
+        
+        # Create list
+        result = [
+            {'feature': feat, 'importance': float(imp)}
+            for feat, imp in zip(feature_names, importances)
+        ]
+        result.sort(key=lambda x: x['importance'], reverse=True)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Feature importance error: {e}")
+        return []
 
 
-def _handle_feature_specific(query: str, df=None) -> Dict[str, Any]:
-    """Handle deep dive analysis for a specific feature"""
+# =============================================================================
+# HANDLER: SPECIFIC CHARTS
+# =============================================================================
+
+def _handle_specific_chart(query: str, df, user_id: str, chart_type: str) -> Dict[str, Any]:
+    """Handle requests for specific chart types"""
     result = {
         "answer": "",
         "mode": "predict",
         "confidence": 0.95,
-        "sources": ["Feature Analysis", automl_engine.model_name],
+        "sources": ["Chart Generator", automl_engine.model_name],
         "ml_used": True
     }
     
-    # Identify feature
-    target_feat = None
-    q = query.lower()
-    features = automl_engine.feature_columns
-    metadata = {m['name']: m for m in automl_engine.feature_metadata}
+    # Try to get stored chart
+    chart = get_chart_by_name(user_id, chart_type)
     
-    for feat in features:
-        feat_clean = feat.lower().replace('_', ' ')
-        # Check for exact feature name matching or cleaned version
-        if re.search(r'\b' + re.escape(feat.lower()) + r'\b', q) or \
-           re.search(r'\b' + re.escape(feat_clean) + r'\b', q):
-            target_feat = feat
-            break
-            
-    if not target_feat:
-        result["answer"] = "I couldn't identify which feature you want to analyze. Please specify a valid feature name found in your model."
-        return result
-        
-    meta = metadata.get(target_feat, {})
-    ftype = meta.get('type', 'unknown')
-    target = automl_engine.target_column
-    
-    response = f"""## 🔍 Feature Analysis: **{target_feat}**
+    if chart:
+        response = f"""## 📊 {chart_type.replace('_', ' ').title()}
+
+Here is the **{chart_type.replace('_', ' ')}** from your trained model:
 
 """
-    
-    # Stats
-    if ftype == 'numeric':
-        min_v = meta.get('min', 0)
-        max_v = meta.get('max', 0)
-        mean_v = meta.get('mean', 0)
-        response += f"### 📊 Statistics (Numeric)\n"
-        response += f"- **Range**: {min_v:,.1f} to {max_v:,.1f}\n"
-        response += f"- **Average**: {mean_v:,.1f}\n"
-        response += f"- **Default**: {meta.get('default', 0):,.1f}\n"
-    else:
-        options = meta.get('options', [])
-        response += f"### 📊 Statistics (Categorical)\n"
-        response += f"- **Unique Values**: {len(options)}\n"
-        response += f"- **Options**: {', '.join(str(o) for o in options[:6])}\n"
-
-    # Importance
-    importance = _get_feature_importance()
-    feat_imp = next((f for f in importance if f['feature'] == target_feat), None)
-    if feat_imp:
-        rank = importance.index(feat_imp) + 1
-        imp_pct = feat_imp['importance'] * 100
-        imp_bar = "█" * int(imp_pct / 5) + "░" * (20 - int(imp_pct / 5))
-        response += f"\n### 🔑 Importance\n"
-        response += f"- **Rank**: #{rank} of {len(features)}\n"
-        response += f"- **Impact**: {imp_pct:.1f}%\n"
-        response += f"`{imp_bar}`\n"
-
-    # LLM Explanation for relationship
-    if LLM_AVAILABLE:
-        prompt = f"""Explain how the feature '{target_feat}' typically affects '{target}' in a machine learning context. 
-        Domain: General Business/Healthcare. 
-        Feature Stats: {meta}
-        Target: {target}
+        response += f"\n```plotly_chart\n{json.dumps(chart)}\n```"
         
-        Provide 2-3 concise sentences on the relationship."""
-        try:
-            explanation = llm_chat(prompt, temperature=0.3, max_tokens=150)
-            response += f"\n### 💡 Relationship to {target}\n\n{explanation}\n"
-        except:
-            response += f"\n### 💡 Relationship to {target}\nThis feature is used by the model to discriminate between {target} outcomes based on the patterns found in training data.\n"
-    
-    # Charts - Gauge for numeric, Bar for importance
-    if ftype == 'numeric':
-        min_v = meta.get('min', 0)
-        max_v = meta.get('max', 100)
-        mean_v = meta.get('mean', 50)
-        
-        chart = {
-            "data": [{
-                "type": "indicator",
-                "mode": "gauge+number",
-                "value": mean_v,
-                "title": {"text": f"Average {target_feat}", "font": {"size": 14}},
-                "gauge": {
-                    "axis": {"range": [min_v, max_v]}, 
-                    "bar": {"color": "#8b5cf6"},
-                    "steps": [
-                        {"range": [min_v, mean_v], "color": "#f3e8ff"},
-                        {"range": [mean_v, max_v], "color": "#ffffff"}
-                    ]
-                }
-            }],
-            "layout": {
-                "height": 250, 
-                "paper_bgcolor": "#f8fafc",
-                "margin": {"t": 40, "b": 10, "l": 40, "r": 40}
-            }
+        # Add interpretation
+        ml_context = {
+            'model_name': automl_engine.model_name,
+            'target': automl_engine.target_column,
+            'chart_type': chart_type
         }
-    else:
-        # Show relative importance compared to top feature
-        top_imp = importance[0]['importance'] if importance else 1
-        my_imp = feat_imp['importance'] if feat_imp else 0
+        interpretation = generate_senior_explanation(chart_type, ml_context, query)
+        response += f"\n\n### 💡 Interpretation\n\n{interpretation}"
         
-        chart = {
-            "data": [{
-                "type": "bar",
-                "x": ["Top Feature", target_feat],
-                "y": [top_imp*100, my_imp*100],
-                "marker": {"color": ["#94a3b8", "#3b82f6"]}
-            }],
-            "layout": {
-                "title": {"text": "Relative Importance %", "font": {"size": 14}}, 
-                "yaxis": {"title": "Importance %"},
-                "paper_bgcolor": "#f8fafc",
-                "height": 250
-            }
-        }
+    else:
+        response = f"""## 📊 {chart_type.replace('_', ' ').title()}
 
-    response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
+The **{chart_type.replace('_', ' ')}** chart is being generated...
+
+You can find all available charts on the **ML Predictions** page in the sidebar.
+
+### Available Charts:
+- Confusion Matrix
+- ROC Curve
+- Precision-Recall Curve
+- Feature Importance
+- Class Distribution
+- Calibration Curve
+"""
+    
     result["answer"] = response
     return result
 
+
+def _handle_show_chart(query: str, df=None) -> Dict[str, Any]:
+    """Handle generic chart show requests"""
+    # Detect specific chart from query
+    q = query.lower()
+    
+    chart_mapping = {
+        'confusion': 'confusion_matrix',
+        'roc': 'roc_curve',
+        'precision': 'precision_recall',
+        'recall': 'precision_recall',
+        'feature': 'feature_importance',
+        'importance': 'feature_importance',
+        'distribution': 'class_distribution',
+        'calibration': 'calibration',
+        'correlation': 'correlation_heatmap'
+    }
+    
+    for keyword, chart_name in chart_mapping.items():
+        if keyword in q:
+            return _handle_feature_importance(query, df) if chart_name == 'feature_importance' else _handle_metrics(query, df)
+    
+    # Default: show feature importance
+    return _handle_feature_importance(query, df)
+
+
+# =============================================================================
+# HANDLER: DASHBOARD
+# =============================================================================
+
+def _handle_dashboard(query: str, df, user_id: str) -> Dict[str, Any]:
+    """Generate comprehensive dashboard with all charts and metrics"""
+    result = {
+        "answer": "",
+        "mode": "predict",
+        "confidence": 0.98,
+        "sources": ["Full Dashboard", automl_engine.model_name],
+        "ml_used": True
+    }
+    
+    model = automl_engine.model_name
+    target = automl_engine.target_column
+    task = automl_engine.task_type
+    
+    # Get metrics
+    try:
+        metrics_data = automl_engine.get_model_metrics()
+        metrics = metrics_data.get('metrics', {})
+    except:
+        metrics = {}
+    
+    response = f"""## 📊 Complete ML Dashboard
+
+### 🤖 Model Overview
+
+| Property | Value |
+|----------|-------|
+| **Model** | {model} |
+| **Target** | {target} |
+| **Task** | {task.replace('_', ' ').title()} |
+| **Features** | {len(automl_engine.feature_columns)} |
+
+---
+
+### 🎯 Key Metrics
+
+"""
+    
+    if metrics.get('accuracy'):
+        response += f"- **Accuracy**: {metrics['accuracy']*100:.1f}%\n"
+    if metrics.get('f1'):
+        response += f"- **F1 Score**: {metrics['f1']*100:.1f}%\n"
+    if metrics.get('r2'):
+        response += f"- **R² Score**: {metrics['r2']:.4f}\n"
+    
+    response += """
+---
+
+### 📈 Available Visualizations
+
+To view specific charts, ask me:
+- "Show confusion matrix"
+- "Show ROC curve"
+- "Show feature importance"
+- "Show precision-recall curve"
+- "Show class distribution"
+
+Or visit the **ML Predictions** page for the full interactive dashboard!
+
+---
+
+### 💡 Quick Actions
+
+- **Make Prediction**: "Predict for [feature]=value"
+- **What-If Analysis**: "What if [feature] was [value]?"
+- **Explain**: "Why did the model predict this?"
+"""
+    
+    result["answer"] = response
+    return result
+
+
+# =============================================================================
+# HANDLER: MODEL INFO
+# =============================================================================
 
 def _handle_model_info(query: str, df=None) -> Dict[str, Any]:
     """Handle model information queries"""
@@ -962,7 +1308,7 @@ def _handle_model_info(query: str, df=None) -> Dict[str, Any]:
         "answer": "",
         "mode": "predict",
         "confidence": 0.95,
-        "sources": ["Model Info", automl_engine.model_name],
+        "sources": ["Model Info"],
         "ml_used": True
     }
     
@@ -970,24 +1316,28 @@ def _handle_model_info(query: str, df=None) -> Dict[str, Any]:
     task = automl_engine.task_type
     target = automl_engine.target_column
     features = automl_engine.feature_columns
-    n_classes = automl_engine.n_classes
+    n_classes = getattr(automl_engine, 'n_classes', None)
     
     response = f"""## 🤖 Trained Model Information
 
-### Model Details
-- **Algorithm**: {model}
-- **Task Type**: {task.replace('_', ' ').title()}
-- **Target Variable**: {target}
-- **Number of Features**: {len(features)}
+### Model Architecture
+
+| Property | Value |
+|----------|-------|
+| **Algorithm** | {model} |
+| **Task Type** | {task.replace('_', ' ').title()} |
+| **Target Variable** | `{target}` |
+| **Number of Features** | {len(features)} |
 """
     
-    if 'classification' in task:
-        response += f"- **Number of Classes**: {n_classes}\n"
+    if n_classes and 'classification' in task:
+        response += f"| **Number of Classes** | {n_classes} |\n"
     
     response += f"""
 ---
 
-### 📋 Features Used for Prediction
+### 📋 Features ({len(features)} total)
+
 """
     
     for i, feat in enumerate(features[:15], 1):
@@ -999,65 +1349,71 @@ def _handle_model_info(query: str, df=None) -> Dict[str, Any]:
     response += f"""
 ---
 
-### 💡 How to Use
+### 💡 How to Use This Model
 
-Ask me things like:
-- "Predict {target} for age=60, time=100"
-- "What factors affect {target} most?"
-- "Show model accuracy"
-- "Compare high vs low values"
+| Query Type | Example |
+|------------|---------|
+| **Predict** | "Predict for {features[0] if features else 'feature'}=50" |
+| **Importance** | "What features matter most?" |
+| **Metrics** | "Show model accuracy" |
+| **What-If** | "What if {features[0] if features else 'feature'} was 100?" |
 """
     
     result["answer"] = response
     return result
 
 
-def _handle_comparison(query: str, df=None) -> Dict[str, Any]:
-    """Handle comparison queries between scenarios"""
+# =============================================================================
+# HANDLER: WHAT-IF SCENARIOS
+# =============================================================================
+
+def _handle_what_if(query: str, df=None) -> Dict[str, Any]:
+    """Handle what-if scenario analysis"""
     result = {
         "answer": "",
         "mode": "predict",
-        "confidence": 0.85,
-        "sources": ["Comparison Analysis", automl_engine.model_name],
+        "confidence": 0.88,
+        "sources": ["Scenario Analysis", automl_engine.model_name],
         "ml_used": True
     }
     
     target = automl_engine.target_column
     metadata = automl_engine.feature_metadata
     
-    # Find a key feature to compare
-    key_features = [m for m in metadata if m.get('type') == 'numeric']
-    
-    if not key_features:
-        result["answer"] = "Comparison analysis requires numeric features."
+    # Find key feature to analyze
+    numeric_feats = [m for m in metadata if m.get('type') == 'numeric']
+    if not numeric_feats:
+        result["answer"] = "What-if analysis requires numeric features."
         return result
     
-    key_feat = key_features[0]
-    feat_name = key_feat['name']
-    low_val = key_feat.get('p25', key_feat.get('min', 30))
-    high_val = key_feat.get('p75', key_feat.get('max', 70))
+    # Analyze first numeric feature
+    feat = numeric_feats[0]
+    feat_name = feat['name']
+    low_val = feat.get('p25', feat.get('min', 30))
+    high_val = feat.get('p75', feat.get('max', 70))
     
-    # Make predictions for low and high scenarios
-    base_features = _get_default_features()
+    # Get default features
+    base = {m['name']: m.get('mean', m.get('default', 0)) for m in metadata}
     
-    low_features = base_features.copy()
-    low_features[feat_name] = low_val
+    # Predict for low and high
+    low_input = base.copy()
+    low_input[feat_name] = low_val
     
-    high_features = base_features.copy()
-    high_features[feat_name] = high_val
+    high_input = base.copy()
+    high_input[feat_name] = high_val
     
     try:
-        low_pred = automl_engine.predict(low_features)
-        high_pred = automl_engine.predict(high_features)
+        low_pred = automl_engine.predict(low_input)
+        high_pred = automl_engine.predict(high_input)
         
-        response = f"""## ⚖️ Scenario Comparison
+        response = f"""## 🔮 What-If Analysis
 
-### Comparing **{feat_name}** Impact on **{target}**
+### Varying **{feat_name}** and its effect on **{target}**
 
 | Scenario | {feat_name} | Prediction | Confidence |
-|----------|-------------|------------|------------|
-| Low | {low_val:.1f} | {low_pred['prediction']} | {(low_pred.get('confidence', 0.7)*100):.0f}% |
-| High | {high_val:.1f} | {high_pred['prediction']} | {(high_pred.get('confidence', 0.7)*100):.0f}% |
+|----------|------------|------------|------------|
+| **Low** | {low_val:.1f} | {low_pred['prediction']} | {low_pred.get('confidence', 0.7)*100:.0f}% |
+| **High** | {high_val:.1f} | {high_pred['prediction']} | {high_pred.get('confidence', 0.7)*100:.0f}% |
 
 ---
 
@@ -1066,30 +1422,30 @@ def _handle_comparison(query: str, df=None) -> Dict[str, Any]:
 """
         
         # LLM interpretation
-        if LLM_AVAILABLE:
-            prompt = f"Compare predictions: When {feat_name}={low_val:.1f}, prediction is {low_pred['prediction']}. When {feat_name}={high_val:.1f}, prediction is {high_pred['prediction']}. The target is {target}. Explain in 2-3 sentences what this means."
-            try:
-                insight = llm_chat(prompt, temperature=0.3, max_tokens=150)
-                response += insight
-            except:
-                response += f"Higher {feat_name} values appear to affect the {target} prediction."
-        else:
-            response += f"Higher {feat_name} values affect the {target} prediction."
+        ml_context = {
+            'feature': feat_name,
+            'target': target,
+            'low_val': low_val,
+            'high_val': high_val,
+            'low_pred': low_pred['prediction'],
+            'high_pred': high_pred['prediction']
+        }
+        interpretation = generate_senior_explanation('what_if', ml_context, query)
+        response += interpretation
         
-        # Chart comparing scenarios
+        # Chart
         chart = {
             "data": [{
                 "type": "bar",
                 "x": [f"Low ({low_val:.0f})", f"High ({high_val:.0f})"],
-                "y": [low_pred.get('confidence', 0.7) * 100, high_pred.get('confidence', 0.7) * 100],
+                "y": [low_pred.get('confidence', 0.7)*100, high_pred.get('confidence', 0.7)*100],
                 "marker": {"color": ["#22c55e", "#ef4444"]}
             }],
             "layout": {
-                "title": {"text": f"Confidence Comparison by {feat_name}", "font": {"size": 16}},
-                "xaxis": {"title": feat_name},
+                "title": {"text": f"Confidence by {feat_name}", "font": {"size": 14}},
                 "yaxis": {"title": "Confidence (%)", "range": [0, 100]},
                 "paper_bgcolor": "#f8fafc",
-                "font": {"color": "#1f2937"}
+                "height": 300
             }
         }
         response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
@@ -1097,1276 +1453,295 @@ def _handle_comparison(query: str, df=None) -> Dict[str, Any]:
         result["answer"] = response
         
     except Exception as e:
-        result["answer"] = f"Comparison error: {str(e)}"
+        result["answer"] = f"⚠️ What-If analysis failed: {e}"
     
     return result
 
 
-def _handle_general_ml(query: str, df=None, context: str = "") -> Dict[str, Any]:
-    """
-    Handle general ML questions with LLM + Full Context + Dynamic Charts.
-    """
+# =============================================================================
+# HANDLER: EXPLAIN
+# =============================================================================
+
+def _handle_explain(query: str, df=None) -> Dict[str, Any]:
+    """Handle explanation requests"""
     result = {
         "answer": "",
         "mode": "predict",
-        "confidence": 0.9,
-        "sources": ["ML Assistant", automl_engine.model_name],
+        "confidence": 0.85,
+        "sources": ["Model Explainer", automl_engine.model_name],
         "ml_used": True
     }
     
-    # 1. Check for specific patterns first (Fast Path)
-    q = query.lower().strip()
-    direct_response = ""
+    model = automl_engine.model_name
+    target = automl_engine.target_column
     
-    # Task type simple check
-    if any(p in q for p in ['classification', 'regression', 'type']) and 'task' in q:
-        is_class = 'classification' in automl_engine.task_type
-        direct_response = f"**Task**: {automl_engine.task_type.replace('_', ' ').title()}"
-
-    # 2. Build Rich Context
-    model_context = _build_full_context(df)
+    # Get feature importance for context
+    importance = _get_feature_importance_data()[:5]
     
-    # 3. LLM Query
-    if LLM_AVAILABLE:
-        prompt = f"""You are an intelligent ML Assistant specialized on this specific model.
-        
-PREVIOUS CONVERSATION:
-{context}
+    response = f"""## 🔍 Model Explanation
 
-{model_context}
+### How does **{model}** predict **{target}**?
 
-USER QUERY: {query}
-
-INSTRUCTIONS:
-1. Answer strictly based on the Model Context provided.
-2. Be concise (2-3 paragraphs max).
-3. If users ask for a chart, describe what chart would be best (I will generate it).
-4. Use markdown formatting.
-5. If the query is about specific feature values, reference the stats provided.
-
-Answer:"""
-        try:
-            llm_response = llm_chat(prompt, temperature=0.3, max_tokens=300)
-            result["answer"] = f"## 💡 ML Assistant\n\n{llm_response}\n"
-        except Exception as e:
-            result["answer"] = f"## 💡 ML Assistant\n\nI couldn't process the robust context. Here is a summary:\n\n{direct_response or 'Model: ' + automl_engine.model_name}\n"
-    else:
-        # Fallback if no LLM
-        result["answer"] = f"## 💡 ML Assistant\n\n**Model**: {automl_engine.model_name}\n**Target**: {automl_engine.target_column}\n\nI can help you analyze this model. Try asking specific questions like 'Predict for X' or 'Show accuracy'."
-
-    # 4. Dynamic Chart Generation
-    chart = _determine_dynamic_chart(query, df)
+"""
     
-    # Fallback to Model Overview if no specific chart identified but requested
-    if not chart and any(x in q for x in ['chart', 'graph', 'plot', 'visualize']):
-        chart = _generate_model_overview_chart()
-        
-    if chart:
-        result["answer"] += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
-    elif not chart and not direct_response and "chart" not in q:
-        # Always helpful to show something visual for general queries
-        chart = _generate_model_overview_chart()
-        result["answer"] += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
+    if importance:
+        response += "### Key Decision Factors\n\n"
+        for i, feat in enumerate(importance, 1):
+            response += f"{i}. **{feat['feature']}**: {feat['importance']*100:.1f}% influence\n"
+    
+    response += "\n---\n\n### 💡 Senior ML Engineer Analysis\n\n"
+    
+    ml_context = {
+        'model_name': model,
+        'target': target,
+        'top_features': [f['feature'] for f in importance] if importance else []
+    }
+    explanation = generate_senior_explanation('explain', ml_context, query)
+    response += explanation
+    
+    response += """
 
+---
+
+### 🔬 For Deeper Analysis
+
+- Ask: "Show SHAP values" (if available)
+- Ask: "Why did the model predict X?"
+- View the **ML Predictions** page for interactive explanations
+"""
+    
+    result["answer"] = response
     return result
 
 
-def _generate_model_overview_chart() -> Dict:
-    """Generate a quick overview chart for the model"""
-    task = automl_engine.task_type
-    target = automl_engine.target_column
-    is_classification = 'classification' in task
-    
-    # Get feature importance if available
-    importance = _get_feature_importance()
-    
-    if importance and len(importance) >= 3:
-        # Feature importance chart
-        feats = [f['feature'][:15] for f in importance[:6]]
-        vals = [f['importance'] * 100 for f in importance[:6]]
-        
-        return {
-            "data": [{
-                "type": "bar",
-                "y": feats[::-1],
-                "x": vals[::-1],
-                "orientation": "h",
-                "marker": {"color": "#3b82f6"}
-            }],
-            "layout": {
-                "title": {"text": f"🔑 Key Features for {target}", "font": {"size": 16}},
-                "xaxis": {"title": "Importance (%)"},
-                "paper_bgcolor": "#f8fafc",
-                "font": {"color": "#1f2937"},
-                "margin": {"l": 120},
-                "height": 350
-            }
-        }
-    else:
-        # Simple model info chart
-        metadata = automl_engine.feature_metadata[:6]
-        if metadata:
-            names = [m['name'][:12] for m in metadata if m.get('type') == 'numeric']
-            means = [m.get('mean', 50) for m in metadata if m.get('type') == 'numeric']
-            
-            return {
-                "data": [{
-                    "type": "bar",
-                    "x": names[:6],
-                    "y": means[:6],
-                    "marker": {"color": "#8b5cf6"}
-                }],
-                "layout": {
-                    "title": {"text": "📊 Feature Values", "font": {"size": 16}},
-                    "xaxis": {"tickangle": -45},
-                    "paper_bgcolor": "#f8fafc",
-                    "font": {"color": "#1f2937"},
-                    "height": 350
-                }
-            }
-        else:
-            return {
-                "data": [{"type": "indicator", "mode": "gauge+number", "value": 85, "title": {"text": "Model Ready"}}],
-                "layout": {"paper_bgcolor": "#f8fafc", "height": 300}
-            }
+# =============================================================================
+# HANDLER: COMPARISON
+# =============================================================================
 
+def _handle_comparison(query: str, df=None) -> Dict[str, Any]:
+    """Handle comparison queries between scenarios"""
+    # Reuse what-if handler
+    return _handle_what_if(query, df)
+
+
+# =============================================================================
+# HANDLER: HELP
+# =============================================================================
 
 def _handle_help(query: str, df=None) -> Dict[str, Any]:
-    """Handle help/how-to-use queries"""
-    target = automl_engine.target_column
-    model = automl_engine.model_name
-    features = automl_engine.feature_columns[:5]
+    """Handle help queries"""
+    result = {
+        "answer": "",
+        "mode": "predict",
+        "confidence": 0.95,
+        "sources": ["Help"],
+        "ml_used": False
+    }
     
-    example_feat = features[0] if features else "feature"
+    target = automl_engine.target_column if hasattr(automl_engine, 'target_column') else 'outcome'
     
-    response = f"""## 🤖 ML Prediction Assistant - Help
+    response = f"""## 🤖 ML Assistant Help
 
-I'm your intelligent ML assistant! I use your trained **{model}** model to answer questions about **{target}**.
+I'm your Senior AIML Engineer assistant. Here's what I can do:
+
+### 🎯 Make Predictions
+
+```
+"Predict for age=60, income=50000"
+"What would happen if credit_score is 750?"
+```
+
+### 📊 View Model Performance
+
+```
+"Show accuracy"
+"Show confusion matrix"
+"How well does the model perform?"
+```
+
+### 🔑 Understand Features
+
+```
+"What features are most important?"
+"How does age affect {target}?"
+```
+
+### 📈 View Charts
+
+```
+"Show ROC curve"
+"Show precision-recall curve"
+"Display feature importance chart"
+```
+
+### 🔮 Scenario Analysis
+
+```
+"What if age was 30 instead of 60?"
+"Compare high vs low income scenarios"
+```
+
+### 💡 Get Explanations
+
+```
+"Why did the model predict this?"
+"Explain how the model works"
+```
 
 ---
 
-### 📝 What You Can Ask Me
-
-**1. Make Predictions** 🎯
-- "Predict for {example_feat}=50, age=60"
-- "What would happen if time=200?"
-- "Classify this patient: age=70, diabetes=1"
-
-**2. Feature Importance** 🔑
-- "What affects {target} most?"
-- "Which features are important?"
-- "Why does the model predict this?"
-
-**3. Model Performance** 📊
-- "Show model accuracy"
-- "What's the F1 score?"
-- "Display confusion matrix"
-
-**4. Data Analysis** 📈
-- "Analyze the data distribution"
-- "Show feature statistics"
-- "What's the average age?"
-
-**5. Comparisons** ⚖️
-- "Compare high vs low values"
-- "What if age is 30 vs 80?"
-
----
-
-### 💡 Tips
-
-- Provide feature values like: `feature_name=value`
-- Ask naturally - I understand context!
-- I use REAL ML predictions, not guesses
-
-*Ready to explore your data!* 🚀
+*I provide senior ML engineer level insights with statistical depth!*
 """
     
-    return {
-        "answer": response,
+    result["answer"] = response
+    return result
+
+
+# =============================================================================
+# HANDLER: GENERAL ML
+# =============================================================================
+
+def _handle_general_ml(query: str, df=None, context: str = "") -> Dict[str, Any]:
+    """Handle general ML questions with LLM"""
+    result = {
+        "answer": "",
         "mode": "predict",
-        "confidence": 1.0,
-        "sources": ["Help", "ML Assistant"],
+        "confidence": 0.75,
+        "sources": ["ML Knowledge"],
         "ml_used": True
     }
-
-
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-def _extract_features(query: str, df=None) -> Dict[str, Any]:
-    """
-    Extract feature values from natural language query - DYNAMIC for any dataset.
     
-    Works with ANY trained model, not just healthcare data.
-    Supports patterns like:
-    - "feature=100" or "feature:100"
-    - "feature is 100" or "feature of 100"
-    - Categorical values: "category is A"
-    """
-    values = {}
-    query_lower = query.lower()
+    if not LLM_AVAILABLE:
+        result["answer"] = "LLM not available for general questions. Try specific queries like 'show accuracy' or 'predict for age=50'."
+        return result
     
-    features = automl_engine.feature_columns
-    metadata = {m['name']: m for m in automl_engine.feature_metadata}
-    
-    logger.info(f"🔍 Extracting features from query: '{query[:50]}...'")
-    logger.info(f"   Model features: {features[:5]}{'...' if len(features) > 5 else ''}")
-    
-    # Pattern 1: feature=value or feature:value (universal - works for any feature name)
-    for match in re.finditer(r'([a-zA-Z_][a-zA-Z0-9_]*)\s*[=:]\s*([\d.]+)', query):
-        feat_query = match.group(1).lower().replace('_', '').replace(' ', '')
-        val = float(match.group(2))
-        
-        # Match against actual model features (fuzzy matching)
-        for feat in features:
-            feat_normalized = feat.lower().replace('_', '').replace(' ', '')
-            if feat_query == feat_normalized or feat_query in feat_normalized or feat_normalized in feat_query:
-                values[feat] = val
-                logger.info(f"   ✓ Matched: {feat} = {val}")
-                break
-    
-    # Pattern 2: "feature is value" or "feature of value" - dynamic for all features
-    for feat in features:
-        if feat in values:
-            continue
-        # Create pattern from actual feature name
-        feat_words = feat.lower().replace('_', r'[\s_]*')
-        pattern = rf'{feat_words}\s*(?:is|of|=|:)?\s*([\d.]+)'
-        match = re.search(pattern, query_lower)
-        if match:
-            values[feat] = float(match.group(1))
-            logger.info(f"   ✓ Pattern matched: {feat} = {values[feat]}")
-    
-    # Pattern 3: Categorical feature matching - "feature is category_value"
-    for feat in features:
-        if feat in values:
-            continue
-        meta = metadata.get(feat, {})
-        if meta.get('type') == 'categorical':
-            options = meta.get('options', [])
-            for opt in options:
-                opt_str = str(opt).lower()
-                if opt_str in query_lower:
-                    values[feat] = opt
-                    logger.info(f"   ✓ Categorical matched: {feat} = {opt}")
-                    break
-    
-    # Pattern 4: Boolean/binary features (yes/no, true/false, has/no)
-    for feat in features:
-        if feat in values:
-            continue
-        feat_lower = feat.lower()
-        # Check for "has X" or "with X" or "X is yes/true/1"
-        if re.search(rf'(?:has|with)\s+{feat_lower}', query_lower):
-            values[feat] = 1
-            logger.info(f"   ✓ Boolean matched: {feat} = 1")
-        elif re.search(rf'no\s+{feat_lower}|without\s+{feat_lower}', query_lower):
-            values[feat] = 0
-            logger.info(f"   ✓ Boolean matched: {feat} = 0")
-    
-    # Fill missing with smart defaults from metadata
-    for feat in features:
-        if feat not in values:
-            meta = metadata.get(feat, {})
-            if meta.get('type') == 'numeric':
-                # Use median if available, otherwise mean, otherwise 0
-                values[feat] = meta.get('default', meta.get('median', meta.get('mean', 0)))
-            elif meta.get('type') == 'categorical':
-                options = meta.get('options', [])
-                values[feat] = options[0] if options else 0
-            else:
-                values[feat] = 0
-    
-    logger.info(f"   📊 Extracted {len([v for v in values.values() if v != 0])} non-default features")
-    return values
-
-
-def _build_full_context(df=None) -> str:
-    """Build comprehensive model and data context for LLM"""
-    model = automl_engine.model_name
-    task = automl_engine.task_type.replace('_', ' ').title()
-    target = automl_engine.target_column
-    features = automl_engine.feature_columns
-    
-    # Model Specs
-    context = f"""
-MODEL CONTEXT:
-- Model: {model}
-- Task: {task}
-- Target Variable: {target}
-- Input Features ({len(features)}): {', '.join(features)}
+    # Build context
+    model_context = ""
+    if hasattr(automl_engine, 'model_name'):
+        model_context = f"""
+Current trained model: {automl_engine.model_name}
+Target: {automl_engine.target_column}
+Task: {automl_engine.task_type}
+Features: {len(automl_engine.feature_columns)}
 """
-
-    # Feature Importance
-    importance = _get_feature_importance()
-    if importance:
-        top_5 = [f"{f['feature']} ({f['importance']*100:.1f}%)" for f in importance[:5]]
-        context += f"- Top Predictive Features: {', '.join(top_5)}\n"
-        
-    # Dataset Stats (if available)
-    if df is not None:
-        context += f"\nCURRENT DATASET stats:\n"
-        context += f"- Rows: {len(df)}\n"
-        context += f"- Columns: {len(df.columns)}\n"
-        
-        # Add summary of numeric columns
-        numerics = df.select_dtypes(include=['number'])
-        if not numerics.empty:
-            stats = numerics.agg(['mean', 'min', 'max']).to_string()
-            context += f"- Data Distribution:\n{stats}\n"
     
-    return context
+    prompt = f"""{SENIOR_AIML_SYSTEM_PROMPT}
 
+{model_context}
 
-def _determine_dynamic_chart(query: str, df=None) -> Optional[Dict]:
-    """Determine and generate appropriate chart based on query"""
-    q = query.lower()
-    
-    # Distribution / Histogram
-    if any(x in q for x in ['distribution', 'hist', 'spread', 'range']):
-        if df is not None:
-            # Find mentioned feature
-            for col in df.columns:
-                if col.lower() in q:
-                    import plotly.express as px
-                    fig = px.histogram(df, x=col, title=f"Distribution of {col}", template="plotly_white")
-                    fig.update_layout(paper_bgcolor="#f8fafc", margin=dict(l=20, r=20, t=40, b=20), height=300)
-                    return json.loads(fig.to_json())
-                    
-    # Comparison / Box / Bar
-    if any(x in q for x in ['compare', 'vs', 'difference']):
-        if df is not None and automl_engine.target_column in df.columns:
-            target = automl_engine.target_column
-            # Find feature to compare against target
-            for col in df.columns:
-                if col.lower() in q and col != target:
-                    import plotly.express as px
-                    if df[target].dtype == 'object' or len(df[target].unique()) < 10:
-                        # Categorical target: Box plot or Histogram
-                        fig = px.histogram(df, x=col, color=target, barmode="group", title=f"{col} by {target}")
-                    else:
-                        # Numeric target: Scatter
-                        fig = px.scatter(df, x=col, y=target, title=f"{col} vs {target}")
-                    
-                    fig.update_layout(paper_bgcolor="#f8fafc", margin=dict(l=20, r=20, t=40, b=20), height=350)
-                    return json.loads(fig.to_json())
-    
-    # Trend / Line
-    if any(x in q for x in ['trend', 'time', 'over time']):
-        if df is not None:
-            # Find date/time column
-            time_col = next((c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()), None)
-            target = automl_engine.target_column
-            if time_col and target in df.columns:
-                import plotly.express as px
-                fig = px.line(df, x=time_col, y=target, title=f"{target} over Time")
-                fig.update_layout(paper_bgcolor="#f8fafc", margin=dict(l=20, r=20, t=40, b=20), height=300)
-                return json.loads(fig.to_json())
+User question: {query}
 
-    return None
-
-
-def _get_feature_importance() -> List[Dict]:
-    """Get feature importance from trained model"""
-    try:
-        model = automl_engine.model
-        features = automl_engine.feature_columns
-        
-        if hasattr(model, 'feature_importances_'):
-            imp = model.feature_importances_
-            result = []
-            for i, feat in enumerate(features):
-                if i < len(imp):
-                    result.append({'feature': feat, 'importance': float(imp[i])})
-            result.sort(key=lambda x: x['importance'], reverse=True)
-            return result
-    except:
-        pass
-    return []
-
-
-def _get_prediction_help() -> str:
-    """Generate help text for making predictions"""
-    target = automl_engine.target_column
-    features = automl_engine.feature_metadata[:8]
-    
-    response = f"""## 🤖 Ready to Predict!
-
-To predict **{target}**, provide feature values like:
-
-### Example Query:
-```
-Predict for """
-    
-    # Build example
-    examples = []
-    for meta in features[:4]:
-        name = meta['name']
-        if meta.get('type') == 'numeric':
-            val = meta.get('default', 50)
-            examples.append(f"{name}={val:.0f}")
-    
-    response += ", ".join(examples) + "\n```\n\n### Available Features:\n"
-    
-    for meta in features:
-        name = meta['name']
-        if meta.get('type') == 'numeric':
-            default = meta.get('default', 50)
-            response += f"- **{name}**: typical value ~{default:.0f}\n"
-        elif meta.get('type') == 'categorical':
-            opts = meta.get('options', [])[:3]
-            response += f"- **{name}**: {', '.join(str(o) for o in opts)}\n"
-    
-    return response
-
-
-def _interpret_classification(prediction, target: str, confidence: float) -> str:
-    """Interpret classification prediction in human terms"""
-    conf_pct = int((confidence or 0.7) * 100)
-    
-    if 'death' in target.lower():
-        if str(prediction) == "1":
-            return f"⚠️ **High Risk** - Death event predicted ({conf_pct}% confidence)"
-        else:
-            return f"✅ **Low Risk** - Survival predicted ({conf_pct}% confidence)"
-    elif 'churn' in target.lower():
-        if str(prediction) == "1":
-            return f"⚠️ **Likely to Churn** ({conf_pct}% confidence)"
-        else:
-            return f"✅ **Likely to Stay** ({conf_pct}% confidence)"
-    elif 'fraud' in target.lower():
-        if str(prediction) == "1":
-            return f"🚨 **Fraud Detected** ({conf_pct}% confidence)"
-        else:
-            return f"✅ **Legitimate** ({conf_pct}% confidence)"
-    else:
-        return f"🎯 **{target}**: {prediction} ({conf_pct}% confidence)"
-
-
-def _generate_llm_explanation(query: str, prediction, confidence: float, 
-                              features: Dict, target: str, task_type: str) -> str:
-    """Generate natural language explanation using LLM"""
-    if not LLM_AVAILABLE:
-        return "The model made this prediction based on the input features provided."
-    
-    top_features = list(features.items())[:5]
-    feat_str = ", ".join([f"{k}={v:.1f}" if isinstance(v, float) else f"{k}={v}" for k, v in top_features])
-    
-    prompt = f"""Explain this ML prediction in 2-3 sentences:
-- Target: {target}
-- Prediction: {prediction}
-- Confidence: {confidence:.0%} if {confidence} else 'N/A'
-- Key inputs: {feat_str}
-- Task: {task_type}
-
-Be specific about which features likely influenced this result. Keep it brief and insightful."""
+Provide a helpful, technically accurate response. If the question relates to the trained model, incorporate that context. Be concise but thorough."""
 
     try:
-        explanation = llm_chat(prompt, temperature=0.3, max_tokens=150)
-        return explanation
-    except:
-        return "The prediction is based on the input features and patterns learned during training."
-
-
-def _interpret_metrics(metrics: Dict, task: str) -> str:
-    """Interpret model metrics in human terms"""
-    if not LLM_AVAILABLE:
-        return "These metrics indicate the model's performance on test data."
+        response = llm_chat(prompt, temperature=0.4, max_tokens=400)
+        result["answer"] = f"## 💡 ML Insight\n\n{response}"
+    except Exception as e:
+        result["answer"] = f"⚠️ Error generating response: {e}"
     
-    prompt = f"""Interpret these ML model metrics briefly (2-3 sentences):
-Task: {task}
-Metrics: {metrics}
-
-Explain what these numbers mean in simple terms. Is this good or needs improvement?"""
-
-    try:
-        interpretation = llm_chat(prompt, temperature=0.3, max_tokens=100)
-        return interpretation
-    except:
-        acc = metrics.get('accuracy', metrics.get('r2', 0.7))
-        if acc > 0.8:
-            return "This is a well-performing model with strong predictive accuracy."
-        elif acc > 0.6:
-            return "The model shows moderate performance. Consider more data or feature engineering."
-        else:
-            return "The model's performance could be improved with more training data or tuning."
+    return result
 
 
-def _interpret_feature_importance(top_features: List[str], target: str) -> str:
-    """Interpret feature importance results"""
-    if not LLM_AVAILABLE:
-        return f"The top features {', '.join(top_features)} have the most influence on {target}."
-    
-    prompt = f"""Briefly explain (2-3 sentences) why these features might be important for predicting {target}:
-Top features: {', '.join(top_features)}
+# =============================================================================
+# HANDLER: BATCH PREDICTION
+# =============================================================================
 
-Be insightful about the domain logic."""
-
-    try:
-        interpretation = llm_chat(prompt, temperature=0.4, max_tokens=100)
-        return interpretation
-    except:
-        return f"The features {', '.join(top_features)} show the strongest correlation with {target}."
-
-
-def _generate_prediction_chart(prediction, confidence: float, features: Dict) -> Dict:
-    """Generate dynamic Plotly chart for prediction result"""
-    task = automl_engine.task_type
-    target = automl_engine.target_column
-    is_class = 'classification' in task
-    
-    if is_class:
-        prob = confidence if confidence else 0.75
-        pred_label = "Positive" if str(prediction) == "1" else "Negative"
-        color = "#ef4444" if str(prediction) == "1" else "#22c55e"
-        
-        chart = {
-            "data": [{
-                "type": "pie",
-                "values": [prob * 100, (1 - prob) * 100],
-                "labels": [pred_label, "Other"],
-                "marker": {"colors": [color, "#e5e7eb"]},
-                "hole": 0.6,
-                "textinfo": "label+percent",
-                "textposition": "outside",
-                "textfont": {"size": 14}
-            }],
-            "layout": {
-                "title": {"text": f"🎯 {target} Prediction", "font": {"size": 18, "color": "#1f2937"}},
-                "paper_bgcolor": "#f8fafc",
-                "font": {"color": "#1f2937"},
-                "showlegend": False,
-                "annotations": [{
-                    "text": f"<b>{prob*100:.0f}%</b><br>Confidence",
-                    "x": 0.5, "y": 0.5,
-                    "font": {"size": 20, "color": color},
-                    "showarrow": False
-                }],
-                "width": 450,
-                "height": 400
-            }
-        }
-    else:
-        # Regression: Show prediction with feature context
-        feats = list(features.keys())[:6]
-        vals = [features[f] for f in feats]
-        
-        chart = {
-            "data": [{
-                "type": "bar",
-                "x": feats,
-                "y": vals,
-                "marker": {"color": "#3b82f6"}
-            }],
-            "layout": {
-                "title": {"text": f"📊 {target} = {prediction}", "font": {"size": 18}},
-                "xaxis": {"title": "Input Features", "tickangle": -45},
-                "yaxis": {"title": "Values"},
-                "paper_bgcolor": "#f8fafc",
-                "font": {"color": "#1f2937"}
-            }
-        }
-    
-    return chart
+def _handle_batch_prediction(query: str, df=None) -> Dict[str, Any]:
+    """Handle batch prediction requests"""
+    result = {
+        "answer": "Batch prediction feature coming soon! For now, use the ML Predictions page to make predictions on uploaded data.",
+        "mode": "predict",
+        "confidence": 0.7,
+        "sources": [],
+        "ml_used": False
+    }
+    return result
 
 
-# ============================================================================
-# PREDICTION MEMORY - Store prediction history per user
-# ============================================================================
+# =============================================================================
+# HANDLER: FEATURE SPECIFIC
+# =============================================================================
 
-class PredictionMemory:
-    """
-    💾 PREDICTION MEMORY SYSTEM
-    
-    Stores prediction history per user for:
-    - "What was my last prediction?"
-    - Comparing predictions over time
-    - Learning patterns from user queries
-    """
-    _storage: Dict[str, List[Dict]] = {}
-    
-    @classmethod
-    def store_prediction(cls, user_id: str, prediction_data: Dict):
-        """Store a prediction with timestamp"""
-        if user_id not in cls._storage:
-            cls._storage[user_id] = []
-        
-        prediction_data['timestamp'] = datetime.now().isoformat()
-        cls._storage[user_id].append(prediction_data)
-        
-        # Keep only last 50 predictions per user
-        if len(cls._storage[user_id]) > 50:
-            cls._storage[user_id] = cls._storage[user_id][-50:]
-        
-        logger.info(f"💾 Stored prediction for user {user_id}: {prediction_data.get('prediction')}")
-    
-    @classmethod
-    def get_last_prediction(cls, user_id: str) -> Optional[Dict]:
-        """Get the last prediction for a user"""
-        if user_id in cls._storage and cls._storage[user_id]:
-            return cls._storage[user_id][-1]
-        return None
-    
-    @classmethod
-    def get_history(cls, user_id: str, limit: int = 10) -> List[Dict]:
-        """Get prediction history for a user"""
-        if user_id not in cls._storage:
-            return []
-        return cls._storage[user_id][-limit:][::-1]  # Most recent first
-
-
-# ============================================================================
-# NLU HANDLERS - Natural Language Understanding for ML queries
-# ============================================================================
-
-def _handle_what_if(query: str, df=None) -> Dict[str, Any]:
-    """Handle 'What if X was Y?' scenario queries"""
+def _handle_feature_specific(query: str, df=None) -> Dict[str, Any]:
+    """Handle specific feature analysis"""
     result = {
         "answer": "",
         "mode": "predict",
         "confidence": 0.90,
-        "sources": ["What-If Analysis", automl_engine.model_name],
+        "sources": ["Feature Analysis"],
         "ml_used": True
     }
     
-    target = automl_engine.target_column
+    # Find mentioned feature
     features = automl_engine.feature_columns
-    metadata = {m['name']: m for m in automl_engine.feature_metadata}
+    q = query.lower()
     
-    # Extract feature changes from query
-    modified_features = _extract_features(query, df)
+    target_feat = None
+    for feat in features:
+        if feat.lower() in q or feat.lower().replace('_', ' ') in q:
+            target_feat = feat
+            break
     
-    # Make prediction with modified features
-    try:
-        pred = automl_engine.predict(modified_features)
-        prediction = pred.get('prediction')
-        confidence = pred.get('confidence', 0.75)
-        
-        # Get feature values that differ from defaults
-        changed_features = []
-        for feat, val in modified_features.items():
-            meta = metadata.get(feat, {})
-            default = meta.get('default', meta.get('mean', 0))
-            if isinstance(val, (int, float)) and isinstance(default, (int, float)):
-                if abs(val - default) > 0.01:
-                    changed_features.append(f"{feat}={val:.1f}")
-        
-        response = f"""## 🔮 What-If Analysis
-
-### Scenario
-{', '.join(changed_features) if changed_features else 'Using default values for all features'}
-
-### Prediction
-- **{target}**: {prediction}
-- **Confidence**: {confidence*100:.1f}%
-
-"""
-        
-        # LLM explanation
-        if LLM_AVAILABLE:
-            prompt = f"""Explain the prediction:
-- Target: {target}
-- Prediction: {prediction}
-- Key inputs: {changed_features[:3]}
-- Confidence: {confidence:.0%}
-
-Provide a 2-sentence insight on what this means and what could change the outcome."""
-            try:
-                insight = llm_chat(prompt, temperature=0.3, max_tokens=150)
-                response += f"### 💡 Insight\n{insight}\n"
-            except:
-                pass
-        
-        # Add chart
-        chart = _generate_prediction_chart(prediction, confidence, modified_features)
-        response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
-        
-        result["answer"] = response
-        result["prediction"] = prediction
-        result["confidence"] = confidence
-        
-    except Exception as e:
-        result["answer"] = f"⚠️ What-If analysis error: {str(e)}"
-    
-    return result
-
-
-def _handle_explain(query: str, df=None) -> Dict[str, Any]:
-    """Handle 'Explain why...' queries about model predictions"""
-    result = {
-        "answer": "",
-        "mode": "predict",
-        "confidence": 0.88,
-        "sources": ["Model Explanation", automl_engine.model_name],
-        "ml_used": True
-    }
-    
-    target = automl_engine.target_column
-    model_name = automl_engine.model_name
-    task_type = automl_engine.task_type
-    
-    # Get feature importance for explanation
-    importance = _get_feature_importance()
-    top_features = importance[:5] if importance else []
-    
-    response = f"""## 🧠 Model Explanation
-
-### Model Details
-- **Algorithm**: {model_name}
-- **Task**: {task_type.replace('_', ' ').title()}
-- **Target**: {target}
-
-### Key Drivers (Feature Importance)
-
-"""
-    
-    if top_features:
-        for i, feat in enumerate(top_features, 1):
-            pct = feat['importance'] * 100
-            bar = "█" * int(pct / 5) + "░" * (20 - int(pct / 5))
-            response += f"{i}. **{feat['feature']}**: {pct:.1f}% `{bar}`\n"
-    
-    # LLM explanation
-    if LLM_AVAILABLE:
-        prompt = f"""Explain how this ML model makes predictions:
-- Model: {model_name}
-- Task: {task_type}
-- Target: {target}
-- Top features: {[f['feature'] for f in top_features[:3]]}
-
-Explain in 3-4 sentences how the model uses these features to make predictions. Be specific and insightful."""
-        try:
-            explanation = llm_chat(prompt, temperature=0.4, max_tokens=200)
-            response += f"\n### 💡 How the Model Works\n{explanation}\n"
-        except:
-            response += "\n### 💡 How the Model Works\nThe model analyzes patterns in the input features to predict the target variable.\n"
-    
-    # Add feature importance chart
-    chart = ProductionMLVisualizer.generate_feature_importance_chart()
-    if chart:
-        response += f"\n\n```plotly_chart\n{json.dumps(chart)}\n```"
-    
-    result["answer"] = response
-    return result
-
-
-def _handle_history(query: str, df=None) -> Dict[str, Any]:
-    """Handle 'What was my last prediction?' queries"""
-    result = {
-        "answer": "",
-        "mode": "predict",
-        "confidence": 0.95,
-        "sources": ["Prediction History"],
-        "ml_used": True
-    }
-    
-    # Get user_id from context (this will be passed via automl_engine.user_id if set)
-    user_id = getattr(automl_engine, '_current_user_id', 'default')
-    
-    # Get last prediction
-    last_pred = PredictionMemory.get_last_prediction(user_id)
-    history = PredictionMemory.get_history(user_id, limit=5)
-    
-    if not last_pred:
-        result["answer"] = """## 📜 Prediction History
-
-No predictions found yet! 
-
-Try asking:
-- "Predict for age=50, income=75000"
-- "What would happen if sales=1000000?"
-
-I'll remember your predictions for future reference."""
+    if not target_feat:
+        result["answer"] = f"Please specify which feature you want to analyze. Available: {', '.join(features[:10])}"
         return result
     
-    response = """## 📜 Your Prediction History
-
-### Last Prediction
-"""
-    
+    # Get metadata
+    metadata = {m['name']: m for m in automl_engine.feature_metadata}
+    meta = metadata.get(target_feat, {})
     target = automl_engine.target_column
-    response += f"- **{target}**: {last_pred.get('prediction')}\n"
-    response += f"- **Confidence**: {(last_pred.get('confidence', 0.75)*100):.1f}%\n"
-    response += f"- **Time**: {last_pred.get('timestamp', 'Unknown')}\n"
     
-    if len(history) > 1:
-        response += "\n### Recent Predictions\n\n"
-        response += "| # | Prediction | Confidence | Time |\n"
-        response += "|---|------------|------------|------|\n"
-        
-        for i, pred in enumerate(history[:5], 1):
-            pred_val = pred.get('prediction', 'N/A')
-            conf = pred.get('confidence', 0.75)
-            time = pred.get('timestamp', 'Unknown')
-            if isinstance(time, str) and len(time) > 10:
-                time = time[:10]  # Just date
-            response += f"| {i} | {pred_val} | {conf*100:.0f}% | {time} |\n"
-    
-    result["answer"] = response
-    return result
+    response = f"""## 🔍 Feature Analysis: **{target_feat}**
 
-
-def _handle_dashboard(query: str, df=None) -> Dict[str, Any]:
-    """Handle 'Show me all charts' dashboard queries"""
-    result = {
-        "answer": "",
-        "mode": "predict",
-        "confidence": 0.95,
-        "sources": ["ML Dashboard", automl_engine.model_name],
-        "ml_used": True
-    }
-    
-    target = automl_engine.target_column
-    model_name = automl_engine.model_name
-    task_type = automl_engine.task_type
-    metrics = automl_engine.get_model_metrics() if hasattr(automl_engine, 'get_model_metrics') else {}
-    
-    response = f"""## 📊 ML Model Dashboard
-
-### Model Overview
-- **Model**: {model_name}
-- **Target**: {target}
-- **Task**: {task_type.replace('_', ' ').title()}
-- **Features**: {len(automl_engine.feature_columns)}
+### 📊 Statistics
 
 """
     
-    # Add metrics if available
-    if metrics:
-        response += "### Performance Metrics\n"
-        for key, value in metrics.items():
-            if isinstance(value, float):
-                response += f"- **{key.replace('_', ' ').title()}**: {value:.4f}\n"
-            else:
-                response += f"- **{key.replace('_', ' ').title()}**: {value}\n"
-        response += "\n"
-    
-    # Generate all available charts
-    charts = ProductionMLVisualizer.generate_all_metrics_dashboard()
-    
-    if charts:
-        response += f"### 📈 Visualizations ({len(charts)} charts)\n\n"
-        for chart in charts:
-            response += f"```plotly_chart\n{json.dumps(chart)}\n```\n\n"
+    if meta.get('type') == 'numeric':
+        response += f"""| Statistic | Value |
+|-----------|-------|
+| **Type** | Numeric |
+| **Min** | {meta.get('min', 'N/A'):,.1f} |
+| **Max** | {meta.get('max', 'N/A'):,.1f} |
+| **Mean** | {meta.get('mean', 'N/A'):,.1f} |
+"""
     else:
-        response += "### 📈 Visualizations\n\nNo charts available. Train a model first!\n"
+        options = meta.get('options', [])[:5]
+        response += f"""| Property | Value |
+|----------|-------|
+| **Type** | Categorical |
+| **Unique Values** | {len(meta.get('options', []))} |
+| **Examples** | {', '.join(str(o) for o in options)} |
+"""
+    
+    # Get importance rank
+    importance = _get_feature_importance_data()
+    rank = next((i+1 for i, f in enumerate(importance) if f['feature'] == target_feat), None)
+    
+    if rank:
+        response += f"\n### 🔑 Importance Rank: #{rank} of {len(features)}\n"
+    
+    # LLM explanation
+    ml_context = {
+        'feature': target_feat,
+        'target': target,
+        'stats': meta
+    }
+    explanation = generate_senior_explanation('feature_analysis', ml_context, query)
+    response += f"\n---\n\n### 💡 Analysis\n\n{explanation}"
     
     result["answer"] = response
     return result
 
 
-# ============================================================================
-# PRODUCTION-LEVEL ML VISUALIZATIONS
-# Dynamic chart generation from AutoML model - NO HARDCODING
-# ============================================================================
+# =============================================================================
+# EXPORT - For use by other modules
+# =============================================================================
 
-class ProductionMLVisualizer:
-    """
-    🎨 PRODUCTION ML VISUALIZER
-    
-    Generates industrial-grade ML visualizations dynamically from AutoML model.
-    Supports: Confusion Matrix, ROC Curve, Feature Importance, Residuals, etc.
-    
-    All charts are generated from actual model data - no hardcoding!
-    """
-    
-    @staticmethod
-    def generate_confusion_matrix_chart() -> Optional[Dict]:
-        """Generate production-quality confusion matrix heatmap"""
-        try:
-            cm = getattr(automl_engine, 'confusion_matrix', None)
-            if cm is None:
-                # Try to get from stored data
-                y_test = getattr(automl_engine, '_y_test', None)
-                y_pred = getattr(automl_engine, '_y_pred', None)
-                if y_test is not None and y_pred is not None:
-                    from sklearn.metrics import confusion_matrix
-                    cm = confusion_matrix(y_test, y_pred)
-            
-            if cm is None:
-                return None
-            
-            cm_list = cm.tolist() if hasattr(cm, 'tolist') else cm
-            n_classes = len(cm_list)
-            
-            # Get class labels dynamically
-            target = automl_engine.target_column
-            if n_classes == 2:
-                if 'death' in target.lower():
-                    labels = ['Survived', 'Death']
-                elif 'churn' in target.lower():
-                    labels = ['Retained', 'Churned']
-                elif 'fraud' in target.lower():
-                    labels = ['Legitimate', 'Fraud']
-                else:
-                    labels = ['Class 0', 'Class 1']
-            else:
-                labels = [f'Class {i}' for i in range(n_classes)]
-            
-            # Seaborn-style color scale
-            colorscale = [
-                [0.0, '#f0fdf4'],
-                [0.25, '#86efac'],
-                [0.5, '#22c55e'],
-                [0.75, '#15803d'],
-                [1.0, '#14532d']
-            ]
-            
-            chart = {
-                "data": [{
-                    "type": "heatmap",
-                    "z": cm_list,
-                    "x": labels,
-                    "y": labels,
-                    "colorscale": colorscale,
-                    "showscale": True,
-                    "text": [[str(int(v)) for v in row] for row in cm_list],
-                    "texttemplate": "%{text}",
-                    "textfont": {"size": 16, "color": "#1f2937"},
-                    "hoverongaps": False,
-                    "colorbar": {"title": "Count", "titlefont": {"size": 12}}
-                }],
-                "layout": {
-                    "title": {"text": "📊 Confusion Matrix", "font": {"size": 18, "color": "#1f2937"}},
-                    "xaxis": {"title": "Predicted", "tickfont": {"size": 12}, "side": "bottom"},
-                    "yaxis": {"title": "Actual", "autorange": "reversed", "tickfont": {"size": 12}},
-                    "paper_bgcolor": "#f8fafc",
-                    "plot_bgcolor": "#ffffff",
-                    "font": {"color": "#1f2937"},
-                    "width": 500,
-                    "height": 450,
-                    "margin": {"l": 100, "r": 50, "t": 60, "b": 80}
-                }
-            }
-            return chart
-        except Exception as e:
-            logger.error(f"Confusion matrix chart error: {e}")
-            return None
-    
-    @staticmethod
-    def generate_roc_curve_chart() -> Optional[Dict]:
-        """Generate ROC curve for classification models"""
-        try:
-            if 'classification' not in automl_engine.task_type:
-                return None
-            
-            y_test = getattr(automl_engine, '_y_test', None)
-            y_proba = None
-            
-            # Try to get probabilities
-            if hasattr(automl_engine.model, 'predict_proba'):
-                y_pred_proba = getattr(automl_engine, '_y_pred_proba', None)
-                if y_pred_proba is not None:
-                    y_proba = y_pred_proba
-            
-            if y_test is None or y_proba is None:
-                return None
-            
-            from sklearn.metrics import roc_curve, auc
-            
-            # Handle multi-class by using positive class
-            if len(np.unique(y_test)) == 2:
-                fpr, tpr, _ = roc_curve(y_test, y_proba)
-                roc_auc = auc(fpr, tpr)
-            else:
-                return None  # Skip for multi-class
-            
-            chart = {
-                "data": [
-                    {
-                        "type": "scatter",
-                        "mode": "lines",
-                        "x": fpr.tolist(),
-                        "y": tpr.tolist(),
-                        "name": f"ROC (AUC = {roc_auc:.3f})",
-                        "line": {"color": "#3b82f6", "width": 3}
-                    },
-                    {
-                        "type": "scatter",
-                        "mode": "lines",
-                        "x": [0, 1],
-                        "y": [0, 1],
-                        "name": "Random",
-                        "line": {"color": "#94a3b8", "dash": "dash", "width": 2}
-                    }
-                ],
-                "layout": {
-                    "title": {"text": f"📈 ROC Curve (AUC = {roc_auc:.3f})", "font": {"size": 18}},
-                    "xaxis": {"title": "False Positive Rate", "range": [0, 1]},
-                    "yaxis": {"title": "True Positive Rate", "range": [0, 1]},
-                    "paper_bgcolor": "#f8fafc",
-                    "plot_bgcolor": "#ffffff",
-                    "showlegend": True,
-                    "legend": {"x": 0.6, "y": 0.1},
-                    "width": 500,
-                    "height": 450
-                }
-            }
-            return chart
-        except Exception as e:
-            logger.error(f"ROC curve error: {e}")
-            return None
-    
-    @staticmethod
-    def generate_feature_importance_chart() -> Optional[Dict]:
-        """Generate horizontal bar chart for feature importance"""
-        try:
-            importance = _get_feature_importance()
-            if not importance or len(importance) < 2:
-                return None
-            
-            target = automl_engine.target_column
-            
-            # Take top 12 features
-            top_features = importance[:12]
-            features = [f['feature'][:20] for f in top_features][::-1]
-            values = [f['importance'] * 100 for f in top_features][::-1]
-            
-            # Gradient colors
-            n = len(features)
-            colors = [f'hsl(220, 80%, {40 + i * 3}%)' for i in range(n)]
-            
-            chart = {
-                "data": [{
-                    "type": "bar",
-                    "x": values,
-                    "y": features,
-                    "orientation": "h",
-                    "marker": {
-                        "color": colors,
-                        "line": {"color": "#1e40af", "width": 1}
-                    },
-                    "text": [f"{v:.1f}%" for v in values],
-                    "textposition": "outside",
-                    "textfont": {"size": 11}
-                }],
-                "layout": {
-                    "title": {"text": f"🔑 Feature Importance for {target}", "font": {"size": 16}},
-                    "xaxis": {"title": "Importance (%)", "range": [0, max(values) * 1.2]},
-                    "yaxis": {"tickfont": {"size": 11}},
-                    "paper_bgcolor": "#f8fafc",
-                    "plot_bgcolor": "#ffffff",
-                    "font": {"color": "#1f2937"},
-                    "margin": {"l": 150, "r": 80, "t": 50, "b": 50},
-                    "height": max(350, len(features) * 35)
-                }
-            }
-            return chart
-        except Exception as e:
-            logger.error(f"Feature importance chart error: {e}")
-            return None
-    
-    @staticmethod
-    def generate_actual_vs_predicted_chart() -> Optional[Dict]:
-        """Generate actual vs predicted scatter plot"""
-        try:
-            y_test = getattr(automl_engine, '_y_test', None)
-            y_pred = getattr(automl_engine, '_y_pred', None)
-            
-            if y_test is None or y_pred is None:
-                return None
-            
-            y_test_list = y_test.tolist() if hasattr(y_test, 'tolist') else list(y_test)
-            y_pred_list = y_pred.tolist() if hasattr(y_pred, 'tolist') else list(y_pred)
-            
-            is_classification = 'classification' in automl_engine.task_type
-            target = automl_engine.target_column
-            
-            if is_classification:
-                # For classification: grouped bar chart
-                import pandas as pd
-                df_res = pd.DataFrame({'Actual': y_test_list, 'Predicted': y_pred_list})
-                act_counts = df_res['Actual'].value_counts().sort_index()
-                pred_counts = df_res['Predicted'].value_counts().sort_index()
-                
-                labels = [str(i) for i in act_counts.index]
-                
-                chart = {
-                    "data": [
-                        {"type": "bar", "name": "Actual", "x": labels, "y": act_counts.values.tolist(), 
-                         "marker": {"color": "#64748b"}},
-                        {"type": "bar", "name": "Predicted", "x": labels, "y": pred_counts.values.tolist(),
-                         "marker": {"color": "#3b82f6"}}
-                    ],
-                    "layout": {
-                        "title": {"text": "📊 Actual vs Predicted Distribution", "font": {"size": 16}},
-                        "barmode": "group",
-                        "xaxis": {"title": "Class"},
-                        "yaxis": {"title": "Count"},
-                        "paper_bgcolor": "#f8fafc",
-                        "plot_bgcolor": "#ffffff",
-                        "showlegend": True,
-                        "legend": {"x": 0.8, "y": 0.95}
-                    }
-                }
-            else:
-                # For regression: scatter plot
-                min_val = min(min(y_test_list), min(y_pred_list))
-                max_val = max(max(y_test_list), max(y_pred_list))
-                
-                chart = {
-                    "data": [
-                        {
-                            "type": "scatter",
-                            "mode": "markers",
-                            "x": y_test_list,
-                            "y": y_pred_list,
-                            "marker": {"color": "#3b82f6", "opacity": 0.6, "size": 8},
-                            "name": "Data Points"
-                        },
-                        {
-                            "type": "scatter",
-                            "mode": "lines",
-                            "x": [min_val, max_val],
-                            "y": [min_val, max_val],
-                            "line": {"color": "#ef4444", "dash": "dash", "width": 2},
-                            "name": "Perfect Fit"
-                        }
-                    ],
-                    "layout": {
-                        "title": {"text": f"📈 Actual vs Predicted: {target}", "font": {"size": 16}},
-                        "xaxis": {"title": "Actual Values"},
-                        "yaxis": {"title": "Predicted Values"},
-                        "paper_bgcolor": "#f8fafc",
-                        "plot_bgcolor": "#ffffff",
-                        "showlegend": True,
-                        "width": 500,
-                        "height": 450
-                    }
-                }
-            return chart
-        except Exception as e:
-            logger.error(f"Actual vs predicted chart error: {e}")
-            return None
-    
-    @staticmethod
-    def generate_residual_plot() -> Optional[Dict]:
-        """Generate residual distribution plot for regression"""
-        try:
-            if 'classification' in automl_engine.task_type:
-                return None
-            
-            y_test = getattr(automl_engine, '_y_test', None)
-            y_pred = getattr(automl_engine, '_y_pred', None)
-            
-            if y_test is None or y_pred is None:
-                return None
-            
-            y_test_arr = np.array(y_test)
-            y_pred_arr = np.array(y_pred)
-            residuals = y_test_arr - y_pred_arr
-            
-            chart = {
-                "data": [{
-                    "type": "histogram",
-                    "x": residuals.tolist(),
-                    "nbinsx": 30,
-                    "marker": {"color": "#8b5cf6", "line": {"color": "#6d28d9", "width": 1}},
-                    "name": "Residuals"
-                }],
-                "layout": {
-                    "title": {"text": "📊 Residual Distribution", "font": {"size": 16}},
-                    "xaxis": {"title": "Residual (Actual - Predicted)"},
-                    "yaxis": {"title": "Frequency"},
-                    "paper_bgcolor": "#f8fafc",
-                    "plot_bgcolor": "#ffffff",
-                    "shapes": [{
-                        "type": "line",
-                        "x0": 0, "x1": 0,
-                        "y0": 0, "y1": 1,
-                        "yref": "paper",
-                        "line": {"color": "#ef4444", "dash": "dash", "width": 2}
-                    }],
-                    "width": 500,
-                    "height": 400
-                }
-            }
-            return chart
-        except Exception as e:
-            logger.error(f"Residual plot error: {e}")
-            return None
-    
-    @staticmethod
-    def generate_confidence_gauge(confidence: float) -> Dict:
-        """Generate confidence gauge chart"""
-        conf_pct = (confidence or 0.75) * 100
-        
-        if conf_pct >= 80:
-            color = "#22c55e"  # Green
-            level = "High"
-        elif conf_pct >= 60:
-            color = "#f59e0b"  # Amber
-            level = "Medium"
-        else:
-            color = "#ef4444"  # Red
-            level = "Low"
-        
-        chart = {
-            "data": [{
-                "type": "indicator",
-                "mode": "gauge+number+delta",
-                "value": conf_pct,
-                "title": {"text": f"Prediction Confidence ({level})", "font": {"size": 14}},
-                "gauge": {
-                    "axis": {"range": [0, 100], "tickwidth": 1},
-                    "bar": {"color": color},
-                    "bgcolor": "#f1f5f9",
-                    "borderwidth": 2,
-                    "bordercolor": "#e2e8f0",
-                    "steps": [
-                        {"range": [0, 60], "color": "#fef2f2"},
-                        {"range": [60, 80], "color": "#fef3c7"},
-                        {"range": [80, 100], "color": "#dcfce7"}
-                    ],
-                    "threshold": {
-                        "line": {"color": "#1f2937", "width": 2},
-                        "thickness": 0.75,
-                        "value": conf_pct
-                    }
-                },
-                "number": {"suffix": "%", "font": {"size": 24}}
-            }],
-            "layout": {
-                "paper_bgcolor": "#f8fafc",
-                "font": {"color": "#1f2937"},
-                "height": 280,
-                "margin": {"t": 40, "b": 20, "l": 30, "r": 30}
-            }
-        }
-        return chart
-    
-    @staticmethod
-    def generate_all_metrics_dashboard() -> List[Dict]:
-        """Generate all available charts for a comprehensive dashboard"""
-        charts = []
-        
-        # Try each chart type
-        cm = ProductionMLVisualizer.generate_confusion_matrix_chart()
-        if cm:
-            charts.append(cm)
-        
-        roc = ProductionMLVisualizer.generate_roc_curve_chart()
-        if roc:
-            charts.append(roc)
-        
-        fi = ProductionMLVisualizer.generate_feature_importance_chart()
-        if fi:
-            charts.append(fi)
-        
-        avp = ProductionMLVisualizer.generate_actual_vs_predicted_chart()
-        if avp:
-            charts.append(avp)
-        
-        res = ProductionMLVisualizer.generate_residual_plot()
-        if res:
-            charts.append(res)
-        
-        return charts
-
-
-# Legacy function for backward compatibility
-async def predict_response(user_id: str, query: str, context: str = "", df=None) -> Dict[str, Any]:
-    """Async wrapper for backward compatibility"""
-    return predict_response_sync(user_id, query, context, df)
+__all__ = [
+    'predict_response_sync',
+    'detect_query_type',
+    'QueryType',
+    'get_stored_charts',
+    'get_chart_by_name'
+]

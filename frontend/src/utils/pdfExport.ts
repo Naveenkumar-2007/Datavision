@@ -42,6 +42,56 @@ export async function exportToPDF(
     const finalOptions = { ...defaultOptions, ...options };
     const timestamp = new Date().toISOString().split('T')[0];
 
+    // Show PDF-only header before export
+    const pdfHeader = element.querySelector('.pdf-only-header') as HTMLElement;
+    if (pdfHeader) {
+        pdfHeader.style.display = 'block';
+    }
+
+    // Store original styles to restore later
+    const originalBg = element.style.backgroundColor;
+    const originalColor = element.style.color;
+    
+    // Apply light theme for PDF (dark text on white background)
+    element.style.backgroundColor = '#ffffff';
+    element.style.color = '#1a1a2e';
+    
+    // Apply dark text to all text elements for PDF visibility
+    const textElements = element.querySelectorAll('*');
+    const originalStyles: Map<Element, { color: string; backgroundColor: string }> = new Map();
+    
+    textElements.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+        originalStyles.set(el, {
+            color: htmlEl.style.color,
+            backgroundColor: htmlEl.style.backgroundColor
+        });
+        
+        // Force dark text colors for PDF readability
+        const computedColor = window.getComputedStyle(htmlEl).color;
+        if (computedColor && (computedColor.includes('255') || computedColor.includes('rgb(255') || computedColor.includes('rgba(255'))) {
+            htmlEl.style.color = '#1a1a2e';
+        }
+        
+        // Handle specific element types
+        if (htmlEl.tagName === 'H1' || htmlEl.tagName === 'H2' || htmlEl.tagName === 'H3') {
+            htmlEl.style.color = '#1a1a2e';
+        }
+        if (htmlEl.tagName === 'P' || htmlEl.tagName === 'SPAN' || htmlEl.tagName === 'DIV') {
+            if (!htmlEl.style.color || htmlEl.style.color.includes('var(')) {
+                htmlEl.style.color = '#2d2d3a';
+            }
+        }
+        
+        // Make backgrounds white/transparent
+        const computedBg = window.getComputedStyle(htmlEl).backgroundColor;
+        if (computedBg && computedBg !== 'rgba(0, 0, 0, 0)' && computedBg !== 'transparent') {
+            if (computedBg.includes('rgb(') && !computedBg.includes('255, 255, 255')) {
+                htmlEl.style.backgroundColor = 'rgba(240, 240, 245, 0.5)';
+            }
+        }
+    });
+
     const pdfOptions = {
         margin: finalOptions.margin,
         filename: `${finalOptions.filename}_${timestamp}.pdf`,
@@ -65,6 +115,24 @@ export async function exportToPDF(
     } catch (error) {
         console.error('PDF export failed:', error);
         throw error;
+    } finally {
+        // Restore original styles
+        element.style.backgroundColor = originalBg;
+        element.style.color = originalColor;
+        
+        textElements.forEach((el) => {
+            const htmlEl = el as HTMLElement;
+            const original = originalStyles.get(el);
+            if (original) {
+                htmlEl.style.color = original.color;
+                htmlEl.style.backgroundColor = original.backgroundColor;
+            }
+        });
+        
+        // Hide PDF-only header after export
+        if (pdfHeader) {
+            pdfHeader.style.display = 'none';
+        }
     }
 }
 

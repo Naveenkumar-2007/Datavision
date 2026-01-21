@@ -63,6 +63,15 @@ class Settings:
     EMBED_DIM = 384
     GRAPH_MAX_NODES = 100
     
+    # ⚡ PERFORMANCE OPTIMIZATION SETTINGS
+    FAST_MODE = False  # Set True for faster (less detailed) responses
+    CACHE_ENABLED = True  # Enable response caching
+    CACHE_TTL_SECONDS = 3600  # 1 hour cache TTL
+    MAX_TOKENS_FAST = 500  # Max tokens for fast mode
+    MAX_TOKENS_NORMAL = 1500  # Max tokens for normal mode
+    MAX_RAG_STEPS = 2  # Limit RAG iterations
+    MAX_AGENT_STEPS = 3  # Limit agent iterations
+    
     # Exchange Rates (MVP Static Source)
     EXCHANGE_RATES = {
         "INR_TO_USD": 88.0,
