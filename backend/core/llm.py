@@ -245,52 +245,39 @@ def chat(
             # Check if we should try next key
             is_rate_limit = 'rate_limit' in error_str or 'rate limit' in error_str or '429' in error_str
             is_auth_error = 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str or '401' in error_str
+            is_org_restricted = 'organization' in error_str and ('restricted' in error_str or 'blocked' in error_str)
+            is_bad_request = 'badrequest' in error_str.replace(' ', '') or 'invalid_request' in error_str
             
-            if (is_rate_limit or is_auth_error) and i < len(keys_to_try) - 1:
-                logger.warning(f"⚠️ Key {i+1} failed ({'Rate Limit' if is_rate_limit else 'Auth Error'}). Rotating to next key...")
+            # Rotate to next key on any of these errors
+            should_rotate = is_rate_limit or is_auth_error or is_org_restricted or is_bad_request
+            
+            if should_rotate and i < len(keys_to_try) - 1:
+                reason = 'Rate Limit' if is_rate_limit else ('Org Restricted' if is_org_restricted else ('Bad Request' if is_bad_request else 'Auth Error'))
+                logger.warning(f"⚠️ Key {i+1} failed ({reason}). Rotating to next key...")
                 continue # Try next key
             else:
-                logger.error(f"Groq model failed with available keys: {e}")
-                # Don't break, let it fall through to Gemini/Ollama backups
+                logger.error(f"Groq model failed with all {len(keys_to_try)} keys: {e}")
                 break 
                 
-    # If we get here, all Groq keys failed. 'last_error' holds the last exception.
-    # Fall through to Gemini/Ollama logic below...
-    e = last_error 
-        
-    # =====================================================================
-    # 🌟 GEMINI FALLBACK - Try Google Gemini if Groq fails (FREE tier!)
-    # =====================================================================
-    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-        try:
-            # Correct LiteLLM format for Gemini (Google AI Studio)
-            # Provider prefix 'gemini/' is required for API keys
-            gemini_model = "gemini/gemini-pro"  
-            logger.info(f"🌟 Falling back to Gemini: {gemini_model}")
-            response = litellm.completion(
-                model=gemini_model,
-                messages=final_messages,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-            logger.info(f"✅ Gemini fallback success!")
-            return response.choices[0].message.content
-        except Exception as gemini_error:
-            logger.error(f"🌟 Gemini fallback also failed: {gemini_error}")
-    
-    # Return user-friendly error if all fail
+    # All Groq keys exhausted - return user-friendly error
+    e = last_error
+    error_str = str(e).lower() if e else ''
     if 'rate_limit' in error_str or 'rate limit' in error_str:
         return (
             "**Rate limit reached.** Please wait a moment and try again.\n\n"
             "The AI service is temporarily busy."
         )
+    elif 'organization' in error_str and ('restricted' in error_str or 'blocked' in error_str):
+        return (
+            "**Organization Restricted**\n\n"
+            "All Groq API keys have organization restrictions.\n\n"
+            "💡 **Solution:** Get new API keys from https://console.groq.com/keys"
+        )
     elif 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str:
         return (
             "**API Key Error**\n\n"
-            "Please check your GROQ_API_KEY or GEMINI_API_KEY in the .env file.\n\n"
-            "💡 **Get FREE keys:**\n"
-            "- Groq: https://console.groq.com/keys\n"
-            "- Gemini: https://aistudio.google.com/apikey"
+            "Please check your GROQ_API_KEY in the .env file.\n\n"
+            "💡 **Get FREE keys:** https://console.groq.com/keys"
         )
     elif 'timeout' in error_str or 'connection' in error_str:
         return (
