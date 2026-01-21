@@ -69,7 +69,18 @@ uv.lock
 *_results.txt
 *_output.txt
 models_list.txt
+push_log.txt
 
 # Large files
 *.zip
 *.tar.gz
+
+# Sample data (not needed for production)
+sample_data/
+
+# Backend uploads (user data)
+backend/uploads/
+
+# FAISS indexes
+*.faiss
+faiss/
