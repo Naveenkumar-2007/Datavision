@@ -525,74 +525,170 @@ class GeneratedEmail(BaseModel):
 
 
 async def gather_user_data_context(user_id: str) -> str:
-    """Gather real user data for context in email generation"""
+    """
+    Gather REAL user data for context in email generation.
+    Reads actual uploaded CSV files, calculates real statistics,
+    and fetches ML training results.
+    """
     context_parts = []
     
     try:
         # Use the correct get_user_paths utility (same as rest of app)
         from utils.paths import get_user_paths
+        import pandas as pd
         paths = get_user_paths(user_id)
         
-        # 1. Get uploaded files info
+        # 1. Get uploaded files and read REAL data
         files_dir = paths.get('files')
         if files_dir and files_dir.exists():
             files = [f for f in files_dir.glob("*") if f.is_file()]
             if files:
-                file_names = [f.name for f in files[:5]]  # Limit to 5
-                context_parts.append(f"📁 Uploaded Files ({len(files)} total): {', '.join(file_names)}")
+                file_names = [f.name for f in files[:5]]
+                context_parts.append(f"📁 UPLOADED FILES ({len(files)} total): {', '.join(file_names)}")
                 
-                # Try to read first CSV for data summary
-                csv_files = [f for f in files if f.suffix.lower() == '.csv']
-                if csv_files:
+                # Read CSV/Excel files for real data summary
+                data_files = [f for f in files if f.suffix.lower() in ['.csv', '.xlsx', '.xls']]
+                
+                total_rows = 0
+                total_columns = 0
+                all_column_stats = []
+                
+                for data_file in data_files[:3]:  # Process up to 3 files
                     try:
-                        import pandas as pd
-                        df = pd.read_csv(csv_files[0], nrows=100)  # Quick read
-                        context_parts.append(f"📈 Data Overview: {len(df)} rows, {len(df.columns)} columns")
+                        if data_file.suffix.lower() == '.csv':
+                            df = pd.read_csv(data_file)
+                        else:
+                            df = pd.read_excel(data_file)
                         
-                        # Numeric summary
-                        numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()[:3]
+                        total_rows += len(df)
+                        total_columns = max(total_columns, len(df.columns))
+                        
+                        context_parts.append(f"\n📊 FILE: {data_file.name}")
+                        context_parts.append(f"   • Rows: {len(df):,} | Columns: {len(df.columns)}")
+                        context_parts.append(f"   • Columns: {', '.join(df.columns.tolist()[:8])}{'...' if len(df.columns) > 8 else ''}")
+                        
+                        # Numeric column statistics
+                        numeric_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns.tolist()
                         if numeric_cols:
-                            for col in numeric_cols:
-                                mean_val = df[col].mean()
-                                context_parts.append(f"  • {col}: Mean = {mean_val:.2f}")
+                            context_parts.append(f"   📈 NUMERIC SUMMARY:")
+                            for col in numeric_cols[:5]:  # Top 5 numeric columns
+                                col_mean = df[col].mean()
+                                col_sum = df[col].sum()
+                                col_min = df[col].min()
+                                col_max = df[col].max()
+                                context_parts.append(f"      • {col}: Sum={col_sum:,.2f}, Mean={col_mean:,.2f}, Range=[{col_min:,.2f} to {col_max:,.2f}]")
+                                all_column_stats.append({
+                                    'column': col,
+                                    'sum': col_sum,
+                                    'mean': col_mean,
+                                    'min': col_min,
+                                    'max': col_max
+                                })
+                        
+                        # Categorical column breakdown
+                        cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+                        if cat_cols:
+                            context_parts.append(f"   📋 CATEGORY BREAKDOWN:")
+                            for col in cat_cols[:3]:  # Top 3 categories
+                                value_counts = df[col].value_counts().head(5)
+                                top_values = ', '.join([f"{v}: {c}" for v, c in value_counts.items()])
+                                context_parts.append(f"      • {col}: {top_values}")
+                    
                     except Exception as e:
-                        logger.warning(f"Error reading CSV for context: {e}")
+                        logger.warning(f"Error reading {data_file.name}: {e}")
+                
+                if total_rows > 0:
+                    context_parts.insert(1, f"📈 TOTAL DATA: {total_rows:,} rows across {len(data_files)} file(s)")
         
-        # 2. Get ML training results from localStorage (frontend stores here)
-        # Also check backend storage
-        ml_results_dir = paths.get('base', Path(".")) / "ml_results"
-        if ml_results_dir.exists():
-            ml_files = list(ml_results_dir.glob("*.json"))
-            if ml_files:
+        # 2. Get ML training results from automl storage
+        from config.settings import Settings
+        automl_results_dir = Settings.BASE_DIR / "storage" / "automl_results" / user_id
+        
+        ml_found = False
+        if automl_results_dir.exists():
+            result_files = list(automl_results_dir.glob("*.json"))
+            if result_files:
+                # Sort by modification time to get latest
+                result_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
                 try:
-                    with open(ml_files[-1], 'r') as f:  # Get latest
+                    with open(result_files[0], 'r') as f:
                         ml_data = json.load(f)
-                        if ml_data:
-                            best_model = ml_data.get('best_model', {})
-                            task_type = ml_data.get('task_type', 'unknown')
-                            target = ml_data.get('target_column', 'unknown')
-                            metrics = best_model.get('metrics', {})
-                            accuracy = metrics.get('accuracy', metrics.get('r2', 0))
-                            context_parts.append(f"🤖 ML Model: {best_model.get('name', 'N/A')} ({task_type})")
-                            if accuracy:
-                                context_parts.append(f"🎯 Target: {target} | Accuracy: {accuracy:.1%}")
-                            else:
-                                context_parts.append(f"🎯 Target: {target}")
-                            
-                            # Feature importance
-                            features = ml_data.get('feature_importance', [])[:3]
-                            if features:
-                                if isinstance(features[0], dict):
-                                    top_features = [f.get('feature', str(f)) for f in features]
+                        
+                    if ml_data:
+                        ml_found = True
+                        best_model = ml_data.get('best_model', {})
+                        task_type = ml_data.get('task_type', 'classification')
+                        target = ml_data.get('target_column', 'unknown')
+                        metrics = best_model.get('metrics', {})
+                        
+                        context_parts.append(f"\n🤖 ML MODEL TRAINED:")
+                        context_parts.append(f"   • Model: {best_model.get('name', 'AutoML Model')}")
+                        context_parts.append(f"   • Task Type: {task_type.upper()}")
+                        context_parts.append(f"   • Target Column: {target}")
+                        
+                        # Report metrics based on task type
+                        if task_type == 'classification':
+                            acc = metrics.get('accuracy', 0)
+                            f1 = metrics.get('f1_score', metrics.get('f1', 0))
+                            precision = metrics.get('precision', 0)
+                            recall = metrics.get('recall', 0)
+                            context_parts.append(f"   📊 PERFORMANCE METRICS:")
+                            context_parts.append(f"      • Accuracy: {acc:.1%}")
+                            if f1: context_parts.append(f"      • F1 Score: {f1:.1%}")
+                            if precision: context_parts.append(f"      • Precision: {precision:.1%}")
+                            if recall: context_parts.append(f"      • Recall: {recall:.1%}")
+                        else:  # regression
+                            r2 = metrics.get('r2', metrics.get('r2_score', 0))
+                            rmse = metrics.get('rmse', 0)
+                            mae = metrics.get('mae', 0)
+                            context_parts.append(f"   📊 PERFORMANCE METRICS:")
+                            context_parts.append(f"      • R² Score: {r2:.3f}")
+                            if rmse: context_parts.append(f"      • RMSE: {rmse:,.2f}")
+                            if mae: context_parts.append(f"      • MAE: {mae:,.2f}")
+                        
+                        # Feature importance
+                        features = ml_data.get('feature_importance', [])[:5]
+                        if features:
+                            context_parts.append(f"   🔑 TOP FEATURES (most predictive):")
+                            for idx, feat in enumerate(features, 1):
+                                if isinstance(feat, dict):
+                                    fname = feat.get('feature', feat.get('name', str(feat)))
+                                    importance = feat.get('importance', 0)
+                                    context_parts.append(f"      {idx}. {fname} (importance: {importance:.3f})")
                                 else:
-                                    top_features = [str(f) for f in features]
-                                context_parts.append(f"📊 Top Features: {', '.join(top_features)}")
+                                    context_parts.append(f"      {idx}. {feat}")
                 except Exception as e:
                     logger.warning(f"Error reading ML results: {e}")
         
+        # 3. Check for unified analytics cache
+        analytics_cache_dir = Settings.BASE_DIR / "storage" / "analytics_cache"
+        if analytics_cache_dir.exists():
+            cache_files = list(analytics_cache_dir.glob(f"{user_id}*.json"))
+            if cache_files:
+                try:
+                    with open(cache_files[-1], 'r') as f:
+                        analytics = json.load(f)
+                    
+                    kpis = analytics.get('overviewLayout', {}).get('kpis', [])
+                    if kpis:
+                        context_parts.append(f"\n📈 KEY PERFORMANCE INDICATORS:")
+                        for kpi in kpis[:4]:
+                            title = kpi.get('title', 'Metric')
+                            value = kpi.get('value', 0)
+                            delta = kpi.get('delta')
+                            delta_str = f" ({'+' if delta > 0 else ''}{delta:.1f}%)" if delta else ""
+                            context_parts.append(f"   • {title}: {value:,}{delta_str}")
+                except Exception as e:
+                    logger.warning(f"Error reading analytics cache: {e}")
+        
+        if not ml_found:
+            context_parts.append(f"\n💡 TIP: No ML model trained yet. Consider training a model for predictions!")
+        
     except Exception as e:
         logger.error(f"Error gathering user data context: {e}")
-        context_parts.append("(Limited data available)")
+        import traceback
+        traceback.print_exc()
+        context_parts.append("(Limited data available due to error)")
     
     return "\n".join(context_parts) if context_parts else "No data uploaded yet."
 

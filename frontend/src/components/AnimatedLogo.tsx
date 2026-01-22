@@ -41,7 +41,7 @@ const AnimatedLogo: React.FC<AnimatedLogoProps> = ({
                 }}
             >
                 <img
-                    src="/datavision_icon_v3.png"
+                    src="/logo.png"
                     alt="DataVision Icon"
                     className="w-full h-full object-contain"
                     style={{

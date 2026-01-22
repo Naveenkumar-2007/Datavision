@@ -25,7 +25,7 @@ const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '
     <div className={`flex items-center gap-3 ${className}`}>
       {/* Logo Icon Only */}
       <img
-        src="/datavision_icon_v3.png"
+        src="/logo.png"
         alt="DataVision"
         className="object-contain"
         style={{ width: icon, height: icon }}
