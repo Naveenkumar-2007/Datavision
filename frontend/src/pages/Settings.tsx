@@ -679,7 +679,7 @@ const Settings: React.FC = () => {
         className="flex items-center gap-4 mb-2"
       >
         <img
-          src="/logo_transparent.png"
+          src="/datavision_icon_v3.png"
           alt="DataVision Logo"
           className="w-12 h-12 object-contain rounded-xl shadow-lg"
         />

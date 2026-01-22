@@ -120,7 +120,9 @@ async def production_train(
         logger.error(f"Production train error: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # User-friendly error message
+        user_message = "We encountered an issue while training your model. Please ensure your data is properly formatted and try again."
+        raise HTTPException(status_code=500, detail=user_message)
 
 
 @router.post("/ultra_train")
@@ -232,7 +234,9 @@ async def ultra_train(
         logger.error(f"Ultra train error: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # User-friendly error message
+        user_message = "We encountered an issue during maximum accuracy training. Please ensure your data is properly formatted and try again."
+        raise HTTPException(status_code=500, detail=user_message)
 
 
 @router.post("/train_with_test")
@@ -336,7 +340,9 @@ async def train_with_test_file(
         logger.error(f"AutoML error: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # User-friendly error message
+        user_message = "We encountered an issue during training with test set. Please verify your data files are compatible and try again."
+        raise HTTPException(status_code=500, detail=user_message)
 
 
 @router.post("/train")
@@ -488,7 +494,9 @@ async def train_automl(
         logger.error(f"AutoML error: {e}")
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # User-friendly error message
+        user_message = "We encountered an issue during training. Please ensure your data is properly formatted and try again."
+        raise HTTPException(status_code=500, detail=user_message)
 
 
 @router.post("/predict")
@@ -521,7 +529,9 @@ async def predict(request: PredictRequest):
         raise
     except Exception as e:
         logger.error(f"Prediction error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # User-friendly error message
+        user_message = "We couldn't complete your prediction. Please ensure the input data matches the training format."
+        raise HTTPException(status_code=500, detail=user_message)
 
 
 @router.get("/status")

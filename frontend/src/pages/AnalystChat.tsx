@@ -715,14 +715,14 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
   return <div className="space-y-1">{formatContent(content)}</div>;
 };
 
-// Animated Logo for AI Assistant - Uses actual DataVision logo with animation
+// Animated Logo for AI Assistant - Uses actual DataVision logo with subtle animation
 const AnimatedBotIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
   <div
-    className="relative flex items-center justify-center"
-    style={{ width: size, height: size }}
+    className="relative flex items-center justify-center flex-shrink-0"
+    style={{ width: size, height: size, minWidth: size, minHeight: size }}
   >
     <img
-      src="/logo.png"
+      src="/datavision_icon_v3.png"
       alt="DataVision"
       className="w-full h-full object-contain"
       style={{
@@ -733,11 +733,11 @@ const AnimatedBotIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
       @keyframes pulse-glow {
         0%, 100% { 
           filter: drop-shadow(0 0 2px rgba(20, 184, 166, 0.4));
-          transform: scale(1);
+          opacity: 1;
         }
         50% { 
-          filter: drop-shadow(0 0 8px rgba(20, 184, 166, 0.6));
-          transform: scale(1.05);
+          filter: drop-shadow(0 0 6px rgba(20, 184, 166, 0.5));
+          opacity: 0.9;
         }
       }
     `}</style>
