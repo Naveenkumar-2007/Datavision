@@ -684,15 +684,19 @@ class ProductionFeatureEngineer:
                     categorical_cols.append(col)
                 continue
             
-            # It's an object/string column
-            series = df[col].astype(str)
-            nunique = series.nunique()
-            avg_len = series.str.len().mean()
-            
-            # Text: long strings or high cardinality
-            if avg_len > 30 or nunique > 100:
-                text_cols.append(col)
-            else:
+            # It's an object/string column - ALWAYS treat as categorical or text
+            try:
+                series = df[col].astype(str)
+                nunique = series.nunique()
+                avg_len = series.str.len().mean()
+                
+                # Text: long strings or high cardinality
+                if avg_len > 30 or nunique > 100:
+                    text_cols.append(col)
+                else:
+                    categorical_cols.append(col)
+            except Exception:
+                # If any error, treat as categorical
                 categorical_cols.append(col)
         
         print(f"   📊 Columns: {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, {len(text_cols)} text, {len(datetime_cols)} datetime")
@@ -924,22 +928,56 @@ class ProductionFeatureEngineer:
         if not feature_parts:
             raise ValueError("No valid features after processing!")
         
-        X = np.hstack(feature_parts)
+        # 🛡️ SAFETY: Ensure each feature part is numeric before combining
+        clean_parts = []
+        for i, part in enumerate(feature_parts):
+            try:
+                part_arr = np.asarray(part, dtype=float)
+                part_arr = np.nan_to_num(part_arr, nan=0.0, posinf=0.0, neginf=0.0)
+                clean_parts.append(part_arr)
+            except (ValueError, TypeError) as e:
+                print(f"   ⚠️ Feature part {i} has non-numeric values, converting...")
+                # Force convert each column
+                part_arr = np.asarray(part)
+                clean_arr = np.zeros(part_arr.shape, dtype=float)
+                if part_arr.ndim == 1:
+                    part_arr = part_arr.reshape(-1, 1)
+                    clean_arr = np.zeros(part_arr.shape, dtype=float)
+                for j in range(part_arr.shape[1] if part_arr.ndim > 1 else 1):
+                    col = part_arr[:, j] if part_arr.ndim > 1 else part_arr
+                    try:
+                        clean_arr[:, j] = pd.to_numeric(col, errors='coerce').fillna(0)
+                    except:
+                        le = LabelEncoder()
+                        clean_arr[:, j] = le.fit_transform(col.astype(str))
+                clean_parts.append(clean_arr)
+        
+        X = np.hstack(clean_parts)
         
         # ===== FINAL SAFETY CHECK: FORCE NUMERIC =====
-        if X.dtype == object or not np.issubdtype(X.dtype, np.number):
+        # ALWAYS verify and convert to ensure no string values leak through
+        print("   🛡️ Verifying all features are numeric...")
+        try:
+            X = np.asarray(X, dtype=float)
+        except (ValueError, TypeError):
             print("   ⚠️ Non-numeric values detected, forcing conversion...")
-            try:
-                X = X.astype(float)
-            except (ValueError, TypeError):
-                # Column-by-column conversion
-                X_clean = np.zeros(X.shape, dtype=float)
-                for i in range(X.shape[1]):
+            # Column-by-column conversion with LabelEncoder fallback
+            X_clean = np.zeros(X.shape, dtype=float)
+            for i in range(X.shape[1]):
+                col_data = X[:, i]
+                try:
+                    # Try numeric conversion first
+                    X_clean[:, i] = pd.to_numeric(col_data, errors='coerce').fillna(0)
+                except Exception:
                     try:
-                        X_clean[:, i] = pd.to_numeric(X[:, i], errors='coerce').fillna(0)
-                    except:
+                        # Fallback: LabelEncode string values
+                        le = LabelEncoder()
+                        X_clean[:, i] = le.fit_transform(col_data.astype(str))
+                        print(f"      ✅ Column {i}: Label encoded ({len(le.classes_)} classes)")
+                    except Exception:
                         X_clean[:, i] = 0
-                X = X_clean
+                        print(f"      ⚠️ Column {i}: Set to 0 (conversion failed)")
+            X = X_clean
         
         # Handle any remaining NaN/Inf
         X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
@@ -1498,9 +1536,31 @@ class ProductionModelTrainer:
         models = self.get_models()
         print(f"   Training {len(models)} models...")
         
-        # Ensure data is clean
-        X_train = np.nan_to_num(X_train.astype(float), nan=0.0, posinf=0.0, neginf=0.0)
-        X_test = np.nan_to_num(X_test.astype(float), nan=0.0, posinf=0.0, neginf=0.0)
+        # 🛡️ ROBUST DATA CLEANING - Handle ANY remaining non-numeric values
+        def force_numeric_array(arr, name="data"):
+            """Force array to numeric, handling strings like 'Absence', 'Present', etc."""
+            try:
+                # Fast path: try direct conversion
+                return np.nan_to_num(np.asarray(arr, dtype=float), nan=0.0, posinf=0.0, neginf=0.0)
+            except (ValueError, TypeError):
+                # Slow path: column-by-column conversion
+                print(f"   ⚠️ {name} contains non-numeric values, forcing conversion...")
+                arr = np.asarray(arr)
+                result = np.zeros(arr.shape, dtype=float)
+                for i in range(arr.shape[1]):
+                    try:
+                        result[:, i] = pd.to_numeric(arr[:, i], errors='coerce').fillna(0)
+                    except Exception:
+                        # If column is pure strings, try label encoding as last resort
+                        try:
+                            le = LabelEncoder()
+                            result[:, i] = le.fit_transform(arr[:, i].astype(str))
+                        except:
+                            result[:, i] = 0
+                return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        X_train = force_numeric_array(X_train, "X_train")
+        X_test = force_numeric_array(X_test, "X_test")
         
         # For classification, ensure y is integer and handle class encoding
         if self.task_type == 'classification':

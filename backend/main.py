@@ -135,11 +135,31 @@ async def serve_frontend():
 # Serve logo files
 @app.get("/logo.png")
 async def serve_logo_png():
-    return FileResponse(os.path.join(frontend_static_dir, "logo.png"))
+    logo_path = os.path.join(frontend_static_dir, "logo.png")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path)
+    return {"error": "logo.png not found"}
 
 @app.get("/logo.jpg")
 async def serve_logo_jpg():
-    return FileResponse(os.path.join(frontend_static_dir, "logo.jpg"))
+    logo_path = os.path.join(frontend_static_dir, "logo.jpg")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path)
+    return {"error": "logo.jpg not found"}
+
+@app.get("/logo_transparent.png")
+async def serve_logo_transparent():
+    logo_path = os.path.join(frontend_static_dir, "logo_transparent.png")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path)
+    return {"error": "logo_transparent.png not found"}
+
+@app.get("/datavision_icon_v3.png")
+async def serve_datavision_icon():
+    icon_path = os.path.join(frontend_static_dir, "datavision_icon_v3.png")
+    if os.path.exists(icon_path):
+        return FileResponse(icon_path)
+    return {"error": "datavision_icon_v3.png not found"}
 
 # Serve service worker
 @app.get("/sw.js")

@@ -1865,18 +1865,36 @@ class ProductionMLEngine:
         try:
             # Convert to float, handling any object types
             if X_processed.dtype == object:
-                X_processed = X_processed.astype(float)
+                # 🛡️ ROBUST: Force column-by-column conversion for object arrays
+                logger.warning("   ⚠️ Object dtype detected, forcing column-wise numeric conversion...")
+                X_clean = np.zeros(X_processed.shape, dtype=float)
+                for i in range(X_processed.shape[1]):
+                    try:
+                        X_clean[:, i] = pd.to_numeric(X_processed[:, i], errors='coerce').fillna(0)
+                    except Exception:
+                        try:
+                            # Last resort: LabelEncode strings like 'Absence', 'Present'
+                            le = LabelEncoder()
+                            X_clean[:, i] = le.fit_transform(X_processed[:, i].astype(str))
+                            logger.info(f"      ✅ Column {i}: Label encoded")
+                        except:
+                            X_clean[:, i] = 0
+                X_processed = X_clean
             X_processed = np.nan_to_num(X_processed.astype(float), nan=0.0, posinf=0.0, neginf=0.0)
         except (ValueError, TypeError) as conv_err:
             logger.warning(f"   ⚠️ Numeric conversion issue: {conv_err}, attempting column-wise conversion")
-            # Fallback: column-wise conversion
+            # Fallback: column-wise conversion with LabelEncoder
             X_clean = np.zeros_like(X_processed, dtype=float)
             for i in range(X_processed.shape[1]):
                 try:
                     col = pd.to_numeric(X_processed[:, i], errors='coerce')
                     X_clean[:, i] = np.nan_to_num(col, nan=0.0, posinf=0.0, neginf=0.0)
-                except:
-                    X_clean[:, i] = 0.0
+                except Exception:
+                    try:
+                        le = LabelEncoder()
+                        X_clean[:, i] = le.fit_transform(X_processed[:, i].astype(str))
+                    except:
+                        X_clean[:, i] = 0.0
             X_processed = X_clean
         
         # Process target
