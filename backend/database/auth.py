@@ -14,8 +14,16 @@ from database.supabase_client import get_supabase_client, get_supabase_admin_cli
 from database.models import AuthUser, UserRole
 
 # Supabase JWT secret (get from Supabase Dashboard -> Settings -> API -> JWT Secret)
-JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+# SECURITY: Never fall back to service role key - it has elevated privileges
+JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 JWT_ALGORITHM = "HS256"
+
+if not JWT_SECRET:
+    import logging
+    logging.getLogger("auth").warning(
+        "⚠️ SUPABASE_JWT_SECRET not configured! JWT verification will fail. "
+        "Get this from Supabase Dashboard -> Settings -> API -> JWT Secret"
+    )
 
 
 def decode_jwt(token: str) -> dict:
@@ -38,11 +46,14 @@ def decode_jwt(token: str) -> dict:
 
 def get_user_id_from_headers(
     x_user_id: Optional[str] = None,
-    authorization: Optional[str] = None
-) -> str:
+    authorization: Optional[str] = None,
+    require_auth: bool = False
+) -> Optional[str]:
     """
     Extract user ID from JWT token or X-User-ID header.
     Works for both authenticated and legacy/demo sessions.
+    
+    SECURITY: Set require_auth=True for sensitive operations.
     """
     user_id = None
     
@@ -55,15 +66,24 @@ def get_user_id_from_headers(
             print(f"🔐 Auth - User from JWT: {user_id}")
         except Exception as e:
             print(f"⚠️ JWT decode error: {e}")
+            if require_auth:
+                raise HTTPException(status_code=401, detail="Invalid authentication token")
     
-    # Fallback to X-User-ID header
+    # Fallback to X-User-ID header (only if explicitly provided)
     if not user_id and x_user_id:
-        user_id = x_user_id
-        print(f"🔐 Auth - User from header: {user_id}")
+        # SECURITY: Validate the user_id format
+        import re
+        if re.match(r'^[a-zA-Z0-9_-]+$', x_user_id) and '..' not in x_user_id:
+            user_id = x_user_id
+            print(f"🔐 Auth - User from header: {user_id}")
+        else:
+            print(f"⚠️ Invalid X-User-ID format: {x_user_id}")
     
     if not user_id:
-        # Default to demo_user if nothing else found
-        return "demo_user"
+        if require_auth:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        # SECURITY: Return None instead of default user - let caller decide
+        return None
     
     return user_id
 

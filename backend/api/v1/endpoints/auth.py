@@ -29,6 +29,25 @@ class SignupRequest(BaseModel):
     password: str
     full_name: Optional[str] = None
     company_name: Optional[str] = None
+    
+    @classmethod
+    def validate_password_strength(cls, password: str) -> None:
+        """Validate password meets security requirements"""
+        import re
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters long")
+        if len(password) > 128:
+            raise ValueError("Password must be less than 128 characters")
+        if not re.search(r'[A-Z]', password):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not re.search(r'[a-z]', password):
+            raise ValueError("Password must contain at least one lowercase letter")
+        if not re.search(r'[0-9]', password):
+            raise ValueError("Password must contain at least one number")
+        # Check for common weak passwords
+        weak_passwords = ['password', '12345678', 'qwerty', 'admin', 'letmein']
+        if password.lower() in weak_passwords:
+            raise ValueError("Password is too common. Please choose a stronger password")
 
 
 class LoginRequest(BaseModel):
@@ -58,6 +77,18 @@ async def signup(request: SignupRequest):
     Create a new user account with email and password.
     Supabase sends confirmation email via configured SMTP (Resend).
     """
+    # SECURITY: Validate password strength
+    try:
+        SignupRequest.validate_password_strength(request.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # SECURITY: Validate email format
+    import re
+    email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    if not email_pattern.match(request.email):
+        raise HTTPException(status_code=400, detail="Invalid email format")
+    
     auth_service = get_auth_service()
     
     metadata = {}

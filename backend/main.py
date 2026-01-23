@@ -1,9 +1,11 @@
 import os
 import uvicorn
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -40,16 +42,57 @@ logger.info("✅ Autonomous Brain API loaded")
 app = FastAPI(
     title="DataVision - Autonomous AI Data Platform",
     description="$50B Silicon Valley AI Data Analysis System",
-    version="3.0.0"
+    version="3.0.0",
+    # Security: Hide docs in production
+    docs_url="/docs" if os.environ.get("ENVIRONMENT", "development") != "production" else None,
+    redoc_url="/redoc" if os.environ.get("ENVIRONMENT", "development") != "production" else None,
 )
 
-# CORS
+# ============================================
+# SECURITY MIDDLEWARE
+# ============================================
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses"""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        
+        # Security headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        
+        # Remove server header (MutableHeaders uses del, not pop)
+        if "server" in response.headers:
+            del response.headers["server"]
+        
+        return response
+
+# Add security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Trusted host middleware (prevent host header injection)
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+if os.environ.get("ENVIRONMENT") == "production":
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+
+# CORS - Secure configuration
+# WARNING: Never use allow_origins=["*"] with allow_credentials=True in production
+ALLOWED_ORIGINS = os.environ.get(
+    "CORS_ORIGINS", 
+    "http://localhost:5173,http://localhost:3000,http://localhost:8000"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,  # Whitelist specific origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # Explicit methods
+    allow_headers=["Authorization", "Content-Type", "X-User-ID", "X-Requested-With"],
+    max_age=600,  # Cache preflight for 10 minutes
 )
 
 # Mount Static Files

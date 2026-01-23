@@ -9,12 +9,46 @@ from dotenv import load_dotenv
 # Configure Basic Logging
 # Configure Basic Logging
 import sys
+
+# Custom log filter to redact sensitive information
+class SensitiveDataFilter(logging.Filter):
+    """Filter to redact sensitive data from logs"""
+    
+    SENSITIVE_PATTERNS = [
+        ('gsk_', 8),  # Groq API keys
+        ('sk-', 20),  # OpenAI-style keys
+        ('Bearer ', 20),  # JWT tokens
+        ('password', 0),  # Passwords
+        ('secret', 0),  # Secrets
+        ('api_key', 0),  # API keys
+        ('token', 0),  # Tokens
+    ]
+    
+    def filter(self, record):
+        if hasattr(record, 'msg') and isinstance(record.msg, str):
+            msg = record.msg
+            for pattern, chars_to_show in self.SENSITIVE_PATTERNS:
+                if pattern.lower() in msg.lower():
+                    # Redact sensitive values
+                    import re
+                    # Redact values after = or : 
+                    msg = re.sub(
+                        rf'({pattern}[=:\s]*)[^\s,\]}}]+',
+                        rf'\1[REDACTED]',
+                        msg,
+                        flags=re.IGNORECASE
+                    )
+            record.msg = msg
+        return True
+
+# Create handler with filter
+handler = logging.StreamHandler(sys.stdout)
+handler.addFilter(SensitiveDataFilter())
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ],
+    handlers=[handler],
     force=True
 )
 logger = logging.getLogger("settings")

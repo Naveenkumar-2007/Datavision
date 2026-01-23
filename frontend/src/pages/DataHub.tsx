@@ -1063,8 +1063,8 @@ const DataHub: React.FC = () => {
                 </p>
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                   {ultraMode
-                    ? '⏱️ Ultra mode: 2-10 minutes for maximum accuracy.'
-                    : '⏱️ Fast mode: 30-60 seconds for quick results.'
+                    ? '⏱️ Ultra mode: ~15-20 minutes for maximum accuracy.'
+                    : '⏱️ Fast mode: ~3 minutes for quick results.'
                   }
                 </p>
               </div>

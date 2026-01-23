@@ -2,10 +2,18 @@
 Core LLM module for DataVision
 Handles all interaction with Large Language Models
 Enterprise-grade error handling and logging
+SECURED: AI security filter for prompt injection protection
 """
 import logging
 from typing import List, Dict, Any, Optional, Union
 import os
+
+# 🔒 SECURITY: Import AI security filter
+try:
+    from core.ai_security import get_ai_security_filter, sanitize_user_input
+    AI_SECURITY_AVAILABLE = True
+except ImportError:
+    AI_SECURITY_AVAILABLE = False
 
 # Try importing litellm, handle if missing or broken
 LITELLM_AVAILABLE = False
@@ -160,6 +168,7 @@ def chat(
     """
     Send chat to LLM and get response.
     Uses Groq as primary with automatic Gemini fallback.
+    SECURED: Applies AI security filter to prevent prompt injection.
     
     Args:
         messages: List of message dicts (role, content) OR single string prompt
@@ -175,6 +184,11 @@ def chat(
         logger.error("LiteLLM not installed. Please install: pip install litellm")
         return "Error: LLM driver (LiteLLM) missing."
 
+    # 🔒 SECURITY: Apply AI security filter to user input
+    ai_filter = None
+    if AI_SECURITY_AVAILABLE:
+        ai_filter = get_ai_security_filter()
+    
     # Prepare messages
     final_messages = []
     
@@ -184,9 +198,23 @@ def chat(
         
     # Handle input: If string, convert to user message
     if isinstance(messages, str):
-        final_messages.append({"role": "user", "content": messages})
+        # 🔒 SECURITY: Sanitize user input
+        safe_message = messages
+        if ai_filter:
+            safe_message, was_suspicious, pattern = ai_filter.filter_input(messages)
+            if was_suspicious:
+                logger.warning(f"Prompt injection attempt detected: {pattern}")
+        final_messages.append({"role": "user", "content": safe_message})
     else:
-        final_messages.extend(messages)
+        # 🔒 SECURITY: Sanitize each user message in the list
+        for msg in messages:
+            if msg.get("role") == "user" and ai_filter:
+                safe_content, was_suspicious, pattern = ai_filter.filter_input(msg.get("content", ""))
+                if was_suspicious:
+                    logger.warning(f"Prompt injection attempt detected: {pattern}")
+                final_messages.append({"role": msg["role"], "content": safe_content})
+            else:
+                final_messages.append(msg)
     
     # =========================================================================
     # ☁️ GROQ FIRST - Fast cloud AI (openai/gpt-oss-120b)
@@ -221,7 +249,12 @@ def chat(
                         api_key=api_key # 🔑 Explicitly pass key
                     )
                     logger.info(f"✅ Success with: {primary_model}")
-                    return response.choices[0].message.content
+                    
+                    # 🔒 SECURITY: Filter output to remove any leaked sensitive data
+                    result = response.choices[0].message.content
+                    if ai_filter:
+                        result = ai_filter.filter_output(result)
+                    return result
                 except Exception as e:
                     # Reraise immediately if it's an auth error (no point retrying same key)
                     error_str = str(e).lower()

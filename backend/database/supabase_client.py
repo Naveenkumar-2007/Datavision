@@ -11,10 +11,14 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Supabase configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://cooutbyxchcrhdfinvnl.supabase.co")
+# Supabase configuration - MUST be set via environment variables
+SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+# Validate required configuration
+if not SUPABASE_URL:
+    print("⚠️ CRITICAL: SUPABASE_URL not configured. Set in environment variables.")
 
 # Singleton clients
 _supabase_client: Optional[Client] = None

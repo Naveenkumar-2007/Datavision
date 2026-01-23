@@ -13,6 +13,8 @@ from pathlib import Path
 import shutil
 import traceback
 from datetime import datetime
+import re
+import os
 
 from ingestion.pipeline import IngestionPipeline
 from config.settings import Settings
@@ -32,6 +34,68 @@ except ImportError:
     def get_user_id_from_headers(*args, **kwargs): return None  # Return None to preserve URL user_id
 
 router = APIRouter()
+
+# ============================================
+# SECURITY: File Upload Validation
+# ============================================
+# Allowed file extensions (whitelist approach)
+ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls', '.json', '.pdf', '.docx', '.doc', '.txt', '.png', '.jpg', '.jpeg'}
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB max
+MAX_FILENAME_LENGTH = 255
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitize filename to prevent path traversal attacks.
+    - Remove path separators
+    - Remove null bytes
+    - Limit length
+    - Only allow safe characters
+    """
+    if not filename:
+        raise HTTPException(status_code=400, detail="Filename cannot be empty")
+    
+    # Remove path separators and parent directory references
+    filename = os.path.basename(filename)
+    filename = filename.replace('..', '')
+    filename = filename.replace('\x00', '')  # Remove null bytes
+    
+    # Remove any remaining path separators
+    filename = re.sub(r'[/\\]', '', filename)
+    
+    # Limit filename length
+    if len(filename) > MAX_FILENAME_LENGTH:
+        name, ext = os.path.splitext(filename)
+        filename = name[:MAX_FILENAME_LENGTH - len(ext)] + ext
+    
+    # Ensure filename is not empty after sanitization
+    if not filename or filename in ('.', '..'):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    
+    return filename
+
+def validate_file(file: UploadFile) -> None:
+    """Validate uploaded file for security"""
+    # Sanitize and validate filename
+    sanitized_name = sanitize_filename(file.filename)
+    
+    # Check file extension (whitelist)
+    ext = os.path.splitext(sanitized_name)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File type '{ext}' not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+    
+    # Update filename with sanitized version
+    file.filename = sanitized_name
+
+def validate_user_id(user_id: str) -> str:
+    """Validate user_id to prevent path traversal"""
+    if not user_id or not re.match(r'^[a-zA-Z0-9_-]+$', user_id):
+        raise HTTPException(status_code=400, detail="Invalid user ID format")
+    if '..' in user_id or '/' in user_id or '\\' in user_id:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+    return user_id
 
 # ============================================
 # UPLOAD CANCELLATION STATE MANAGEMENT
@@ -83,9 +147,16 @@ async def upload_files(
     SECURED: Validates user identity from JWT token
     CANCELLABLE: Stops processing if client disconnects or cancel is requested
     """
+    # SECURITY: Validate user_id to prevent path traversal
+    user_id = validate_user_id(user_id)
+    
     # Get the actual user_id first for cancellation checks
     authenticated_user = get_user_id_from_headers(x_user_id, authorization)
     actual_user_id = authenticated_user if authenticated_user else user_id
+    
+    # SECURITY: Validate authenticated user_id as well
+    if actual_user_id:
+        actual_user_id = validate_user_id(actual_user_id)
     
     # Clear any previous cancellation flag at the start
     clear_cancellation(actual_user_id)
@@ -133,6 +204,9 @@ async def upload_files(
         
         # Save uploaded files
         for file in files:
+            # SECURITY: Validate each uploaded file
+            validate_file(file)
+            
             # Check cancellation for each file
             if await is_cancelled():
                 print(f"🛑 Upload cancelled by client during file save ({file.filename})")

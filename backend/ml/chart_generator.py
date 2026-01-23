@@ -1063,3 +1063,439 @@ def generate_boxplot_grid(df: pd.DataFrame, title: str = "Feature Box Plots") ->
     except Exception as e:
         logger.warning(f"Boxplot grid error: {e}")
         return None
+
+
+# =============================================================================
+# 🌟 ULTRA MODE ADVANCED CHARTS (Premium Visualizations)
+# =============================================================================
+# These charts are ONLY generated in Ultra mode for advanced insights
+
+# Premium Ultra Color Palette - Rich Gradients
+ULTRA_COLORS = {
+    'primary': ['#667eea', '#764ba2'],      # Purple Gradient
+    'success': ['#11998e', '#38ef7d'],      # Green Gradient  
+    'warning': ['#f093fb', '#f5576c'],      # Pink Gradient
+    'info': ['#4facfe', '#00f2fe'],         # Blue Gradient
+    'danger': ['#ff416c', '#ff4b2b'],       # Red Gradient
+    'premium': ['#c471f5', '#fa71cd'],      # Premium Pink
+    'gold': ['#f7971e', '#ffd200'],         # Gold Gradient
+    'ocean': ['#2193b0', '#6dd5ed'],        # Ocean Blue
+}
+
+ULTRA_PALETTE = [
+    '#667eea', '#11998e', '#f093fb', '#4facfe', '#ff416c',
+    '#c471f5', '#f7971e', '#2193b0', '#764ba2', '#38ef7d'
+]
+
+
+def generate_ultra_charts(
+    task_type: str,
+    y_test: np.ndarray,
+    y_pred: np.ndarray,
+    y_proba: Optional[np.ndarray] = None,
+    feature_importance: Optional[List[Dict]] = None,
+    leaderboard: Optional[List[Dict]] = None,
+    model_name: str = "Model",
+    X_test: Optional[np.ndarray] = None,
+    cv_scores: Optional[List[float]] = None
+) -> Dict[str, str]:
+    """
+    🌟 ULTRA MODE ADVANCED CHARTS
+    
+    Generates premium visualizations with advanced analytics:
+    1. Learning Curve Analysis
+    2. Performance Radar Chart
+    3. Model Reliability Analysis
+    4. Cross-Validation Stability
+    5. Prediction Density Plot
+    6. SHAP-style Feature Importance
+    7. Performance Dashboard
+    8. Threshold Analysis (Classification)
+    """
+    charts = {}
+    
+    try:
+        y_test = np.array(y_test).flatten()
+        y_pred = np.array(y_pred).flatten()
+        
+        task_lower = task_type.lower()
+        is_classification = 'classification' in task_lower or 'nlp' in task_lower
+        
+        # 1. PERFORMANCE RADAR CHART (Multi-metric visualization)
+        if is_classification:
+            try:
+                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+                
+                accuracy = accuracy_score(y_test, y_pred)
+                precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+                recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+                f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+                
+                # Calculate specificity (TN / (TN + FP)) for binary
+                n_classes = len(np.unique(y_test))
+                if n_classes == 2:
+                    from sklearn.metrics import confusion_matrix
+                    cm = confusion_matrix(y_test, y_pred)
+                    specificity = cm[0,0] / (cm[0,0] + cm[0,1]) if (cm[0,0] + cm[0,1]) > 0 else 0
+                else:
+                    specificity = recall  # Use recall as proxy for multi-class
+                
+                metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'Specificity']
+                values = [accuracy, precision, recall, f1, specificity]
+                
+                # Radar chart
+                fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
+                
+                angles = np.linspace(0, 2 * np.pi, len(metrics), endpoint=False).tolist()
+                values_plot = values + [values[0]]  # Close the polygon
+                angles += angles[:1]
+                
+                ax.fill(angles, values_plot, color=ULTRA_PALETTE[0], alpha=0.25)
+                ax.plot(angles, values_plot, color=ULTRA_PALETTE[0], linewidth=2, marker='o', markersize=8)
+                
+                ax.set_xticks(angles[:-1])
+                ax.set_xticklabels(metrics, size=11, color='#333333')
+                ax.set_ylim(0, 1)
+                ax.set_title(f'🎯 Performance Radar - {model_name}', size=14, y=1.1, color='#333333')
+                
+                # Add value annotations
+                for angle, value, metric in zip(angles[:-1], values, metrics):
+                    ax.annotate(f'{value:.2f}', xy=(angle, value), xytext=(angle, value + 0.1),
+                               ha='center', fontsize=9, color=ULTRA_PALETTE[0], fontweight='bold')
+                
+                charts['ultra_performance_radar'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Performance radar error: {e}")
+        
+        # 2. MODEL RELIABILITY / CALIBRATION ANALYSIS
+        if is_classification and y_proba is not None:
+            try:
+                fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+                
+                # Left: Reliability diagram with confidence intervals
+                ax1 = axes[0]
+                n_classes = len(np.unique(y_test))
+                
+                if n_classes == 2 and len(y_proba.shape) > 1:
+                    prob = y_proba[:, 1]
+                    
+                    # Binned reliability
+                    n_bins = 10
+                    bins = np.linspace(0, 1, n_bins + 1)
+                    bin_indices = np.digitize(prob, bins) - 1
+                    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+                    
+                    bin_accuracy = []
+                    bin_confidence = []
+                    bin_counts = []
+                    
+                    for i in range(n_bins):
+                        mask = bin_indices == i
+                        if mask.sum() > 0:
+                            bin_accuracy.append(y_test[mask].mean())
+                            bin_confidence.append(prob[mask].mean())
+                            bin_counts.append(mask.sum())
+                        else:
+                            bin_accuracy.append(np.nan)
+                            bin_confidence.append((bins[i] + bins[i+1]) / 2)
+                            bin_counts.append(0)
+                    
+                    # Plot with gradient bars
+                    bar_colors = plt.cm.coolwarm(np.array(bin_accuracy))
+                    ax1.bar(range(n_bins), bin_accuracy, color=bar_colors, edgecolor='white', alpha=0.8)
+                    ax1.plot(range(n_bins), bin_confidence, 'k--', lw=2, label='Perfect Calibration')
+                    ax1.set_xticks(range(n_bins))
+                    ax1.set_xticklabels([f'{bins[i]:.1f}-{bins[i+1]:.1f}' for i in range(n_bins)], rotation=45, ha='right')
+                    ax1.set_xlabel('Predicted Probability Bin', fontsize=11)
+                    ax1.set_ylabel('Actual Accuracy', fontsize=11)
+                    ax1.set_title('📊 Calibration Analysis', fontsize=13, color='#333333')
+                    ax1.legend()
+                    ax1.set_ylim(0, 1)
+                
+                # Right: Confidence vs Accuracy scatter
+                ax2 = axes[1]
+                max_proba = np.max(y_proba, axis=1) if len(y_proba.shape) > 1 else y_proba
+                correct = (y_pred == y_test).astype(int)
+                
+                # Hexbin for density
+                hb = ax2.hexbin(max_proba, correct, gridsize=20, cmap='YlGnBu', mincnt=1)
+                plt.colorbar(hb, ax=ax2, label='Count')
+                ax2.set_xlabel('Prediction Confidence', fontsize=11)
+                ax2.set_ylabel('Correct (1) / Incorrect (0)', fontsize=11)
+                ax2.set_title('🎯 Confidence vs Correctness', fontsize=13, color='#333333')
+                
+                plt.tight_layout()
+                charts['ultra_model_reliability'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Model reliability error: {e}")
+        
+        # 3. CROSS-VALIDATION STABILITY (if cv_scores provided)
+        if cv_scores and len(cv_scores) > 1:
+            try:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                folds = range(1, len(cv_scores) + 1)
+                mean_score = np.mean(cv_scores)
+                std_score = np.std(cv_scores)
+                
+                # Gradient bars
+                colors = plt.cm.viridis(np.linspace(0.3, 0.9, len(cv_scores)))
+                bars = ax.bar(folds, cv_scores, color=colors, edgecolor='white', linewidth=1.5)
+                
+                # Mean line
+                ax.axhline(mean_score, color='#ff416c', linestyle='--', linewidth=2, 
+                          label=f'Mean: {mean_score:.4f}')
+                ax.fill_between([0.5, len(cv_scores) + 0.5], mean_score - std_score, mean_score + std_score,
+                               alpha=0.2, color='#ff416c', label=f'±1 Std: {std_score:.4f}')
+                
+                ax.set_xlabel('Fold', fontsize=12)
+                ax.set_ylabel('Score', fontsize=12)
+                ax.set_title(f'📈 Cross-Validation Stability - {model_name}', fontsize=14, color='#333333')
+                ax.set_xticks(folds)
+                ax.legend()
+                
+                # Add value labels
+                for bar, score in zip(bars, cv_scores):
+                    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+                           f'{score:.3f}', ha='center', fontsize=9, fontweight='bold')
+                
+                charts['ultra_cv_stability'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"CV stability error: {e}")
+        
+        # 4. PREDICTION DENSITY / JOINTPLOT
+        try:
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            if is_classification and y_proba is not None and len(y_proba.shape) > 1:
+                # For classification: confidence heatmap
+                max_proba = np.max(y_proba, axis=1)
+                
+                # KDE density
+                from scipy.stats import gaussian_kde
+                xy = np.vstack([y_test, max_proba])
+                try:
+                    z = gaussian_kde(xy)(xy)
+                    scatter = ax.scatter(y_test, max_proba, c=z, s=50, cmap='plasma', alpha=0.7)
+                    plt.colorbar(scatter, ax=ax, label='Density')
+                except:
+                    scatter = ax.scatter(y_test, max_proba, c=ULTRA_PALETTE[0], s=50, alpha=0.6)
+                
+                ax.set_xlabel('Actual Class', fontsize=12)
+                ax.set_ylabel('Prediction Confidence', fontsize=12)
+                ax.set_title(f'🌈 Prediction Density - {model_name}', fontsize=14, color='#333333')
+            else:
+                # For regression: actual vs predicted density
+                from scipy.stats import gaussian_kde
+                xy = np.vstack([y_test, y_pred])
+                try:
+                    z = gaussian_kde(xy)(xy)
+                    scatter = ax.scatter(y_test, y_pred, c=z, s=50, cmap='viridis', alpha=0.7)
+                    plt.colorbar(scatter, ax=ax, label='Density')
+                except:
+                    scatter = ax.scatter(y_test, y_pred, c=ULTRA_PALETTE[1], s=50, alpha=0.6)
+                
+                # Perfect line
+                min_v, max_v = min(y_test.min(), y_pred.min()), max(y_test.max(), y_pred.max())
+                ax.plot([min_v, max_v], [min_v, max_v], 'r--', lw=2, label='Perfect')
+                ax.legend()
+                ax.set_xlabel('Actual Value', fontsize=12)
+                ax.set_ylabel('Predicted Value', fontsize=12)
+                ax.set_title(f'🌈 Prediction Density - {model_name}', fontsize=14, color='#333333')
+            
+            charts['ultra_prediction_density'] = _fig_to_base64(fig)
+        except Exception as e:
+            logger.warning(f"Prediction density error: {e}")
+        
+        # 5. SHAP-STYLE FEATURE IMPORTANCE (Premium visualization)
+        if feature_importance and len(feature_importance) > 0:
+            try:
+                fig, ax = plt.subplots(figsize=(12, 8))
+                
+                top_n = min(15, len(feature_importance))
+                features = feature_importance[:top_n]
+                names = [f.get('feature', f"Feat {i}")[:30] for i, f in enumerate(features)]
+                values = [f.get('importance', 0) * 100 for f in features]
+                
+                # Reverse for horizontal bar (top feature at top)
+                names = names[::-1]
+                values = values[::-1]
+                
+                # Gradient colors based on importance
+                colors = plt.cm.plasma(np.linspace(0.2, 0.8, len(names)))[::-1]
+                
+                bars = ax.barh(range(len(names)), values, color=colors, 
+                              edgecolor='white', linewidth=0.5, height=0.7)
+                
+                # Add lollipop markers
+                for i, (bar, val) in enumerate(zip(bars, values)):
+                    ax.scatter(val, i, s=100, color=colors[i], zorder=5, edgecolors='white', linewidths=2)
+                    ax.text(val + max(values)*0.02, i, f'{val:.1f}%', va='center', fontsize=10, fontweight='bold')
+                
+                ax.set_yticks(range(len(names)))
+                ax.set_yticklabels(names, fontsize=10)
+                ax.set_xlabel('Importance (%)', fontsize=12)
+                ax.set_title(f'🎨 Feature Importance (Premium) - {model_name}', fontsize=14, color='#333333', pad=15)
+                ax.set_xlim(0, max(values) * 1.2)
+                
+                # Add gradient background
+                ax.axvspan(0, max(values) * 0.33, alpha=0.1, color='green')
+                ax.axvspan(max(values) * 0.33, max(values) * 0.66, alpha=0.1, color='yellow')
+                ax.axvspan(max(values) * 0.66, max(values) * 1.2, alpha=0.1, color='red')
+                
+                plt.tight_layout()
+                charts['ultra_feature_importance'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"SHAP-style importance error: {e}")
+        
+        # 6. MODEL COMPARISON DASHBOARD (if leaderboard provided)
+        if leaderboard and len(leaderboard) > 1:
+            try:
+                fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+                
+                # Get model names and metrics
+                models = [m.get('name', f"Model {i}")[:15] for i, m in enumerate(leaderboard[:8])]
+                
+                # Get different metrics
+                scores = [m.get('score', 0) for m in leaderboard[:8]]
+                accuracies = [m.get('metrics', {}).get('accuracy', 0) for m in leaderboard[:8]]
+                f1_scores = [m.get('metrics', {}).get('f1', 0) for m in leaderboard[:8]]
+                
+                # Top-left: Primary Score
+                ax1 = axes[0, 0]
+                colors1 = plt.cm.coolwarm(np.linspace(0.2, 0.8, len(models)))
+                bars1 = ax1.barh(models, scores, color=colors1, edgecolor='white')
+                ax1.set_xlabel('Score')
+                ax1.set_title('🏆 Model Scores', fontsize=12, color='#333333')
+                for bar, score in zip(bars1, scores):
+                    ax1.text(bar.get_width() + 0.01, bar.get_y() + bar.get_height()/2,
+                            f'{score:.3f}', va='center', fontsize=9)
+                
+                # Top-right: Accuracy
+                ax2 = axes[0, 1]
+                colors2 = plt.cm.viridis(np.linspace(0.2, 0.8, len(models)))
+                bars2 = ax2.barh(models, accuracies, color=colors2, edgecolor='white')
+                ax2.set_xlabel('Accuracy')
+                ax2.set_title('📊 Accuracy Comparison', fontsize=12, color='#333333')
+                
+                # Bottom-left: F1 Score
+                ax3 = axes[1, 0]
+                colors3 = plt.cm.plasma(np.linspace(0.2, 0.8, len(models)))
+                bars3 = ax3.barh(models, f1_scores, color=colors3, edgecolor='white')
+                ax3.set_xlabel('F1 Score')
+                ax3.set_title('🎯 F1 Score Comparison', fontsize=12, color='#333333')
+                
+                # Bottom-right: Performance ranking
+                ax4 = axes[1, 1]
+                rankings = list(range(1, len(models) + 1))
+                scatter = ax4.scatter(scores, f1_scores, c=rankings, s=200, 
+                                     cmap='RdYlGn_r', edgecolors='white', linewidths=2)
+                for i, model in enumerate(models):
+                    ax4.annotate(model, (scores[i], f1_scores[i]), 
+                               xytext=(5, 5), textcoords='offset points', fontsize=8)
+                ax4.set_xlabel('Score')
+                ax4.set_ylabel('F1 Score')
+                ax4.set_title('📈 Score vs F1 Trade-off', fontsize=12, color='#333333')
+                plt.colorbar(scatter, ax=ax4, label='Rank')
+                
+                fig.suptitle(f'🌟 ULTRA Model Comparison Dashboard', fontsize=16, y=1.02, color='#333333')
+                plt.tight_layout()
+                
+                charts['ultra_model_dashboard'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Model dashboard error: {e}")
+        
+        # 7. THRESHOLD ANALYSIS (Binary Classification)
+        if is_classification and y_proba is not None:
+            n_classes = len(np.unique(y_test))
+            if n_classes == 2 and len(y_proba.shape) > 1:
+                try:
+                    from sklearn.metrics import precision_score, recall_score, f1_score as f1_metric
+                    
+                    fig, ax = plt.subplots(figsize=(10, 6))
+                    
+                    probs = y_proba[:, 1]
+                    thresholds = np.linspace(0.1, 0.9, 17)
+                    
+                    precisions = []
+                    recalls = []
+                    f1s = []
+                    
+                    for thresh in thresholds:
+                        pred_thresh = (probs >= thresh).astype(int)
+                        precisions.append(precision_score(y_test, pred_thresh, zero_division=0))
+                        recalls.append(recall_score(y_test, pred_thresh, zero_division=0))
+                        f1s.append(f1_metric(y_test, pred_thresh, zero_division=0))
+                    
+                    ax.plot(thresholds, precisions, 'o-', color=ULTRA_PALETTE[0], lw=2, label='Precision', markersize=6)
+                    ax.plot(thresholds, recalls, 's-', color=ULTRA_PALETTE[1], lw=2, label='Recall', markersize=6)
+                    ax.plot(thresholds, f1s, '^-', color=ULTRA_PALETTE[4], lw=2, label='F1-Score', markersize=6)
+                    
+                    # Mark optimal F1 threshold
+                    best_idx = np.argmax(f1s)
+                    ax.axvline(thresholds[best_idx], color='gray', linestyle='--', alpha=0.7)
+                    ax.scatter([thresholds[best_idx]], [f1s[best_idx]], s=200, color='gold', 
+                              edgecolors='black', linewidths=2, zorder=5, label=f'Optimal: {thresholds[best_idx]:.2f}')
+                    
+                    ax.set_xlabel('Classification Threshold', fontsize=12)
+                    ax.set_ylabel('Score', fontsize=12)
+                    ax.set_title(f'🔧 Threshold Analysis - {model_name}', fontsize=14, color='#333333')
+                    ax.legend(loc='best')
+                    ax.set_xlim(0, 1)
+                    ax.set_ylim(0, 1.05)
+                    ax.grid(True, alpha=0.3)
+                    
+                    charts['ultra_threshold_analysis'] = _fig_to_base64(fig)
+                except Exception as e:
+                    logger.warning(f"Threshold analysis error: {e}")
+        
+        # 8. ERROR DISTRIBUTION VIOLIN (Regression)
+        if not is_classification:
+            try:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                errors = y_pred - y_test
+                abs_errors = np.abs(errors)
+                
+                # Create quartile groups
+                quartiles = np.percentile(y_test, [25, 50, 75])
+                groups = []
+                group_labels = []
+                
+                masks = [
+                    y_test <= quartiles[0],
+                    (y_test > quartiles[0]) & (y_test <= quartiles[1]),
+                    (y_test > quartiles[1]) & (y_test <= quartiles[2]),
+                    y_test > quartiles[2]
+                ]
+                
+                for i, mask in enumerate(masks):
+                    if mask.sum() > 0:
+                        groups.append(errors[mask])
+                        group_labels.append(f'Q{i+1}')
+                
+                parts = ax.violinplot(groups, positions=range(len(groups)), showmeans=True, showmedians=True)
+                
+                for i, pc in enumerate(parts['bodies']):
+                    pc.set_facecolor(ULTRA_PALETTE[i % len(ULTRA_PALETTE)])
+                    pc.set_alpha(0.7)
+                
+                ax.set_xticks(range(len(group_labels)))
+                ax.set_xticklabels(group_labels)
+                ax.axhline(0, color='red', linestyle='--', alpha=0.5)
+                ax.set_xlabel('Target Quartile', fontsize=12)
+                ax.set_ylabel('Prediction Error', fontsize=12)
+                ax.set_title(f'🎻 Error Distribution by Target Range - {model_name}', fontsize=14, color='#333333')
+                
+                charts['ultra_error_violin'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Error violin error: {e}")
+        
+        logger.info(f"✨ Generated {len(charts)} ULTRA charts: {list(charts.keys())}")
+        
+    except Exception as e:
+        logger.error(f"Ultra chart generation error: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return charts

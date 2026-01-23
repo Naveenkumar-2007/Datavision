@@ -7,6 +7,9 @@ from .dashboard_api import router as dashboard_router
 from .brain import router as brain_router
 from .datavision_api import router as datavision_router
 from .automl_api import router as automl_router
+from .data_health_api import router as data_health_router
+from .explainability_api import router as explainability_router
+from .playground_api import router as playground_router
 
 # Export all routers
 __all__ = [
@@ -19,4 +22,7 @@ __all__ = [
     "brain_router",
     "datavision_router",
     "automl_router",
+    "data_health_router",
+    "explainability_router",
+    "playground_router",
 ]

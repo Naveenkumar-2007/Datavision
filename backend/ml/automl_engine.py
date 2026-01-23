@@ -2760,31 +2760,30 @@ class ProductionMLEngine:
                 if box_chart:
                     charts['boxplot_grid'] = box_chart
             
-            # 🆕 ULTRA MODE: Premium Enterprise Charts ($5M Quality)
+            # 🆕 ULTRA MODE: Premium Enterprise Charts
             if mode == 'ultra':
                 try:
-                    from ml.ultra_chart_engine import generate_ultra_charts
+                    from ml.chart_generator import generate_ultra_charts
                     
                     ultra_charts = generate_ultra_charts(
-                        task_type=self.task_type_simple,
+                        task_type=self.task_type,
                         y_test=y_test,
                         y_pred=self._y_pred,
                         y_proba=y_proba,
-                        model_name=trainer.best_name,
-                        metrics=best_metrics,
-                        leaderboard=trainer.results,
                         feature_importance=self._get_importance(self.model),
-                        training_time=time.time() - start_time if 'start_time' in locals() else 0,
-                        n_models_tested=len(trainer.results),
-                        model=self.model,
-                        X_test=X_test
+                        leaderboard=trainer.results,
+                        model_name=trainer.best_name,
+                        X_test=X_test,
+                        cv_scores=None  # Could add if available
                     )
                     
                     # Merge ultra charts with standard charts
                     charts.update(ultra_charts)
-                    logger.info(f"   🎨 Ultra Charts: {list(ultra_charts.keys())}")
+                    logger.info(f"   🎨 Ultra Charts Generated: {list(ultra_charts.keys())}")
                 except Exception as ultra_err:
                     logger.warning(f"⚠️ Ultra chart error: {ultra_err}")
+                    import traceback
+                    traceback.print_exc()
                     
             print(f"📊 Generated {len(charts)} charts: {list(charts.keys())}")
             

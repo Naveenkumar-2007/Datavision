@@ -3,15 +3,32 @@ Real Chat with RAG/Graph routing - NO FAKE DATA
 Uses existing agents and router system
 With semantic caching for API cost savings
 SECURED: Uses JWT authentication for user isolation
+PROTECTED: Rate limiting and AI security enabled
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Header, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from pathlib import Path
 import traceback
 from datetime import datetime
 import json
+
+# 🔒 SECURITY: Import rate limiter
+try:
+    from core.rate_limiter import check_rate_limit
+    RATE_LIMITER_AVAILABLE = True
+except ImportError:
+    RATE_LIMITER_AVAILABLE = False
+    print("⚠️ Rate limiter not available")
+
+# 🔒 SECURITY: Import AI security filter
+try:
+    from core.ai_security import get_ai_security_filter, detect_prompt_injection
+    AI_SECURITY_AVAILABLE = True
+except ImportError:
+    AI_SECURITY_AVAILABLE = False
+    print("⚠️ AI security filter not available")
 
 from agents.router import route_question
 from vector.store_faiss import FaissStore
@@ -1827,14 +1844,22 @@ async def stream_message(
     )
 @router.post("/message", response_model=ChatResponse)
 async def send_message(
+    http_request: Request,  # For rate limiting
     request: ChatRequest,
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
     authorization: Optional[str] = Header(None, alias="Authorization")
 ):
     """Send message - REAL RAG/Graph response with file comparison and memory
     SECURED: Uses JWT-based user identification for data isolation
+    PROTECTED: Rate limiting and prompt injection detection
     """
     try:
+        # 🔒 SECURITY: Rate limiting check
+        if RATE_LIMITER_AVAILABLE:
+            # Extract user for rate limiting (use IP if not authenticated yet)
+            temp_user_id = x_user_id or "anonymous"
+            await check_rate_limit(http_request, "chat", temp_user_id)
+        
         # SECURITY: Get user_id from authentication headers
         # Priority: 1. JWT token (most secure), 2. X-User-ID header, 3. request body (legacy)
         user_id = None
@@ -1869,6 +1894,14 @@ async def send_message(
         mode = request.mode
         conversation_id = request.conversationId or f"conv_{int(datetime.now().timestamp())}"
         compare_files = request.compareFiles
+        
+        # 🔒 SECURITY: Check for prompt injection attacks
+        if AI_SECURITY_AVAILABLE:
+            is_suspicious, detected_pattern = detect_prompt_injection(query)
+            if is_suspicious:
+                print(f"⚠️ SECURITY: Potential prompt injection detected from user {user_id}: {detected_pattern}")
+                # Log but don't block - let AI security filter handle it in llm.py
+                # This provides defense in depth
         
         # =====================================================================
         # USER SELECTED MODE/MODEL - Respect user's choice
