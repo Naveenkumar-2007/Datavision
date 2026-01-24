@@ -23,7 +23,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy pre-built frontend (built locally, committed to repo)
-COPY frontend/dist /app/static
+COPY frontend/dist /app/backend/static
 
 # Copy backend source files
 COPY backend/ backend/
@@ -31,7 +31,7 @@ COPY backend/ backend/
 # Create storage directories with proper ownership
 # SECURITY: Use 755 (rwxr-xr-x) instead of 777
 RUN mkdir -p /app/storage /app/backend/storage && \
-    chown -R appuser:appuser /app/storage /app/backend/storage /app/static && \
+    chown -R appuser:appuser /app/storage /app/backend/storage /app/backend/static && \
     chmod -R 755 /app/storage /app/backend/storage
 
 # Set ownership of entire app directory to non-root user
