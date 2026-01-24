@@ -11,7 +11,8 @@ Automatically detects:
 Generates dynamic reports based on actual data structure!
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from api.deps import get_current_user_id
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import traceback
@@ -2517,10 +2518,14 @@ def get_user_currency(user_id: str, df: pd.DataFrame = None) -> str:
 # ==========================================
 
 @router.post("/generate")
-async def generate_report(request: ReportRequest):
+async def generate_report(
+    request: ReportRequest,
+    user_id: str = Depends(get_current_user_id)
+):
     """Generate INTELLIGENT report with LLM insights and ML charts - works with ANY dataset."""
     try:
-        user_id = request.userId
+        # Ignore request.userId from body, use secure header
+        # user_id = request.userId 
         report_type = request.reportType
         
         # === USE NEW DYNAMIC REPORT GENERATOR WITH LLM ===
@@ -2585,8 +2590,14 @@ async def generate_report(request: ReportRequest):
 
 
 @router.get("/list/{user_id}")
-async def list_reports(user_id: str):
+async def list_reports(
+    user_id: str,
+    current_user_id: str = Depends(get_current_user_id)
+):
     """List available reports with dynamic naming based on data."""
+    if user_id != current_user_id:
+        raise HTTPException(status_code=403, detail="Unauthorized access to another user's reports")
+        
     try:
         paths = get_user_paths(user_id)
         Settings.GRAPH_DIR = paths["graph"]

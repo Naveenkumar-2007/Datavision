@@ -6,7 +6,8 @@ SECURED: Uses JWT authentication for user isolation
 PROTECTED: Rate limiting and AI security enabled
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Header, Request
+from fastapi import APIRouter, HTTPException, Depends, Header, Request, status
+from api.deps import get_current_user_id
 from pydantic import BaseModel
 from typing import List, Optional
 from pathlib import Path
@@ -1774,8 +1775,7 @@ async def stream_openrouter_response(
 @router.post("/stream")
 async def stream_message(
     request: StreamingChatRequest,
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
-    authorization: Optional[str] = Header(None, alias="Authorization")
+    user_id: str = Depends(get_current_user_id)
 ):
     """
     Stream chat response in real-time (like ChatGPT).
@@ -1785,10 +1785,10 @@ async def stream_message(
     """
     import os
     
-    # Get user_id
-    user_id = request.userId or request.user_id or x_user_id
+    # Get user_id (Already validated by Depends)
+    # user_id = request.userId or request.user_id or x_user_id (REMOVED insecure fallback)
     if not user_id:
-        user_id = "default_user"
+        user_id = "default_user" # Should not happen with Depends
     
     query = request.message.strip()
     
@@ -1844,47 +1844,22 @@ async def stream_message(
     )
 @router.post("/message", response_model=ChatResponse)
 async def send_message(
-    http_request: Request,  # For rate limiting
+    http_request: Request,
     request: ChatRequest,
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
-    authorization: Optional[str] = Header(None, alias="Authorization")
+    user_id: str = Depends(get_current_user_id)
 ):
     """Send message - REAL RAG/Graph response with file comparison and memory
     SECURED: Uses JWT-based user identification for data isolation
     PROTECTED: Rate limiting and prompt injection detection
     """
     try:
-        # 🔒 SECURITY: Rate limiting check
+        # 🔒 SECURITY: Rate limiting check uses authenticated user_id
         if RATE_LIMITER_AVAILABLE:
-            # Extract user for rate limiting (use IP if not authenticated yet)
-            temp_user_id = x_user_id or "anonymous"
-            await check_rate_limit(http_request, "chat", temp_user_id)
+            await check_rate_limit(http_request, "chat", user_id)
         
-        # SECURITY: Get user_id from authentication headers
-        # Priority: 1. JWT token (most secure), 2. X-User-ID header, 3. request body (legacy)
-        user_id = None
-        
-        # Try to extract from JWT token first
-        if authorization and authorization.startswith("Bearer "):
-            try:
-                from database.auth import decode_jwt
-                token = authorization.split(" ")[1]
-                payload = decode_jwt(token)
-                user_id = payload.get("sub")  # Subject is user ID
-                print(f"🔐 Authenticated user from JWT: {user_id}")
-            except Exception as e:
-                print(f"⚠️ JWT decode error: {e}")
-        
-        # Fallback to X-User-ID header (for authenticated requests)
-        if not user_id and x_user_id:
-            user_id = x_user_id
-            print(f"🔐 User from X-User-ID header: {user_id}")
-        
-        # Final fallback to request body (legacy support)
-        if not user_id:
-            user_id = request.userId or request.user_id
-            if user_id:
-                print(f"⚠️ Using legacy user_id from request body: {user_id}")
+        # USER ID is now guaranteed by Depends(get_current_user_id)
+        # Removed vulnerable fallback to request.userId
+
         
         # Require authentication
         if not user_id:
