@@ -151,7 +151,8 @@ logger.info("✅ Explainability API loaded")
 from fastapi.responses import FileResponse
 
 # Frontend static directory (pre-built React app)
-frontend_static_dir = "/app/static"
+# Works for Docker (/app/backend/static) and Local (via relative path)
+frontend_static_dir = os.path.join(os.path.dirname(__file__), "static")
 
 @app.get("/api")
 async def api_info():
