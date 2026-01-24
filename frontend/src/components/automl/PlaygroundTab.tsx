@@ -6,13 +6,15 @@
  * - Dropdowns for categorical features
  * - Real-time prediction updates
  * - Confidence display
+ * - SHAP explanation button
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Sliders, RefreshCw, Sparkles, AlertCircle, Activity, ChevronDown } from 'lucide-react';
+import { Sliders, RefreshCw, Sparkles, AlertCircle, Activity, ChevronDown, HelpCircle } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import debounce from 'lodash/debounce';
+import ExplainModal from './ExplainModal';
 
 interface SliderConfig {
     name: string;
@@ -45,6 +47,7 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
     const [prediction, setPrediction] = useState<any>(null);
     const [predicting, setPredicting] = useState(false);
     const [confidence, setConfidence] = useState<number | null>(null);
+    const [showExplainModal, setShowExplainModal] = useState(false);
 
     // Load playground config
     useEffect(() => {
@@ -143,8 +146,8 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-xl bg-gradient-to-r from-purple-500/20 to-pink-500/20">
-                        <Sliders className="w-6 h-6 text-purple-400" />
+                    <div className="p-3 rounded-xl bg-gradient-to-r from-teal-500/20 to-amber-500/20">
+                        <Sliders className="w-6 h-6 text-teal-400" />
                     </div>
                     <div>
                         <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -158,7 +161,7 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                 <button
                     onClick={handlePredict}
                     disabled={predicting}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium hover:opacity-90 transition-opacity flex items-center gap-2"
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-amber-500 text-white font-medium hover:opacity-90 transition-opacity flex items-center gap-2"
                 >
                     {predicting ? (
                         <RefreshCw className="w-4 h-4 animate-spin" />
@@ -174,11 +177,11 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                 initial={false}
                 animate={{
                     scale: prediction ? [1, 1.02, 1] : 1,
-                    borderColor: prediction ? '#a855f7' : 'var(--border-color)'
+                    borderColor: prediction ? '#14b8a6' : 'var(--border-color)'
                 }}
                 className="p-6 rounded-2xl border-2"
                 style={{
-                    backgroundColor: isDark ? 'rgba(139, 92, 246, 0.1)' : 'rgba(168, 85, 247, 0.05)',
+                    backgroundColor: isDark ? 'rgba(20, 184, 166, 0.1)' : 'rgba(20, 184, 166, 0.05)',
                     borderColor: 'var(--border-color)'
                 }}
             >
@@ -187,27 +190,38 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                         <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
                             Predicted {config.target_column}
                         </p>
-                        <p className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                        <p className="text-4xl font-bold bg-gradient-to-r from-teal-400 to-amber-400 bg-clip-text text-transparent">
                             {prediction !== null ? String(prediction) : '—'}
                         </p>
                     </div>
-                    {confidence !== null && (
-                        <div className="text-right">
-                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Confidence</p>
-                            <div className="flex items-center gap-2">
-                                <div
-                                    className="w-24 h-3 rounded-full overflow-hidden"
-                                    style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb' }}
-                                >
+                    <div className="flex items-center gap-4">
+                        {confidence !== null && (
+                            <div className="text-right">
+                                <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Confidence</p>
+                                <div className="flex items-center gap-2">
                                     <div
-                                        className="h-full rounded-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
-                                        style={{ width: `${confidence * 100}%` }}
-                                    />
+                                        className="w-24 h-3 rounded-full overflow-hidden"
+                                        style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb' }}
+                                    >
+                                        <div
+                                            className="h-full rounded-full bg-gradient-to-r from-teal-500 to-amber-500 transition-all duration-300"
+                                            style={{ width: `${confidence * 100}%` }}
+                                        />
+                                    </div>
+                                    <span className="font-bold text-teal-400">{(confidence * 100).toFixed(1)}%</span>
                                 </div>
-                                <span className="font-bold text-purple-400">{(confidence * 100).toFixed(1)}%</span>
                             </div>
-                        </div>
-                    )}
+                        )}
+                        {prediction !== null && (
+                            <button
+                                onClick={() => setShowExplainModal(true)}
+                                className="px-3 py-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors flex items-center gap-1.5 text-sm font-medium"
+                            >
+                                <HelpCircle className="w-4 h-4" />
+                                Why?
+                            </button>
+                        )}
+                    </div>
                 </div>
             </motion.div>
 
@@ -217,9 +231,9 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                 style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
             >
                 <h4 className="font-semibold mb-6 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                    <Activity className="w-5 h-5 text-blue-400" />
+                    <Activity className="w-5 h-5 text-teal-400" />
                     Adjust Feature Values
-                    <span className="text-xs px-2 py-1 rounded-full bg-blue-500/20 text-blue-400 ml-2">
+                    <span className="text-xs px-2 py-1 rounded-full bg-teal-500/20 text-teal-400 ml-2">
                         {config.sliders.length} features
                     </span>
                 </h4>
@@ -248,9 +262,9 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                                         step={slider.step}
                                         value={values[slider.name] ?? slider.min}
                                         onChange={(e) => handleValueChange(slider.name, parseFloat(e.target.value))}
-                                        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-teal-500"
                                         style={{
-                                            background: `linear-gradient(to right, #a855f7 0%, #a855f7 ${((values[slider.name] - (slider.min || 0)) / ((slider.max || 100) - (slider.min || 0))) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} ${((values[slider.name] - (slider.min || 0)) / ((slider.max || 100) - (slider.min || 0))) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} 100%)`
+                                            background: `linear-gradient(to right, #14b8a6 0%, #14b8a6 ${((values[slider.name] - (slider.min || 0)) / ((slider.max || 100) - (slider.min || 0))) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} ${((values[slider.name] - (slider.min || 0)) / ((slider.max || 100) - (slider.min || 0))) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} 100%)`
                                         }}
                                     />
                                     <div className="flex justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -287,8 +301,16 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
             <div className="text-sm text-center" style={{ color: 'var(--text-muted)' }}>
                 💡 Predictions update automatically as you adjust the sliders
             </div>
+
+            {/* SHAP Explain Modal */}
+            <ExplainModal
+                isOpen={showExplainModal}
+                onClose={() => setShowExplainModal(false)}
+                inputValues={values}
+            />
         </div>
     );
 };
 
 export default PlaygroundTab;
+

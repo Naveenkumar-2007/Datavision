@@ -45,7 +45,7 @@ interface ExplainModalProps {
 
 const ExplainModal: React.FC<ExplainModalProps> = ({ isOpen, onClose, inputValues }) => {
     const { isDark } = useUserStore();
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);  // Start with loading=true
     const [explanation, setExplanation] = useState<ExplainResponse | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -55,6 +55,8 @@ const ExplainModal: React.FC<ExplainModalProps> = ({ isOpen, onClose, inputValue
             setError(null);
 
             const userId = localStorage.getItem('userId') || 'default';
+            console.log('[ExplainModal] Fetching explanation for:', inputValues);
+
             const response = await fetch('/api/v1/automl/explain', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -65,14 +67,16 @@ const ExplainModal: React.FC<ExplainModalProps> = ({ isOpen, onClose, inputValue
             });
 
             const data = await response.json();
+            console.log('[ExplainModal] Response:', data);
 
             if (response.ok && data.success) {
                 setExplanation(data);
             } else {
-                setError(data.detail || 'Explanation failed');
+                setError(data.detail || data.error || 'Explanation failed');
             }
-        } catch (err) {
-            setError('Failed to get explanation');
+        } catch (err: any) {
+            console.error('[ExplainModal] Error:', err);
+            setError(err.message || 'Failed to get explanation');
         } finally {
             setLoading(false);
         }
@@ -80,8 +84,17 @@ const ExplainModal: React.FC<ExplainModalProps> = ({ isOpen, onClose, inputValue
 
     // Fetch when modal opens
     React.useEffect(() => {
-        if (isOpen && Object.keys(inputValues).length > 0) {
-            fetchExplanation();
+        if (isOpen) {
+            setLoading(true);
+            setExplanation(null);
+            setError(null);
+
+            if (Object.keys(inputValues).length > 0) {
+                fetchExplanation();
+            } else {
+                setLoading(false);
+                setError('No input values provided. Please fill in the prediction form first.');
+            }
         }
     }, [isOpen]);
 
@@ -134,10 +147,11 @@ const ExplainModal: React.FC<ExplainModalProps> = ({ isOpen, onClose, inputValue
                             <div className="flex flex-col items-center justify-center py-12">
                                 <RefreshCw className="w-12 h-12 animate-spin text-primary-400 mb-4" />
                                 <p style={{ color: 'var(--text-muted)' }}>Calculating SHAP values...</p>
+                                <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>This may take a few seconds...</p>
                             </div>
                         )}
 
-                        {error && (
+                        {error && !loading && (
                             <div className="text-center py-12">
                                 <AlertCircle className="w-12 h-12 mx-auto mb-4 text-red-400" />
                                 <p className="text-red-400 mb-2">{error}</p>

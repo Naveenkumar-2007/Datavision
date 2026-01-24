@@ -56,10 +56,17 @@ const DataHealthCard: React.FC<DataHealthCardProps> = ({
     const [error, setError] = useState<string | null>(null);
     const [expanded, setExpanded] = useState(false);
 
-    // Check health when file changes
+    // Check health when file changes - reset state first
     useEffect(() => {
+        // Reset state when file changes
+        setHealth(null);
+        setError(null);
+        setLoading(true);
+
         if (fileName) {
             checkHealth();
+        } else {
+            setLoading(false);
         }
     }, [fileName, targetColumn]);
 

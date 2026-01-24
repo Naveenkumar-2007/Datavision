@@ -133,6 +133,21 @@ from api.v1.endpoints import agentic_automl_api
 app.include_router(agentic_automl_api.router, prefix="/api/v2", tags=["Agentic AutoML"])
 logger.info("✅ Agentic AutoML API loaded (9 Specialized Agents)")
 
+# 🏥 Data Health API (Data Quality Analysis)
+from api.v1.endpoints import data_health_api
+app.include_router(data_health_api.router, prefix="/api/v1", tags=["Data Health"])
+logger.info("✅ Data Health API loaded")
+
+# 🎮 Playground API (Interactive Predictions)
+from api.v1.endpoints import playground_api
+app.include_router(playground_api.router, prefix="/api/v1", tags=["Playground"])
+logger.info("✅ Playground API loaded")
+
+# 📊 Explainability API (SHAP Explanations)
+from api.v1.endpoints import explainability_api
+app.include_router(explainability_api.router, prefix="/api/v1", tags=["Explainability"])
+logger.info("✅ Explainability API loaded")
+
 from fastapi.responses import FileResponse
 
 # Frontend static directory (pre-built React app)

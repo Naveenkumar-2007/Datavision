@@ -32,8 +32,13 @@ import {
     Download,
     FileText,
     XCircle,
+    Sliders,
+    HelpCircle,
 } from 'lucide-react';
 import ModelHistory from '@/components/automl/ModelHistory';
+import PlaygroundTab from '@/components/automl/PlaygroundTab';
+import DataHealthCard from '@/components/automl/DataHealthCard';
+import ExplainModal from '@/components/automl/ExplainModal';
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
 
@@ -104,7 +109,7 @@ const MLPredictions: React.FC = () => {
     // Results state
     const [result, setResult] = useState<MLResult | null>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'features' | 'predict' | 'history' | 'data'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'features' | 'predict' | 'playground' | 'history' | 'data'>('overview');
     const [predictionInput, setPredictionInput] = useState<Record<string, string>>({});
     const [predictionResult, setPredictionResult] = useState<any>(null);
     const [chartsLoading, setChartsLoading] = useState(false);
@@ -118,6 +123,7 @@ const MLPredictions: React.FC = () => {
     const [availableColumns, setAvailableColumns] = useState<string[]>([]);
     const [progressMessage, setProgressMessage] = useState('Initializing...');
     const [abortController, setAbortController] = useState<AbortController | null>(null);
+    const [showExplainModal, setShowExplainModal] = useState(false);
 
     // Smart target column detection - SAME AS DATAHUB
     const detectTargetColumn = (columns: string[]): string => {
@@ -202,7 +208,7 @@ const MLPredictions: React.FC = () => {
                 try {
                     const response = await fetch(`/api/v2/autonomous/models/${userId}`);
                     const data = await response.json();
-                    
+
                     if (data.success && data.models && data.models.length > 0) {
                         const activeModel = data.models.find((m: any) => m.is_active);
                         if (activeModel) {
@@ -291,7 +297,7 @@ const MLPredictions: React.FC = () => {
         try {
             const response = await fetch(`/api/v2/autonomous/models/${userId}`);
             const data = await response.json();
-            
+
             if (data.success && data.models && data.models.length > 0) {
                 const activeModel = data.models.find((m: any) => m.is_active);
                 if (activeModel && result) {
@@ -325,12 +331,12 @@ const MLPredictions: React.FC = () => {
             // Download file and parse columns
             const fileResponse = await fetch(`/api/v1/files/${userId}/${fileName}/download`);
             if (!fileResponse.ok) return;
-            
+
             const blob = await fileResponse.blob();
             const text = await blob.text();
             const firstLine = text.split('\n')[0];
             const columns = firstLine.split(',').map(col => col.trim().replace(/"/g, ''));
-            
+
             setAvailableColumns(columns);
             const detected = detectTargetColumn(columns);
             setTargetColumn(detected);
@@ -527,7 +533,7 @@ const MLPredictions: React.FC = () => {
                             {/* Title - Mode Aware */}
                             <h2 className={`text-4xl font-bold bg-clip-text text-transparent mb-4 ${ultraMode
                                 ? 'bg-gradient-to-r from-purple-400 via-pink-400 to-rose-400'
-                                : 'bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400'
+                                : 'bg-gradient-to-r from-teal-400 via-cyan-400 to-blue-400'
                                 }`}>
                                 {ultraMode ? '🎼 Ultra AutoML Training' : '🚀 Fast ML Training'}
                             </h2>
@@ -748,6 +754,15 @@ const MLPredictions: React.FC = () => {
                     </motion.div>
                 )}
 
+                {/* 🏥 Data Health Card - Shows before training */}
+                {selectedFile && availableColumns.length > 0 && (
+                    <DataHealthCard
+                        key={selectedFile.name}
+                        fileName={selectedFile.name}
+                        targetColumn={targetColumn}
+                    />
+                )}
+
                 {/* Instructions when no file selected */}
                 {!selectedFile && existingFiles.length > 0 && (
                     <motion.div
@@ -918,6 +933,7 @@ const MLPredictions: React.FC = () => {
                         { id: 'charts', label: 'ML Charts', icon: BarChart3 },
                         { id: 'features', label: 'Features', icon: TrendingUp },
                         { id: 'predict', label: 'Make Prediction', icon: Play },
+                        { id: 'playground', label: 'Playground', icon: Sliders },
                         { id: 'history', label: 'Model History', icon: History },
                         { id: 'data', label: 'Cleaned Data', icon: Database },
                     ].map((tab) => (
@@ -1069,16 +1085,16 @@ const MLPredictions: React.FC = () => {
                                     className="flex items-center gap-4 p-3 rounded-xl"
                                     style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
                                 >
-                                    <span className="w-8 h-8 rounded-lg bg-gradient-to-r from-primary-500 to-emerald-500 flex items-center justify-center text-white font-bold">
+                                    <span className="w-8 h-8 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 flex items-center justify-center text-white font-bold">
                                         {f.rank || i + 1}
                                     </span>
                                     <div className="flex-1">
                                         <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{f.feature}</span>
                                         <div className="w-full rounded-full h-2 mt-1" style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb' }}>
-                                            <div className="h-2 rounded-full bg-gradient-to-r from-primary-500 to-emerald-500" style={{ width: `${f.importance * 100}%` }} />
+                                            <div className="h-2 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500" style={{ width: `${f.importance * 100}%` }} />
                                         </div>
                                     </div>
-                                    <span className="font-bold text-primary-400">{(f.importance * 100).toFixed(1)}%</span>
+                                    <span className="font-bold text-teal-400">{(f.importance * 100).toFixed(1)}%</span>
                                 </div>
                             ))}
                         </div>
@@ -1174,7 +1190,7 @@ const MLPredictions: React.FC = () => {
                                     alert(`Prediction failed: ${e.message}`);
                                 }
                             }}
-                            className="px-6 py-3 bg-gradient-to-r from-primary-500 to-emerald-500 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity flex items-center gap-2"
+                            className="px-6 py-3 bg-gradient-to-r from-teal-500 to-amber-500 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity flex items-center gap-2"
                         >
                             <Play className="w-5 h-5" />
                             Get Prediction
@@ -1184,12 +1200,21 @@ const MLPredictions: React.FC = () => {
                             <motion.div
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="mt-6 p-6 rounded-xl bg-gradient-to-r from-primary-500/20 to-emerald-500/20 border border-primary-500/30"
+                                className="mt-6 p-6 rounded-xl bg-gradient-to-r from-teal-500/20 to-amber-500/20 border border-teal-500/30"
                             >
-                                <h4 className="text-lg font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
-                                    Prediction Result
-                                </h4>
-                                <p className="text-3xl font-bold text-primary-400">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h4 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
+                                        Prediction Result
+                                    </h4>
+                                    <button
+                                        onClick={() => setShowExplainModal(true)}
+                                        className="px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors flex items-center gap-1.5 text-sm font-medium"
+                                    >
+                                        <HelpCircle className="w-4 h-4" />
+                                        Why?
+                                    </button>
+                                </div>
+                                <p className="text-3xl font-bold text-white">
                                     {predictionResult.prediction}
                                 </p>
                                 {predictionResult.probability && (
@@ -1199,13 +1224,24 @@ const MLPredictions: React.FC = () => {
                                 )}
                             </motion.div>
                         )}
+
+                        {/* SHAP Explain Modal */}
+                        <ExplainModal
+                            isOpen={showExplainModal}
+                            onClose={() => setShowExplainModal(false)}
+                            inputValues={predictionInput}
+                        />
                     </div>
+                )}
+
+                {activeTab === 'playground' && (
+                    <PlaygroundTab />
                 )}
 
                 {activeTab === 'history' && (
                     <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                        <ModelHistory 
-                            userId={localStorage.getItem('userId') || 'default'} 
+                        <ModelHistory
+                            userId={localStorage.getItem('userId') || 'default'}
                             onModelChange={handleModelChange}
                         />
                     </div>

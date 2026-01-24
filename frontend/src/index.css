@@ -33,13 +33,13 @@
   --text-muted: #a1a1aa;
   /* Zinc 400 */
 
-  --accent-primary: #22c55e;
-  --accent-glow: rgba(34, 197, 94, 0.4);
+  --accent-primary: #14b8a6;
+  --accent-glow: rgba(20, 184, 166, 0.4);
 
   /* Table */
-  --table-header-bg: rgba(34, 197, 94, 0.15);
+  --table-header-bg: rgba(20, 184, 166, 0.15);
   --table-row-hover: rgba(255, 255, 255, 0.05);
-  --table-row-active: rgba(34, 197, 94, 0.1);
+  --table-row-active: rgba(20, 184, 166, 0.1);
 
   /* =========================================
      PREMIUM DESIGN TOKENS - ChatGPT Level
@@ -64,8 +64,8 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  --shadow-glow-teal: 0 0 20px rgba(34, 197, 94, 0.3);
-  --shadow-glow-sm: 0 0 10px rgba(34, 197, 94, 0.2);
+  --shadow-glow-teal: 0 0 20px rgba(20, 184, 166, 0.3);
+  --shadow-glow-sm: 0 0 10px rgba(20, 184, 166, 0.2);
   --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
 
   /* Animation Timing */
@@ -99,8 +99,8 @@
   /* Gradients - Premium */
   --gradient-dark: linear-gradient(180deg, #0a0a0f 0%, #111118 100%);
   --gradient-card: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
-  --gradient-accent: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-  --gradient-glow: radial-gradient(ellipse at center, rgba(34, 197, 94, 0.15) 0%, transparent 70%);
+  --gradient-accent: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%);
+  --gradient-glow: radial-gradient(ellipse at center, rgba(20, 184, 166, 0.15) 0%, transparent 70%);
 }
 
 /* LIGHT MODE - Complete Override */
@@ -120,13 +120,13 @@ html.light-theme {
   --text-tertiary: #475569;
   --text-muted: #64748b;
 
-  --accent-primary: #16a34a;
-  --accent-glow: rgba(34, 197, 94, 0.3);
+  --accent-primary: #0d9488;
+  --accent-glow: rgba(20, 184, 166, 0.3);
 
   /* Table */
-  --table-header-bg: #f0fdf4;
+  --table-header-bg: #f0fdfa;
   --table-row-hover: #f8fafc;
-  --table-row-active: #dcfce7;
+  --table-row-active: #ccfbf1;
 }
 
 /* ------------------------------------------------------------------
@@ -143,14 +143,14 @@ body {
 
 /* GLOBAL SELECTION & FOCUS OVERRIDES */
 ::selection {
-  background-color: rgba(34, 197, 94, 0.3) !important;
-  color: #f0fdf4 !important;
-  /* Green 50 */
+  background-color: rgba(20, 184, 166, 0.3) !important;
+  color: #f0fdfa !important;
+  /* Teal 50 */
 }
 
 /* Global Focus Ring */
 *:focus-visible {
-  outline: 2px solid #22c55e !important;
+  outline: 2px solid #14b8a6 !important;
   outline-offset: 2px;
 }
 
@@ -533,16 +533,16 @@ input:-webkit-autofill:active {
 
 .nav-item.active,
 .sidebar-item.active {
-  background-color: rgba(34, 197, 94, 0.15) !important;
+  background-color: rgba(20, 184, 166, 0.15) !important;
   color: var(--accent-primary) !important;
-  border-color: rgba(34, 197, 94, 0.3) !important;
+  border-color: rgba(20, 184, 166, 0.3) !important;
 }
 
 html.light-theme .nav-item.active,
 html.light-theme .sidebar-item.active {
-  background-color: #f0fdf4 !important;
-  color: #16a34a !important;
-  border-color: #bbf7d0 !important;
+  background-color: #f0fdfa !important;
+  color: #0d9488 !important;
+  border-color: #99f6e4 !important;
 }
 
 /* ------------------------------------------------------------------
@@ -567,7 +567,7 @@ html.light-theme .sidebar-item.active {
 
 html.light-theme .chat-item.active {
   background-color: #ffffff !important;
-  border-color: #4ade80 !important;
+  border-color: #2dd4bf !important;
 }
 
 /* ------------------------------------------------------------------
@@ -593,7 +593,7 @@ html.light-theme .btn-new-chat {
 
 html.light-theme .btn-new-chat:hover {
   background-color: #f8fafc !important;
-  border-color: #22c55e !important;
+  border-color: #14b8a6 !important;
 }
 
 /* ------------------------------------------------------------------
