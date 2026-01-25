@@ -59,11 +59,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         
         # Security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
+        # Allow embedding in HuggingFace iframe
+        response.headers["X-Frame-Options"] = "ALLOWALL"
         response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         
         # Remove server header (MutableHeaders uses del, not pop)
         if "server" in response.headers:
@@ -80,19 +79,23 @@ if os.environ.get("ENVIRONMENT") == "production":
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 
 # CORS - Secure configuration
-# WARNING: Never use allow_origins=["*"] with allow_credentials=True in production
+# Allow HuggingFace Spaces domains and local development
 ALLOWED_ORIGINS = os.environ.get(
     "CORS_ORIGINS", 
-    "http://localhost:5173,http://localhost:3000,http://localhost:8000"
+    "http://localhost:5173,http://localhost:3000,http://localhost:8000,https://huggingface.co,https://killerkumar-ai-business-analyst.hf.space,https://*.hf.space"
 ).split(",")
+
+# For HuggingFace Spaces, we need to allow all origins for the embedded iframe
+if os.path.exists("/app"):  # Running in Docker/HF
+    ALLOWED_ORIGINS = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,  # Whitelist specific origins
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],  # Explicit methods
-    allow_headers=["Authorization", "Content-Type", "X-User-ID", "X-Requested-With"],
-    max_age=600,  # Cache preflight for 10 minutes
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],  # Allow all headers for HF compatibility
+    max_age=600,
 )
 
 # Mount Static Files
