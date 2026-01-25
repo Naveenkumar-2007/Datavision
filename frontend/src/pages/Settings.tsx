@@ -29,7 +29,7 @@ const Settings: React.FC = () => {
 
 
   const { user: authUser } = useAuth();
-  const { isDark, toggleTheme, setUser: setStoreUser } = useUserStore();
+  const { isDark, toggleTheme, setTheme, setUser: setStoreUser } = useUserStore();
 
   // Profile state - synced from auth on mount, saved per user
   const [profile, setProfile] = useState({
@@ -628,13 +628,10 @@ const Settings: React.FC = () => {
   };
 
   const handleResetTheme = () => {
-    // Force reset to dark mode
-    localStorage.removeItem('userPreferences');
-    document.documentElement.classList.remove('light-theme');
-    document.body.classList.remove('light-theme');
+    // Force reset to dark mode using store
+    setTheme(true);
     setPreferences({ ...preferences, theme: 'dark' });
-    alert('✅ Theme reset to Dark Mode! The page will now reload.');
-    window.location.reload();
+    setStatusMessage({ type: 'success', text: '✅ Theme reset to Dark Mode!' });
   };
 
   const handleCancel = () => {
@@ -793,19 +790,23 @@ const Settings: React.FC = () => {
             <div>
               <label className="block text-sm text-gray-400 mb-2">Theme</label>
               <select
-                value={preferences.theme}
-                onChange={(e) => setPreferences({ ...preferences, theme: e.target.value })}
-                className="w-full px-4 py-3 bg-dark-card border border-dark-border rounded-xl text-gray-200 focus:outline-none focus:border-primary-500 appearance-none cursor-pointer"
+                value={isDark ? 'dark' : 'light'}
+                onChange={(e) => {
+                  const newTheme = e.target.value;
+                  setPreferences({ ...preferences, theme: newTheme });
+                  setTheme(newTheme === 'dark');
+                }}
+                className="w-full px-4 py-3 rounded-xl focus:outline-none focus:border-primary-500 appearance-none cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--bg-card)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)'
+                }}
               >
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
+                <option value="dark">🌙 Dark Mode</option>
+                <option value="light">☀️ Light Mode</option>
               </select>
-              <button
-                onClick={handleResetTheme}
-                className="text-primary-400 text-sm mt-2 hover:underline"
-              >
-                Reset to Dark Mode
-              </button>
             </div>
 
           </div>
