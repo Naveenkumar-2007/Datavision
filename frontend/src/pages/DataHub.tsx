@@ -606,7 +606,7 @@ const DataHub: React.FC = () => {
                   onClick={() => setUltraMode(true)}
                   disabled={automlRunning}
                   className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${ultraMode
-                    ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-lg'
+                    ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg'
                     : 'text-gray-400 hover:text-gray-200'
                     }`}
                   title="Ultra Mode: 20+ models with ensembles, 2-10min training"
@@ -622,7 +622,7 @@ const DataHub: React.FC = () => {
                 disabled={automlRunning}
                 className={`btn-primary flex-1 md:flex-none rounded-full flex items-center justify-center gap-2 ${ultraMode
                   ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500'
-                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500'
+                  : 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500'
                   } ${automlRunning ? 'opacity-60 cursor-wait' : ''}`}
               >
                 {automlRunning ? (
@@ -662,7 +662,7 @@ const DataHub: React.FC = () => {
       < motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <div
           {...getRootProps()}
-          className={`card-premium hover-glow p-6 md:p-12 border-2 border-dashed transition-all cursor-pointer glass-panel ${isDragActive ? 'border-teal-500 bg-teal-500/5' : ''
+          className={`card-premium hover-glow p-6 md:p-12 border-2 border-dashed transition-all cursor-pointer glass-panel ${isDragActive ? 'border-green-500 bg-green-500/5' : ''
             }`}
           style={{ borderColor: isDragActive ? '#14b8a6' : 'var(--border-color)' }}
         >
@@ -693,7 +693,7 @@ const DataHub: React.FC = () => {
                   or click to browse • AutoML trains automatically after upload
                 </p>
                 <div className="mb-4">
-                  <p className="text-sm text-teal-500 font-semibold mb-3">Supported Formats:</p>
+                  <p className="text-sm text-green-500 font-semibold mb-3">Supported Formats:</p>
                   <div className="flex flex-wrap justify-center gap-2">
                     {[
                       { name: 'CSV', color: 'bg-orange-500' },
@@ -1012,10 +1012,10 @@ const DataHub: React.FC = () => {
             >
               {/* Big Animated Icon - Mode Aware Colors */}
               <div className="relative w-40 h-40 mb-8 flex items-center justify-center">
-                <div className={`absolute inset-0 blur-2xl rounded-full animate-pulse ${ultraMode ? 'bg-purple-500/20' : 'bg-teal-500/20'}`}></div>
+                <div className={`absolute inset-0 blur-2xl rounded-full animate-pulse ${ultraMode ? 'bg-purple-500/20' : 'bg-green-500/20'}`}></div>
                 <div className={`absolute inset-0 border-4 rounded-full animate-spin ${ultraMode
                   ? 'border-t-purple-400 border-r-purple-400/50 border-b-purple-400/20 border-l-purple-400/50'
-                  : 'border-t-teal-400 border-r-teal-400/50 border-b-teal-400/20 border-l-teal-400/50'
+                  : 'border-t-green-400 border-r-green-400/50 border-b-green-400/20 border-l-green-400/50'
                   }`}></div>
                 <div className={`absolute inset-4 border-4 rounded-full animate-spin ${ultraMode
                   ? 'border-b-pink-400 border-l-pink-400/50 border-t-pink-400/20 border-r-pink-400/50'
@@ -1027,13 +1027,13 @@ const DataHub: React.FC = () => {
               {/* Title - Mode Aware */}
               <h2 className={`text-4xl font-bold bg-clip-text text-transparent mb-4 ${ultraMode
                 ? 'bg-gradient-to-r from-purple-400 via-pink-400 to-rose-400'
-                : 'bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400'
+                : 'bg-gradient-to-r from-emerald-400 via-green-400 to-cyan-400'
                 }`}>
                 {ultraMode ? '🎼 Ultra AutoML Training' : '🚀 Fast ML Training'}
               </h2>
 
               {/* Mode Details */}
-              <div className={`flex items-center gap-2 mb-4 px-4 py-2 rounded-full ${ultraMode ? 'bg-purple-500/20 text-purple-300' : 'bg-teal-500/20 text-teal-300'
+              <div className={`flex items-center gap-2 mb-4 px-4 py-2 rounded-full ${ultraMode ? 'bg-purple-500/20 text-purple-300' : 'bg-green-500/20 text-green-300'
                 }`}>
                 {ultraMode ? (
                   <>
@@ -1054,7 +1054,7 @@ const DataHub: React.FC = () => {
 
               {/* Progress Card */}
               <div
-                className={`backdrop-blur border rounded-2xl p-6 w-full mb-8 shadow-2xl ${ultraMode ? 'border-purple-500/30' : 'border-teal-500/30'
+                className={`backdrop-blur border rounded-2xl p-6 w-full mb-8 shadow-2xl ${ultraMode ? 'border-purple-500/30' : 'border-green-500/30'
                   }`}
                 style={{ backgroundColor: 'var(--bg-card)' }}
               >

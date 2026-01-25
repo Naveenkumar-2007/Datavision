@@ -184,7 +184,7 @@ const ChartImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
       <div className="absolute top-3 right-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
         <button
           onClick={handleDownload}
-          className="p-2 bg-[var(--bg-card)]/90 hover:bg-teal-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-[var(--border-color)]"
+          className="p-2 bg-[var(--bg-card)]/90 hover:bg-green-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-[var(--border-color)]"
           title="Download Chart"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -194,7 +194,7 @@ const ChartImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
         </button>
         <button
           onClick={handleCopy}
-          className="p-2 bg-[var(--bg-card)]/90 hover:bg-teal-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-[var(--border-color)]"
+          className="p-2 bg-[var(--bg-card)]/90 hover:bg-green-600 rounded-lg text-white text-xs flex items-center gap-1 backdrop-blur-sm border border-[var(--border-color)]"
           title="Copy Chart"
         >
           {copied ? (
@@ -272,7 +272,7 @@ const MLChartBlock: React.FC<{
     <div className="my-4 p-4 glass-card rounded-xl border border-[var(--border-color)] shadow-lg">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg">{icon}</span>
-        <span className="text-sm font-medium text-teal-400">
+        <span className="text-sm font-medium text-green-400">
           {chart.title || 'ML Visualization'}
         </span>
         <span className="text-xs text-gray-500 ml-auto">
@@ -292,7 +292,7 @@ const MLChartsContainer: React.FC<{
 
   return (
     <div className="space-y-4 mt-4">
-      <div className="flex items-center gap-2 text-sm text-teal-400">
+      <div className="flex items-center gap-2 text-sm text-green-400">
         <Zap className="w-4 h-4" />
         <span>ML Visualizations • Real scikit-learn analysis</span>
       </div>
@@ -673,7 +673,7 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
                 const text = cleanLine.replace(/^[-•*●]\s*/, '');
                 return (
                   <li key={i} className="flex items-start gap-2 text-gray-300">
-                    <span className="text-teal-400 mt-0.5">•</span>
+                    <span className="text-green-400 mt-0.5">•</span>
                     <span><InlineFormattedText text={text} /></span>
                   </li>
                 );
@@ -693,7 +693,7 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
               if (match) {
                 return (
                   <li key={i} className="flex items-start gap-3 text-gray-300">
-                    <span className="text-teal-400 font-semibold min-w-[1.5rem]">{match[1]}.</span>
+                    <span className="text-green-400 font-semibold min-w-[1.5rem]">{match[1]}.</span>
                     <span><InlineFormattedText text={match[2]} /></span>
                   </li>
                 );
@@ -765,9 +765,9 @@ const TypingIndicator: React.FC<{ mode?: string }> = ({ mode = 'rag' }) => (
     <div className="flex flex-col gap-1 py-2">
       <div className="flex items-center gap-2">
         <div className="streaming-indicator flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-          <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-          <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+          <span className="w-2 h-2 rounded-full bg-green-400"></span>
+          <span className="w-2 h-2 rounded-full bg-green-400"></span>
+          <span className="w-2 h-2 rounded-full bg-green-400"></span>
         </div>
         <span className="text-sm text-gray-400 italic">{getModeThinkingText(mode)}</span>
       </div>
@@ -867,7 +867,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             onClick={onSend}
             disabled={!input.trim() || isLoading}
             className={`m-2 p-3 rounded-xl transition-all ${input.trim() && !isLoading
-              ? 'bg-teal-500 hover:bg-teal-600 text-white'
+              ? 'bg-green-500 hover:bg-green-600 text-white'
               : 'bg-[var(--bg-hover)] text-gray-400 cursor-not-allowed'
               }`}
           >
@@ -884,8 +884,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             onClick={() => onSuggestionClick(suggestion.text)}
             className="flex items-center gap-3 p-4 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)]/30 hover:bg-[var(--bg-hover)] hover:border-gray-500 transition-all duration-200 text-left group"
           >
-            <div className="p-2 rounded-lg bg-teal-500/10 group-hover:bg-teal-500/20 transition-colors">
-              <suggestion.icon className="w-5 h-5 text-teal-400" />
+            <div className="p-2 rounded-lg bg-green-500/10 group-hover:bg-green-500/20 transition-colors">
+              <suggestion.icon className="w-5 h-5 text-green-400" />
             </div>
             <span className="text-sm transition-colors group-hover:text-[var(--text-primary)]" style={{ color: 'var(--text-secondary)' }}>
               {suggestion.text}
@@ -1865,7 +1865,7 @@ const AnalystChat: React.FC = () => {
                 onClick={() => selectConversation(conv.id)}
                 className={`group flex items-center gap-2 p-3 rounded-lg cursor-pointer chat-item ${currentConversationId === conv.id ? 'active' : ''}`}
               >
-                <MessageSquare className={`w-4 h-4 flex-shrink-0 ${currentConversationId === conv.id ? 'text-teal-400' : 'text-gray-500'}`} />
+                <MessageSquare className={`w-4 h-4 flex-shrink-0 ${currentConversationId === conv.id ? 'text-green-400' : 'text-gray-500'}`} />
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm truncate ${currentConversationId === conv.id ? 'text-gray-100' : 'text-gray-300'}`}>
                     {conv.title}
@@ -1935,7 +1935,7 @@ const AnalystChat: React.FC = () => {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setUseStreaming(!useStreaming)}
-              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${useStreaming ? 'bg-teal-500/10 text-teal-400' : 'bg-[var(--bg-hover)] text-gray-500'
+              className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${useStreaming ? 'bg-green-500/10 text-green-400' : 'bg-[var(--bg-hover)] text-gray-500'
                 }`}
               title="Toggle Streaming"
             >
@@ -1998,7 +1998,7 @@ const AnalystChat: React.FC = () => {
                               <button
                                 onClick={() => handleSaveAndResend(message.id)}
                                 disabled={!editingContent.trim()}
-                                className="px-4 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm rounded-lg disabled:opacity-50"
+                                className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg disabled:opacity-50"
                               >
                                 Save & Resend
                               </button>
@@ -2045,7 +2045,7 @@ const AnalystChat: React.FC = () => {
                                 </p>
                                 <div className="flex flex-wrap gap-2">
                                   {message.sources.map((source, i) => (
-                                    <span key={i} className="px-2 py-1 bg-teal-500/20 text-teal-300 rounded-lg text-xs">
+                                    <span key={i} className="px-2 py-1 bg-green-500/20 text-green-300 rounded-lg text-xs">
                                       {String(source)}
                                     </span>
                                   ))}
@@ -2085,7 +2085,7 @@ const AnalystChat: React.FC = () => {
                             </button>
                             <button
                               onClick={() => handleRegenerate(message.id)}
-                              className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-gray-500 hover:text-teal-400 transition-colors"
+                              className="p-1.5 hover:bg-[var(--bg-hover)] rounded-lg text-gray-500 hover:text-green-400 transition-colors"
                               title="Regenerate response"
                             >
                               <RefreshCw className="w-4 h-4" />
@@ -2096,7 +2096,7 @@ const AnalystChat: React.FC = () => {
                           {message.suggestions && message.suggestions.length > 0 && (
                             <div className="mt-4 pt-3 border-t border-[var(--border-color)]/50 animate-fadeIn">
                               <p className="text-xs text-gray-500 mb-2 flex items-center gap-1">
-                                <Sparkles className="w-3 h-3 text-teal-400" /> Follow-up questions
+                                <Sparkles className="w-3 h-3 text-green-400" /> Follow-up questions
                               </p>
                               <div className="flex flex-wrap gap-2">
                                 {message.suggestions.map((suggestion: string, i: number) => (
@@ -2107,7 +2107,7 @@ const AnalystChat: React.FC = () => {
                                       const inputEl = document.querySelector('textarea');
                                       inputEl?.focus();
                                     }}
-                                    className="px-3 py-1.5 bg-teal-50 dark:bg-teal-500/10 hover:bg-teal-100 dark:hover:bg-teal-500/20 border border-teal-200 dark:border-teal-500/30 rounded-full text-xs text-teal-700 dark:text-teal-300 transition-colors duration-200"
+                                    className="px-3 py-1.5 bg-green-50 dark:bg-green-500/10 hover:bg-green-100 dark:hover:bg-green-500/20 border border-green-200 dark:border-green-500/30 rounded-full text-xs text-green-700 dark:text-green-300 transition-colors duration-200"
                                   >
                                     {suggestion}
                                   </button>
@@ -2137,7 +2137,7 @@ const AnalystChat: React.FC = () => {
                           {/* 🤖 ML Charts - Matplotlib/Seaborn Visualizations from Predict Mode */}
                           {(message as any).mlCharts && Array.isArray((message as any).mlCharts) && (message as any).mlCharts.length > 0 && (
                             <div className="mt-4 space-y-4">
-                              <div className="flex items-center gap-2 text-sm text-teal-400 border-t border-[var(--border-color)] pt-3">
+                              <div className="flex items-center gap-2 text-sm text-green-400 border-t border-[var(--border-color)] pt-3">
                                 <Zap className="w-4 h-4" />
                                 <span>ML Visualizations • Real scikit-learn analysis</span>
                               </div>
@@ -2152,7 +2152,7 @@ const AnalystChat: React.FC = () => {
                                               chart.type === 'ml_distribution' ? '📊' :
                                                 chart.type === 'ml_summary' ? '🤖' : '📊'}
                                       </span>
-                                      <span className="text-sm font-medium text-teal-400">
+                                      <span className="text-sm font-medium text-green-400">
                                         {chart.title || 'ML Visualization'}
                                       </span>
                                       <span className="text-xs text-gray-500 ml-auto">
@@ -2208,7 +2208,7 @@ const AnalystChat: React.FC = () => {
                         </button>
                         <button
                           onClick={() => mcpPermissionDialog.onAllow?.()}
-                          className="px-4 py-2 text-sm text-white bg-teal-600 hover:bg-teal-700 rounded-lg transition-colors shadow-lg shadow-teal-900/20"
+                          className="px-4 py-2 text-sm text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors shadow-lg shadow-green-900/20"
                         >
                           Allow
                         </button>
@@ -2290,7 +2290,7 @@ const AnalystChat: React.FC = () => {
             >
               <div className="p-3 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-secondary)]/50">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">MCP Servers</p>
-                <span className="text-xs text-teal-400 font-medium">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length} active</span>
+                <span className="text-xs text-green-400 font-medium">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length} active</span>
               </div>
               <div className="max-h-64 overflow-y-auto">
                 {mcpServers.map((mcp) => (
@@ -2304,7 +2304,7 @@ const AnalystChat: React.FC = () => {
                       <p className={`text-sm font-medium ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
                       <p className="text-xs text-gray-500 line-clamp-1">{mcp.description}</p>
                     </div>
-                    <div className={`w-9 h-5 rounded-full transition-all duration-200 ${enabledMcps[mcp.id] ? 'bg-teal-500' : 'bg-gray-700'} flex items-center`}>
+                    <div className={`w-9 h-5 rounded-full transition-all duration-200 ${enabledMcps[mcp.id] ? 'bg-green-500' : 'bg-gray-700'} flex items-center`}>
                       <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${enabledMcps[mcp.id] ? 'translate-x-4' : 'translate-x-0.5'}`} />
                     </div>
                   </button>
@@ -2339,14 +2339,14 @@ const AnalystChat: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
                       {m.badge && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-teal-500/20 text-teal-400 rounded">
+                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/20 text-green-400 rounded">
                           {m.badge}
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-gray-500">{m.description}</p>
                   </div>
-                  {mode === m.id && <Check className="w-4 h-4 text-teal-400" />}
+                  {mode === m.id && <Check className="w-4 h-4 text-green-400" />}
                 </button>
               ))}
 
@@ -2406,7 +2406,7 @@ const AnalystChat: React.FC = () => {
                   <div className="mb-3 flex flex-wrap gap-2">
                     {attachedFiles.map((file, index) => (
                       <div key={index} className="flex items-center gap-2 px-3 py-2 bg-dark-card border border-dark-border rounded-lg text-sm">
-                        <FileText className="w-4 h-4 text-teal-400" />
+                        <FileText className="w-4 h-4 text-green-400" />
                         <span className="text-gray-300 truncate max-w-[200px]">{file.name}</span>
                         <button
                           onClick={() => removeAttachedFile(index)} className="text-gray-500 hover:text-red-400">

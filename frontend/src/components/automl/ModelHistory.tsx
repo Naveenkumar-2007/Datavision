@@ -208,7 +208,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModel
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20">
+                    <div className="p-2 rounded-xl bg-gradient-to-r from-emerald-500/20 to-green-500/20">
                         <History className="w-6 h-6 text-emerald-400" />
                     </div>
                     <div>
@@ -249,7 +249,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModel
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="p-6 rounded-2xl border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-500/10 to-teal-500/10"
+                    className="p-6 rounded-2xl border-2 border-emerald-500/50 bg-gradient-to-br from-emerald-500/10 to-green-500/10"
                 >
                     <div className="flex items-center gap-3 mb-4">
                         <div className="px-3 py-1 bg-emerald-500 text-white text-xs font-bold rounded-full">

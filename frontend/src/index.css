@@ -33,13 +33,13 @@
   --text-muted: #a1a1aa;
   /* Zinc 400 */
 
-  --accent-primary: #14b8a6;
-  --accent-glow: rgba(20, 184, 166, 0.4);
+  --accent-primary: #22c55e;
+  --accent-glow: rgba(34, 197, 94, 0.4);
 
   /* Table */
-  --table-header-bg: rgba(20, 184, 166, 0.15);
+  --table-header-bg: rgba(34, 197, 94, 0.15);
   --table-row-hover: rgba(255, 255, 255, 0.05);
-  --table-row-active: rgba(20, 184, 166, 0.1);
+  --table-row-active: rgba(34, 197, 94, 0.1);
 
   /* =========================================
      PREMIUM DESIGN TOKENS - ChatGPT Level
@@ -64,8 +64,8 @@
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  --shadow-glow-teal: 0 0 20px rgba(20, 184, 166, 0.3);
-  --shadow-glow-sm: 0 0 10px rgba(20, 184, 166, 0.2);
+  --shadow-glow-teal: 0 0 20px rgba(34, 197, 94, 0.3);
+  --shadow-glow-sm: 0 0 10px rgba(34, 197, 94, 0.2);
   --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
 
   /* Animation Timing */
@@ -99,8 +99,8 @@
   /* Gradients - Premium */
   --gradient-dark: linear-gradient(180deg, #0a0a0f 0%, #111118 100%);
   --gradient-card: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
-  --gradient-accent: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%);
-  --gradient-glow: radial-gradient(ellipse at center, rgba(20, 184, 166, 0.15) 0%, transparent 70%);
+  --gradient-accent: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+  --gradient-glow: radial-gradient(ellipse at center, rgba(34, 197, 94, 0.15) 0%, transparent 70%);
 }
 
 /* LIGHT MODE - Complete Override */
@@ -120,8 +120,8 @@ html.light-theme {
   --text-tertiary: #475569;
   --text-muted: #64748b;
 
-  --accent-primary: #0d9488;
-  --accent-glow: rgba(20, 184, 166, 0.3);
+  --accent-primary: #16a34a;
+  --accent-glow: rgba(34, 197, 94, 0.3);
 
   /* Table */
   --table-header-bg: #f0fdfa;
@@ -143,14 +143,14 @@ body {
 
 /* GLOBAL SELECTION & FOCUS OVERRIDES */
 ::selection {
-  background-color: rgba(20, 184, 166, 0.3) !important;
+  background-color: rgba(34, 197, 94, 0.3) !important;
   color: #f0fdfa !important;
   /* Teal 50 */
 }
 
 /* Global Focus Ring */
 *:focus-visible {
-  outline: 2px solid #14b8a6 !important;
+  outline: 2px solid #22c55e !important;
   outline-offset: 2px;
 }
 
@@ -286,6 +286,79 @@ html.light-theme .text-gray-500 {
   color: #64748b !important;
 }
 
+/* ====================================================================
+   LIGHT MODE: FIX GREEN/TEAL ACCENT COLORS FOR VISIBILITY
+   These light-400 shades are not visible on light backgrounds
+   ==================================================================== */
+html.light-theme .text-primary-400 {
+  color: #15803d !important; /* green-700 - much darker for visibility */
+}
+
+html.light-theme .text-primary-500 {
+  color: #16a34a !important; /* green-600 */
+}
+
+html.light-theme .text-emerald-400 {
+  color: #047857 !important; /* emerald-700 */
+}
+
+html.light-theme .text-emerald-500 {
+  color: #059669 !important; /* emerald-600 */
+}
+
+html.light-theme .text-green-400 {
+  color: #15803d !important; /* green-700 */
+}
+
+html.light-theme .text-green-500 {
+  color: #16a34a !important; /* green-600 */
+}
+
+html.light-theme .text-teal-400 {
+  color: #0f766e !important; /* teal-700 */
+}
+
+html.light-theme .text-teal-500 {
+  color: #0d9488 !important; /* teal-600 */
+}
+
+/* Other light accent colors that need darkening in light mode */
+html.light-theme .text-blue-400 {
+  color: #1d4ed8 !important; /* blue-700 */
+}
+
+html.light-theme .text-violet-400 {
+  color: #6d28d9 !important; /* violet-700 */
+}
+
+html.light-theme .text-purple-400 {
+  color: #7c3aed !important; /* purple-600 */
+}
+
+html.light-theme .text-amber-400 {
+  color: #b45309 !important; /* amber-700 */
+}
+
+html.light-theme .text-yellow-400 {
+  color: #a16207 !important; /* yellow-700 */
+}
+
+html.light-theme .text-orange-400 {
+  color: #c2410c !important; /* orange-700 */
+}
+
+html.light-theme .text-cyan-400 {
+  color: #0e7490 !important; /* cyan-700 */
+}
+
+html.light-theme .text-red-400 {
+  color: #b91c1c !important; /* red-700 */
+}
+
+html.light-theme .text-pink-400 {
+  color: #be185d !important; /* pink-700 */
+}
+
 /* KPI Cards, Glass Cards, Feature Cards - ensure dark text */
 html.light-theme .glass-card h1,
 html.light-theme .glass-card h2,
@@ -366,27 +439,27 @@ html.light-theme .text-accent-red {
 }
 
 html.light-theme .text-accent-orange {
-  color: #0D9488 !important;
+  color: #16a34a !important;
 }
 
 html.light-theme .text-accent-purple {
-  color: #14B8A6 !important;
+  color: #22c55e !important;
 }
 
 html.light-theme .text-primary-400 {
-  color: #2DD4BF !important;
+  color: #4ade80 !important;
 }
 
 html.light-theme .text-primary-500 {
-  color: #14B8A6 !important;
+  color: #22c55e !important;
 }
 
 html.light-theme .text-purple-300 {
-  color: #2DD4BF !important;
+  color: #4ade80 !important;
 }
 
 html.light-theme .text-purple-400 {
-  color: #14B8A6 !important;
+  color: #22c55e !important;
 }
 
 /* Recharts Tooltips in Light Mode */
@@ -459,7 +532,7 @@ html.light-theme .glass-input {
 }
 
 html.light-theme .glass-input:focus-within {
-  border-color: #0d9488 !important;
+  border-color: #16a34a !important;
   box-shadow: 0 4px 12px rgba(13, 148, 136, 0.1);
 }
 
@@ -533,15 +606,15 @@ input:-webkit-autofill:active {
 
 .nav-item.active,
 .sidebar-item.active {
-  background-color: rgba(20, 184, 166, 0.15) !important;
+  background-color: rgba(34, 197, 94, 0.15) !important;
   color: var(--accent-primary) !important;
-  border-color: rgba(20, 184, 166, 0.3) !important;
+  border-color: rgba(34, 197, 94, 0.3) !important;
 }
 
 html.light-theme .nav-item.active,
 html.light-theme .sidebar-item.active {
   background-color: #f0fdfa !important;
-  color: #0d9488 !important;
+  color: #16a34a !important;
   border-color: #99f6e4 !important;
 }
 
@@ -567,7 +640,7 @@ html.light-theme .sidebar-item.active {
 
 html.light-theme .chat-item.active {
   background-color: #ffffff !important;
-  border-color: #2dd4bf !important;
+  border-color: #4ade80 !important;
 }
 
 /* ------------------------------------------------------------------
@@ -593,7 +666,7 @@ html.light-theme .btn-new-chat {
 
 html.light-theme .btn-new-chat:hover {
   background-color: #f8fafc !important;
-  border-color: #14b8a6 !important;
+  border-color: #22c55e !important;
 }
 
 /* ------------------------------------------------------------------
@@ -869,7 +942,7 @@ button[class*="bg-gradient"],
   align-items: center;
   justify-content: center;
   padding: 0.625rem;
-  background: linear-gradient(135deg, #14B8A6 0%, #0D9488 100%) !important;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
   border-radius: 0.75rem;
   color: #ffffff !important;
   transition: all 0.15s ease;
@@ -877,7 +950,7 @@ button[class*="bg-gradient"],
 
 .claude-send-btn:hover {
   transform: scale(1.02);
-  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.4);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
 }
 
 .claude-send-btn:disabled {
@@ -896,13 +969,13 @@ button[class*="bg-gradient"],
 
 /* Claude-style Chat Messages */
 .claude-message-user {
-  background: linear-gradient(135deg, #14B8A6 0%, #0D9488 100%) !important;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
   color: #ffffff !important;
   padding: 0.75rem 1rem;
   border-radius: 1.25rem;
   border-bottom-right-radius: 0.375rem;
   max-width: 85%;
-  box-shadow: 0 4px 12px rgba(20, 184, 166, 0.25);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.25);
 }
 
 .claude-message-bot {
@@ -916,8 +989,8 @@ button[class*="bg-gradient"],
   padding: 0.125rem 0.375rem;
   font-size: 0.625rem;
   font-weight: 500;
-  background-color: rgba(20, 184, 166, 0.2);
-  color: #2DD4BF;
+  background-color: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
   border-radius: 0.25rem;
 }
 
@@ -941,7 +1014,7 @@ button[class*="bg-gradient"],
 }
 
 .claude-mcp-toggle.active {
-  background-color: #14B8A6;
+  background-color: #22c55e;
 }
 
 .claude-mcp-toggle.active .claude-mcp-toggle-thumb {
@@ -1097,7 +1170,7 @@ html.light-theme .claude-message-bot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: #14B8A6;
+  background-color: #22c55e;
   animation: typingBounce 1.4s ease-in-out infinite;
 }
 
@@ -1147,14 +1220,14 @@ html.light-theme .claude-message-bot {
 .premium-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.15);
-  border-color: rgba(20, 184, 166, 0.3);
+  border-color: rgba(34, 197, 94, 0.3);
 }
 
 /* ------------------------------------------------------------------
    INSIGHT CARD STYLES
    ------------------------------------------------------------------ */
 .insight-card {
-  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(20, 184, 166, 0.05) 100%);
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(34, 197, 94, 0.05) 100%);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 1rem 1.25rem;
@@ -1162,8 +1235,8 @@ html.light-theme .claude-message-bot {
 }
 
 .insight-card:hover {
-  border-color: rgba(20, 184, 166, 0.4);
-  box-shadow: 0 8px 16px -4px rgba(20, 184, 166, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 8px 16px -4px rgba(34, 197, 94, 0.15);
 }
 
 .insight-card.risk {
@@ -1201,8 +1274,8 @@ html.light-theme .claude-message-bot {
 
 .suggestion-chip:hover {
   background: var(--bg-hover);
-  border-color: #14B8A6;
-  color: #14B8A6;
+  border-color: #22c55e;
+  color: #22c55e;
   transform: translateY(-1px);
 }
 
@@ -1229,8 +1302,8 @@ html.light-theme .claude-message-bot {
 }
 
 .confidence-medium {
-  background: rgba(20, 184, 166, 0.15);
-  color: #14B8A6;
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
 }
 
 .confidence-low {
@@ -1331,11 +1404,11 @@ html.light-theme .apple-blur {
 
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.4);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
   }
 
   50% {
-    box-shadow: 0 0 0 8px rgba(20, 184, 166, 0);
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
   }
 }
 
@@ -1377,8 +1450,8 @@ html.light-theme .apple-blur {
 }
 
 .response-section.summary {
-  background: linear-gradient(135deg, rgba(20, 184, 166, 0.1) 0%, var(--bg-card) 100%);
-  border-color: rgba(20, 184, 166, 0.3);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, var(--bg-card) 100%);
+  border-color: rgba(34, 197, 94, 0.3);
 }
 
 .response-section.actions {
@@ -1404,17 +1477,17 @@ html.light-theme .apple-blur {
   align-items: center;
   gap: 0.5rem;
   padding: 0.375rem 0.75rem;
-  background: rgba(20, 184, 166, 0.1);
-  border: 1px solid rgba(20, 184, 166, 0.2);
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
   border-radius: 8px;
   font-size: 0.75rem;
-  color: #2DD4BF;
+  color: #4ade80;
   transition: all 0.2s ease;
 }
 
 .source-card:hover {
-  background: rgba(20, 184, 166, 0.2);
-  border-color: rgba(20, 184, 166, 0.4);
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.4);
 }
 
 /* ------------------------------------------------------------------
@@ -2008,11 +2081,11 @@ html.light-theme .apple-blur {
 
 .mcp-progress-bar {
   background: linear-gradient(90deg,
-      #14B8A6,
+      #22c55e,
       #06B6D4,
       #0EA5E9,
       #06B6D4,
-      #14B8A6);
+      #22c55e);
   background-size: 200% 100%;
   animation: mcp-progress-gradient 2s ease infinite;
 }
@@ -2125,7 +2198,7 @@ html.light-theme .mcp-execution-card:hover {
   display: inline-block;
   width: 2px;
   height: 1.2em;
-  background: linear-gradient(180deg, #14B8A6 0%, #0D9488 100%);
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
   margin-left: 2px;
   animation: typingCursor 1s ease-in-out infinite;
   border-radius: 1px;
@@ -2153,21 +2226,21 @@ html.light-theme .mcp-execution-card:hover {
    ------------------------------------------------------------------ */
 @keyframes inputFocusGlow {
   0% {
-    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
   }
 
   50% {
-    box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.15);
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
   }
 
   100% {
-    box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.1);
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.1);
   }
 }
 
 .input-glow-focus:focus-within {
   animation: inputFocusGlow 0.4s ease forwards;
-  border-color: #14B8A6 !important;
+  border-color: #22c55e !important;
 }
 
 /* Send button pulse on hover */
@@ -2335,8 +2408,8 @@ html.light-theme .mcp-execution-card:hover {
 
 .glass-input:focus-within {
   background: rgba(30, 41, 59, 0.9) !important;
-  border-color: rgba(20, 184, 166, 0.5) !important;
-  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.1),
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.1),
     0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
@@ -2347,8 +2420,8 @@ html.light-theme .glass-input {
 
 html.light-theme .glass-input:focus-within {
   background: #ffffff !important;
-  border-color: #14B8A6 !important;
-  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.1),
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.1),
     0 8px 32px rgba(0, 0, 0, 0.08);
 }
 
@@ -2389,19 +2462,19 @@ html.light-theme .glass-input:focus-within {
    For highlighted text in chat responses
    ================================================================== */
 .inline-code-highlight {
-  background-color: rgba(20, 184, 166, 0.15);
-  color: #0d9488;
+  background-color: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
   padding: 0.125rem 0.5rem;
   border-radius: 0.375rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.875em;
   font-weight: 500;
-  border: 1px solid rgba(20, 184, 166, 0.3);
+  border: 1px solid rgba(34, 197, 94, 0.3);
 }
 
 /* Dark mode inline code */
 html:not(.light-theme) .inline-code-highlight {
-  background-color: rgba(20, 184, 166, 0.2);
+  background-color: rgba(34, 197, 94, 0.2);
   color: #5eead4;
   border-color: rgba(94, 234, 212, 0.3);
 }
@@ -2557,7 +2630,7 @@ html.light-theme .inline-code-highlight {
    CHATGPT-STYLE MESSAGE BUBBLES
    ------------------------------------------------------------------ */
 .message-user {
-  background: linear-gradient(135deg, rgba(45, 212, 191, 0.15) 0%, rgba(20, 184, 166, 0.1) 100%);
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.15) 0%, rgba(34, 197, 94, 0.1) 100%);
   border: 1px solid rgba(45, 212, 191, 0.2);
   border-radius: var(--radius-xl) var(--radius-xl) var(--radius-sm) var(--radius-xl);
   padding: var(--space-4) var(--space-5);
@@ -2823,7 +2896,7 @@ html.light-theme .card-glass {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #22c55e 0%, #14b8a6 50%, #06b6d4 100%);
+  background: linear-gradient(90deg, #22c55e 0%, #22c55e 50%, #06b6d4 100%);
 }
 
 /* ------------------------------------------------------------------
@@ -3084,7 +3157,7 @@ html.light-theme .input-premium:focus {
   justify-content: center;
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(20, 184, 166, 0.2) 100%);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.2) 100%);
   border-radius: 12px;
   color: #22c55e;
 }

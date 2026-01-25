@@ -77,7 +77,7 @@ const PrivacyPolicy: React.FC = () => {
                 >
                     {/* Title */}
                     <div className="text-center mb-12">
-                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 mb-4">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 mb-4">
                             <Shield className="w-8 h-8 text-white" />
                         </div>
                         <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Privacy Policy</h1>
@@ -102,15 +102,15 @@ const PrivacyPolicy: React.FC = () => {
                             style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
                         >
                             <div className="flex items-center gap-3 mb-4">
-                                <div className="p-2 rounded-lg bg-teal-500/10">
-                                    <section.icon className="w-5 h-5 text-teal-500" />
+                                <div className="p-2 rounded-lg bg-green-500/10">
+                                    <section.icon className="w-5 h-5 text-green-500" />
                                 </div>
                                 <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>{section.title}</h2>
                             </div>
                             <ul className="space-y-3">
                                 {section.content.map((item, i) => (
                                     <li key={i} className="flex items-start gap-2" style={{ color: 'var(--text-secondary)' }}>
-                                        <span className="text-teal-500 mt-1.5">•</span>
+                                        <span className="text-green-500 mt-1.5">•</span>
                                         <span dangerouslySetInnerHTML={{ __html: item.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
                                     </li>
                                 ))}
@@ -123,22 +123,22 @@ const PrivacyPolicy: React.FC = () => {
                         <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Third-Party Services</h2>
                         <p className="mb-4" style={{ color: 'var(--text-secondary)' }}>We use the following third-party services:</p>
                         <ul className="space-y-2" style={{ color: 'var(--text-secondary)' }}>
-                            <li className="flex items-start gap-2"><span className="text-teal-500">•</span><strong>Supabase</strong> - Authentication and database services</li>
-                            <li className="flex items-start gap-2"><span className="text-teal-500">•</span><strong>Hugging Face</strong> - Application hosting infrastructure</li>
-                            <li className="flex items-start gap-2"><span className="text-teal-500">•</span><strong>Groq</strong> - AI/LLM services for intelligent analysis</li>
-                            <li className="flex items-start gap-2"><span className="text-teal-500">•</span><strong>Resend</strong> - Email delivery for scheduled reports</li>
+                            <li className="flex items-start gap-2"><span className="text-green-500">•</span><strong>Supabase</strong> - Authentication and database services</li>
+                            <li className="flex items-start gap-2"><span className="text-green-500">•</span><strong>Hugging Face</strong> - Application hosting infrastructure</li>
+                            <li className="flex items-start gap-2"><span className="text-green-500">•</span><strong>Groq</strong> - AI/LLM services for intelligent analysis</li>
+                            <li className="flex items-start gap-2"><span className="text-green-500">•</span><strong>Resend</strong> - Email delivery for scheduled reports</li>
                         </ul>
                     </div>
 
                     {/* Contact */}
-                    <div className="p-6 rounded-2xl border bg-gradient-to-r from-teal-500/10 to-emerald-500/10" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="p-6 rounded-2xl border bg-gradient-to-r from-green-500/10 to-emerald-500/10" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center gap-3 mb-3">
-                            <Mail className="w-5 h-5 text-teal-500" />
+                            <Mail className="w-5 h-5 text-green-500" />
                             <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Contact Us</h2>
                         </div>
                         <p style={{ color: 'var(--text-secondary)' }}>
                             For privacy-related questions or concerns, contact us at:{' '}
-                            <a href="mailto:naveenkumarchapala686@gmail.com" className="text-teal-500 hover:underline">
+                            <a href="mailto:naveenkumarchapala686@gmail.com" className="text-green-500 hover:underline">
                                 naveenkumarchapala686@gmail.com
                             </a>
                         </p>

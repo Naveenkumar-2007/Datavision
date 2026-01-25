@@ -146,8 +146,8 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="p-3 rounded-xl bg-gradient-to-r from-teal-500/20 to-amber-500/20">
-                        <Sliders className="w-6 h-6 text-teal-400" />
+                    <div className="p-3 rounded-xl bg-gradient-to-r from-green-500/20 to-amber-500/20">
+                        <Sliders className="w-6 h-6 text-green-400" />
                     </div>
                     <div>
                         <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -161,7 +161,7 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                 <button
                     onClick={handlePredict}
                     disabled={predicting}
-                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-teal-500 to-amber-500 text-white font-medium hover:opacity-90 transition-opacity flex items-center gap-2"
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-green-500 to-amber-500 text-white font-medium hover:opacity-90 transition-opacity flex items-center gap-2"
                 >
                     {predicting ? (
                         <RefreshCw className="w-4 h-4 animate-spin" />
@@ -177,48 +177,52 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                 initial={false}
                 animate={{
                     scale: prediction ? [1, 1.02, 1] : 1,
-                    borderColor: prediction ? '#14b8a6' : 'var(--border-color)'
+                    borderColor: prediction ? '#22c55e' : 'var(--border-color)'
                 }}
-                className="p-6 rounded-2xl border-2"
+                className="p-4 sm:p-6 rounded-2xl border-2"
                 style={{
-                    backgroundColor: isDark ? 'rgba(20, 184, 166, 0.1)' : 'rgba(20, 184, 166, 0.05)',
-                    borderColor: 'var(--border-color)'
+                    backgroundColor: isDark ? 'rgba(34, 197, 94, 0.1)' : 'rgba(34, 197, 94, 0.05)',
+                    borderColor: isDark ? '#22c55e' : '#16a34a'
                 }}
             >
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                         <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
                             Predicted {config.target_column}
                         </p>
-                        <p className="text-4xl font-bold bg-gradient-to-r from-teal-400 to-amber-400 bg-clip-text text-transparent">
+                        <p className="text-3xl sm:text-4xl font-bold" style={{ color: isDark ? '#4ade80' : '#15803d' }}>
                             {prediction !== null ? String(prediction) : '—'}
                         </p>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
                         {confidence !== null && (
-                            <div className="text-right">
+                            <div className="sm:text-right">
                                 <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Confidence</p>
                                 <div className="flex items-center gap-2">
                                     <div
-                                        className="w-24 h-3 rounded-full overflow-hidden"
+                                        className="w-20 sm:w-24 h-3 rounded-full overflow-hidden"
                                         style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb' }}
                                     >
                                         <div
-                                            className="h-full rounded-full bg-gradient-to-r from-teal-500 to-amber-500 transition-all duration-300"
+                                            className="h-full rounded-full bg-gradient-to-r from-green-500 to-amber-500 transition-all duration-300"
                                             style={{ width: `${confidence * 100}%` }}
                                         />
                                     </div>
-                                    <span className="font-bold text-teal-400">{(confidence * 100).toFixed(1)}%</span>
+                                    <span className="font-bold" style={{ color: isDark ? '#4ade80' : '#15803d' }}>{(confidence * 100).toFixed(1)}%</span>
                                 </div>
                             </div>
                         )}
                         {prediction !== null && (
                             <button
                                 onClick={() => setShowExplainModal(true)}
-                                className="px-3 py-2 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors flex items-center gap-1.5 text-sm font-medium"
+                                className="w-full sm:w-auto px-3 py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 text-sm font-medium"
+                                style={{
+                                    backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.1)',
+                                    color: isDark ? '#fbbf24' : '#b45309',
+                                }}
                             >
                                 <HelpCircle className="w-4 h-4" />
-                                Why?
+                                Why this prediction?
                             </button>
                         )}
                     </div>
@@ -231,9 +235,9 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                 style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
             >
                 <h4 className="font-semibold mb-6 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                    <Activity className="w-5 h-5 text-teal-400" />
+                    <Activity className="w-5 h-5 text-green-400" />
                     Adjust Feature Values
-                    <span className="text-xs px-2 py-1 rounded-full bg-teal-500/20 text-teal-400 ml-2">
+                    <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400 ml-2">
                         {config.sliders.length} features
                     </span>
                 </h4>
@@ -262,7 +266,7 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                                         step={slider.step}
                                         value={values[slider.name] ?? slider.min}
                                         onChange={(e) => handleValueChange(slider.name, parseFloat(e.target.value))}
-                                        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-teal-500"
+                                        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-green-500"
                                         style={{
                                             background: `linear-gradient(to right, #14b8a6 0%, #14b8a6 ${((values[slider.name] - (slider.min || 0)) / ((slider.max || 100) - (slider.min || 0))) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} ${((values[slider.name] - (slider.min || 0)) / ((slider.max || 100) - (slider.min || 0))) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} 100%)`
                                         }}

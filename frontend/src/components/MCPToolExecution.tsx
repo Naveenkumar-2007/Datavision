@@ -57,7 +57,7 @@ const MCPToolExecution: React.FC<MCPToolExecutionProps> = ({
 
     const getStatusColor = () => {
         switch (status) {
-            case 'running': return 'border-teal-500 bg-teal-500/10';
+            case 'running': return 'border-green-500 bg-green-500/10';
             case 'success': return 'border-green-500 bg-green-500/10';
             case 'error': return 'border-red-500 bg-red-500/10';
             case 'permission_required': return 'border-amber-500 bg-amber-500/10';
@@ -68,7 +68,7 @@ const MCPToolExecution: React.FC<MCPToolExecutionProps> = ({
     const getStatusIcon = () => {
         switch (status) {
             case 'running':
-                return <Loader2 className="w-4 h-4 text-teal-400 animate-spin" />;
+                return <Loader2 className="w-4 h-4 text-green-400 animate-spin" />;
             case 'success':
                 return <CheckCircle2 className="w-4 h-4 text-green-400" />;
             case 'error':
@@ -148,7 +148,7 @@ const MCPToolExecution: React.FC<MCPToolExecutionProps> = ({
                     animate={{ opacity: 1 }}
                 >
                     <motion.div
-                        className="h-full bg-gradient-to-r from-teal-500 to-cyan-400"
+                        className="h-full bg-gradient-to-r from-green-500 to-cyan-400"
                         initial={{ width: '0%' }}
                         animate={{ width: progress > 0 ? `${progress}%` : '100%' }}
                         transition={progress > 0 ? { duration: 0.3 } : {
@@ -174,7 +174,7 @@ const MCPToolExecution: React.FC<MCPToolExecutionProps> = ({
                 >
                     <button
                         onClick={onAllow}
-                        className="flex-1 py-1.5 px-3 bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2"
+                        className="flex-1 py-1.5 px-3 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2"
                     >
                         <CheckCircle2 className="w-4 h-4" />
                         Allow
@@ -209,7 +209,7 @@ const MCPToolExecution: React.FC<MCPToolExecutionProps> = ({
                                             className="flex items-center gap-2 text-xs text-gray-400"
                                         >
                                             <div className={`w-1.5 h-1.5 rounded-full ${idx <= currentDetailIndex && status === 'running'
-                                                    ? 'bg-teal-400'
+                                                    ? 'bg-green-400'
                                                     : status === 'success'
                                                         ? 'bg-green-400'
                                                         : 'bg-gray-600'
@@ -260,7 +260,7 @@ export const MCPToolChain: React.FC<MCPToolChainProps> = ({ tools, title }) => {
         <div className="rounded-lg border border-gray-700 bg-gray-800/50 p-3 mb-3">
             {title && (
                 <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-700">
-                    <Wrench className="w-4 h-4 text-teal-400" />
+                    <Wrench className="w-4 h-4 text-green-400" />
                     <span className="text-sm font-medium text-gray-200">{title}</span>
                 </div>
             )}
@@ -273,7 +273,7 @@ export const MCPToolChain: React.FC<MCPToolChainProps> = ({ tools, title }) => {
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ delay: idx * 0.1 }}
                             className={`flex-shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-full border ${tool.status === 'running'
-                                    ? 'border-teal-500 bg-teal-500/10'
+                                    ? 'border-green-500 bg-green-500/10'
                                     : tool.status === 'success'
                                         ? 'border-green-500 bg-green-500/10'
                                         : tool.status === 'error'
@@ -284,7 +284,7 @@ export const MCPToolChain: React.FC<MCPToolChainProps> = ({ tools, title }) => {
                             <span className="text-sm">{tool.icon}</span>
                             <span className="text-xs text-gray-300">{tool.name}</span>
                             {tool.status === 'running' && (
-                                <Loader2 className="w-3 h-3 text-teal-400 animate-spin" />
+                                <Loader2 className="w-3 h-3 text-green-400 animate-spin" />
                             )}
                             {tool.status === 'success' && (
                                 <CheckCircle2 className="w-3 h-3 text-green-400" />

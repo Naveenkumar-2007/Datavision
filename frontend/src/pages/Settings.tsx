@@ -697,13 +697,13 @@ const Settings: React.FC = () => {
         className="glass-card p-8"
       >
         <div className="flex items-center space-x-4 mb-6">
-          <User className="w-6 h-6 text-teal-400" />
+          <User className="w-6 h-6 text-green-400" />
           <h2 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>Profile</h2>
         </div>
 
         <div className="space-y-6">
           <div className="flex items-center space-x-6">
-            <div className="relative w-24 h-24 rounded-2xl overflow-hidden bg-gradient-to-br from-teal-500 to-amber-600 flex items-center justify-center group">
+            <div className="relative w-24 h-24 rounded-2xl overflow-hidden bg-gradient-to-br from-green-500 to-amber-600 flex items-center justify-center group">
               {profile.avatar ? (
                 <img src={profile.avatar} alt="Profile" className="w-full h-full object-cover" />
               ) : (
@@ -1002,7 +1002,7 @@ const Settings: React.FC = () => {
                 }
               }}
               disabled={dailyReportSending}
-              className="px-6 py-3 bg-gradient-to-r from-teal-600 to-cyan-600 rounded-xl text-white font-medium hover:shadow-lg hover:shadow-teal-500/20 transition-all disabled:opacity-50 flex items-center space-x-2"
+              className="px-6 py-3 bg-gradient-to-r from-green-600 to-cyan-600 rounded-xl text-white font-medium hover:shadow-lg hover:shadow-green-500/20 transition-all disabled:opacity-50 flex items-center space-x-2"
             >
               <Mail className="w-4 h-4" />
               <span>{dailyReportSending ? 'Sending...' : '📈 Send Weekly Report Now'}</span>
@@ -1030,18 +1030,18 @@ const Settings: React.FC = () => {
           {/* Export All Data */}
           <button
             onClick={handleExportData}
-            className="w-full p-4 bg-dark-card border border-dark-border rounded-xl text-left hover:bg-dark-hover hover:border-teal-500/30 transition-colors flex items-center justify-between group"
+            className="w-full p-4 bg-dark-card border border-dark-border rounded-xl text-left hover:bg-dark-hover hover:border-green-500/30 transition-colors flex items-center justify-between group"
           >
             <div className="flex items-center space-x-3">
-              <div className="p-2 rounded-lg bg-teal-500/10 group-hover:bg-teal-500/20 transition-colors">
-                <Download className="w-5 h-5 text-teal-400" />
+              <div className="p-2 rounded-lg bg-green-500/10 group-hover:bg-green-500/20 transition-colors">
+                <Download className="w-5 h-5 text-green-400" />
               </div>
               <div>
                 <div className="text-white font-medium">Export All Data</div>
                 <div className="text-sm text-gray-400">Download files, settings, and ML results as JSON</div>
               </div>
             </div>
-            <span className="text-teal-400 text-sm font-medium group-hover:translate-x-1 transition-transform">Export →</span>
+            <span className="text-green-400 text-sm font-medium group-hover:translate-x-1 transition-transform">Export →</span>
           </button>
 
           {/* Clear ML Models */}

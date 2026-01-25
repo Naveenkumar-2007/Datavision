@@ -390,7 +390,7 @@ const AutoML: React.FC = () => {
                     </p>
                     <button
                         onClick={() => navigate('/datahub')}
-                        className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 mx-auto"
+                        className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-green-500 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity flex items-center gap-2 mx-auto"
                     >
                         <Zap className="w-5 h-5" />
                         Go to DataHub
@@ -428,7 +428,7 @@ const AutoML: React.FC = () => {
                             {result.pipeline && (
                                 <span className={`ml-2 px-3 py-1 text-sm font-medium rounded-full ${result.pipeline === 'ULTRA_AUTOML'
                                     ? 'bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-400 border border-purple-500/30'
-                                    : 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-gradient-to-r from-emerald-500/20 to-green-500/20 text-emerald-400 border border-emerald-500/30'
                                     }`}>
                                     {result.pipeline === 'ULTRA_AUTOML' ? '🎼 Ultra Mode' : '🚀 Fast Mode'}
                                 </span>
@@ -543,7 +543,7 @@ const AutoML: React.FC = () => {
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id as any)}
                         className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition-all ${activeTab === tab.id
-                            ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white'
+                            ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white'
                             : 'text-gray-400 hover:text-white'
                             }`}
                     >
@@ -933,7 +933,7 @@ const AutoML: React.FC = () => {
                                                             <span className="font-bold text-emerald-400">{(importance.importance * 100).toFixed(1)}%</span>
                                                             <div className="w-full bg-gray-700 rounded-full h-1.5 mt-1">
                                                                 <div
-                                                                    className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                                                                    className="h-1.5 rounded-full bg-gradient-to-r from-emerald-500 to-green-500"
                                                                     style={{ width: `${importance.importance * 100}%` }}
                                                                 />
                                                             </div>
@@ -951,14 +951,14 @@ const AutoML: React.FC = () => {
                                             className="flex items-center gap-4 p-3 rounded-xl"
                                             style={{ backgroundColor: theme.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
                                         >
-                                            <span className="w-8 h-8 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 flex items-center justify-center text-white font-bold">
+                                            <span className="w-8 h-8 rounded-lg bg-gradient-to-r from-emerald-500 to-green-500 flex items-center justify-center text-white font-bold">
                                                 {f.rank}
                                             </span>
                                             <div className="flex-1">
                                                 <span className="font-medium" style={{ color: theme.textPrimary }}>{f.feature}</span>
                                                 <div className="w-full bg-gray-700 rounded-full h-2 mt-1">
                                                     <div
-                                                        className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                                                        className="h-2 rounded-full bg-gradient-to-r from-emerald-500 to-green-500"
                                                         style={{ width: `${f.importance * 100}%` }}
                                                     />
                                                 </div>
@@ -1073,7 +1073,7 @@ const AutoML: React.FC = () => {
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* Prediction Form */}
                         <div
-                            className="p-6 rounded-2xl border bg-gradient-to-br from-emerald-500/10 to-teal-500/10"
+                            className="p-6 rounded-2xl border bg-gradient-to-br from-emerald-500/10 to-green-500/10"
                             style={{ borderColor: theme.borderColor }}
                         >
                             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>
@@ -1244,7 +1244,7 @@ const AutoML: React.FC = () => {
                                 <button
                                     onClick={handlePredict}
                                     disabled={isPredicting || Object.keys(predictionInputs).length === 0}
-                                    className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-semibold hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 text-white font-semibold hover:opacity-90 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {isPredicting ? (
                                         <>
@@ -1278,7 +1278,7 @@ const AutoML: React.FC = () => {
                                     className="space-y-6"
                                 >
                                     {/* Main Prediction */}
-                                    <div className="p-6 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-center">
+                                    <div className="p-6 rounded-xl bg-gradient-to-br from-emerald-500/20 to-green-500/20 text-center">
                                         <p className="text-sm mb-2" style={{ color: theme.textMuted }}>
                                             Predicted {result.target_column}
                                         </p>
@@ -1302,7 +1302,7 @@ const AutoML: React.FC = () => {
                                                 <motion.div
                                                     initial={{ width: 0 }}
                                                     animate={{ width: `${predictionResult.probability * 100}%` }}
-                                                    className="h-3 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
+                                                    className="h-3 rounded-full bg-gradient-to-r from-emerald-500 to-green-500"
                                                 />
                                             </div>
                                         </div>
@@ -1396,7 +1396,7 @@ const AutoML: React.FC = () => {
                         {/* API Endpoint */}
                         {result.api_endpoint && (
                             <div
-                                className="lg:col-span-2 p-6 rounded-2xl border bg-gradient-to-r from-emerald-500/10 to-teal-500/10"
+                                className="lg:col-span-2 p-6 rounded-2xl border bg-gradient-to-r from-emerald-500/10 to-green-500/10"
                                 style={{ borderColor: 'rgba(16, 185, 129, 0.3)' }}
                             >
                                 <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: theme.textPrimary }}>

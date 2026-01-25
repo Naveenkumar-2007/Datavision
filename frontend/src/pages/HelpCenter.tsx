@@ -144,7 +144,7 @@ const HelpCenter: React.FC = () => {
 
     const getColorClass = (color: string) => {
         const colors: Record<string, string> = {
-            teal: 'text-teal-500 bg-teal-500/10',
+            teal: 'text-green-500 bg-green-500/10',
             amber: 'text-amber-500 bg-amber-500/10',
             purple: 'text-purple-500 bg-purple-500/10',
             blue: 'text-blue-500 bg-blue-500/10',
@@ -175,7 +175,7 @@ const HelpCenter: React.FC = () => {
                 >
                     {/* Title */}
                     <div className="text-center mb-12">
-                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-500 mb-4">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 mb-4">
                             <HelpCircle className="w-8 h-8 text-white" />
                         </div>
                         <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Help Center</h1>
@@ -188,7 +188,7 @@ const HelpCenter: React.FC = () => {
                             <a
                                 key={i}
                                 href={`#${cat.title.toLowerCase().replace(/\s/g, '-')}`}
-                                className="p-4 rounded-xl border text-center hover:border-teal-500/50 transition-colors"
+                                className="p-4 rounded-xl border text-center hover:border-green-500/50 transition-colors"
                                 style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
                             >
                                 <div className={`inline-flex p-2 rounded-lg mb-2 ${getColorClass(cat.color)}`}>
@@ -253,14 +253,14 @@ const HelpCenter: React.FC = () => {
                     ))}
 
                     {/* Contact Support */}
-                    <div className="p-6 rounded-2xl border bg-gradient-to-r from-teal-500/10 to-emerald-500/10" style={{ borderColor: 'var(--border-color)' }}>
+                    <div className="p-6 rounded-2xl border bg-gradient-to-r from-green-500/10 to-emerald-500/10" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex items-center gap-3 mb-3">
-                            <Mail className="w-5 h-5 text-teal-500" />
+                            <Mail className="w-5 h-5 text-green-500" />
                             <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Still need help?</h2>
                         </div>
                         <p style={{ color: 'var(--text-secondary)' }}>
                             Contact our support team at:{' '}
-                            <a href="mailto:naveenkumarchapala686@gmail.com" className="text-teal-500 hover:underline">
+                            <a href="mailto:naveenkumarchapala686@gmail.com" className="text-green-500 hover:underline">
                                 naveenkumarchapala686@gmail.com
                             </a>
                         </p>

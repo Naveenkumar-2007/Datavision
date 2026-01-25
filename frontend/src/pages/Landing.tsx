@@ -568,13 +568,13 @@ const Landing: React.FC = () => {
                                                     </div>
                                                     <div className="flex items-end gap-0.5 h-20 mt-1">
                                                         {[...Array(20)].map((_, i) => (
-                                                            <div key={i} className="w-full bg-teal-400" style={{ height: `${i * 5}%` }} />
+                                                            <div key={i} className="w-full bg-green-400" style={{ height: `${i * 5}%` }} />
                                                         ))}
-                                                        <div className="w-full bg-teal-400/50 border-t border-dashed border-white" style={{ height: '30%' }} />
+                                                        <div className="w-full bg-green-400/50 border-t border-dashed border-white" style={{ height: '30%' }} />
                                                     </div>
                                                     <div className="flex items-center gap-2 mt-1 justify-center">
-                                                        <span className="w-2 h-0.5 bg-teal-400"></span><span className="text-[6px] text-muted-foreground">Actual</span>
-                                                        <span className="w-2 h-0.5 border-t border-dashed border-teal-400"></span><span className="text-[6px] text-muted-foreground">Forecast</span>
+                                                        <span className="w-2 h-0.5 bg-green-400"></span><span className="text-[6px] text-muted-foreground">Actual</span>
+                                                        <span className="w-2 h-0.5 border-t border-dashed border-green-400"></span><span className="text-[6px] text-muted-foreground">Forecast</span>
                                                     </div>
                                                 </div>
                                                 {/* Area */}
@@ -584,8 +584,8 @@ const Landing: React.FC = () => {
                                                         <span className="text-[8px] text-muted-foreground">area</span>
                                                     </div>
                                                     <svg viewBox="0 0 100 40" className="w-full h-full">
-                                                        <path d="M0 40 L100 0 V40 H0 Z" fill="#14b8a6" fillOpacity="0.3" />
-                                                        <path d="M0 40 L100 0" stroke="#14b8a6" strokeWidth="2" fill="none" />
+                                                        <path d="M0 40 L100 0 V40 H0 Z" fill="#22c55e" fillOpacity="0.3" />
+                                                        <path d="M0 40 L100 0" stroke="#22c55e" strokeWidth="2" fill="none" />
                                                     </svg>
                                                 </div>
                                             </div>
@@ -609,10 +609,10 @@ const Landing: React.FC = () => {
                                                         <span className="text-[8px] text-muted-foreground">box</span>
                                                     </div>
                                                     <div className="relative h-20 mt-1 flex items-center justify-center">
-                                                        <div className="w-3/4 h-8 border border-teal-500 relative">
-                                                            <div className="absolute left-[40%] h-full w-0.5 bg-teal-500"></div>
+                                                        <div className="w-3/4 h-8 border border-green-500 relative">
+                                                            <div className="absolute left-[40%] h-full w-0.5 bg-green-500"></div>
                                                         </div>
-                                                        <div className="absolute w-full h-0.5 bg-teal-500/50 top-1/2"></div>
+                                                        <div className="absolute w-full h-0.5 bg-green-500/50 top-1/2"></div>
                                                     </div>
                                                     <div className="text-[6px] text-muted-foreground mt-1">200</div>
                                                 </div>
@@ -624,7 +624,7 @@ const Landing: React.FC = () => {
                                                     </div>
                                                     <div className="grid grid-cols-4 gap-0.5 h-full opacity-80">
                                                         {[...Array(16)].map((_, i) => (
-                                                            <div key={i} style={{ backgroundColor: i % 5 === 0 ? '#14b8a6' : '#14b8a640' }} />
+                                                            <div key={i} style={{ backgroundColor: i % 5 === 0 ? '#22c55e' : '#22c55e40' }} />
                                                         ))}
                                                     </div>
                                                 </div>
@@ -789,7 +789,7 @@ const Landing: React.FC = () => {
                                                             <span className="text-[9px]" style={{ color: demoMuted }}>Task type: multiclass_classification</span>
                                                         </div>
                                                         <div className="p-2 rounded border flex items-center gap-2" style={{ backgroundColor: `${demoBg}`, borderColor: demoBorder }}>
-                                                            <div className="w-1.5 h-1.5 rounded-full bg-teal-500" />
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
                                                             <span className="text-[9px]" style={{ color: demoMuted }}>Found 2 natural clusters in your data</span>
                                                         </div>
                                                     </div>
@@ -1258,7 +1258,7 @@ const Landing: React.FC = () => {
                                                 <div className="flex items-center justify-between mb-4">
                                                     <div>
                                                         <div className="flex items-center gap-2">
-                                                            <Clock className="w-3 h-3 text-teal-500" />
+                                                            <Clock className="w-3 h-3 text-green-500" />
                                                             <p className="text-sm font-medium" style={{ color: demoText }}>Daily Reports</p>
                                                         </div>
                                                         <p className="text-[10px]" style={{ color: demoMuted }}>Receive daily data insights from DataVision</p>
@@ -1490,9 +1490,9 @@ const Landing: React.FC = () => {
                         <AnimatedLogo size="sm" showText={true} isDark={isDark} />
                     </div>
                     <div className="flex items-center gap-6 text-sm" style={{ color: textMuted }}>
-                        <Link to="/privacy" className="hover:text-teal-400 transition-colors">Privacy Policy</Link>
-                        <Link to="/terms" className="hover:text-teal-400 transition-colors">Terms of Service</Link>
-                        <Link to="/help" className="hover:text-teal-400 transition-colors">Help Center</Link>
+                        <Link to="/privacy" className="hover:text-green-400 transition-colors">Privacy Policy</Link>
+                        <Link to="/terms" className="hover:text-green-400 transition-colors">Terms of Service</Link>
+                        <Link to="/help" className="hover:text-green-400 transition-colors">Help Center</Link>
                     </div>
                     <p className="text-xs text-center" style={{ color: textMuted }}>
                         © 2026 DataVision. Enterprise Analytics Platform.

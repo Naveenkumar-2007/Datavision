@@ -8,21 +8,19 @@ Includes:
 - Predictions with explainability
 """
 
-from ml.automl_engine import ProductionMLEngine, cancel_training
-from api.deps import get_current_user_id
-from fastapi import Depends, APIRouter, HTTPException, UploadFile, File, Form
-from pydantic import BaseModel
+import logging
 from typing import Optional
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from pydantic import BaseModel
 import pandas as pd
 import io
-import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 class PredictRequest(BaseModel):
-    # user_id: str  <-- REMOVED: Should not trust body
+    user_id: str
     model_name: str
     data: dict
 
@@ -31,7 +29,7 @@ class PredictRequest(BaseModel):
 async def production_train(
     file: UploadFile = File(...),
     target_column: Optional[str] = Form(None),
-    user_id: str = Depends(get_current_user_id) # Trust Header only
+    user_id: str = Form("default")
 ):
     """
     🚀 SILICON VALLEY GRADE ML TRAINING
@@ -43,7 +41,7 @@ async def production_train(
     - Ensemble methods
     """
     try:
-        print(f"🚀 [PRODUCTION] Silicon Valley Grade Training for User: {user_id}")
+        print("🚀 [PRODUCTION] Silicon Valley Grade Training")
         
         content = await file.read()
         filename = file.filename or "data.csv"
@@ -55,8 +53,7 @@ async def production_train(
         
         print(f"📂 File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
         
-        # INSTANTIATE FRESH ENGINE PER REQUEST (No Singleton!)
-        engine = ProductionMLEngine()
+        from ml.automl_engine import automl_engine
         
         # Run synchronous blocking training in a separate thread
         # This allows the API to process /stop_training requests concurrently
@@ -65,7 +62,7 @@ async def production_train(
         print(f"🧵 Offloading training to thread pool for user {user_id}")
         result = await loop.run_in_executor(
             None, 
-            lambda: engine.production_train(df, target_column, user_id, mode='fast')
+            lambda: automl_engine.production_train(df, target_column, user_id, mode='fast')
         )
         
         # Use charts already generated during training
@@ -132,7 +129,7 @@ async def production_train(
 async def ultra_train(
     file: UploadFile = File(...),
     target_column: Optional[str] = Form(None),
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Form("default"),
     mode: str = Form("maximum_accuracy")
 ):
     """
@@ -162,8 +159,7 @@ async def ultra_train(
         print(f"📂 File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
         
         # Use the SAME production training as Fast mode for full compatibility
-        # INSTANTIATE NEW ENGINE
-        engine = ProductionMLEngine()
+        from ml.automl_engine import automl_engine
         import asyncio
         
         loop = asyncio.get_running_loop()
@@ -172,7 +168,7 @@ async def ultra_train(
         # Run production training with ULTRA settings (20+ models with ensembles)
         result = await loop.run_in_executor(
             None, 
-            lambda: engine.production_train(df, target_column, user_id, mode='ultra')
+            lambda: automl_engine.production_train(df, target_column, user_id, mode='ultra')
         )
         
         # Use charts already generated during training
@@ -248,7 +244,7 @@ async def train_with_test_file(
     train_file: UploadFile = File(..., description="Training data file"),
     test_file: UploadFile = File(..., description="Test/evaluation data file"),
     target_column: Optional[str] = Form(None),
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Form("default")
 ):
     """
     Train with SEPARATE train and test files.
@@ -284,11 +280,11 @@ async def train_with_test_file(
                 detail=f"Column mismatch. Missing in test: {missing_in_test}, Missing in train: {missing_in_train}"
             )
         
-        engine = ProductionMLEngine()
+        from ml.automl_engine import automl_engine
         from ml.chart_generator import chart_generator
         
         # Train with separate test set
-        result = await engine.train_with_test_set(
+        result = await automl_engine.train_with_test_set(
             train_df=train_df,
             test_df=test_df,
             target_col=target_column,
@@ -353,7 +349,7 @@ async def train_with_test_file(
 async def train_automl(
     file: UploadFile = File(...),
     target_column: Optional[str] = Form(None),
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Form("default")
 ):
     """
     Full AutoML training pipeline with BOTH:
@@ -383,8 +379,7 @@ async def train_automl(
         # =========================================
         # SUPERVISED LEARNING (SILICON VALLEY GRADE)
         # =========================================
-        # Use fresh engine
-        engine = ProductionMLEngine()
+        from ml.automl_engine import automl_engine
         import asyncio
         loop = asyncio.get_running_loop()
         
@@ -392,7 +387,7 @@ async def train_automl(
         # Run in thread pool to prevent blocking event loop (Crucial for Cancellation)
         result = await loop.run_in_executor(
             None,
-            lambda: engine.production_train(df, target_column, user_id)
+            lambda: automl_engine.production_train(df, target_column, user_id)
         )
         
         # =========================================
@@ -408,8 +403,7 @@ async def train_automl(
         clustering_result = None
         try:
             print("🔮 [AUTOML] Running automatic clustering...")
-            # Use same engine
-            clustering_result = engine.run_clustering(df, n_clusters=None, algorithm='kmeans')
+            clustering_result = automl_engine.run_clustering(df, n_clusters=None, algorithm='kmeans')
             
             if clustering_result.get('success'):
                 print(f"   ✅ Clustering: {clustering_result.get('n_clusters')} clusters found")
@@ -506,23 +500,20 @@ async def train_automl(
 
 
 @router.post("/predict")
-async def predict(
-    request: PredictRequest,
-    user_id: str = Depends(get_current_user_id)
-):
+async def predict(request: PredictRequest):
     """Make prediction"""
     try:
-        # engine = ProductionMLEngine() <-- Instantiated below
+        from ml.automl_engine import automl_engine
         
         print(f"🔮 [PREDICT] Input: {request.data}")
         
-        engine = ProductionMLEngine()
-        # Load model explicitly for this user
-        loaded = engine.load(user_id)
-        if not loaded or engine.model is None:
-             raise HTTPException(status_code=400, detail="No model trained. Please train first.")
+        # Load model if not in memory
+        if automl_engine.model is None:
+            loaded = automl_engine.load(request.user_id)
+            if not loaded:
+                raise HTTPException(status_code=400, detail="No model trained. Please train first.")
         
-        result = engine.predict(request.data)
+        result = automl_engine.predict(request.data)
         print(f"🔮 [PREDICT] Output: {result}")
         
         return {
@@ -544,26 +535,23 @@ async def predict(
 
 
 @router.get("/status")
-async def get_status(user_id: str = Depends(get_current_user_id)):
+async def get_status():
     """Get engine status"""
     try:
-        engine = ProductionMLEngine()
-        # Check if we can load a model for this user
-        is_trained = engine.load(user_id)
-        
+        from ml.automl_engine import automl_engine
         return {
             "ready": True,
-            "model_trained": is_trained,
-            "best_model": engine.model_name if is_trained else None,
-            "feature_columns": engine.feature_columns if is_trained else [],
-            "feature_metadata": engine.get_feature_metadata() if is_trained else []
+            "model_trained": automl_engine.model is not None,
+            "best_model": automl_engine.model_name,
+            "feature_columns": automl_engine.feature_columns,
+            "feature_metadata": automl_engine.get_feature_metadata()
         }
     except:
         return {"ready": True, "model_trained": False}
 
 
 @router.post("/stop_training")
-async def stop_training(user_id: str = Depends(get_current_user_id)):
+async def stop_training(user_id: str = Form(...)):
     """
     ⛔ stop current training task for user
     Sets the cancellation flag which checked by the training engine loop.
@@ -580,26 +568,23 @@ async def stop_training(user_id: str = Depends(get_current_user_id)):
         return {"success": False, "error": str(e)}
 
 
-@router.post("/predict_v2") # Renamed to avoid collision if necessary, but original likely has 2 predict endpoints? checking code it looks like duplicat... keeping original function name
-async def make_prediction(
-    request: PredictRequest,
-    user_id: str = Depends(get_current_user_id)
-):
+@router.post("/predict")
+async def make_prediction(request: PredictRequest):
     """
     🔮 MAKE PREDICTION - Use trained model to predict new data
     
     Uses AutoMLEngine hydration to ensure exact feature pipeline replication.
     """
     try:
-        print(f"🔮 [PREDICT] Request from user: {user_id}")
+        print(f"🔮 [PREDICT] Request from user: {request.user_id}")
         
         from ml.model_persistence import ModelPersistenceManager
-        # from ml.automl_engine import ProductionMLEngine <-- already imported
+        from ml.automl_engine import ProductionMLEngine
         import numpy as np
         
         # Load the model state
         persistence = ModelPersistenceManager()
-        engine_state = persistence.load_model(user_id)
+        engine_state = persistence.load_model(request.user_id)
         
         if not engine_state:
             return {
@@ -735,25 +720,16 @@ async def make_prediction(
 
 
 @router.get("/charts/{user_id}")
-async def get_ml_charts(
-    user_id: str, # Matches URL param
-    current_user_id: str = Depends(get_current_user_id)
-):
+async def get_ml_charts(user_id: str):
     """
     📊 GET ML CHARTS - Retrieve saved ML charts for a user
     
     Returns the base64-encoded matplotlib charts generated during training.
     Used by frontend to restore charts when navigating back to ML Predictions page.
     """
-    # Enforce security: URL param must match authenticated user
-    if user_id != current_user_id:
-        raise HTTPException(status_code=403, detail="Unauthorized access to another user's charts")
-    
-    # user_id is already set correctly
-    
     try:
         from ml.model_persistence import model_persistence
-
+        from ml.automl_engine import automl_engine
         
         charts = {}
         
@@ -769,22 +745,21 @@ async def get_ml_charts(
         # 2. If no charts in persistence, try to regenerate from loaded model
         if not charts:
             try:
-                engine = ProductionMLEngine()
-                if engine.load(user_id) and engine.model is not None:
+                if automl_engine.load(user_id) and automl_engine.model is not None:
                     # Try to get charts from the engine
-                    if hasattr(engine, 'get_charts'):
-                        charts = engine.get_charts() or {}
+                    if hasattr(automl_engine, 'get_charts'):
+                        charts = automl_engine.get_charts() or {}
                     
                     # If still no charts, generate new ones
-                    if not charts and hasattr(engine, '_y_test') and engine._y_test is not None:
+                    if not charts and hasattr(automl_engine, '_y_test') and automl_engine._y_test is not None:
                         from ml.chart_generator import generate_ml_charts
                         charts = generate_ml_charts(
-                            engine.model,
-                            engine._y_test,
-                            engine._y_pred,
-                            engine.task_type,
-                            engine.feature_columns,
-                            getattr(engine, '_get_importance', lambda m: [])(engine.model)
+                            automl_engine.model,
+                            automl_engine._y_test,
+                            automl_engine._y_pred,
+                            automl_engine.task_type,
+                            automl_engine.feature_columns,
+                            getattr(automl_engine, '_get_importance', lambda m: [])(automl_engine.model)
                         ) or {}
                         
                         # Save the regenerated charts for future use

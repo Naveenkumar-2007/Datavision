@@ -104,7 +104,7 @@ const AppLayout: React.FC = () => {
           >
             <div className="relative shrink-0">
               <img src="/logo.png" alt="DataVision" className="w-9 h-9 object-contain rounded-lg" />
-              <div className="absolute inset-0 bg-teal-400/20 rounded-full blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="absolute inset-0 bg-green-400/20 rounded-full blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             <span
               className={`text-lg font-semibold tracking-tight md:hidden whitespace-nowrap
@@ -155,7 +155,7 @@ const AppLayout: React.FC = () => {
                   ${isSidebarCollapsed ? 'lg:hidden' : 'lg:block'}
                 `}>{item.label}</span>
                 {item.path === '/chat' && (
-                  <Sparkles className={`w-3.5 h-3.5 ml-auto text-teal-400 opacity-60 md:hidden
+                  <Sparkles className={`w-3.5 h-3.5 ml-auto text-green-400 opacity-60 md:hidden
                     ${isSidebarCollapsed ? 'lg:hidden' : 'lg:inline-block'}
                   `} />
                 )}

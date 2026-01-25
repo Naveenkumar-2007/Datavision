@@ -45,7 +45,7 @@ export default function ForgotPassword() {
             {/* Background Orbs */}
             <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
                 <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full blur-[100px] opacity-20 bg-emerald-500/20" />
-                <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] rounded-full blur-[120px] opacity-10 bg-teal-500/20" />
+                <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] rounded-full blur-[120px] opacity-10 bg-green-500/20" />
             </div>
 
             {/* Theme Toggle */}
@@ -112,7 +112,7 @@ export default function ForgotPassword() {
                 <div className="text-center mb-8">
                     <Link to="/" className="inline-flex items-center gap-3 group">
                         <div className="relative">
-                            <div className="absolute inset-0 rounded-full blur-lg opacity-50 group-hover:opacity-100 transition-opacity bg-teal-500/30" />
+                            <div className="absolute inset-0 rounded-full blur-lg opacity-50 group-hover:opacity-100 transition-opacity bg-green-500/30" />
                             <img src="/logo.png" alt="DataVision Logo" className="w-14 h-14 object-contain relative z-10 drop-shadow-lg" />
                         </div>
                         <span className="text-3xl font-bold tracking-tight">

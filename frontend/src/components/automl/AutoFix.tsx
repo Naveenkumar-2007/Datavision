@@ -345,7 +345,7 @@ const AutoFix: React.FC<AutoFixProps> = ({ theme, userId = 'default', onFixCompl
                         <button
                             onClick={handleAutoFix}
                             disabled={loading || detecting}
-                            className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl text-white font-semibold transition-opacity hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-50"
+                            className="flex-1 px-4 py-3 bg-gradient-to-r from-emerald-500 to-green-500 rounded-xl text-white font-semibold transition-opacity hover:opacity-90 flex items-center justify-center gap-2 disabled:opacity-50"
                         >
                             {loading ? (
                                 <Loader className="w-5 h-5 animate-spin" />
@@ -367,7 +367,7 @@ const AutoFix: React.FC<AutoFixProps> = ({ theme, userId = 'default', onFixCompl
                 >
                     {/* Success Header */}
                     <div
-                        className="p-6 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30"
+                        className="p-6 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-green-500/20 border border-emerald-500/30"
                     >
                         <div className="flex items-center gap-4">
                             <div className="w-14 h-14 rounded-2xl bg-emerald-500 flex items-center justify-center">

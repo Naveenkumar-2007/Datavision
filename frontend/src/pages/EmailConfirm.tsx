@@ -70,7 +70,7 @@ export default function EmailConfirm() {
             >
                 {status === 'loading' && (
                     <>
-                        <div className="w-16 h-16 border-4 border-t-teal-500 border-r-teal-500 border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-6" />
+                        <div className="w-16 h-16 border-4 border-t-green-500 border-r-green-500 border-b-transparent border-l-transparent rounded-full animate-spin mx-auto mb-6" />
                         <h2 className="text-xl font-bold mb-2" style={{ color: textPrimary }}>
                             Confirming your email...
                         </h2>

@@ -44,10 +44,10 @@ export const ExecutiveKPICard: React.FC<WidgetProps> = ({ data }) => {
         >
             <div className="flex justify-between items-start relative z-10">
                 <div>
-                    <span className="text-[10px] font-bold text-teal-400/80 uppercase tracking-widest">{data.title}</span>
+                    <span className="text-[10px] font-bold text-green-400/80 uppercase tracking-widest">{data.title}</span>
                     <div className="flex items-baseline gap-2 mt-1">
                         <h2 className="text-2xl font-black text-white">{formatValue(data.value)}</h2>
-                        <span className={`text-[10px] font-bold flex items-center gap-0.5 ${comp.is_positive ? 'text-teal-400' : 'text-rose-400'}`}>
+                        <span className={`text-[10px] font-bold flex items-center gap-0.5 ${comp.is_positive ? 'text-green-400' : 'text-rose-400'}`}>
                             {comp.is_positive ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
                             {formatPercent(comp.change_pct)}
                         </span>
@@ -92,7 +92,7 @@ export const ExecutiveKPICard: React.FC<WidgetProps> = ({ data }) => {
 export const RegionalMatrix: React.FC<WidgetProps> = ({ data }) => {
     return (
         <div className="p-4 rounded-xl border bg-[#0a192f]/50 backdrop-blur-md h-full flex flex-col" style={{ borderColor: 'rgba(45, 212, 191, 0.1)' }}>
-            <h4 className="text-[10px] font-bold text-teal-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+            <h4 className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <Layout className="w-3 h-3" />
                 {data.title}
             </h4>
@@ -109,7 +109,7 @@ export const RegionalMatrix: React.FC<WidgetProps> = ({ data }) => {
                     <tbody className="divide-y divide-white/5">
                         {data.data.map((row: any, i: number) => (
                             <tr key={i} className="hover:bg-white/5 transition-colors group">
-                                <td className="py-2.5 text-xs font-bold text-white group-hover:text-teal-400">{row.dimension}</td>
+                                <td className="py-2.5 text-xs font-bold text-white group-hover:text-green-400">{row.dimension}</td>
                                 {data.columns?.map((col: string) => (
                                     <td key={col} className="py-2.5 text-xs font-mono text-slate-300 text-right">{formatValue(row[col])}</td>
                                 ))}
@@ -303,7 +303,7 @@ export const PerformerWidget: React.FC<WidgetProps> = ({ data }) => {
 
     return (
         <div className="p-4 rounded-xl border flex flex-col h-full bg-gradient-to-br from-[#0a192f] to-[#0d2a4a] shadow-xl" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
-            <h4 className="text-[10px] font-bold text-teal-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <h4 className="text-[10px] font-bold text-green-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <TrendingUp className="w-3 h-3" />
                 Performance Summary: {dimension}
             </h4>
@@ -311,7 +311,7 @@ export const PerformerWidget: React.FC<WidgetProps> = ({ data }) => {
             <div className="flex-1 flex flex-col justify-center gap-4">
                 <div className="group relative">
                     <div className="flex items-center justify-between mb-1">
-                        <span className="text-[8px] uppercase font-bold text-teal-400">🏆 Top</span>
+                        <span className="text-[8px] uppercase font-bold text-green-400">🏆 Top</span>
                     </div>
                     <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-white">{top.name}</span>

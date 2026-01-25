@@ -133,17 +133,17 @@ from api.v1.endpoints import agentic_automl_api
 app.include_router(agentic_automl_api.router, prefix="/api/v2", tags=["Agentic AutoML"])
 logger.info("✅ Agentic AutoML API loaded (9 Specialized Agents)")
 
-# 🏥 Data Health API (Data Quality Analysis)
+# 🏥 Data Health API
 from api.v1.endpoints import data_health_api
 app.include_router(data_health_api.router, prefix="/api/v1", tags=["Data Health"])
 logger.info("✅ Data Health API loaded")
 
-# 🎮 Playground API (Interactive Predictions)
+# 🎮 Playground API
 from api.v1.endpoints import playground_api
 app.include_router(playground_api.router, prefix="/api/v1", tags=["Playground"])
 logger.info("✅ Playground API loaded")
 
-# 📊 Explainability API (SHAP Explanations)
+# 🔍 Explainability API
 from api.v1.endpoints import explainability_api
 app.include_router(explainability_api.router, prefix="/api/v1", tags=["Explainability"])
 logger.info("✅ Explainability API loaded")
@@ -151,8 +151,7 @@ logger.info("✅ Explainability API loaded")
 from fastapi.responses import FileResponse
 
 # Frontend static directory (pre-built React app)
-# Works for Docker (/app/backend/static) and Local (via relative path)
-frontend_static_dir = os.path.join(os.path.dirname(__file__), "static")
+frontend_static_dir = "/app/static"
 
 @app.get("/api")
 async def api_info():

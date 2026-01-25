@@ -490,7 +490,7 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ onTrainingComplete, u
                     onClick={handleTrain}
                     disabled={!trainFile.file || !testFile.file || isTraining}
                     className={`flex-1 py-4 rounded-xl font-semibold flex items-center justify-center gap-3 transition-all ${trainFile.file && testFile.file && !isTraining
-                        ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:opacity-90'
+                        ? 'bg-gradient-to-r from-emerald-500 to-green-500 text-white hover:opacity-90'
                         : 'bg-gray-500/20 text-gray-500 cursor-not-allowed'
                         }`}
                 >

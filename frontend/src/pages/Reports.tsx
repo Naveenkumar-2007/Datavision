@@ -403,7 +403,7 @@ const Reports: React.FC = () => {
                 })()}%
               </div>
             </div>
-            <div className="px-3 py-1 bg-teal-500/20 text-teal-400 text-xs font-bold rounded-full">
+            <div className="px-3 py-1 bg-green-500/20 text-green-400 text-xs font-bold rounded-full">
               Ready
             </div>
           </div>
@@ -672,7 +672,7 @@ const Reports: React.FC = () => {
                   {exportingPDF ? <Loader className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
                   <span className="whitespace-nowrap">{exportingPDF ? 'Exporting...' : 'Export PDF'}</span>
                 </button>
-                <button onClick={handleDownload} className="flex-1 sm:flex-none px-4 py-2 bg-teal-500/10 border border-teal-500/30 rounded-xl text-teal-400 font-medium hover:bg-teal-500/20 transition-colors flex items-center justify-center gap-2">
+                <button onClick={handleDownload} className="flex-1 sm:flex-none px-4 py-2 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400 font-medium hover:bg-green-500/20 transition-colors flex items-center justify-center gap-2">
                   <Download className="w-4 h-4" />
                   <span className="whitespace-nowrap">Download TXT</span>
                 </button>
@@ -733,11 +733,11 @@ const Reports: React.FC = () => {
                 const confidence = dataPoints > 20 ? 'Very High' : dataPoints > 10 ? 'High' : dataPoints > 5 ? 'Medium' : 'Standard';
 
                 return (
-                  <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-teal-500/10 to-indigo-500/10 border border-teal-500/30">
+                  <div className="mb-6 p-4 rounded-xl bg-gradient-to-r from-green-500/10 to-indigo-500/10 border border-green-500/30">
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-lg">🤖</span>
                       <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>AI Key Findings</h3>
-                      <span className="px-2 py-0.5 bg-teal-500/20 text-teal-400 text-[10px] font-bold rounded-full">AUTO-GENERATED</span>
+                      <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-[10px] font-bold rounded-full">AUTO-GENERATED</span>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30">
@@ -1096,7 +1096,7 @@ const Reports: React.FC = () => {
           <h3 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No Report Generated Yet</h3>
           <p className="mb-4" style={{ color: 'var(--text-muted)' }}>Select a report type above and click generate.</p>
           {!analytics?.hasData && (
-            <a href="/data-hub" className="inline-block px-6 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-full transition-colors">
+            <a href="/data-hub" className="inline-block px-6 py-2 bg-green-500 hover:bg-green-600 text-white rounded-full transition-colors">
               Upload Files First
             </a>
           )}

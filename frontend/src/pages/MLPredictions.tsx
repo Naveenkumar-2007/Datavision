@@ -32,12 +32,13 @@ import {
     Download,
     FileText,
     XCircle,
+    HeartPulse,
     Sliders,
     HelpCircle,
 } from 'lucide-react';
 import ModelHistory from '@/components/automl/ModelHistory';
-import PlaygroundTab from '@/components/automl/PlaygroundTab';
 import DataHealthCard from '@/components/automl/DataHealthCard';
+import PlaygroundTab from '@/components/automl/PlaygroundTab';
 import ExplainModal from '@/components/automl/ExplainModal';
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
@@ -110,6 +111,8 @@ const MLPredictions: React.FC = () => {
     const [result, setResult] = useState<MLResult | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'features' | 'predict' | 'playground' | 'history' | 'data'>('overview');
+    const [showExplainModal, setShowExplainModal] = useState(false);
+    const [explainInputValues, setExplainInputValues] = useState<Record<string, any>>({});
     const [predictionInput, setPredictionInput] = useState<Record<string, string>>({});
     const [predictionResult, setPredictionResult] = useState<any>(null);
     const [chartsLoading, setChartsLoading] = useState(false);
@@ -123,7 +126,6 @@ const MLPredictions: React.FC = () => {
     const [availableColumns, setAvailableColumns] = useState<string[]>([]);
     const [progressMessage, setProgressMessage] = useState('Initializing...');
     const [abortController, setAbortController] = useState<AbortController | null>(null);
-    const [showExplainModal, setShowExplainModal] = useState(false);
 
     // Smart target column detection - SAME AS DATAHUB
     const detectTargetColumn = (columns: string[]): string => {
@@ -208,7 +210,7 @@ const MLPredictions: React.FC = () => {
                 try {
                     const response = await fetch(`/api/v2/autonomous/models/${userId}`);
                     const data = await response.json();
-
+                    
                     if (data.success && data.models && data.models.length > 0) {
                         const activeModel = data.models.find((m: any) => m.is_active);
                         if (activeModel) {
@@ -297,7 +299,7 @@ const MLPredictions: React.FC = () => {
         try {
             const response = await fetch(`/api/v2/autonomous/models/${userId}`);
             const data = await response.json();
-
+            
             if (data.success && data.models && data.models.length > 0) {
                 const activeModel = data.models.find((m: any) => m.is_active);
                 if (activeModel && result) {
@@ -331,12 +333,12 @@ const MLPredictions: React.FC = () => {
             // Download file and parse columns
             const fileResponse = await fetch(`/api/v1/files/${userId}/${fileName}/download`);
             if (!fileResponse.ok) return;
-
+            
             const blob = await fileResponse.blob();
             const text = await blob.text();
             const firstLine = text.split('\n')[0];
             const columns = firstLine.split(',').map(col => col.trim().replace(/"/g, ''));
-
+            
             setAvailableColumns(columns);
             const detected = detectTargetColumn(columns);
             setTargetColumn(detected);
@@ -492,7 +494,7 @@ const MLPredictions: React.FC = () => {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh]">
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
-                    <RefreshCw className="w-16 h-16 mx-auto mb-4 animate-spin text-primary-400" />
+                    <RefreshCw className="w-16 h-16 mx-auto mb-4 animate-spin" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
                     <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Loading ML Results...</h2>
                 </motion.div>
             </div>
@@ -518,10 +520,10 @@ const MLPredictions: React.FC = () => {
                         >
                             {/* Big Animated Icon - Mode Aware Colors */}
                             <div className="relative w-40 h-40 mb-8 flex items-center justify-center">
-                                <div className={`absolute inset-0 blur-2xl rounded-full animate-pulse ${ultraMode ? 'bg-purple-500/20' : 'bg-teal-500/20'}`}></div>
+                                <div className={`absolute inset-0 blur-2xl rounded-full animate-pulse ${ultraMode ? 'bg-purple-500/20' : 'bg-green-500/20'}`}></div>
                                 <div className={`absolute inset-0 border-4 rounded-full animate-spin ${ultraMode
                                     ? 'border-t-purple-400 border-r-purple-400/50 border-b-purple-400/20 border-l-purple-400/50'
-                                    : 'border-t-teal-400 border-r-teal-400/50 border-b-teal-400/20 border-l-teal-400/50'
+                                    : 'border-t-green-400 border-r-green-400/50 border-b-green-400/20 border-l-green-400/50'
                                     }`}></div>
                                 <div className={`absolute inset-4 border-4 rounded-full animate-spin ${ultraMode
                                     ? 'border-b-pink-400 border-l-pink-400/50 border-t-pink-400/20 border-r-pink-400/50'
@@ -533,13 +535,13 @@ const MLPredictions: React.FC = () => {
                             {/* Title - Mode Aware */}
                             <h2 className={`text-4xl font-bold bg-clip-text text-transparent mb-4 ${ultraMode
                                 ? 'bg-gradient-to-r from-purple-400 via-pink-400 to-rose-400'
-                                : 'bg-gradient-to-r from-teal-400 via-cyan-400 to-blue-400'
+                                : 'bg-gradient-to-r from-emerald-400 via-green-400 to-cyan-400'
                                 }`}>
                                 {ultraMode ? '🎼 Ultra AutoML Training' : '🚀 Fast ML Training'}
                             </h2>
 
                             {/* Mode Details */}
-                            <div className={`flex items-center gap-2 mb-4 px-4 py-2 rounded-full ${ultraMode ? 'bg-purple-500/20 text-purple-300' : 'bg-teal-500/20 text-teal-300'
+                            <div className={`flex items-center gap-2 mb-4 px-4 py-2 rounded-full ${ultraMode ? 'bg-purple-500/20 text-purple-300' : 'bg-green-500/20 text-green-300'
                                 }`}>
                                 {ultraMode ? (
                                     <>
@@ -560,7 +562,7 @@ const MLPredictions: React.FC = () => {
 
                             {/* Progress Card */}
                             <div
-                                className={`backdrop-blur border rounded-2xl p-6 w-full mb-8 shadow-2xl ${ultraMode ? 'border-purple-500/30' : 'border-teal-500/30'
+                                className={`backdrop-blur border rounded-2xl p-6 w-full mb-8 shadow-2xl ${ultraMode ? 'border-purple-500/30' : 'border-green-500/30'
                                     }`}
                                 style={{ backgroundColor: 'var(--bg-card)' }}
                             >
@@ -615,7 +617,7 @@ const MLPredictions: React.FC = () => {
                                     onClick={() => setUltraMode(true)}
                                     disabled={training}
                                     className={`px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${ultraMode
-                                        ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-white shadow-lg'
+                                        ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg'
                                         : ''
                                         }`}
                                     style={!ultraMode ? { color: 'var(--text-muted)' } : undefined}
@@ -632,7 +634,7 @@ const MLPredictions: React.FC = () => {
                                 disabled={training}
                                 className={`btn-primary flex-1 md:flex-none rounded-full flex items-center justify-center gap-2 px-6 py-2.5 ${ultraMode
                                     ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500'
-                                    : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500'
+                                    : 'bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500'
                                     } text-white font-medium ${training ? 'opacity-60 cursor-wait' : ''}`}
                             >
                                 {training ? (
@@ -755,12 +757,17 @@ const MLPredictions: React.FC = () => {
                 )}
 
                 {/* 🏥 Data Health Card - Shows before training */}
-                {selectedFile && availableColumns.length > 0 && (
-                    <DataHealthCard
-                        key={selectedFile.name}
-                        fileName={selectedFile.name}
-                        targetColumn={targetColumn}
-                    />
+                {selectedFile && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                    >
+                        <DataHealthCard
+                            fileName={selectedFile.name}
+                            targetColumn={targetColumn}
+                        />
+                    </motion.div>
                 )}
 
                 {/* Instructions when no file selected */}
@@ -828,11 +835,11 @@ const MLPredictions: React.FC = () => {
                 <div className="flex items-center gap-4 w-full md:w-auto">
                     <div className="min-w-0">
                         <h1 className="text-2xl font-bold flex items-center gap-3 truncate" style={{ color: 'var(--text-primary)' }}>
-                            <Brain className="w-8 h-8 text-primary-400 flex-shrink-0" />
+                            <Brain className="w-8 h-8 flex-shrink-0" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
                             <span className="truncate">ML Predictions</span>
                         </h1>
                         <p className="text-sm truncate" style={{ color: 'var(--text-muted)' }}>
-                            Target: <span className="text-primary-400 font-medium">{result.target_column}</span>
+                            Target: <span className="font-medium" style={{ color: isDark ? '#4ade80' : '#16a34a' }}>{result.target_column}</span>
                             {' • '}
                             Task: <span className="text-blue-400 font-medium">{result.task_type}</span>
                             {' • '}
@@ -864,7 +871,7 @@ const MLPredictions: React.FC = () => {
                 >
                     <div className="flex items-center gap-3 mb-4">
                         <div className="p-2 rounded-lg bg-primary-500/20">
-                            <Award className="w-5 h-5 text-primary-400" />
+                            <Award className="w-5 h-5" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
                         </div>
                         <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Best Model</span>
                     </div>
@@ -932,10 +939,10 @@ const MLPredictions: React.FC = () => {
                         { id: 'overview', label: 'Overview', icon: PieChart },
                         { id: 'charts', label: 'ML Charts', icon: BarChart3 },
                         { id: 'features', label: 'Features', icon: TrendingUp },
-                        { id: 'predict', label: 'Make Prediction', icon: Play },
+                        { id: 'predict', label: 'Predict', icon: Play },
                         { id: 'playground', label: 'Playground', icon: Sliders },
-                        { id: 'history', label: 'Model History', icon: History },
-                        { id: 'data', label: 'Cleaned Data', icon: Database },
+                        { id: 'history', label: 'History', icon: History },
+                        { id: 'data', label: 'Data', icon: Database },
                     ].map((tab) => (
                         <button
                             key={tab.id}
@@ -1004,7 +1011,7 @@ const MLPredictions: React.FC = () => {
                                 {result.insights?.slice(0, 5).map((insight, i) => (
                                     <div
                                         key={i}
-                                        className="p-4 rounded-xl border-l-4 border-l-teal-500"
+                                        className="p-4 rounded-xl border-l-4 border-l-green-500"
                                         style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
                                     >
                                         <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{insight}</p>
@@ -1015,11 +1022,26 @@ const MLPredictions: React.FC = () => {
                     </div>
                 )}
 
+                {activeTab === 'playground' && (
+                    <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                            <Sliders className="w-5 h-5 text-violet-400" />
+                            Interactive Prediction Playground
+                        </h3>
+                        <PlaygroundTab 
+                            onPredictionMade={(pred) => {
+                                setPredictionResult(pred);
+                                setExplainInputValues(pred.input_values || {});
+                            }}
+                        />
+                    </div>
+                )}
+
                 {activeTab === 'charts' && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {chartsLoading && (
                             <div className="col-span-2 text-center p-12 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                                <RefreshCw className="w-16 h-16 mx-auto mb-4 animate-spin text-primary-400" />
+                                <RefreshCw className="w-16 h-16 mx-auto mb-4 animate-spin" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
                                 <p className="text-lg font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Loading Charts...</p>
                                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Fetching ML visualizations from server</p>
                             </div>
@@ -1033,7 +1055,7 @@ const MLPredictions: React.FC = () => {
                             >
                                 <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
                                     <div className="p-2 rounded-lg bg-gradient-to-r from-primary-500/20 to-emerald-500/20">
-                                        <BarChart3 className="w-4 h-4 text-primary-400" />
+                                        <BarChart3 className="w-4 h-4" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
                                     </div>
                                     <h3 className="text-base font-semibold capitalize" style={{ color: 'var(--text-primary)' }}>
                                         {chartName.replace(/_/g, ' ')}
@@ -1074,7 +1096,7 @@ const MLPredictions: React.FC = () => {
                     <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                         <h3 className="text-lg font-semibold mb-6 flex items-center justify-between" style={{ color: 'var(--text-primary)' }}>
                             <span>Feature Importance Ranking</span>
-                            <span className="text-sm font-normal px-3 py-1 rounded-full bg-primary-500/20 text-primary-400">
+                            <span className="text-sm font-normal px-3 py-1 rounded-full bg-primary-500/20" style={{ color: isDark ? '#4ade80' : '#16a34a' }}>
                                 {rankedFeatures.length} features
                             </span>
                         </h3>
@@ -1085,16 +1107,16 @@ const MLPredictions: React.FC = () => {
                                     className="flex items-center gap-4 p-3 rounded-xl"
                                     style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
                                 >
-                                    <span className="w-8 h-8 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 flex items-center justify-center text-white font-bold">
+                                    <span className="w-8 h-8 rounded-lg bg-gradient-to-r from-primary-500 to-emerald-500 flex items-center justify-center text-white font-bold">
                                         {f.rank || i + 1}
                                     </span>
                                     <div className="flex-1">
                                         <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{f.feature}</span>
                                         <div className="w-full rounded-full h-2 mt-1" style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb' }}>
-                                            <div className="h-2 rounded-full bg-gradient-to-r from-teal-500 to-cyan-500" style={{ width: `${f.importance * 100}%` }} />
+                                            <div className="h-2 rounded-full bg-gradient-to-r from-primary-500 to-emerald-500" style={{ width: `${f.importance * 100}%` }} />
                                         </div>
                                     </div>
-                                    <span className="font-bold text-teal-400">{(f.importance * 100).toFixed(1)}%</span>
+                                    <span className="font-bold" style={{ color: isDark ? '#4ade80' : '#16a34a' }}>{(f.importance * 100).toFixed(1)}%</span>
                                 </div>
                             ))}
                         </div>
@@ -1190,7 +1212,7 @@ const MLPredictions: React.FC = () => {
                                     alert(`Prediction failed: ${e.message}`);
                                 }
                             }}
-                            className="px-6 py-3 bg-gradient-to-r from-teal-500 to-amber-500 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity flex items-center gap-2"
+                            className="px-6 py-3 bg-gradient-to-r from-primary-500 to-emerald-500 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity flex items-center gap-2"
                         >
                             <Play className="w-5 h-5" />
                             Get Prediction
@@ -1200,48 +1222,69 @@ const MLPredictions: React.FC = () => {
                             <motion.div
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="mt-6 p-6 rounded-xl bg-gradient-to-r from-teal-500/20 to-amber-500/20 border border-teal-500/30"
+                                className="mt-6 p-4 sm:p-6 rounded-xl border-2"
+                                style={{
+                                    backgroundColor: isDark ? 'rgba(34, 197, 94, 0.1)' : 'rgba(34, 197, 94, 0.05)',
+                                    borderColor: isDark ? '#22c55e' : '#16a34a',
+                                }}
                             >
-                                <div className="flex items-center justify-between mb-2">
-                                    <h4 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                                        Prediction Result
-                                    </h4>
-                                    <button
-                                        onClick={() => setShowExplainModal(true)}
-                                        className="px-3 py-1.5 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors flex items-center gap-1.5 text-sm font-medium"
-                                    >
-                                        <HelpCircle className="w-4 h-4" />
-                                        Why?
-                                    </button>
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div>
+                                        <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+                                            Predicted label
+                                        </p>
+                                        <p 
+                                            className="text-3xl sm:text-4xl font-bold"
+                                            style={{ color: isDark ? '#4ade80' : '#15803d' }}
+                                        >
+                                            {predictionResult.prediction}
+                                        </p>
+                                    </div>
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+                                        {predictionResult.probability && (
+                                            <div className="sm:text-right">
+                                                <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-muted)' }}>Confidence</p>
+                                                <div className="flex items-center gap-2">
+                                                    <div
+                                                        className="w-20 sm:w-24 h-3 rounded-full overflow-hidden"
+                                                        style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb' }}
+                                                    >
+                                                        <div
+                                                            className="h-full rounded-full bg-gradient-to-r from-green-500 to-amber-500 transition-all duration-300"
+                                                            style={{ width: `${Math.max(...predictionResult.probability) * 100}%` }}
+                                                        />
+                                                    </div>
+                                                    <span className="font-bold" style={{ color: isDark ? '#4ade80' : '#15803d' }}>
+                                                        {(Math.max(...predictionResult.probability) * 100).toFixed(1)}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <button
+                                            onClick={() => {
+                                                setExplainInputValues(predictionInput);
+                                                setShowExplainModal(true);
+                                            }}
+                                            className="w-full sm:w-auto px-3 py-2 rounded-lg transition-colors flex items-center justify-center gap-1.5 text-sm font-medium"
+                                            style={{
+                                                backgroundColor: isDark ? 'rgba(245, 158, 11, 0.2)' : 'rgba(245, 158, 11, 0.1)',
+                                                color: isDark ? '#fbbf24' : '#b45309',
+                                            }}
+                                        >
+                                            <HelpCircle className="w-4 h-4" />
+                                            Why this prediction?
+                                        </button>
+                                    </div>
                                 </div>
-                                <p className="text-3xl font-bold text-white">
-                                    {predictionResult.prediction}
-                                </p>
-                                {predictionResult.probability && (
-                                    <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>
-                                        Confidence: {(Math.max(...predictionResult.probability) * 100).toFixed(1)}%
-                                    </p>
-                                )}
                             </motion.div>
                         )}
-
-                        {/* SHAP Explain Modal */}
-                        <ExplainModal
-                            isOpen={showExplainModal}
-                            onClose={() => setShowExplainModal(false)}
-                            inputValues={predictionInput}
-                        />
                     </div>
-                )}
-
-                {activeTab === 'playground' && (
-                    <PlaygroundTab />
                 )}
 
                 {activeTab === 'history' && (
                     <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                        <ModelHistory
-                            userId={localStorage.getItem('userId') || 'default'}
+                        <ModelHistory 
+                            userId={localStorage.getItem('userId') || 'default'} 
                             onModelChange={handleModelChange}
                         />
                     </div>
@@ -1251,7 +1294,7 @@ const MLPredictions: React.FC = () => {
                     <div className="p-12 text-center rounded-2xl border border-dashed" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-md mx-auto">
                             <div className="w-20 h-20 mx-auto bg-primary-500/20 rounded-full flex items-center justify-center mb-6">
-                                <Database className="w-10 h-10 text-primary-400" />
+                                <Database className="w-10 h-10" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
                             </div>
                             <h2 className="text-2xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
                                 Production Cleaned Dataset
@@ -1285,6 +1328,13 @@ const MLPredictions: React.FC = () => {
                     </div>
                 )}
             </motion.div>
+
+            {/* Explain Modal */}
+            <ExplainModal
+                isOpen={showExplainModal}
+                onClose={() => setShowExplainModal(false)}
+                inputValues={explainInputValues}
+            />
 
             {/* Footer */}
             <motion.div

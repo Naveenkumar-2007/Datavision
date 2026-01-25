@@ -82,7 +82,7 @@ export default function AuthCallback() {
                     </div>
                     <h2 className="text-xl font-bold text-white mb-2">Login Failed</h2>
                     <p className="text-gray-400 mb-6">{error}</p>
-                    <a href="/login" className="px-6 py-2 bg-teal-500 text-white rounded-lg inline-block">
+                    <a href="/login" className="px-6 py-2 bg-green-500 text-white rounded-lg inline-block">
                         Try Again
                     </a>
                 </div>
@@ -102,7 +102,7 @@ export default function AuthCallback() {
                     </div>
                     <h2 className="text-xl font-bold text-white mb-2">Email Confirmed! 🎉</h2>
                     <p className="text-gray-400 mb-4">Your account is now verified.</p>
-                    <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    <div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
                     <p className="text-gray-500 text-sm mt-2">Redirecting...</p>
                 </div>
             </div>
@@ -112,7 +112,7 @@ export default function AuthCallback() {
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-900">
             <div className="text-center">
-                <div className="w-12 h-12 border-4 border-teal-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
                 <p className="text-white">Completing login...</p>
             </div>
         </div>
