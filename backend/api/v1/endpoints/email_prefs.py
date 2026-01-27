@@ -41,6 +41,7 @@ class EmailPreferences(BaseModel):
     weekly_report_hour: int = 9  # 9 AM default
     weekly_report_minute: int = 0  # 0 minutes default
     email_address: Optional[str] = None  # Override Supabase email if needed
+    timezone_offset: float = 5.5  # Default IST (UTC+5:30), can be changed by user
 
 
 def get_prefs_path(user_id: str) -> Path:
@@ -600,65 +601,129 @@ async def gather_user_data_context(user_id: str) -> str:
                 if total_rows > 0:
                     context_parts.insert(1, f"📈 TOTAL DATA: {total_rows:,} rows across {len(data_files)} file(s)")
         
-        # 2. Get ML training results from automl storage
+        # 2. Get ML training results from model storage (where models are actually saved)
         from config.settings import Settings
-        automl_results_dir = Settings.BASE_DIR / "storage" / "automl_results" / user_id
         
         ml_found = False
-        if automl_results_dir.exists():
-            result_files = list(automl_results_dir.glob("*.json"))
-            if result_files:
-                # Sort by modification time to get latest
-                result_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-                try:
-                    with open(result_files[0], 'r') as f:
-                        ml_data = json.load(f)
-                        
-                    if ml_data:
-                        ml_found = True
-                        best_model = ml_data.get('best_model', {})
-                        task_type = ml_data.get('task_type', 'classification')
-                        target = ml_data.get('target_column', 'unknown')
-                        metrics = best_model.get('metrics', {})
-                        
-                        context_parts.append(f"\n🤖 ML MODEL TRAINED:")
-                        context_parts.append(f"   • Model: {best_model.get('name', 'AutoML Model')}")
-                        context_parts.append(f"   • Task Type: {task_type.upper()}")
-                        context_parts.append(f"   • Target Column: {target}")
-                        
-                        # Report metrics based on task type
-                        if task_type == 'classification':
-                            acc = metrics.get('accuracy', 0)
-                            f1 = metrics.get('f1_score', metrics.get('f1', 0))
-                            precision = metrics.get('precision', 0)
-                            recall = metrics.get('recall', 0)
-                            context_parts.append(f"   📊 PERFORMANCE METRICS:")
-                            context_parts.append(f"      • Accuracy: {acc:.1%}")
-                            if f1: context_parts.append(f"      • F1 Score: {f1:.1%}")
-                            if precision: context_parts.append(f"      • Precision: {precision:.1%}")
-                            if recall: context_parts.append(f"      • Recall: {recall:.1%}")
-                        else:  # regression
+        
+        # Check the correct model storage path: storage/models/{user_id}/active_metadata.json
+        model_storage_dir = Settings.BASE_DIR / "storage" / "models" / user_id
+        active_metadata_path = model_storage_dir / "active_metadata.json"
+        
+        if active_metadata_path.exists():
+            try:
+                with open(active_metadata_path, 'r') as f:
+                    ml_data = json.load(f)
+                    
+                if ml_data:
+                    ml_found = True
+                    model_name = ml_data.get('model_name', 'AutoML Model')
+                    task_type = ml_data.get('task_type', 'classification')
+                    target = ml_data.get('target_column', 'unknown')
+                    metrics = ml_data.get('metrics', {})
+                    feature_columns = ml_data.get('feature_columns', [])
+                    training_date = ml_data.get('training_date', '')
+                    version = ml_data.get('version', 1)
+                    
+                    context_parts.append(f"\n🤖 ML MODEL TRAINED:")
+                    context_parts.append(f"   • Model: {model_name}")
+                    context_parts.append(f"   • Task Type: {task_type.upper()}")
+                    context_parts.append(f"   • Target Column: {target}")
+                    context_parts.append(f"   • Features Used: {len(feature_columns)}")
+                    context_parts.append(f"   • Model Version: v{version}")
+                    if training_date:
+                        context_parts.append(f"   • Trained On: {training_date}")
+                    
+                    # Report metrics based on task type
+                    if task_type == 'classification':
+                        context_parts.append(f"   📊 PERFORMANCE METRICS:")
+                        if 'accuracy' in metrics:
+                            context_parts.append(f"      • Accuracy: {metrics['accuracy']:.1%}")
+                        if 'f1' in metrics or 'f1_score' in metrics:
+                            f1 = metrics.get('f1', metrics.get('f1_score', 0))
+                            context_parts.append(f"      • F1 Score: {f1:.1%}")
+                        if 'precision' in metrics:
+                            context_parts.append(f"      • Precision: {metrics['precision']:.1%}")
+                        if 'recall' in metrics:
+                            context_parts.append(f"      • Recall: {metrics['recall']:.1%}")
+                    else:  # regression
+                        context_parts.append(f"   📊 PERFORMANCE METRICS:")
+                        if 'r2' in metrics or 'r2_score' in metrics:
                             r2 = metrics.get('r2', metrics.get('r2_score', 0))
-                            rmse = metrics.get('rmse', 0)
-                            mae = metrics.get('mae', 0)
-                            context_parts.append(f"   📊 PERFORMANCE METRICS:")
                             context_parts.append(f"      • R² Score: {r2:.3f}")
-                            if rmse: context_parts.append(f"      • RMSE: {rmse:,.2f}")
-                            if mae: context_parts.append(f"      • MAE: {mae:,.2f}")
-                        
-                        # Feature importance
-                        features = ml_data.get('feature_importance', [])[:5]
-                        if features:
-                            context_parts.append(f"   🔑 TOP FEATURES (most predictive):")
-                            for idx, feat in enumerate(features, 1):
-                                if isinstance(feat, dict):
-                                    fname = feat.get('feature', feat.get('name', str(feat)))
-                                    importance = feat.get('importance', 0)
-                                    context_parts.append(f"      {idx}. {fname} (importance: {importance:.3f})")
-                                else:
-                                    context_parts.append(f"      {idx}. {feat}")
-                except Exception as e:
-                    logger.warning(f"Error reading ML results: {e}")
+                        if 'rmse' in metrics:
+                            context_parts.append(f"      • RMSE: {metrics['rmse']:,.2f}")
+                        if 'mae' in metrics:
+                            context_parts.append(f"      • MAE: {metrics['mae']:,.2f}")
+                    
+                    # Show top features
+                    if feature_columns:
+                        context_parts.append(f"   🔑 TOP FEATURES:")
+                        for idx, feat in enumerate(feature_columns[:5], 1):
+                            context_parts.append(f"      {idx}. {feat}")
+                        if len(feature_columns) > 5:
+                            context_parts.append(f"      ... and {len(feature_columns) - 5} more features")
+                            
+            except Exception as e:
+                logger.warning(f"Error reading active model metadata: {e}")
+        
+        # Fallback: Also check the old automl_results location for backward compatibility
+        if not ml_found:
+            automl_results_dir = Settings.BASE_DIR / "storage" / "automl_results" / user_id
+            if automl_results_dir.exists():
+                result_files = list(automl_results_dir.glob("*.json"))
+                if result_files:
+                    # Sort by modification time to get latest
+                    result_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+                    try:
+                        with open(result_files[0], 'r') as f:
+                            ml_data = json.load(f)
+                            
+                        if ml_data:
+                            ml_found = True
+                            best_model = ml_data.get('best_model', {})
+                            task_type = ml_data.get('task_type', 'classification')
+                            target = ml_data.get('target_column', 'unknown')
+                            metrics = best_model.get('metrics', {})
+                            
+                            context_parts.append(f"\n🤖 ML MODEL TRAINED:")
+                            context_parts.append(f"   • Model: {best_model.get('name', 'AutoML Model')}")
+                            context_parts.append(f"   • Task Type: {task_type.upper()}")
+                            context_parts.append(f"   • Target Column: {target}")
+                            
+                            # Report metrics based on task type
+                            if task_type == 'classification':
+                                acc = metrics.get('accuracy', 0)
+                                f1 = metrics.get('f1_score', metrics.get('f1', 0))
+                                precision = metrics.get('precision', 0)
+                                recall = metrics.get('recall', 0)
+                                context_parts.append(f"   📊 PERFORMANCE METRICS:")
+                                context_parts.append(f"      • Accuracy: {acc:.1%}")
+                                if f1: context_parts.append(f"      • F1 Score: {f1:.1%}")
+                                if precision: context_parts.append(f"      • Precision: {precision:.1%}")
+                                if recall: context_parts.append(f"      • Recall: {recall:.1%}")
+                            else:  # regression
+                                r2 = metrics.get('r2', metrics.get('r2_score', 0))
+                                rmse = metrics.get('rmse', 0)
+                                mae = metrics.get('mae', 0)
+                                context_parts.append(f"   📊 PERFORMANCE METRICS:")
+                                context_parts.append(f"      • R² Score: {r2:.3f}")
+                                if rmse: context_parts.append(f"      • RMSE: {rmse:,.2f}")
+                                if mae: context_parts.append(f"      • MAE: {mae:,.2f}")
+                            
+                            # Feature importance
+                            features = ml_data.get('feature_importance', [])[:5]
+                            if features:
+                                context_parts.append(f"   🔑 TOP FEATURES (most predictive):")
+                                for idx, feat in enumerate(features, 1):
+                                    if isinstance(feat, dict):
+                                        fname = feat.get('feature', feat.get('name', str(feat)))
+                                        importance = feat.get('importance', 0)
+                                        context_parts.append(f"      {idx}. {fname} (importance: {importance:.3f})")
+                                    else:
+                                        context_parts.append(f"      {idx}. {feat}")
+                    except Exception as e:
+                        logger.warning(f"Error reading ML results: {e}")
         
         # 3. Check for unified analytics cache
         analytics_cache_dir = Settings.BASE_DIR / "storage" / "analytics_cache"
@@ -871,4 +936,181 @@ async def send_custom_email(
         }
     except Exception as e:
         raise HTTPException(500, f"Failed to send email: {str(e)}")
+
+
+class PasswordResetRequest(BaseModel):
+    """Password reset request model"""
+    email: str
+
+
+@router.post("/auth/request-password-reset")
+async def request_password_reset(request: PasswordResetRequest):
+    """
+    🔐 Custom Password Reset Flow
+    
+    Sends a branded password reset email using our email service.
+    This bypasses Supabase's default plain-text email that often goes to spam.
+    
+    Flow:
+    1. Generate a secure reset token using Supabase Admin API
+    2. Build a branded reset link
+    3. Send via our Resend email service with DataVision branding
+    """
+    import secrets
+    import hashlib
+    from datetime import datetime, timedelta
+    from services.email_service import send_password_reset_email
+    
+    email = request.email.strip().lower()
+    
+    if not email:
+        raise HTTPException(400, "Email address is required")
+    
+    try:
+        # Generate a secure token
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        
+        # Store the token with expiry (1 hour)
+        token_data = {
+            "email": email,
+            "token_hash": token_hash,
+            "created_at": datetime.utcnow().isoformat(),
+            "expires_at": (datetime.utcnow() + timedelta(hours=1)).isoformat(),
+            "used": False
+        }
+        
+        # Save token to storage
+        tokens_dir = PREFS_DIR / "password_reset_tokens"
+        tokens_dir.mkdir(parents=True, exist_ok=True)
+        
+        token_file = tokens_dir / f"{token_hash[:16]}.json"
+        with open(token_file, 'w') as f:
+            json.dump(token_data, f)
+        
+        # Build reset link - points to our frontend update-password page
+        # The frontend will validate the token and call backend to update password
+        from urllib.parse import quote
+        APP_URL = os.getenv("APP_URL", "https://killerkumar-ai-business-analyst.hf.space")
+        # URL-encode the email to handle special characters like @ and +
+        encoded_email = quote(email, safe='')
+        reset_link = f"{APP_URL}/auth/update-password?token={token}&email={encoded_email}"
+        
+        logger.info(f"📧 Generated reset link for {email}")
+        
+        # Send branded email
+        await send_password_reset_email(
+            to_email=email,
+            reset_link=reset_link
+        )
+        
+        logger.info(f"✅ Password reset email sent to {email}")
+        
+        return {
+            "success": True,
+            "message": "If an account exists with this email, you will receive a password reset link shortly."
+        }
+        
+    except Exception as e:
+        logger.error(f"Password reset request failed: {e}")
+        # Don't reveal if email exists or not for security
+        return {
+            "success": True,
+            "message": "If an account exists with this email, you will receive a password reset link shortly."
+        }
+
+
+class PasswordUpdateRequest(BaseModel):
+    """Password update request model"""
+    token: str
+    email: str
+    new_password: str
+
+
+@router.post("/auth/update-password-with-token")
+async def update_password_with_token(request: PasswordUpdateRequest):
+    """
+    🔐 Update password using the reset token
+    
+    Validates the token and updates the password via Supabase Admin API
+    """
+    import hashlib
+    from datetime import datetime
+    
+    token = request.token
+    email = request.email.strip().lower()
+    new_password = request.new_password
+    
+    if not token or not email or not new_password:
+        raise HTTPException(400, "Token, email, and new_password are required")
+    
+    if len(new_password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    
+    try:
+        # Verify token
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        tokens_dir = PREFS_DIR / "password_reset_tokens"
+        token_file = tokens_dir / f"{token_hash[:16]}.json"
+        
+        if not token_file.exists():
+            raise HTTPException(400, "Invalid or expired reset token")
+        
+        with open(token_file, 'r') as f:
+            token_data = json.load(f)
+        
+        # Check if token matches email
+        if token_data.get("email") != email:
+            raise HTTPException(400, "Invalid reset token")
+        
+        # Check if already used
+        if token_data.get("used"):
+            raise HTTPException(400, "This reset token has already been used")
+        
+        # Check expiry
+        expires_at = datetime.fromisoformat(token_data["expires_at"])
+        if datetime.utcnow() > expires_at:
+            raise HTTPException(400, "Reset token has expired. Please request a new one.")
+        
+        # Update password via Supabase Admin API
+        from database.supabase_client import get_supabase_admin_client
+        
+        supabase_admin = get_supabase_admin_client()
+        if not supabase_admin:
+            raise HTTPException(500, "Admin client not configured")
+        
+        # Get user by email
+        users = supabase_admin.auth.admin.list_users()
+        user = None
+        for u in users:
+            if u.email and u.email.lower() == email:
+                user = u
+                break
+        
+        if not user:
+            raise HTTPException(400, "No account found with this email")
+        
+        # Update password
+        supabase_admin.auth.admin.update_user_by_id(
+            user.id,
+            {"password": new_password}
+        )
+        
+        # Mark token as used
+        token_data["used"] = True
+        with open(token_file, 'w') as f:
+            json.dump(token_data, f)
+        
+        logger.info(f"✅ Password updated successfully for {email}")
+        
+        return {
+            "success": True,
+            "message": "Password updated successfully! You can now sign in with your new password."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Password update failed: {e}")
+        raise HTTPException(500, f"Failed to update password: {str(e)}")
 

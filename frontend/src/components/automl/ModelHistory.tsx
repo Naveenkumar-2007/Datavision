@@ -26,6 +26,8 @@ import {
     Download,
     RefreshCw,
 } from 'lucide-react';
+import { useConfirmModal } from '@/components/ui/ConfirmModal';
+import { useToast } from '@/contexts/ToastContext';
 
 interface ModelMetadata {
     model_id: string;
@@ -59,6 +61,10 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModel
     const [rollingBack, setRollingBack] = useState<number | null>(null);
     const [deleting, setDeleting] = useState<number | null>(null);
     const [successMessage, setSuccessMessage] = useState<string | null>(null);
+    
+    // Custom hooks for themed modals and toasts
+    const { confirm, ConfirmModal } = useConfirmModal();
+    const toast = useToast();
 
     // Fetch models on mount
     useEffect(() => {
@@ -111,7 +117,17 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModel
     };
 
     const handleDelete = async (version?: number) => {
-        if (!confirm(version ? `Delete version ${version}?` : 'Delete all models?')) return;
+        const confirmed = await confirm({
+            title: version ? 'Delete Model Version' : 'Delete All Models',
+            message: version 
+                ? `Are you sure you want to delete version ${version}? This action cannot be undone.`
+                : 'Are you sure you want to delete all trained models? This will remove all model versions and cannot be undone.',
+            confirmText: 'Delete',
+            variant: 'danger',
+            icon: <Trash2 className="w-6 h-6" />
+        });
+        
+        if (!confirmed) return;
 
         setDeleting(version || -1);
         try {
@@ -123,11 +139,13 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModel
             const data = await response.json();
 
             if (data.success) {
-                setSuccessMessage(version ? `Deleted version ${version}` : 'All models deleted');
+                toast.deleted(version ? `Model version ${version} deleted` : 'All models deleted successfully');
                 await fetchModels();
+            } else {
+                toast.error(data.detail || 'Delete failed');
             }
         } catch (err) {
-            setError('Delete failed');
+            toast.error('Failed to delete model(s)');
         } finally {
             setDeleting(null);
         }
@@ -384,6 +402,9 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModel
                     </button>
                 </div>
             )}
+            
+            {/* Confirm Modal */}
+            <ConfirmModal />
         </div>
     );
 };

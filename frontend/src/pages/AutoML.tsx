@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import ModelHistory from '@/components/automl/ModelHistory';
 import { useUserStore } from '@/store/userStore';
+import { useToast } from '@/contexts/ToastContext';
 
 interface ModelResult {
     name: string;
@@ -119,6 +120,7 @@ interface AutoMLResult {
 
 const AutoML: React.FC = () => {
     const { isDark } = useUserStore();
+    const toast = useToast();
 
     // Derived theme object for JS-side libraries (Charts) and legacy inline styles
     const theme = {
@@ -1411,7 +1413,7 @@ const AutoML: React.FC = () => {
                                         className="px-4 py-3 bg-emerald-500 rounded-xl text-white font-medium hover:bg-emerald-600 transition-colors"
                                         onClick={() => {
                                             navigator.clipboard.writeText(`${window.location.origin}${result.api_endpoint}`);
-                                            alert('Copied to clipboard!');
+                                            toast.success('Copied to clipboard!');
                                         }}
                                     >
                                         Copy URL

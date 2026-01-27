@@ -1,14 +1,15 @@
 /**
  * Forgot Password Page - Styled to match Landing page
  * Allows users to request a password reset email
+ * Uses custom backend endpoint for branded emails (avoids spam filters)
  */
 
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
 import { motion } from 'framer-motion';
 import { useUserStore } from '../store/userStore';
 import { Sun, Moon } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function ForgotPassword() {
     const { isDark, toggleTheme } = useUserStore();
@@ -24,17 +25,20 @@ export default function ForgotPassword() {
         setMessage('');
 
         try {
-            const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                redirectTo: `${window.location.origin}/auth/update-password`,
+            // Use custom backend endpoint for branded password reset emails
+            // This avoids Supabase's plain-text emails that often go to spam
+            const response = await api.post('/api/v1/settings/auth/request-password-reset', {
+                email: email.trim().toLowerCase()
             });
 
-            if (error) {
-                setError(error.message);
+            if (response.data.success) {
+                setMessage('If an account exists with this email, you will receive a password reset link shortly. Please check your inbox and spam folder.');
             } else {
-                setMessage('Check your email for the password reset link.');
+                setError(response.data.message || 'Failed to send reset email');
             }
         } catch (err: any) {
-            setError(err.message || 'An error occurred');
+            // Don't reveal if email exists for security
+            setMessage('If an account exists with this email, you will receive a password reset link shortly. Please check your inbox and spam folder.');
         } finally {
             setLoading(false);
         }

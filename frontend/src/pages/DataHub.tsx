@@ -28,6 +28,8 @@ import {
 } from 'lucide-react';
 import apiService from '@/services/api';
 import MultiFileUpload from '@/components/automl/MultiFileUpload';
+import { useConfirmModal } from '@/components/ui/ConfirmModal';
+import { useToast } from '@/contexts/ToastContext';
 
 interface ThemeContext {
   isDark: boolean;
@@ -51,6 +53,8 @@ import { useUserStore } from '@/store/userStore';
 
 const DataHub: React.FC = () => {
   const { isDark } = useUserStore();
+  const { confirm, ConfirmModal } = useConfirmModal();
+  const toast = useToast();
 
   // Derived theme object removed - using global CSS variables
 
@@ -235,7 +239,7 @@ const DataHub: React.FC = () => {
       // Upload all accepted files (server will handle them) - pass abort signal
       const response = await apiService.uploadFiles(acceptedFiles, controller.signal);
       if (response.data.success) {
-        alert(`✅ ${response.data.files.length} file(s) uploaded${autoFixEnabled && dataFiles.length > 0 ? ' (data quality auto-fixed)' : ''}!`);
+        toast.success(`${response.data.files.length} file(s) uploaded${autoFixEnabled && dataFiles.length > 0 ? ' (data quality auto-fixed)' : ''}!`);
         await loadFiles();
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
@@ -246,7 +250,7 @@ const DataHub: React.FC = () => {
         return;
       }
       console.error('Upload failed:', error);
-      alert(`❌ Upload failed: ${error.response?.data?.detail || error.message}`);
+      toast.error(`Upload failed: ${error.response?.data?.detail || error.message}`);
       setFixingData(false);
     } finally {
       setUploading(false);
@@ -312,7 +316,7 @@ const DataHub: React.FC = () => {
     );
 
     if (dataFiles.length === 0) {
-      alert('❌ No data files found. Please upload a CSV or Excel file first.');
+      toast.error('No data files found. Please upload a CSV or Excel file first.');
       return;
     }
 
@@ -389,7 +393,7 @@ const DataHub: React.FC = () => {
           }
         });
       } else {
-        alert(`❌ AutoML failed: ${automlResult.detail || 'Unknown error'}`);
+        toast.error(`AutoML failed: ${automlResult.detail || 'Unknown error'}`);
       }
     } catch (error: any) {
       // Handle User Stop
@@ -397,7 +401,7 @@ const DataHub: React.FC = () => {
         return; // Silent exit on stop
       }
       console.error('AutoML error:', error);
-      alert(`❌ AutoML error: ${error.message}`);
+      toast.error(`AutoML error: ${error.message}`);
     } finally {
       setAutomlRunning(false);
       setAbortController(null);
@@ -421,7 +425,16 @@ const DataHub: React.FC = () => {
   });
 
   const handleDelete = async (fileId: string) => {
-    if (!confirm(`Are you sure you want to delete ${fileId}?`)) return;
+    const fileToDelete = files.find(f => f.id === fileId);
+    const confirmed = await confirm({
+      title: 'Delete File',
+      message: `Are you sure you want to delete "${fileToDelete?.name || fileId}"? This will also remove it from the AI training data.`,
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
 
     // Set deleting state
     setDeletingFileId(fileId);
@@ -439,12 +452,12 @@ const DataHub: React.FC = () => {
         localStorage.removeItem(`hasMLResults_${userId}`);
         sessionStorage.removeItem(`mlCharts_${userId}`);
 
-        alert('✅ File deleted and indexes retrained!');
+        toast.deleted('File Deleted', `${fileToDelete?.name || fileId} has been removed successfully`);
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
       if (error.name !== 'AbortError') {
-        alert(`Failed to delete file: ${error.response?.data?.detail || error.message}`);
+        toast.error('Delete Failed', error.response?.data?.detail || error.message);
       }
     } finally {
       setDeletingFileId(null);
@@ -462,7 +475,17 @@ const DataHub: React.FC = () => {
   };
 
   const handleDeleteAll = async () => {
-    if (!confirm('⚠️ WARNING: This will delete ALL your files. Are you sure?')) return;
+    const confirmed = await confirm({
+      title: 'Delete All Files',
+      message: 'This will permanently delete ALL your files and remove them from AI training. This action cannot be undone.',
+      confirmText: 'Delete All',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      requireTypedConfirmation: 'DELETE',
+    });
+
+    if (!confirmed) return;
+
     try {
       const response = await apiService.deleteAllFiles();
       if (response.data.success) {
@@ -473,27 +496,36 @@ const DataHub: React.FC = () => {
         localStorage.removeItem(`hasMLResults_${userId}`);
         sessionStorage.removeItem(`mlCharts_${userId}`);
 
-        alert('All files deleted successfully!');
+        toast.deleted('All Files Deleted', 'Your data has been cleared successfully');
         // Dispatch event so all pages refresh their data
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
-      alert(`Failed to delete files: ${error.response?.data?.detail || error.message}`);
+      toast.error('Delete Failed', error.response?.data?.detail || error.message);
     }
   };
 
   const handleRebuild = async () => {
-    if (!confirm('🎯 RETRAIN: Rebuild AI training from all files?')) return;
+    const confirmed = await confirm({
+      title: 'Retrain AI',
+      message: 'This will rebuild the AI training from all your uploaded files. This may take a few minutes.',
+      confirmText: 'Retrain',
+      cancelText: 'Cancel',
+      variant: 'info',
+    });
+
+    if (!confirmed) return;
+
     setUploading(true);
     try {
       const response = await apiService.rebuildIndex();
       if (response.data.success) {
-        alert(`✅ Retrain Complete!\n\n${response.data.message}`);
+        toast.success('Retrain Complete', response.data.message || 'AI has been retrained successfully');
         await loadFiles();
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
-      alert(`❌ Retrain failed: ${error.response?.data?.detail || error.message}`);
+      toast.error('Retrain Failed', error.response?.data?.detail || error.message);
     } finally {
       setUploading(false);
     }
@@ -513,37 +545,43 @@ const DataHub: React.FC = () => {
       link.click();
       link.remove();
     } catch (error: any) {
-      alert(`Failed to download: ${error.message}`);
+      toast.error(`Failed to download: ${error.message}`);
     }
   };
 
   const handlePreviewSheet = async () => {
-    if (!sheetUrl.trim()) return alert('Please enter a Google Sheets URL');
+    if (!sheetUrl.trim()) {
+      toast.warning('Please enter a Google Sheets URL');
+      return;
+    }
     setImportingSheet(true);
     try {
       const response = await apiService.previewGoogleSheet(sheetUrl);
       setSheetPreview(response.data);
     } catch (error: any) {
-      alert(`Preview failed: ${error.response?.data?.detail || error.message}`);
+      toast.error(`Preview failed: ${error.response?.data?.detail || error.message}`);
     } finally {
       setImportingSheet(false);
     }
   };
 
   const handleImportSheet = async () => {
-    if (!sheetUrl.trim()) return alert('Please enter a Google Sheets URL');
+    if (!sheetUrl.trim()) {
+      toast.warning('Please enter a Google Sheets URL');
+      return;
+    }
     setImportingSheet(true);
     try {
       const response = await apiService.importGoogleSheet(sheetUrl);
       if (response.data.success) {
-        alert(`✅ Google Sheet imported!`);
+        toast.success('Google Sheet imported successfully!');
         setSheetUrl('');
         setSheetPreview(null);
         await loadFiles();
         window.dispatchEvent(new CustomEvent('filesUpdated'));
       }
     } catch (error: any) {
-      alert(`Import failed: ${error.response?.data?.detail || error.message}`);
+      toast.error(`Import failed: ${error.response?.data?.detail || error.message}`);
     } finally {
       setImportingSheet(false);
     }
@@ -1096,6 +1134,9 @@ const DataHub: React.FC = () => {
           </div>
         )
       }
+
+      {/* Confirm Modal for Delete Operations */}
+      <ConfirmModal />
 
     </div >
   );

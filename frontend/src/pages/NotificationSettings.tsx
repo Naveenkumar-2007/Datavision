@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useUserStore } from '../store/userStore';
 import { supabase } from '../lib/supabase';
 import { Bell, Mail, MessageSquare, TrendingUp, Moon } from 'lucide-react';
+import { useToast } from '@/contexts/ToastContext';
 
 interface NotificationSettings {
     email_notifications: boolean;
@@ -15,6 +16,7 @@ interface NotificationSettings {
 
 export default function NotificationSettings() {
     const { user } = useUserStore();
+    const toast = useToast();
     const [settings, setSettings] = useState<NotificationSettings>({
         email_notifications: true,
         push_notifications: false,
@@ -142,7 +144,7 @@ export default function NotificationSettings() {
 
     async function registerPushNotifications(workspaceId: string) {
         if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-            alert('Push notifications are not supported in this browser');
+            toast.warning('Push notifications are not supported in this browser');
             setSettings((prev) => ({ ...prev, push_notifications: false }));
             return;
         }
@@ -180,10 +182,11 @@ export default function NotificationSettings() {
                 }),
             });
 
+            toast.success('Push notifications enabled successfully');
             console.log('Push notifications registered successfully');
         } catch (error) {
             console.error('Failed to register push notifications:', error);
-            alert('Failed to enable push notifications. Please try again.');
+            toast.error('Failed to enable push notifications. Please try again.');
             setSettings((prev) => ({ ...prev, push_notifications: false }));
         }
     }

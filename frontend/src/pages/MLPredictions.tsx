@@ -42,6 +42,7 @@ import PlaygroundTab from '@/components/automl/PlaygroundTab';
 import ExplainModal from '@/components/automl/ExplainModal';
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
+import { useToast } from '@/contexts/ToastContext';
 
 
 interface FeatureMetadata {
@@ -104,6 +105,7 @@ interface FileItem {
 
 const MLPredictions: React.FC = () => {
     const { isDark } = useUserStore();
+    const toast = useToast();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -357,7 +359,7 @@ const MLPredictions: React.FC = () => {
     // Training handler - EXACT SAME AS DATAHUB
     const handleRunAutoML = async () => {
         if (!selectedFile) {
-            alert('❌ Please select a data file first.');
+            toast.error('Please select a data file first.');
             return;
         }
 
@@ -423,7 +425,7 @@ const MLPredictions: React.FC = () => {
                 window.dispatchEvent(new CustomEvent('filesUpdated'));
                 setResult(automlResult);
             } else {
-                alert(`❌ AutoML failed: ${automlResult.detail || automlResult.error || 'Unknown error'}`);
+                toast.error(`AutoML failed: ${automlResult.detail || automlResult.error || 'Unknown error'}`);
             }
         } catch (error: any) {
             // Handle User Stop
@@ -431,7 +433,7 @@ const MLPredictions: React.FC = () => {
                 return; // Silent exit on stop
             }
             console.error('AutoML error:', error);
-            alert(`❌ AutoML error: ${error.message}`);
+            toast.error(`AutoML error: ${error.message}`);
         } finally {
             setTraining(false);
             setAbortController(null);
@@ -1209,7 +1211,7 @@ const MLPredictions: React.FC = () => {
                                     const data = await response.json();
                                     setPredictionResult(data);
                                 } catch (e: any) {
-                                    alert(`Prediction failed: ${e.message}`);
+                                    toast.error(`Prediction failed: ${e.message}`);
                                 }
                             }}
                             className="px-6 py-3 bg-gradient-to-r from-primary-500 to-emerald-500 rounded-xl text-white font-semibold hover:opacity-90 transition-opacity flex items-center gap-2"

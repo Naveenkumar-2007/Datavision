@@ -32,6 +32,8 @@ import {
 } from 'lucide-react';
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
+import { useConfirmModal } from '@/components/ui/ConfirmModal';
+import { useToast } from '@/contexts/ToastContext';
 
 // Lazy load PlotlyChart for performance
 const PlotlyChart = React.lazy(() => import('@/components/PlotlyChart'));
@@ -716,10 +718,19 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
 };
 
 // Animated Logo for AI Assistant - Uses actual DataVision logo with subtle animation
-const AnimatedBotIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
+// Adapts to light/dark mode automatically
+const AnimatedBotIcon: React.FC<{ size?: number; isDark?: boolean }> = ({ size = 28, isDark = true }) => (
   <div
-    className="relative flex items-center justify-center flex-shrink-0"
-    style={{ width: size, height: size, minWidth: size, minHeight: size }}
+    className="relative flex items-center justify-center flex-shrink-0 rounded-lg"
+    style={{ 
+      width: size, 
+      height: size, 
+      minWidth: size, 
+      minHeight: size,
+      // In light mode, add a subtle dark background so logo is visible
+      backgroundColor: isDark ? 'transparent' : 'rgba(15, 23, 42, 0.9)',
+      padding: isDark ? '0' : '2px',
+    }}
   >
     <img
       src="/datavision_icon_v3.png"
@@ -727,6 +738,7 @@ const AnimatedBotIcon: React.FC<{ size?: number }> = ({ size = 28 }) => (
       className="w-full h-full object-contain"
       style={{
         animation: 'pulse-glow 2s ease-in-out infinite',
+        borderRadius: isDark ? '0' : '4px',
       }}
     />
     <style>{`
@@ -757,10 +769,10 @@ const getModeThinkingText = (modeId: string): string => {
 };
 
 // Typing Indicator - ChatGPT Style with mode-specific thinking
-const TypingIndicator: React.FC<{ mode?: string }> = ({ mode = 'rag' }) => (
+const TypingIndicator: React.FC<{ mode?: string; isDark?: boolean }> = ({ mode = 'rag', isDark = true }) => (
   <div className="flex items-start gap-3 max-w-3xl message-slide-up">
     <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-      <AnimatedBotIcon size={24} />
+      <AnimatedBotIcon size={24} isDark={isDark} />
     </div>
     <div className="flex flex-col gap-1 py-2">
       <div className="flex items-center gap-2">
@@ -769,7 +781,7 @@ const TypingIndicator: React.FC<{ mode?: string }> = ({ mode = 'rag' }) => (
           <span className="w-2 h-2 rounded-full bg-green-400"></span>
           <span className="w-2 h-2 rounded-full bg-green-400"></span>
         </div>
-        <span className="text-sm text-gray-400 italic">{getModeThinkingText(mode)}</span>
+        <span className="text-sm text-[var(--text-secondary)] italic">{getModeThinkingText(mode)}</span>
       </div>
     </div>
   </div>
@@ -909,7 +921,11 @@ const AnalystChat: React.FC = () => {
     updateConversationMessages,
     getCurrentConversation,
     clearAllChats,
+    isDark,
   } = useUserStore();
+  
+  const { confirm, ConfirmModal } = useConfirmModal();
+  const toast = useToast();
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1241,7 +1257,7 @@ const AnalystChat: React.FC = () => {
 
   const handleVoiceInput = async () => {
     if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      alert('Speech recognition is not supported in your browser.');
+      toast.warning('Speech recognition is not supported in your browser.');
       return;
     }
 
@@ -1688,7 +1704,7 @@ const AnalystChat: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (error: any) {
       console.error('Export failed:', error);
-      alert('Export failed: ' + (error.message || 'Unknown error'));
+      toast.error('Export failed: ' + (error.message || 'Unknown error'));
     }
   };
 
@@ -1733,10 +1749,20 @@ const AnalystChat: React.FC = () => {
     createConversation(mode);
   };
 
-  const handleDeleteConversation = (id: string, e: React.MouseEvent) => {
+  const handleDeleteConversation = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Delete this conversation?')) {
+    const conv = conversations.find(c => c.id === id);
+    const confirmed = await confirm({
+      title: 'Delete Conversation',
+      message: `Delete "${conv?.title || 'this conversation'}"? This cannot be undone.`,
+      confirmText: 'Delete',
+      cancelText: 'Keep',
+      variant: 'danger',
+    });
+    
+    if (confirmed) {
       deleteConversation(id);
+      toast.deleted('Conversation Deleted');
     }
   };
 
@@ -1844,11 +1870,19 @@ const AnalystChat: React.FC = () => {
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Recent</span>
             {conversations.length > 1 && (
               <button
-                onClick={(e) => {
+                onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  if (window.confirm('Clear all chat history?')) {
+                  const confirmed = await confirm({
+                    title: 'Clear All Chats',
+                    message: 'Are you sure you want to clear all chat history? This action cannot be undone.',
+                    confirmText: 'Clear All',
+                    variant: 'danger',
+                    icon: <Trash2 className="w-6 h-6" />
+                  });
+                  if (confirmed) {
                     clearAllChats();
+                    toast.deleted('All chat history cleared');
                   }
                 }}
                 className="text-xs text-gray-500 hover:text-red-400 transition-colors"
@@ -2028,7 +2062,7 @@ const AnalystChat: React.FC = () => {
                       <div className="flex items-start gap-3 w-full max-w-full bot-message-animate">
                         {/* DataVision Logo with animation */}
                         <div className="w-8 h-8 flex-shrink-0 mt-1 flex items-center justify-center">
-                          <AnimatedBotIcon size={24} />
+                          <AnimatedBotIcon size={24} isDark={isDark} />
                         </div>
                         <div className="flex-1">
                           <div className="prose prose-invert max-w-none">
@@ -2266,7 +2300,7 @@ const AnalystChat: React.FC = () => {
                     )}
 
                     {/* Regular Typing Indicator with mode-specific text */}
-                    <TypingIndicator mode={mode} />
+                    <TypingIndicator mode={mode} isDark={isDark} />
                   </div>
                 )}
               </div>
@@ -2619,6 +2653,9 @@ const AnalystChat: React.FC = () => {
           )
         }
       </div >
+
+      {/* Confirm Modal for Delete Operations */}
+      <ConfirmModal />
     </div >
   );
 };

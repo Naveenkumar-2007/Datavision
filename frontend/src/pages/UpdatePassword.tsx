@@ -1,18 +1,21 @@
 /**
  * Update Password Page - For users who clicked the reset link from email
  * This page is shown after clicking the password reset link
+ * Supports both Supabase native flow and custom token-based flow
  */
 
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { motion } from 'framer-motion';
 import { useUserStore } from '../store/userStore';
 import { Sun, Moon, Lock, CheckCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function UpdatePassword() {
     const { isDark, toggleTheme } = useUserStore();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -21,10 +24,34 @@ export default function UpdatePassword() {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [validSession, setValidSession] = useState<boolean | null>(null);
+    
+    // Custom token-based flow parameters - read directly from URL
+    const customToken = searchParams.get('token');
+    const customEmail = searchParams.get('email');
+    const isCustomFlow = !!(customToken && customEmail);
+
+    // Debug logging
+    useEffect(() => {
+        console.log('UpdatePassword: URL params check', {
+            token: customToken ? 'present' : 'missing',
+            email: customEmail,
+            isCustomFlow,
+            fullUrl: window.location.href
+        });
+    }, [customToken, customEmail, isCustomFlow]);
 
     // Check if user has a valid recovery session
     useEffect(() => {
         const checkSession = async () => {
+            console.log('UpdatePassword: Checking session, isCustomFlow:', isCustomFlow);
+            
+            // If we have custom token and email from our custom flow, it's valid
+            if (customToken && customEmail) {
+                console.log('UpdatePassword: Custom flow detected, setting validSession to true');
+                setValidSession(true);
+                return;
+            }
+            
             try {
                 const { data: { session }, error } = await supabase.auth.getSession();
                 
@@ -76,7 +103,7 @@ export default function UpdatePassword() {
         });
 
         return () => subscription.unsubscribe();
-    }, []);
+    }, [customToken, customEmail]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -96,21 +123,41 @@ export default function UpdatePassword() {
         setLoading(true);
 
         try {
-            const { error } = await supabase.auth.updateUser({
-                password: password
-            });
+            if (isCustomFlow) {
+                // Use our custom backend endpoint for token-based password reset
+                const response = await api.post('/api/v1/settings/auth/update-password-with-token', {
+                    token: customToken,
+                    email: customEmail,
+                    new_password: password
+                });
 
-            if (error) {
-                setError(error.message);
+                if (response.data.success) {
+                    setSuccess(true);
+                    // Redirect to login after 3 seconds
+                    setTimeout(() => {
+                        navigate('/login');
+                    }, 3000);
+                } else {
+                    setError(response.data.message || 'Failed to update password');
+                }
             } else {
-                setSuccess(true);
-                // Redirect to login after 3 seconds
-                setTimeout(() => {
-                    navigate('/login');
-                }, 3000);
+                // Use Supabase native flow
+                const { error } = await supabase.auth.updateUser({
+                    password: password
+                });
+
+                if (error) {
+                    setError(error.message);
+                } else {
+                    setSuccess(true);
+                    // Redirect to login after 3 seconds
+                    setTimeout(() => {
+                        navigate('/login');
+                    }, 3000);
+                }
             }
         } catch (err: any) {
-            setError(err.message || 'An error occurred');
+            setError(err.response?.data?.detail || err.message || 'An error occurred');
         } finally {
             setLoading(false);
         }

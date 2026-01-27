@@ -22,11 +22,15 @@ import {
 import { useUserStore } from '@/store/userStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { useConfirmModal } from '@/components/ui/ConfirmModal';
+import { useToast } from '@/contexts/ToastContext';
+import { api } from '@/services/api';
 
 
 
 const Settings: React.FC = () => {
-
+  const { confirm, ConfirmModal } = useConfirmModal();
+  const toast = useToast();
 
   const { user: authUser } = useAuth();
   const { isDark, toggleTheme, setTheme, setUser: setStoreUser } = useUserStore();
@@ -440,9 +444,9 @@ const Settings: React.FC = () => {
 
     // Small delay to let the user see the "Email preferences saved" message if it appeared
     setTimeout(() => {
-      alert('Settings saved successfully. DataVision will apply your preferences.');
-      window.location.reload();
-    }, 1000);
+      toast.success('Settings saved successfully. Reloading to apply preferences...');
+      setTimeout(() => window.location.reload(), 1500);
+    }, 500);
   };
 
   const handleExportData = async () => {
@@ -466,15 +470,23 @@ const Settings: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      alert('✅ Data exported successfully!');
+      toast.success('Data exported successfully!');
     } catch (error: any) {
       console.error('Export failed:', error);
-      alert('❌ Failed to export data: ' + error.message);
+      toast.error('Failed to export data: ' + error.message);
     }
   };
 
   const handleRebuildIndexes = async () => {
-    if (!confirm('Rebuild all indexes from uploaded files? This may take a few minutes.')) return;
+    const confirmed = await confirm({
+      title: 'Rebuild Indexes',
+      message: 'Rebuild all indexes from uploaded files? This may take a few minutes for large datasets.',
+      confirmText: 'Rebuild',
+      variant: 'warning',
+      icon: <RefreshCw className="w-6 h-6" />
+    });
+    
+    if (!confirmed) return;
 
     try {
       const userId = localStorage.getItem('userId') || 'user_001';
@@ -485,22 +497,27 @@ const Settings: React.FC = () => {
       const result = await response.json();
 
       if (result.success) {
-        alert(`✅ ${result.message}\nFiles processed: ${result.files_processed}`);
+        toast.success(`${result.message} - Files processed: ${result.files_processed}`);
       } else {
         throw new Error(result.detail || 'Rebuild failed');
       }
     } catch (error: any) {
       console.error('Rebuild failed:', error);
-      alert('❌ Failed to rebuild indexes: ' + error.message);
+      toast.error('Failed to rebuild indexes: ' + error.message);
     }
   };
 
   const handleDeleteAllData = async () => {
-    if (!confirm('⚠️ WARNING: This will permanently delete ALL your files, indexes, and data. This cannot be undone!')) return;
-    if (!confirm('Are you ABSOLUTELY sure? Type "DELETE" to confirm.') || prompt('Type DELETE to confirm:') !== 'DELETE') {
-      alert('Deletion cancelled.');
-      return;
-    }
+    const confirmed = await confirm({
+      title: 'Delete All Data',
+      message: 'This will permanently delete ALL your files, trained models, indexes, and data. This action cannot be undone and will require re-uploading all your files.',
+      confirmText: 'Delete Everything',
+      cancelText: 'Cancel',
+      variant: 'danger',
+      requireTypedConfirmation: 'DELETE',
+    });
+
+    if (!confirmed) return;
 
     try {
       const userId = localStorage.getItem('userId') || 'user_001';
@@ -511,14 +528,14 @@ const Settings: React.FC = () => {
       const result = await response.json();
 
       if (result.success) {
-        alert('✅ All data deleted successfully. Refreshing...');
-        window.location.reload();
+        toast.deleted('All Data Deleted', 'Your account data has been cleared. Refreshing...');
+        setTimeout(() => window.location.reload(), 1500);
       } else {
         throw new Error(result.detail || 'Deletion failed');
       }
     } catch (error: any) {
       console.error('Delete failed:', error);
-      alert('❌ Failed to delete data: ' + error.message);
+      toast.error('Delete Failed', error.message);
     }
   };
 
@@ -532,14 +549,14 @@ const Settings: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        alert('❌ File size exceeds 5MB limit.');
+        toast.error('File size exceeds 5MB limit.');
         return;
       }
 
       const reader = new FileReader();
       reader.onloadend = () => {
         setProfile({ ...profile, avatar: reader.result as string });
-        alert('✅ Avatar updated successfully!');
+        toast.success('Avatar updated successfully!');
       };
       reader.readAsDataURL(file);
     }
@@ -558,17 +575,17 @@ const Settings: React.FC = () => {
 
     // Validation
     if (!newPassword || !confirmPassword) {
-      alert('❌ Please enter new password and confirm it.');
+      toast.error('Please enter new password and confirm it.');
       return;
     }
 
     if (newPassword.length < 6) {
-      alert('❌ Password must be at least 6 characters.');
+      toast.error('Password must be at least 6 characters.');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      alert('❌ Passwords do not match!');
+      toast.error('Passwords do not match!');
       return;
     }
 
@@ -587,10 +604,10 @@ const Settings: React.FC = () => {
       if (newPasswordInput) newPasswordInput.value = '';
       if (confirmPasswordInput) confirmPasswordInput.value = '';
 
-      alert('✅ Password changed successfully!');
+      toast.success('Password changed successfully!');
     } catch (error: any) {
       console.error('Password change failed:', error);
-      alert('❌ Failed to change password: ' + (error.message || 'Unknown error'));
+      toast.error('Failed to change password: ' + (error.message || 'Unknown error'));
     }
   };
 
@@ -604,23 +621,25 @@ const Settings: React.FC = () => {
 
     setForgotPasswordLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
-        redirectTo: `${window.location.origin}/auth/update-password`,
+      // Use custom backend endpoint for branded password reset emails
+      const response = await api.post('/api/v1/settings/auth/request-password-reset', {
+        email: userEmail.trim().toLowerCase()
       });
 
-      if (error) {
-        throw error;
+      if (response.data.success) {
+        setStatusMessage({
+          type: 'success',
+          text: `Password reset email sent to ${userEmail}. Please check your inbox (and spam folder).`
+        });
+      } else {
+        throw new Error(response.data.message || 'Failed to send reset email');
       }
-
-      setStatusMessage({
-        type: 'success',
-        text: `Password reset email sent to ${userEmail}. Please check your inbox.`
-      });
     } catch (error: any) {
       console.error('Forgot password failed:', error);
+      // Still show success for security (don't reveal if email exists)
       setStatusMessage({
-        type: 'error',
-        text: 'Failed to send reset email: ' + (error.message || 'Unknown error')
+        type: 'success',
+        text: `If an account exists with ${userEmail}, you will receive a password reset link shortly.`
       });
     } finally {
       setForgotPasswordLoading(false);
@@ -634,8 +653,15 @@ const Settings: React.FC = () => {
     setStatusMessage({ type: 'success', text: '✅ Theme reset to Dark Mode!' });
   };
 
-  const handleCancel = () => {
-    if (confirm('Discard unsaved changes?')) {
+  const handleCancel = async () => {
+    const confirmed = await confirm({
+      title: 'Discard Changes',
+      message: 'Are you sure you want to discard your unsaved changes?',
+      confirmText: 'Discard',
+      cancelText: 'Keep Editing',
+      variant: 'warning'
+    });
+    if (confirmed) {
       window.location.reload();
     }
   };
@@ -1047,11 +1073,31 @@ const Settings: React.FC = () => {
 
           {/* Clear ML Models */}
           <button
-            onClick={() => {
-              if (confirm('Clear all ML training history and models? Your uploaded files will remain.')) {
-                const userId = localStorage.getItem('userId') || 'default';
-                localStorage.removeItem(`automl_result_${userId}`);
-                alert('✅ ML models cleared! You can train fresh models now.');
+            onClick={async () => {
+              const confirmed = await confirm({
+                title: 'Reset ML Models',
+                message: 'Clear all ML training history and models? Your uploaded files will remain intact.',
+                confirmText: 'Reset',
+                variant: 'warning',
+                icon: <RefreshCw className="w-6 h-6" />
+              });
+              if (confirmed) {
+                try {
+                  const userId = localStorage.getItem('userId') || authUser?.id || 'default';
+                  
+                  // Call backend API to delete models from storage (v2 endpoint)
+                  await api.delete(`/api/v2/autonomous/models/${userId}`);
+                  
+                  // Also clear localStorage cache
+                  localStorage.removeItem(`automl_result_${userId}`);
+                  localStorage.removeItem(`ml_training_${userId}`);
+                  localStorage.removeItem(`model_history_${userId}`);
+                  
+                  toast.success('ML models cleared! You can train fresh models now.');
+                } catch (error: any) {
+                  console.error('Failed to reset ML models:', error);
+                  toast.error('Failed to reset ML models: ' + (error.message || 'Unknown error'));
+                }
               }
             }}
             className="w-full p-4 bg-dark-card border border-dark-border rounded-xl text-left hover:bg-dark-hover hover:border-amber-500/30 transition-colors flex items-center justify-between group"
@@ -1177,6 +1223,9 @@ const Settings: React.FC = () => {
           <span>Save Changes</span>
         </button>
       </motion.div>
+
+      {/* Confirm Modal for Delete Operations */}
+      <ConfirmModal />
     </div>
   );
 };

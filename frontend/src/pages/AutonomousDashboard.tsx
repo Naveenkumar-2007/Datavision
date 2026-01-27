@@ -363,27 +363,87 @@ const VisualIntelligenceDashboard: React.FC = () => {
             <main className="max-w-[1920px] mx-auto p-4 lg:p-6 space-y-5">
 
 
-                {/* Hero KPIs */}
+                {/* Hero KPIs - Enterprise Grade */}
                 <section>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                        {dashboard.kpis?.map((kpi, i) => {
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 gap-3">
+                        {dashboard.kpis?.slice(0, 10).map((kpi: any, i: number) => {
                             const kpiColors = [
-                                '#22c55e', '#8b5cf6', '#f97316', '#10b981', '#ec4899', '#3b82f6'
+                                '#22c55e', '#8b5cf6', '#f97316', '#10b981', '#ec4899', 
+                                '#3b82f6', '#14b8a6', '#ef4444', '#eab308', '#6366f1'
                             ];
+                            
+                            // Get KPI type-specific styling
+                            const getKPIIcon = () => {
+                                switch(kpi.kpi_type) {
+                                    case 'anomaly': return '⚠️';
+                                    case 'concentration': return '🏆';
+                                    case 'momentum': return kpi.trend === 'up' ? '🚀' : '📉';
+                                    case 'percentile': return '📊';
+                                    case 'seasonality': return '🔄';
+                                    case 'volatility': return kpi.trend === 'up' ? '✅' : '⚡';
+                                    case 'growth': return kpi.trend === 'up' ? '📈' : '📉';
+                                    case 'sum_with_cagr': return '💰';
+                                    default: return '📋';
+                                }
+                            };
+                            
+                            // Render mini sparkline if available
+                            const renderSparkline = () => {
+                                if (!kpi.sparkline || !Array.isArray(kpi.sparkline) || kpi.sparkline.length < 3) return null;
+                                
+                                const data = kpi.sparkline.slice(-15);
+                                const max = Math.max(...data);
+                                const min = Math.min(...data);
+                                const range = max - min || 1;
+                                const height = 24;
+                                const width = 60;
+                                
+                                const points = data.map((v: number, i: number) => {
+                                    const x = (i / (data.length - 1)) * width;
+                                    const y = height - ((v - min) / range) * height;
+                                    return `${x},${y}`;
+                                }).join(' ');
+                                
+                                const sparkColor = kpi.trend === 'up' ? '#22c55e' : (kpi.trend === 'down' ? '#ef4444' : '#6b7280');
+                                
+                                return (
+                                    <svg width={width} height={height} className="mt-1 opacity-60">
+                                        <polyline
+                                            points={points}
+                                            fill="none"
+                                            stroke={sparkColor}
+                                            strokeWidth="1.5"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
+                                );
+                            };
 
                             return (
                                 <div
                                     key={i}
-                                    className={`kpi-card animate-fade-up stagger-${i + 1}`}
-                                    style={{ '--kpi-color': kpiColors[i % 6] } as React.CSSProperties}
+                                    className={`kpi-card animate-fade-up stagger-${i + 1} relative overflow-hidden`}
+                                    style={{ '--kpi-color': kpiColors[i % 10] } as React.CSSProperties}
                                 >
+                                    {/* KPI Type Badge */}
+                                    {kpi.kpi_type && kpi.kpi_type !== 'count' && kpi.kpi_type !== 'sum' && (
+                                        <span className="absolute top-1 right-1 text-xs opacity-50">
+                                            {getKPIIcon()}
+                                        </span>
+                                    )}
+                                    
                                     <p className={`kpi-label`}>{kpi.title}</p>
                                     <p className={`kpi-value`}>{formatValue(kpi.value, kpi.format)}</p>
+                                    
+                                    {/* Sparkline */}
+                                    {renderSparkline()}
+                                    
                                     {kpi.trend && (
                                         <div className={`kpi-trend ${kpi.trend}`}>
                                             {kpi.trend === 'up' && <TrendingUp className="w-3.5 h-3.5" />}
                                             {kpi.trend === 'down' && <TrendingDown className="w-3.5 h-3.5" />}
-                                            <span className="truncate">{kpi.comparison}</span>
+                                            <span className="truncate text-xs">{kpi.comparison}</span>
                                         </div>
                                     )}
                                 </div>
@@ -392,13 +452,14 @@ const VisualIntelligenceDashboard: React.FC = () => {
                     </div>
                 </section>
 
-                {/* Info Pills */}
+                {/* Info Pills - Enhanced with Chart Types */}
                 <section className="flex flex-wrap gap-2">
                     {[
                         { icon: Calendar, label: dashboard.data_source.split('×')[0]?.trim() },
                         { icon: Layers, label: dashboard.data_source.split('×')[1]?.trim() },
                         { icon: Activity, label: `${dashboard.charts?.length || 0} visualizations` },
-                        { icon: Target, label: `${dashboard.insights?.length || 0} insights` }
+                        { icon: Target, label: `${dashboard.insights?.length || 0} insights` },
+                        { icon: Zap, label: `${new Set(dashboard.charts?.map((c: ChartData) => c.type)).size || 0} chart types` }
                     ].map((p, i) => (
                         <span key={i} className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${isDark ? 'bg-gray-800/60 text-gray-400' : 'bg-gray-100 text-gray-600'}`}>
                             <p.icon className="w-3 h-3" />{p.label}
@@ -406,13 +467,40 @@ const VisualIntelligenceDashboard: React.FC = () => {
                     ))}
                 </section>
 
-                {/* Charts Grid */}
+                {/* Charts Grid - Premium Layout */}
                 <section>
-                    <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}>
-                        {dashboard.charts?.map((chart, i) => {
+                    <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4' : 'space-y-4'}>
+                        {dashboard.charts?.map((chart: any, i: number) => {
                             const Icon = getChartIcon(chart.type);
                             const isExpanded = expandedChart === chart.chart_id;
                             const chartHeight = viewMode === 'list' ? 300 : (isExpanded ? 400 : 260);
+                            
+                            // Premium chart type badges
+                            const getPremiumBadge = () => {
+                                const premiumTypes = ['combo_bar_line', 'lollipop', 'diverging_bar', 'slope', 'dumbbell', 'range_plot', 'band_chart', 'pareto', 'radar', 'sankey', 'sunburst'];
+                                if (premiumTypes.includes(chart.type)) {
+                                    return <span className="text-xs px-1.5 py-0.5 rounded bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-400 font-medium ml-1">PRO</span>;
+                                }
+                                return null;
+                            };
+                            
+                            // Get analysis type if available
+                            const getAnalysisLabel = () => {
+                                if (chart.analysis) {
+                                    const labels: {[key: string]: string} = {
+                                        'dual_axis_comparison': '📊 Dual Axis',
+                                        'ranking_visualization': '🏆 Ranking',
+                                        'variance_from_mean': '📈 Variance',
+                                        'period_comparison': '🔄 Period',
+                                        'comparison_visualization': '⚖️ Compare',
+                                        'min_max_spread': '📏 Range',
+                                        'confidence_interval': '🎯 Confidence',
+                                        'power_bi_80_20': '📊 Pareto 80/20'
+                                    };
+                                    return labels[chart.analysis] || null;
+                                }
+                                return null;
+                            };
 
                             return (
                                 <div
@@ -425,14 +513,20 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                         <div className="flex items-center gap-2 min-w-0">
                                             <Icon className="w-4 h-4 flex-shrink-0" style={{ color: t.accent }} />
                                             <h3 className={`text-sm font-semibold truncate ${t.text}`}>{chart.title}</h3>
-                                            <span className="badge-info text-xs">{chart.type}</span>
+                                            <span className="badge-info text-xs">{chart.type.replace('_', ' ')}</span>
+                                            {getPremiumBadge()}
                                         </div>
-                                        <button
-                                            onClick={() => setExpandedChart(isExpanded ? null : chart.chart_id)}
-                                            className="btn-icon"
-                                        >
-                                            <Maximize2 className="w-4 h-4" />
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            {getAnalysisLabel() && (
+                                                <span className={`text-xs ${t.textMuted} hidden sm:inline`}>{getAnalysisLabel()}</span>
+                                            )}
+                                            <button
+                                                onClick={() => setExpandedChart(isExpanded ? null : chart.chart_id)}
+                                                className="btn-icon"
+                                            >
+                                                <Maximize2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* Chart Content */}
