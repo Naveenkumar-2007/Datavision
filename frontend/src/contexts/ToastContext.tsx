@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef, useMemo } from 'react';
 import { X, CheckCircle, AlertTriangle, Info, AlertCircle, Trash2 } from 'lucide-react';
 
 // Toast Types
@@ -10,7 +10,6 @@ export interface Toast {
     message: string;
     description?: string;
     duration?: number;
-    isVisible?: boolean;
 }
 
 interface ToastContextType {
@@ -34,21 +33,47 @@ export const useToast = () => {
     return context;
 };
 
-// Toast Component - DataVision Styled (No Framer Motion - CSS Only)
-const ToastItem = ({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) => {
-    const [isEntering, setIsEntering] = useState(true);
-    const [isExiting, setIsExiting] = useState(false);
+// Toast Component - DataVision Styled (Stable - No Blinking)
+const ToastItem = React.memo(({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) => {
+    const [animationState, setAnimationState] = useState<'entering' | 'visible' | 'exiting'>('entering');
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isMountedRef = useRef(true);
 
     useEffect(() => {
-        // Trigger enter animation
-        const enterTimer = setTimeout(() => setIsEntering(false), 50);
-        return () => clearTimeout(enterTimer);
-    }, []);
+        isMountedRef.current = true;
+        
+        // Enter animation - use requestAnimationFrame for smoother transition
+        requestAnimationFrame(() => {
+            if (isMountedRef.current) {
+                setAnimationState('visible');
+            }
+        });
+        
+        // Auto-remove after duration
+        if (toast.duration && toast.duration > 0) {
+            timerRef.current = setTimeout(() => {
+                if (isMountedRef.current) {
+                    setAnimationState('exiting');
+                    setTimeout(() => {
+                        if (isMountedRef.current) {
+                            onRemove(toast.id);
+                        }
+                    }, 200);
+                }
+            }, toast.duration);
+        }
 
-    const handleRemove = () => {
-        setIsExiting(true);
+        return () => {
+            isMountedRef.current = false;
+            if (timerRef.current) clearTimeout(timerRef.current);
+        };
+    }, []); // Empty deps - only run on mount
+
+    const handleRemove = useCallback(() => {
+        if (timerRef.current) clearTimeout(timerRef.current);
+        setAnimationState('exiting');
         setTimeout(() => onRemove(toast.id), 200);
-    };
+    }, [toast.id, onRemove]);
 
     const configs = {
         success: {
@@ -85,6 +110,17 @@ const ToastItem = ({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
 
     const config = configs[toast.type];
 
+    const getAnimationClasses = () => {
+        switch (animationState) {
+            case 'entering':
+                return 'opacity-0 translate-y-4 scale-95';
+            case 'exiting':
+                return 'opacity-0 translate-x-8 scale-95';
+            default:
+                return 'opacity-100 translate-y-0 translate-x-0 scale-100';
+        }
+    };
+
     return (
         <div
             className={`
@@ -92,8 +128,7 @@ const ToastItem = ({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
                 backdrop-blur-xl shadow-lg w-full max-w-sm pointer-events-auto
                 ${config.bg} ${config.border} bg-[var(--bg-card)]/95
                 transition-all duration-200 ease-out
-                ${isEntering ? 'opacity-0 translate-y-4 scale-95' : ''}
-                ${isExiting ? 'opacity-0 translate-x-8 scale-95' : 'opacity-100 translate-y-0 scale-100'}
+                ${getAnimationClasses()}
             `}
         >
             <div className={`flex-shrink-0 mt-0.5 ${config.iconColor}`}>
@@ -111,33 +146,30 @@ const ToastItem = ({ toast, onRemove }: { toast: Toast; onRemove: (id: string) =
             </div>
             <button
                 onClick={handleRemove}
+                type="button"
                 className="flex-shrink-0 p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
             >
                 <X className="w-4 h-4" />
             </button>
         </div>
     );
-};
+});
+
+ToastItem.displayName = 'ToastItem';
 
 export const ToastProvider = ({ children }: { children: ReactNode }) => {
     const [toasts, setToasts] = useState<Toast[]>([]);
+    const toastIdCounter = useRef(0);
 
     const removeToast = useCallback((id: string) => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
     }, []);
 
     const showToast = useCallback((type: ToastType, message: string, description?: string, duration = 5000) => {
-        const id = Math.random().toString(36).substring(2, 9);
-        const newToast = { id, type, message, description, duration };
-
+        const id = `toast-${++toastIdCounter.current}-${Date.now()}`;
+        const newToast: Toast = { id, type, message, description, duration };
         setToasts((prev) => [...prev, newToast]);
-
-        if (duration > 0) {
-            setTimeout(() => {
-                removeToast(id);
-            }, duration);
-        }
-    }, [removeToast]);
+    }, []);
 
     const success = useCallback((message: string, description?: string) => showToast('success', message, description), [showToast]);
     const error = useCallback((message: string, description?: string) => showToast('error', message, description), [showToast]);
@@ -145,8 +177,19 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     const info = useCallback((message: string, description?: string) => showToast('info', message, description), [showToast]);
     const deleted = useCallback((message: string, description?: string) => showToast('delete', message, description, 4000), [showToast]);
 
+    const contextValue = useMemo(() => ({
+        toasts,
+        showToast,
+        removeToast,
+        success,
+        error,
+        warning,
+        info,
+        deleted
+    }), [toasts, showToast, removeToast, success, error, warning, info, deleted]);
+
     return (
-        <ToastContext.Provider value={{ toasts, showToast, removeToast, success, error, warning, info, deleted }}>
+        <ToastContext.Provider value={contextValue}>
             {children}
             {/* Toast Container - Bottom Right with DataVision styling */}
             <div className="fixed bottom-0 right-0 z-[9998] p-4 sm:p-6 w-full max-w-sm flex flex-col gap-3 pointer-events-none">

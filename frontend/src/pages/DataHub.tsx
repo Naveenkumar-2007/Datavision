@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
@@ -30,6 +30,7 @@ import apiService from '@/services/api';
 import MultiFileUpload from '@/components/automl/MultiFileUpload';
 import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
+import { getUserIdSync } from '@/utils/userId';
 
 interface ThemeContext {
   isDark: boolean;
@@ -79,9 +80,11 @@ const DataHub: React.FC = () => {
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [progressMessage, setProgressMessage] = useState('Initializing...');
 
-  // Upload Cancel State
+  // Upload Cancel State - using refs to avoid stale closures in cancel handler
   const [uploadAbortController, setUploadAbortController] = useState<AbortController | null>(null);
   const [uploadingFileNames, setUploadingFileNames] = useState<string[]>([]); // Track files being uploaded for cancellation
+  const uploadAbortControllerRef = useRef<AbortController | null>(null);
+  const uploadingFileNamesRef = useRef<string[]>([]);
 
   // Delete State
   const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
@@ -169,10 +172,12 @@ const DataHub: React.FC = () => {
     // Create abort controller for cancel functionality
     const controller = new AbortController();
     setUploadAbortController(controller);
+    uploadAbortControllerRef.current = controller; // Store in ref for cancel handler
 
     // Track filenames for cancellation cleanup
     const fileNames = acceptedFiles.map(f => f.name);
     setUploadingFileNames(fileNames);
+    uploadingFileNamesRef.current = fileNames; // Store in ref for cancel handler
 
     setUploading(true);
     setLastFixReport(null);
@@ -207,7 +212,7 @@ const DataHub: React.FC = () => {
         for (const dataFile of dataFiles) {
           const formData = new FormData();
           formData.append('file', dataFile);
-          formData.append('user_id', localStorage.getItem('userId') || 'default');
+          formData.append('user_id', getUserIdSync());
           formData.append('fix_missing', 'true');
           formData.append('fix_outliers', 'true');
           formData.append('fix_duplicates', 'true');
@@ -255,16 +260,23 @@ const DataHub: React.FC = () => {
     } finally {
       setUploading(false);
       setUploadAbortController(null);
+      uploadAbortControllerRef.current = null;
+      uploadingFileNamesRef.current = [];
     }
   }, [autoFixEnabled]);
 
-  // Cancel Upload Handler
-  const handleCancelUpload = async () => {
+  // Cancel Upload Handler - uses refs to avoid stale closure issues
+  const handleCancelUpload = useCallback(async () => {
     console.log('🛑 Cancel upload initiated');
 
+    // Get current values from refs (avoids stale closure)
+    const currentController = uploadAbortControllerRef.current;
+    const currentFileNames = uploadingFileNamesRef.current;
+
     // 1. Abort the HTTP request (stops file transmission if still in progress)
-    if (uploadAbortController) {
-      uploadAbortController.abort();
+    if (currentController) {
+      currentController.abort();
+      console.log('🛑 HTTP request aborted');
     }
 
     const userId = localStorage.getItem('userId') || 'default';
@@ -281,15 +293,15 @@ const DataHub: React.FC = () => {
 
     // 3. EXPLICITLY DELETE any files that may have been uploaded
     // This is the key fix - delete each file we were trying to upload
-    if (uploadingFileNames.length > 0) {
-      console.log(`🗑️ Deleting ${uploadingFileNames.length} cancelled files:`, uploadingFileNames);
+    if (currentFileNames.length > 0) {
+      console.log(`🗑️ Deleting ${currentFileNames.length} cancelled files:`, currentFileNames);
 
-      for (const fileName of uploadingFileNames) {
+      for (const fileName of currentFileNames) {
         try {
           await fetch(`/api/v1/files/${userId}/${encodeURIComponent(fileName)}`, {
             method: 'DELETE',
           });
-          console.log(`�️ Deleted cancelled file: ${fileName}`);
+          console.log(`🗑️ Deleted cancelled file: ${fileName}`);
         } catch (e) {
           // File might not exist yet if upload was aborted early - that's fine
           console.log(`⚠️ Could not delete ${fileName} (may not have been uploaded yet)`);
@@ -302,11 +314,13 @@ const DataHub: React.FC = () => {
     setFixingData(false);
     setUploadAbortController(null);
     setUploadingFileNames([]);
+    uploadAbortControllerRef.current = null;
+    uploadingFileNamesRef.current = [];
 
     // 5. Refresh file list to show correct state
     await loadFiles();
     console.log('✅ Cancel complete - file list refreshed');
-  };
+  }, []);
 
   // Run AutoML Training
   const handleRunAutoML = async () => {

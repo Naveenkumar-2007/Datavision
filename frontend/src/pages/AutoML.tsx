@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import ModelHistory from '@/components/automl/ModelHistory';
 import { useUserStore } from '@/store/userStore';
+import { getUserIdSync } from '@/utils/userId';
 import { useToast } from '@/contexts/ToastContext';
 
 interface ModelResult {
@@ -223,7 +224,7 @@ const AutoML: React.FC = () => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    user_id: 'default',
+                    user_id: getUserIdSync(),
                     model_name: result.best_model.name,
                     data: dataPayload
                 })

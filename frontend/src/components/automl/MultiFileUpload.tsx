@@ -20,6 +20,7 @@ import {
     Brain,
 } from 'lucide-react';
 import apiService from '@/services/api';
+import { getUserIdSync } from '@/utils/userId';
 
 // Theme interface removed
 
@@ -144,7 +145,7 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ onTrainingComplete, u
         setTrainingProgress('Starting training...');
 
         try {
-            const userId = localStorage.getItem('userId') || 'default';
+            const userId = getUserIdSync();
 
             // Files are already uploaded to DataHub on selection
             // Just proceed to training
@@ -250,7 +251,7 @@ const MultiFileUpload: React.FC<MultiFileUploadProps> = ({ onTrainingComplete, u
 
         // Signal backend to stop
         try {
-            const userId = localStorage.getItem('userId') || 'default';
+            const userId = getUserIdSync();
             const formData = new FormData();
             formData.append('user_id', userId);
             await fetch('/api/v2/automl/stop_training', {

@@ -20,6 +20,7 @@ import {
     Info
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
+import { getUserIdSync } from '@/utils/userId';
 
 interface HealthIssue {
     severity: string;
@@ -75,7 +76,7 @@ const DataHealthCard: React.FC<DataHealthCardProps> = ({
             setLoading(true);
             setError(null);
 
-            const userId = localStorage.getItem('userId') || 'default';
+            const userId = getUserIdSync();
             const response = await fetch('/api/v1/automl/health', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

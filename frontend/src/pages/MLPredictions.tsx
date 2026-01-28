@@ -43,6 +43,7 @@ import ExplainModal from '@/components/automl/ExplainModal';
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
 import { useToast } from '@/contexts/ToastContext';
+import { getUserIdSync } from '@/utils/userId';
 
 
 interface FeatureMetadata {
@@ -1197,7 +1198,7 @@ const MLPredictions: React.FC = () => {
                             onClick={async () => {
                                 try {
                                     const dataToSend = {
-                                        user_id: localStorage.getItem('userId') || 'default',
+                                        user_id: getUserIdSync(),
                                         model_name: result.best_model.name,
                                         data: Object.fromEntries(
                                             Object.entries(predictionInput).map(([k, v]) => [k, parseFloat(v) || v])

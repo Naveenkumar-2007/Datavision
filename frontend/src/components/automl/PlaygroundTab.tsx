@@ -15,6 +15,7 @@ import { Sliders, RefreshCw, Sparkles, AlertCircle, Activity, ChevronDown, HelpC
 import { useUserStore } from '@/store/userStore';
 import debounce from 'lodash/debounce';
 import ExplainModal from './ExplainModal';
+import { getUserIdSync } from '@/utils/userId';
 
 interface SliderConfig {
     name: string;
@@ -54,7 +55,7 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
         const loadConfig = async () => {
             try {
                 setLoading(true);
-                const userId = localStorage.getItem('userId') || 'default';
+                const userId = getUserIdSync();
                 const response = await fetch(`/api/v1/automl/playground/config?user_id=${userId}`);
                 const data = await response.json();
 
@@ -85,7 +86,7 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
         debounce(async (vals: Record<string, any>) => {
             try {
                 setPredicting(true);
-                const userId = localStorage.getItem('userId') || 'default';
+                const userId = getUserIdSync();
                 const response = await fetch('/api/v1/automl/playground/predict', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

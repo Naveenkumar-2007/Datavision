@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { AlertTriangle, Trash2, X, CheckCircle, Info } from 'lucide-react';
 
 export type ConfirmVariant = 'danger' | 'warning' | 'info' | 'success';
@@ -48,6 +48,152 @@ const variantConfig = {
     },
 };
 
+// Memoized Modal Content to prevent re-renders
+const ConfirmModalContent = React.memo<{
+    title: string;
+    message: string;
+    confirmText: string;
+    cancelText: string;
+    variant: ConfirmVariant;
+    isLoading: boolean;
+    requireTypedConfirmation?: string;
+    icon?: React.ReactNode;
+    onClose: () => void;
+    onConfirm: () => void;
+}>(({
+    title,
+    message,
+    confirmText,
+    cancelText,
+    variant,
+    isLoading,
+    requireTypedConfirmation,
+    icon,
+    onClose,
+    onConfirm,
+}) => {
+    const [typedValue, setTypedValue] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
+    const config = variantConfig[variant];
+    const IconComponent = config.icon;
+
+    const canConfirm = requireTypedConfirmation 
+        ? typedValue.toUpperCase() === requireTypedConfirmation.toUpperCase()
+        : true;
+
+    // Focus input on mount
+    useEffect(() => {
+        if (requireTypedConfirmation && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [requireTypedConfirmation]);
+
+    const handleConfirmClick = () => {
+        if (canConfirm && !isLoading) {
+            onConfirm();
+        }
+    };
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setTypedValue(e.target.value);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter' && canConfirm && !isLoading) {
+            onConfirm();
+        }
+    };
+
+    return (
+        <div className="rounded-2xl border shadow-2xl overflow-hidden bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
+            {/* Header */}
+            <div className="relative p-6 pb-4">
+                <button
+                    onClick={onClose}
+                    disabled={isLoading}
+                    type="button"
+                    className="absolute top-4 right-4 p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+                >
+                    <X className="w-5 h-5" />
+                </button>
+
+                <div className="flex items-start gap-4">
+                    <div className={`p-3 rounded-xl ${config.iconBg} ${config.borderColor} border flex-shrink-0`}>
+                        {icon ? (
+                            <div className={config.iconColor}>{icon}</div>
+                        ) : (
+                            <IconComponent className={`w-6 h-6 ${config.iconColor}`} />
+                        )}
+                    </div>
+                    <div className="flex-1 min-w-0 pt-1 pr-8">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                            {title}
+                        </h3>
+                        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
+                            {message}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Typed Confirmation Input */}
+                {requireTypedConfirmation && (
+                    <div className="mt-4 ml-16">
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">
+                            Type <span className="font-bold text-gray-900 dark:text-white">{requireTypedConfirmation}</span> to confirm
+                        </label>
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={typedValue}
+                            onChange={handleInputChange}
+                            onKeyDown={handleKeyDown}
+                            placeholder={requireTypedConfirmation}
+                            disabled={isLoading}
+                            autoComplete="off"
+                            spellCheck={false}
+                            className="w-full px-4 py-2.5 rounded-xl border text-sm bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors disabled:opacity-50"
+                        />
+                    </div>
+                )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-3 p-6 pt-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <button
+                    onClick={onClose}
+                    disabled={isLoading}
+                    type="button"
+                    className="flex-1 px-4 py-2.5 rounded-xl font-medium text-sm bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+                >
+                    {cancelText}
+                </button>
+                <button
+                    onClick={handleConfirmClick}
+                    disabled={isLoading || !canConfirm}
+                    type="button"
+                    className={`
+                        flex-1 px-4 py-2.5 rounded-xl font-medium text-sm text-white
+                        ${config.buttonClass}
+                        transition-colors disabled:opacity-50 disabled:cursor-not-allowed
+                        flex items-center justify-center gap-2
+                    `}
+                >
+                    {isLoading ? (
+                        <>
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span>Processing...</span>
+                        </>
+                    ) : (
+                        confirmText
+                    )}
+                </button>
+            </div>
+        </div>
+    );
+});
+
+ConfirmModalContent.displayName = 'ConfirmModalContent';
+
 export const ConfirmModal: React.FC<ConfirmModalProps> = ({
     isOpen,
     onClose,
@@ -61,23 +207,23 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
     requireTypedConfirmation,
     icon,
 }) => {
-    const [typedValue, setTypedValue] = React.useState('');
-    const [isVisible, setIsVisible] = React.useState(false);
-    const modalRef = useRef<HTMLDivElement>(null);
-    const config = variantConfig[variant];
-    const IconComponent = config.icon;
-
-    const canConfirm = requireTypedConfirmation 
-        ? typedValue.toUpperCase() === requireTypedConfirmation.toUpperCase()
-        : true;
+    const [isVisible, setIsVisible] = useState(false);
+    const [isAnimating, setIsAnimating] = useState(false);
 
     // Handle open/close with CSS transitions
     useEffect(() => {
         if (isOpen) {
             setIsVisible(true);
+            // Small delay to trigger animation
+            requestAnimationFrame(() => {
+                setIsAnimating(true);
+            });
             document.body.style.overflow = 'hidden';
         } else {
-            const timer = setTimeout(() => setIsVisible(false), 200);
+            setIsAnimating(false);
+            const timer = setTimeout(() => {
+                setIsVisible(false);
+            }, 200);
             document.body.style.overflow = '';
             return () => clearTimeout(timer);
         }
@@ -89,33 +235,17 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
     // Handle escape key
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && !isLoading) {
-                handleClose();
+            if (e.key === 'Escape' && !isLoading && isOpen) {
+                onClose();
             }
         };
-        if (isOpen) {
-            window.addEventListener('keydown', handleKeyDown);
-            return () => window.removeEventListener('keydown', handleKeyDown);
-        }
-    }, [isOpen, isLoading]);
-
-    const handleConfirm = () => {
-        if (canConfirm && !isLoading) {
-            onConfirm();
-            setTypedValue('');
-        }
-    };
-
-    const handleClose = () => {
-        if (!isLoading) {
-            onClose();
-            setTypedValue('');
-        }
-    };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, isLoading, onClose]);
 
     const handleBackdropClick = (e: React.MouseEvent) => {
         if (e.target === e.currentTarget && !isLoading) {
-            handleClose();
+            onClose();
         }
     };
 
@@ -126,7 +256,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             className={`
                 fixed inset-0 z-[9999] flex items-center justify-center p-4
                 transition-opacity duration-200 ease-out
-                ${isOpen ? 'opacity-100' : 'opacity-0'}
+                ${isAnimating ? 'opacity-100' : 'opacity-0'}
             `}
             onClick={handleBackdropClick}
         >
@@ -135,137 +265,94 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 
             {/* Modal */}
             <div 
-                ref={modalRef}
                 className={`
                     relative z-10 w-full max-w-md
                     transition-all duration-200 ease-out
-                    ${isOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}
+                    ${isAnimating ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-4'}
                 `}
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="rounded-2xl border shadow-2xl overflow-hidden bg-[var(--bg-card)] border-[var(--border-color)]">
-                    {/* Header */}
-                    <div className="relative p-6 pb-4">
-                        <button
-                            onClick={handleClose}
-                            disabled={isLoading}
-                            className="absolute top-4 right-4 p-2 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] transition-colors"
-                        >
-                            <X className="w-5 h-5" />
-                        </button>
-
-                        <div className="flex items-start gap-4">
-                            <div className={`p-3 rounded-xl ${config.iconBg} ${config.borderColor} border`}>
-                                {icon ? (
-                                    <div className={config.iconColor}>{icon}</div>
-                                ) : (
-                                    <IconComponent className={`w-6 h-6 ${config.iconColor}`} />
-                                )}
-                            </div>
-                            <div className="flex-1 min-w-0 pt-1">
-                                <h3 className="text-lg font-semibold text-[var(--text-primary)]">
-                                    {title}
-                                </h3>
-                                <p className="mt-2 text-sm text-[var(--text-secondary)] leading-relaxed">
-                                    {message}
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Typed Confirmation Input */}
-                        {requireTypedConfirmation && (
-                            <div className="mt-4 ml-16">
-                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-2">
-                                    Type <span className="font-bold text-[var(--text-primary)]">{requireTypedConfirmation}</span> to confirm
-                                </label>
-                                <input
-                                    type="text"
-                                    value={typedValue}
-                                    onChange={(e) => setTypedValue(e.target.value)}
-                                    placeholder={requireTypedConfirmation}
-                                    disabled={isLoading}
-                                    className="w-full px-4 py-2.5 rounded-xl border text-sm bg-[var(--bg-primary)] border-[var(--border-color)] text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:border-[var(--text-secondary)] transition-colors"
-                                    autoFocus
-                                />
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-3 p-6 pt-4 border-t border-[var(--border-color)] bg-[var(--bg-secondary)]">
-                        <button
-                            onClick={handleClose}
-                            disabled={isLoading}
-                            className="flex-1 px-4 py-2.5 rounded-xl font-medium text-sm bg-[var(--bg-hover)] text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-colors disabled:opacity-50"
-                        >
-                            {cancelText}
-                        </button>
-                        <button
-                            onClick={handleConfirm}
-                            disabled={isLoading || !canConfirm}
-                            className={`
-                                flex-1 px-4 py-2.5 rounded-xl font-medium text-sm text-white
-                                ${config.buttonClass}
-                                transition-colors disabled:opacity-50
-                                flex items-center justify-center gap-2
-                            `}
-                        >
-                            {isLoading ? (
-                                <>
-                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    Processing...
-                                </>
-                            ) : (
-                                confirmText
-                            )}
-                        </button>
-                    </div>
-                </div>
+                <ConfirmModalContent
+                    title={title}
+                    message={message}
+                    confirmText={confirmText}
+                    cancelText={cancelText}
+                    variant={variant}
+                    isLoading={isLoading}
+                    requireTypedConfirmation={requireTypedConfirmation}
+                    icon={icon}
+                    onClose={onClose}
+                    onConfirm={onConfirm}
+                />
             </div>
         </div>
     );
 };
 
-// Hook for easy usage
+// Stable hook for confirm modal
+interface ModalConfig {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: ConfirmVariant;
+    requireTypedConfirmation?: string;
+    icon?: React.ReactNode;
+}
+
 export const useConfirmModal = () => {
-    const [modalState, setModalState] = React.useState<{
-        isOpen: boolean;
-        config: Omit<ConfirmModalProps, 'isOpen' | 'onClose' | 'onConfirm'>;
-        resolver: ((value: boolean) => void) | null;
-    }>({
-        isOpen: false,
-        config: { title: '', message: '' },
-        resolver: null,
-    });
+    const [isOpen, setIsOpen] = useState(false);
+    const [config, setConfig] = useState<ModalConfig>({ title: '', message: '' });
+    const resolverRef = useRef<((value: boolean) => void) | null>(null);
 
-    const confirm = (config: Omit<ConfirmModalProps, 'isOpen' | 'onClose' | 'onConfirm'>): Promise<boolean> => {
+    const confirm = useCallback((newConfig: ModalConfig): Promise<boolean> => {
         return new Promise((resolve) => {
-            setModalState({
-                isOpen: true,
-                config,
-                resolver: resolve,
-            });
+            resolverRef.current = resolve;
+            setConfig(newConfig);
+            setIsOpen(true);
         });
-    };
+    }, []);
 
-    const handleClose = () => {
-        modalState.resolver?.(false);
-        setModalState((prev) => ({ ...prev, isOpen: false, resolver: null }));
-    };
+    const handleClose = useCallback(() => {
+        setIsOpen(false);
+        // Delay resolver call to allow animation
+        setTimeout(() => {
+            if (resolverRef.current) {
+                resolverRef.current(false);
+                resolverRef.current = null;
+            }
+        }, 50);
+    }, []);
 
-    const handleConfirm = () => {
-        modalState.resolver?.(true);
-        setModalState((prev) => ({ ...prev, isOpen: false, resolver: null }));
-    };
+    const handleConfirm = useCallback(() => {
+        setIsOpen(false);
+        // Delay resolver call to allow animation
+        setTimeout(() => {
+            if (resolverRef.current) {
+                resolverRef.current(true);
+                resolverRef.current = null;
+            }
+        }, 50);
+    }, []);
 
-    const ConfirmModalComponent = () => (
-        <ConfirmModal
-            isOpen={modalState.isOpen}
-            onClose={handleClose}
-            onConfirm={handleConfirm}
-            {...modalState.config}
-        />
-    );
+    // Stable modal component
+    const ConfirmModalComponent = useMemo(() => {
+        const Modal = () => (
+            <ConfirmModal
+                isOpen={isOpen}
+                onClose={handleClose}
+                onConfirm={handleConfirm}
+                title={config.title}
+                message={config.message}
+                confirmText={config.confirmText}
+                cancelText={config.cancelText}
+                variant={config.variant}
+                requireTypedConfirmation={config.requireTypedConfirmation}
+                icon={config.icon}
+            />
+        );
+        return Modal;
+    }, [isOpen, config, handleClose, handleConfirm]);
 
     return { confirm, ConfirmModal: ConfirmModalComponent };
 };

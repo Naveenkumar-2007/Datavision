@@ -45,9 +45,12 @@ api.interceptors.response.use(
   }
 );
 
-// Get current user ID helper
+// Import user ID helper
+import { getUserIdSync } from '../utils/userId';
+
+// Get current user ID helper - uses unique ID per user/guest
 const getUserId = (): string => {
-  return localStorage.getItem('userId') || 'guest';
+  return getUserIdSync();
 };
 
 // API Service Methods

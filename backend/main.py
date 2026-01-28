@@ -27,7 +27,6 @@ from api.v1.endpoints import (
     files,
     analytics,
     reports,
-    reports,
     email_prefs
 )
 

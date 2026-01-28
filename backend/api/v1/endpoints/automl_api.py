@@ -692,6 +692,7 @@ async def make_prediction(request: PredictRequest):
                 "task_type": "classification",
                 "prediction": label,
                 "probabilities": probs,
+                "confidence": max(probs.values()) if probs else None,
                 "model_used": type(engine.model).__name__
             }
         else:
@@ -706,6 +707,7 @@ async def make_prediction(request: PredictRequest):
                 "task_type": "regression",
                 "prediction": val,
                 "formatted_prediction": f"{val:,.4f}",
+                "confidence": None,  # No confidence for regression
                 "model_used": type(engine.model).__name__
             }
 

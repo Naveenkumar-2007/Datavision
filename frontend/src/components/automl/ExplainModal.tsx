@@ -19,6 +19,7 @@ import {
     AlertCircle
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
+import { getUserIdSync } from '@/utils/userId';
 
 interface ContributionItem {
     feature: string;
@@ -54,7 +55,7 @@ const ExplainModal: React.FC<ExplainModalProps> = ({ isOpen, onClose, inputValue
             setLoading(true);
             setError(null);
 
-            const userId = localStorage.getItem('userId') || 'default';
+            const userId = getUserIdSync();
             console.log('[ExplainModal] Fetching explanation for:', inputValues);
 
             const response = await fetch('/api/v1/automl/explain', {

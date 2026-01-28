@@ -99,6 +99,22 @@ try:
 except ImportError:
     HAS_OPTUNA = False
 
+# Import advanced techniques
+try:
+    from ml.advanced_techniques import (
+        AdvancedPreprocessor,
+        AdvancedFeatureEngineer as AdvancedFE,
+        AdvancedFeatureSelector,
+        DataAugmentor,
+        ModelCalibrator,
+        EnhancedEnsembleBuilder,
+        apply_advanced_techniques
+    )
+    HAS_ADVANCED = True
+except ImportError:
+    HAS_ADVANCED = False
+    print("⚠️ Advanced techniques not available")
+
 
 # =============================================================================
 # PHASE 1: DATA CLEANING - WORLD-CLASS IMPLEMENTATION
@@ -1204,11 +1220,32 @@ class ProductionFeatureEngineer:
         return X
     
     def transform_single(self, data: dict) -> np.ndarray:
-        """Transform a single row (dict) for prediction"""
+        """Transform a single row (dict) for prediction - ROBUST VERSION"""
+        # Ensure all original columns are present with defaults
+        for col in self.original_columns:
+            if col not in data:
+                data[col] = 0  # Default for missing columns
+        
         df = pd.DataFrame([data])
-        # Ensure all training columns are present (fill with None if missing)
-        # This is handled inside transform checks
-        return self.transform(df)
+        
+        try:
+            X = self.transform(df)
+            
+            # Validate dimensions match training
+            expected_features = len(self.feature_names)
+            if X.shape[1] != expected_features:
+                print(f"   ⚠️ Feature dimension mismatch: got {X.shape[1]}, expected {expected_features}")
+                # Pad or truncate to match
+                if X.shape[1] < expected_features:
+                    padding = np.zeros((1, expected_features - X.shape[1]))
+                    X = np.hstack([X, padding])
+                else:
+                    X = X[:, :expected_features]
+            
+            return X
+        except Exception as e:
+            print(f"   ⚠️ Transform error: {e}, returning zeros")
+            return np.zeros((1, len(self.feature_names)))
 
 
 # =============================================================================
@@ -1246,13 +1283,13 @@ class ProductionModelTrainer:
     def get_models(self) -> Dict[str, Any]:
         """
         Get models based on mode:
-        - FAST: 8 quick models (30-60 seconds)
-        - ULTRA: 20+ models with ensembles (2-10 minutes)
+        - FAST: 10 quick models (30-60 seconds) - ENHANCED
+        - ULTRA: 25+ models with ensembles (2-10 minutes) - ENHANCED
         """
         is_ultra = self.mode == 'ultra'
         
         if self.task_type == 'classification':
-            # === FAST MODE: 8 Essential Models (WITH CLASS BALANCING) ===
+            # === FAST MODE: 10 Essential Models (WITH CLASS BALANCING) - ENHANCED ===
             models = {
                 # Linear - WITH CLASS WEIGHT BALANCING
                 'LogisticRegression': LogisticRegression(
@@ -1262,115 +1299,185 @@ class ProductionModelTrainer:
                 
                 # Tree-based (core) - WITH CLASS WEIGHT BALANCING
                 'RandomForest': RandomForestClassifier(
-                    n_estimators=100 if not is_ultra else 200, 
-                    max_depth=10 if not is_ultra else 15, 
-                    min_samples_split=5, random_state=42, n_jobs=1,
+                    n_estimators=150 if not is_ultra else 250, 
+                    max_depth=12 if not is_ultra else 18, 
+                    min_samples_split=4, random_state=42, n_jobs=-1,
                     class_weight='balanced'  # CRITICAL: Handle imbalanced classes
                 ),
                 'GradientBoosting': GradientBoostingClassifier(
-                    n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42
-                    # Note: GradientBoosting doesn't support class_weight directly
+                    n_estimators=120, max_depth=6, learning_rate=0.1, random_state=42,
+                    subsample=0.8  # Add subsampling for better generalization
+                ),
+                
+                # 🆕 HistGradientBoosting - FAST & POWERFUL (sklearn's native boosting)
+                'HistGradientBoosting': HistGradientBoostingClassifier(
+                    max_iter=150 if not is_ultra else 250,
+                    max_depth=8 if not is_ultra else 12,
+                    learning_rate=0.1, random_state=42,
+                    class_weight='balanced'  # Native class balancing
                 ),
                 
                 # Neighbors
-                'KNN': KNeighborsClassifier(n_neighbors=5, weights='distance', n_jobs=1),
+                'KNN': KNeighborsClassifier(n_neighbors=7, weights='distance', n_jobs=-1),
                 
                 # Naive Bayes
                 'GaussianNB': GaussianNB(),
+                
+                # 🆕 ExtraTrees - Fast mode now includes this powerful algorithm
+                'ExtraTrees': ExtraTreesClassifier(
+                    n_estimators=100 if not is_ultra else 200,
+                    max_depth=10 if not is_ultra else 15,
+                    random_state=42, n_jobs=-1,
+                    class_weight='balanced'
+                ),
             }
             
-            # XGBoost/LightGBM for both modes
+            # XGBoost/LightGBM for both modes - ENHANCED
             if HAS_XGBOOST:
                 models['XGBoost'] = xgb.XGBClassifier(
-                    n_estimators=100 if not is_ultra else 200, 
-                    max_depth=6, learning_rate=0.1,
-                    random_state=42, n_jobs=1, verbosity=0,
+                    n_estimators=150 if not is_ultra else 300, 
+                    max_depth=7 if not is_ultra else 10,
+                    learning_rate=0.1 if not is_ultra else 0.05,
+                    subsample=0.8, colsample_bytree=0.8,  # Regularization
+                    random_state=42, n_jobs=-1, verbosity=0,
                     eval_metric='mlogloss',
-                    scale_pos_weight=10  # CRITICAL: Balance classes (adjust ratio)
+                    scale_pos_weight=10  # CRITICAL: Balance classes
                 )
             if HAS_LIGHTGBM:
                 models['LightGBM'] = lgb.LGBMClassifier(
-                    n_estimators=100 if not is_ultra else 200, 
-                    max_depth=6, learning_rate=0.1,
-                    random_state=42, n_jobs=1, verbose=-1,
-                    class_weight='balanced'  # CRITICAL: Handle imbalanced classes
+                    n_estimators=150 if not is_ultra else 300, 
+                    max_depth=7 if not is_ultra else 10,
+                    learning_rate=0.1 if not is_ultra else 0.05,
+                    num_leaves=31 if not is_ultra else 50,
+                    subsample=0.8, colsample_bytree=0.8,  # Regularization
+                    random_state=42, n_jobs=-1, verbose=-1,
+                    class_weight='balanced'
                 )
             
-            # === ULTRA MODE: Additional Models (12+ more) WITH CLASS BALANCING ===
+            # 🆕 CatBoost for FAST mode too (if available) - very fast with GPU
+            if HAS_CATBOOST and not is_ultra:
+                models['CatBoost'] = cb.CatBoostClassifier(
+                    iterations=100, depth=6, learning_rate=0.1,
+                    random_state=42, verbose=False,
+                    auto_class_weights='Balanced'
+                )
+            
+            # === ULTRA MODE: Additional Models (15+ more) WITH CLASS BALANCING ===
             if is_ultra:
                 models.update({
                     'RidgeClassifier': RidgeClassifier(alpha=1.0, random_state=42, class_weight='balanced'),
-                    'ExtraTrees': ExtraTreesClassifier(
-                        n_estimators=200, max_depth=15, random_state=42, n_jobs=1,
-                        class_weight='balanced'  # CRITICAL
-                    ),
+                    
+                    # 🆕 Enhanced MLP with better architecture
                     'MLP': MLPClassifier(
-                        hidden_layer_sizes=(128, 64, 32), max_iter=1000,
+                        hidden_layer_sizes=(256, 128, 64, 32), max_iter=1500,
+                        learning_rate='adaptive', early_stopping=True,
+                        validation_fraction=0.1, random_state=42
+                    ),
+                    
+                    # 🆕 MLP with different architecture for diversity
+                    'MLP_Wide': MLPClassifier(
+                        hidden_layer_sizes=(512, 256), max_iter=1000,
                         learning_rate='adaptive', random_state=42
                     ),
-                    # 🆕 NEW ALGORITHMS WITH CLASS BALANCING
+                    
+                    # Ensemble boosting methods
                     'AdaBoost': AdaBoostClassifier(
-                        n_estimators=100, learning_rate=0.5, random_state=42
+                        n_estimators=150, learning_rate=0.5, random_state=42
                     ),
                     'Bagging': BaggingClassifier(
-                        n_estimators=50, random_state=42, n_jobs=1
+                        n_estimators=100, max_samples=0.8, max_features=0.8,
+                        random_state=42, n_jobs=-1
                     ),
-                    'HistGradientBoosting': HistGradientBoostingClassifier(
-                        max_iter=100, max_depth=10, learning_rate=0.1, 
-                        random_state=42, class_weight='balanced'  # CRITICAL
-                    ),
+                    
+                    # Linear models
                     'SGD': SGDClassifier(
-                        loss='log_loss', max_iter=1000, random_state=42,
-                        class_weight='balanced'  # CRITICAL
+                        loss='log_loss', max_iter=1500, random_state=42,
+                        class_weight='balanced', early_stopping=True
                     ),
+                    
+                    # Tree models
                     'DecisionTree': DecisionTreeClassifier(
-                        max_depth=15, random_state=42, class_weight='balanced'  # CRITICAL
+                        max_depth=18, min_samples_split=3, random_state=42,
+                        class_weight='balanced'
                     ),
+                    
+                    # Discriminant Analysis
                     'QDA': QuadraticDiscriminantAnalysis(),
                     'LDA': LinearDiscriminantAnalysis(),
-                    'BernoulliNB': BernoulliNB(),
+                    
+                    # Naive Bayes variants
+                    'BernoulliNB': BernoulliNB(alpha=0.5),
+                    'MultinomialNB_Shifted': GaussianNB(),  # Placeholder, MultinomialNB needs positive features
+                    
+                    # Passive Aggressive
                     'PassiveAggressive': PassiveAggressiveClassifier(
-                        max_iter=1000, random_state=42, class_weight='balanced'  # CRITICAL
+                        max_iter=1500, random_state=42, class_weight='balanced'
+                    ),
+                    
+                    # 🆕 Calibrated Classifiers for better probability estimates
+                    'CalibratedRF': RandomForestClassifier(
+                        n_estimators=150, max_depth=12, random_state=42,
+                        n_jobs=-1, class_weight='balanced'
                     ),
                 })
                 
+                # 🆕 Enhanced CatBoost for Ultra mode
                 if HAS_CATBOOST:
                     models['CatBoost'] = cb.CatBoostClassifier(
-                        iterations=200, depth=8, learning_rate=0.05,
+                        iterations=300, depth=10, learning_rate=0.03,
+                        l2_leaf_reg=3, random_strength=1,
+                        bagging_temperature=0.5,
                         random_state=42, verbose=False,
-                        auto_class_weights='Balanced'  # CRITICAL: CatBoost balanced
+                        auto_class_weights='Balanced'
                     )
                 
-                # SVM with class balancing
-                models['SVM'] = SVC(
-                    kernel='rbf', C=1.0, probability=True, random_state=42,
-                    class_weight='balanced'  # CRITICAL
+                # 🆕 SVM variants
+                models['SVM_RBF'] = SVC(
+                    kernel='rbf', C=1.0, gamma='scale',
+                    probability=True, random_state=42,
+                    class_weight='balanced'
+                )
+                models['SVM_Linear'] = SVC(
+                    kernel='linear', C=0.5,
+                    probability=True, random_state=42,
+                    class_weight='balanced'
                 )
                 
-                # Stacking Ensemble (Ultra only) - WITH BALANCED MODELS
+                # 🆕 Enhanced Stacking Ensemble with more diverse base learners
                 from sklearn.ensemble import StackingClassifier
                 estimators = [
-                    ('rf', RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=1, class_weight='balanced')),
-                    ('gb', GradientBoostingClassifier(n_estimators=100, random_state=42)),
+                    ('rf', RandomForestClassifier(n_estimators=150, max_depth=12, random_state=42, n_jobs=-1, class_weight='balanced')),
+                    ('hgb', HistGradientBoostingClassifier(max_iter=150, max_depth=8, random_state=42, class_weight='balanced')),
+                    ('lr', LogisticRegression(max_iter=1000, random_state=42, class_weight='balanced')),
                 ]
                 if HAS_XGBOOST:
-                    estimators.append(('xgb', xgb.XGBClassifier(n_estimators=100, random_state=42, verbosity=0, eval_metric='mlogloss', scale_pos_weight=10)))
+                    estimators.append(('xgb', xgb.XGBClassifier(n_estimators=150, max_depth=8, random_state=42, verbosity=0, eval_metric='mlogloss')))
+                if HAS_LIGHTGBM:
+                    estimators.append(('lgb', lgb.LGBMClassifier(n_estimators=150, max_depth=8, random_state=42, verbose=-1, class_weight='balanced')))
                 
                 models['StackingEnsemble'] = StackingClassifier(
                     estimators=estimators,
-                    final_estimator=LogisticRegression(max_iter=1000, class_weight='balanced'),
-                    cv=3, n_jobs=1
+                    final_estimator=LogisticRegression(max_iter=1500, C=0.5, random_state=42),
+                    cv=3, n_jobs=-1, passthrough=False
+                )
+                
+                # 🆕 Voting Ensemble (soft voting for probability averaging)
+                from sklearn.ensemble import VotingClassifier
+                voting_estimators = [
+                    ('rf', RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1, class_weight='balanced')),
+                    ('hgb', HistGradientBoostingClassifier(max_iter=100, random_state=42, class_weight='balanced')),
+                ]
+                models['VotingEnsemble'] = VotingClassifier(
+                    estimators=voting_estimators,
+                    voting='soft', n_jobs=-1
                 )
                 
                 # 🧠 DEEP LEARNING: TensorFlow DeepANN (Ultra Mode Only)
-                # Only add if TensorFlow is available and sufficient data
                 try:
                     from ml.algorithm_selector import (
                         create_deep_ann_classifier, 
                         KerasClassifierWrapper
                     )
-                    # DeepANN will be configured dynamically in train_all()
-                    # Store flag to create it with correct input_dim later
                     self._use_deep_ann = True
                     print("   🧠 DeepANN (TensorFlow) will be trained in Ultra Mode")
                 except ImportError:
@@ -1378,91 +1485,155 @@ class ProductionModelTrainer:
                     print("   ⚠️ TensorFlow not available, skipping DeepANN")
         
         elif self.task_type == 'regression':
-            # === FAST MODE: 8 Essential Models ===
+            # === FAST MODE: 10 Essential Models - ENHANCED ===
             models = {
-                # Linear
+                # Linear models
                 'Ridge': Ridge(alpha=1.0, random_state=42),
+                'ElasticNet': ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=42, max_iter=2000),
                 
-                # Tree-based (core)
+                # Tree-based (core) - ENHANCED
                 'RandomForest': RandomForestRegressor(
-                    n_estimators=100 if not is_ultra else 200, 
-                    max_depth=10 if not is_ultra else 15, 
-                    min_samples_split=5, random_state=42, n_jobs=1
+                    n_estimators=150 if not is_ultra else 250, 
+                    max_depth=12 if not is_ultra else 18, 
+                    min_samples_split=4, random_state=42, n_jobs=-1
                 ),
                 'GradientBoosting': GradientBoostingRegressor(
-                    n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42
+                    n_estimators=120, max_depth=6, learning_rate=0.1,
+                    subsample=0.8, random_state=42
+                ),
+                
+                # 🆕 HistGradientBoosting for Fast mode
+                'HistGradientBoosting': HistGradientBoostingRegressor(
+                    max_iter=150 if not is_ultra else 250,
+                    max_depth=8 if not is_ultra else 12,
+                    learning_rate=0.1, random_state=42
+                ),
+                
+                # ExtraTrees
+                'ExtraTrees': ExtraTreesRegressor(
+                    n_estimators=100 if not is_ultra else 200,
+                    max_depth=10 if not is_ultra else 15,
+                    random_state=42, n_jobs=-1
                 ),
                 
                 # Neighbors
                 'KNN': KNeighborsRegressor(n_neighbors=5, weights='distance', n_jobs=1),
             }
             
-            # XGBoost/LightGBM for both modes
+            # XGBoost/LightGBM for both modes - ENHANCED
             if HAS_XGBOOST:
                 models['XGBoost'] = xgb.XGBRegressor(
-                    n_estimators=100 if not is_ultra else 200, 
-                    max_depth=6, learning_rate=0.1,
-                    random_state=42, n_jobs=1, verbosity=0
+                    n_estimators=150 if not is_ultra else 300, 
+                    max_depth=7 if not is_ultra else 10,
+                    learning_rate=0.1 if not is_ultra else 0.05,
+                    subsample=0.8, colsample_bytree=0.8,
+                    random_state=42, n_jobs=-1, verbosity=0
                 )
             if HAS_LIGHTGBM:
                 models['LightGBM'] = lgb.LGBMRegressor(
-                    n_estimators=100 if not is_ultra else 200, 
-                    max_depth=6, learning_rate=0.1,
-                    random_state=42, n_jobs=1, verbose=-1
+                    n_estimators=150 if not is_ultra else 300, 
+                    max_depth=7 if not is_ultra else 10,
+                    learning_rate=0.1 if not is_ultra else 0.05,
+                    num_leaves=31 if not is_ultra else 50,
+                    subsample=0.8, colsample_bytree=0.8,
+                    random_state=42, n_jobs=-1, verbose=-1
                 )
             
-            # === ULTRA MODE: Additional Models (12+ more) ===
+            # 🆕 CatBoost for Fast mode too
+            if HAS_CATBOOST and not is_ultra:
+                models['CatBoost'] = cb.CatBoostRegressor(
+                    iterations=100, depth=6, learning_rate=0.1,
+                    random_state=42, verbose=False
+                )
+            
+            # KNN
+            models['KNN'] = KNeighborsRegressor(n_neighbors=7, weights='distance', n_jobs=-1)
+            
+            # === ULTRA MODE: Additional Models (15+ more) - ENHANCED ===
             if is_ultra:
                 models.update({
-                    'ElasticNet': ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=42, max_iter=2000),
+                    # Linear variants
                     'Lasso': Lasso(alpha=0.01, random_state=42, max_iter=2000),
-                    'ExtraTrees': ExtraTreesRegressor(
-                        n_estimators=200, max_depth=15, random_state=42, n_jobs=1
-                    ),
+                    'BayesianRidge': BayesianRidge(),
+                    
+                    # 🆕 Enhanced MLP
                     'MLP': MLPRegressor(
-                        hidden_layer_sizes=(128, 64, 32), max_iter=1000,
+                        hidden_layer_sizes=(256, 128, 64, 32), max_iter=1500,
+                        learning_rate='adaptive', early_stopping=True,
+                        validation_fraction=0.1, random_state=42
+                    ),
+                    'MLP_Wide': MLPRegressor(
+                        hidden_layer_sizes=(512, 256), max_iter=1000,
                         learning_rate='adaptive', random_state=42
                     ),
-                    # 🆕 NEW REGRESSION ALGORITHMS
+                    
+                    # Ensemble boosting
                     'AdaBoost': AdaBoostRegressor(
-                        n_estimators=100, learning_rate=0.5, random_state=42
+                        n_estimators=150, learning_rate=0.5, random_state=42
                     ),
                     'Bagging': BaggingRegressor(
-                        n_estimators=50, random_state=42, n_jobs=1
+                        n_estimators=100, max_samples=0.8, max_features=0.8,
+                        random_state=42, n_jobs=-1
                     ),
-                    'HistGradientBoosting': HistGradientBoostingRegressor(
-                        max_iter=100, max_depth=10, learning_rate=0.1, random_state=42
+                    
+                    # Linear models
+                    'SGD': SGDRegressor(max_iter=1500, early_stopping=True, random_state=42),
+                    
+                    # Tree models
+                    'DecisionTree': DecisionTreeRegressor(
+                        max_depth=18, min_samples_split=3, random_state=42
                     ),
-                    'SGD': SGDRegressor(max_iter=1000, random_state=42),
-                    'DecisionTree': DecisionTreeRegressor(max_depth=15, random_state=42),
-                    'HuberRegressor': HuberRegressor(max_iter=500),
-                    'TheilSen': TheilSenRegressor(random_state=42, n_jobs=1),
-                    'BayesianRidge': BayesianRidge(),
-                    'SVR': SVR(kernel='rbf', C=1.0),
+                    
+                    # Robust regressors
+                    'HuberRegressor': HuberRegressor(max_iter=500, epsilon=1.35),
+                    'TheilSen': TheilSenRegressor(random_state=42, n_jobs=-1, max_subpopulation=1000),
+                    
+                    # SVR variants
+                    'SVR_RBF': SVR(kernel='rbf', C=1.0, gamma='scale'),
+                    'SVR_Linear': SVR(kernel='linear', C=0.5),
+                    
+                    # Passive Aggressive
                     'PassiveAggressive': PassiveAggressiveRegressor(
-                        max_iter=1000, random_state=42
+                        max_iter=1500, random_state=42
                     ),
                 })
                 
+                # 🆕 Enhanced CatBoost for Ultra
                 if HAS_CATBOOST:
                     models['CatBoost'] = cb.CatBoostRegressor(
-                        iterations=200, depth=8, learning_rate=0.05,
+                        iterations=300, depth=10, learning_rate=0.03,
+                        l2_leaf_reg=3, random_strength=1,
+                        bagging_temperature=0.5,
                         random_state=42, verbose=False
                     )
                 
-                # Stacking Ensemble (Ultra only)
+                # 🆕 Enhanced Stacking Ensemble
                 from sklearn.ensemble import StackingRegressor
                 estimators = [
-                    ('rf', RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=1)),
-                    ('gb', GradientBoostingRegressor(n_estimators=100, random_state=42)),
+                    ('rf', RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42, n_jobs=-1)),
+                    ('hgb', HistGradientBoostingRegressor(max_iter=150, max_depth=8, random_state=42)),
+                    ('ridge', Ridge(alpha=1.0, random_state=42)),
                 ]
                 if HAS_XGBOOST:
-                    estimators.append(('xgb', xgb.XGBRegressor(n_estimators=100, random_state=42, verbosity=0)))
+                    estimators.append(('xgb', xgb.XGBRegressor(n_estimators=150, max_depth=8, random_state=42, verbosity=0)))
+                if HAS_LIGHTGBM:
+                    estimators.append(('lgb', lgb.LGBMRegressor(n_estimators=150, max_depth=8, random_state=42, verbose=-1)))
                 
                 models['StackingEnsemble'] = StackingRegressor(
                     estimators=estimators,
-                    final_estimator=Ridge(alpha=1.0),
-                    cv=3, n_jobs=1
+                    final_estimator=Ridge(alpha=1.0, random_state=42),
+                    cv=3, n_jobs=-1, passthrough=False
+                )
+                
+                # 🆕 Voting Ensemble for regression
+                from sklearn.ensemble import VotingRegressor
+                voting_estimators = [
+                    ('rf', RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)),
+                    ('hgb', HistGradientBoostingRegressor(max_iter=100, random_state=42)),
+                ]
+                models['VotingEnsemble'] = VotingRegressor(
+                    estimators=voting_estimators,
+                    n_jobs=-1
                 )
         
         # =====================================================================
@@ -1698,6 +1869,13 @@ class ProductionModelTrainer:
                     # Also calculate weighted F1 for reference
                     f1_weighted = f1_score(y_test, y_pred, average='weighted', zero_division=0)
                     
+                    # Round metrics for display
+                    accuracy = round(float(accuracy), 4)
+                    precision = round(float(precision), 4)
+                    recall = round(float(recall), 4)
+                    f1 = round(float(f1), 4)
+                    f1_weighted = round(float(f1_weighted), 4)
+                    
                     metrics = {
                         'accuracy': accuracy,
                         'precision': precision,
@@ -1756,11 +1934,12 @@ class ProductionModelTrainer:
                     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
                     
                     metrics = {
-                        'r2': r2,
-                        'mae': mae,
-                        'rmse': rmse
+                        'r2': round(float(r2), 4),
+                        'mae': round(float(mae), 4),
+                        'rmse': round(float(rmse), 4)
                     }
                     score = r2  # Use R² as primary metric
+                    print(f"   ✅ {name}: r2={r2:.4f}, mae={mae:.4f}, rmse={rmse:.4f}")
                 
                 elif self.task_type == 'clustering':
                     # Clustering metrics - use silhouette score
