@@ -115,9 +115,60 @@ export async function isAuthenticated(): Promise<boolean> {
   }
 }
 
+/**
+ * 🔐 Get authorization headers for fetch calls
+ * Use this for all direct fetch() calls to ensure proper auth
+ */
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+      headers['X-User-ID'] = session.user.id;
+    } else {
+      const guestId = getOrCreateGuestId();
+      headers['X-User-ID'] = guestId;
+    }
+  } catch (error) {
+    console.warn('Failed to get auth headers:', error);
+    const guestId = getOrCreateGuestId();
+    headers['X-User-ID'] = guestId;
+  }
+  
+  return headers;
+}
+
+/**
+ * Sync version - uses cached token if available
+ */
+export function getAuthHeadersSync(): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  
+  const userId = localStorage.getItem(USER_ID_KEY);
+  if (userId && !userId.startsWith('guest_')) {
+    headers['X-User-ID'] = userId;
+    // Note: For sync, we can't get the JWT token without async call
+    // The interceptor in api.ts handles adding the token
+  } else {
+    const guestId = getOrCreateGuestId();
+    headers['X-User-ID'] = guestId;
+  }
+  
+  return headers;
+}
+
 export default {
   getUserId,
   getUserIdSync,
   clearUserData,
   isAuthenticated,
+  getAuthHeaders,
+  getAuthHeadersSync,
 };

@@ -10,22 +10,32 @@ export const api = axios.create({
   },
 });
 
-// Add user ID and auth token to all requests
+/**
+ * 🔐 ENTERPRISE AUTH INTERCEPTOR
+ * 
+ * Automatically adds JWT token to ALL requests.
+ * Backend extracts user_id from the verified token - NOT from request body.
+ * This prevents users from manipulating user_id to access other users' data.
+ */
 api.interceptors.request.use(async (config) => {
-  // Get current session from Supabase
-  const { data: { session } } = await supabase.auth.getSession();
+  try {
+    // Get current session from Supabase
+    const { data: { session } } = await supabase.auth.getSession();
 
-  if (session) {
-    // Add user ID header
-    config.headers['X-User-ID'] = session.user.id;
-    // Add auth token
-    config.headers['Authorization'] = `Bearer ${session.access_token}`;
-  } else {
-    // Fallback to localStorage
-    const userId = localStorage.getItem('userId');
-    if (userId) {
-      config.headers['X-User-ID'] = userId;
+    if (session?.access_token) {
+      // 🔐 Send JWT token - Backend validates this cryptographically
+      config.headers['Authorization'] = `Bearer ${session.access_token}`;
+      // Also send user ID header for backward compatibility during migration
+      config.headers['X-User-ID'] = session.user.id;
+    } else {
+      // Guest user - send guest ID in header (backend generates consistent guest ID)
+      const guestId = localStorage.getItem('guestUserId');
+      if (guestId) {
+        config.headers['X-User-ID'] = guestId;
+      }
     }
+  } catch (error) {
+    console.warn('Auth interceptor error:', error);
   }
 
   return config;

@@ -71,6 +71,7 @@ aiohttp>=3.9.0
 # Supabase Integration
 supabase>=2.0.0
 python-jose[cryptography]>=3.3.0
+PyJWT>=2.8.0
 
 # AI Agent Notification System
 pywebpush>=1.14.0
