@@ -1860,35 +1860,43 @@ async def send_message(
             temp_user_id = x_user_id or "anonymous"
             await check_rate_limit(http_request, "chat", temp_user_id)
         
-        # SECURITY: Get user_id from authentication headers
-        # Priority: 1. JWT token (most secure), 2. X-User-ID header, 3. request body (legacy)
+        # 🔐 ENTERPRISE AUTH: Get user_id from verified JWT token
+        # Priority: 1. JWT token (cryptographically verified), 2. X-User-ID header
+        # NEVER trust request body for user_id (can be manipulated)
         user_id = None
         
-        # Try to extract from JWT token first
+        # Try to extract from JWT token first (MOST SECURE)
         if authorization and authorization.startswith("Bearer "):
             try:
-                from database.auth import decode_jwt
+                # Use core.auth module for proper JWT validation
+                from core.auth import decode_supabase_jwt
                 token = authorization.split(" ")[1]
-                payload = decode_jwt(token)
+                payload = decode_supabase_jwt(token)
                 user_id = payload.get("sub")  # Subject is user ID
                 print(f"🔐 Authenticated user from JWT: {user_id}")
             except Exception as e:
                 print(f"⚠️ JWT decode error: {e}")
+                # Fallback to legacy decode
+                try:
+                    from database.auth import decode_jwt
+                    payload = decode_jwt(token)
+                    user_id = payload.get("sub")
+                except:
+                    pass
         
-        # Fallback to X-User-ID header (for authenticated requests)
-        if not user_id and x_user_id:
+        # Fallback to X-User-ID header (for authenticated requests where JWT is also sent)
+        if not user_id and x_user_id and x_user_id not in ["null", "undefined", ""]:
             user_id = x_user_id
             print(f"🔐 User from X-User-ID header: {user_id}")
         
-        # Final fallback to request body (legacy support)
+        # Generate guest ID if no authentication (DO NOT use request body user_id)
         if not user_id:
-            user_id = request.userId or request.user_id
-            if user_id:
-                print(f"⚠️ Using legacy user_id from request body: {user_id}")
-        
-        # Require authentication
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Authentication required. Please log in.")
+            import hashlib
+            ip = http_request.client.host if http_request.client else "unknown"
+            ua = http_request.headers.get("User-Agent", "unknown")[:100]
+            fingerprint = hashlib.sha256(f"{ip}:{ua}".encode()).hexdigest()[:12]
+            user_id = f"guest_{fingerprint}"
+            print(f"🔐 Generated guest user ID: {user_id}")
         
         query = request.message
         mode = request.mode

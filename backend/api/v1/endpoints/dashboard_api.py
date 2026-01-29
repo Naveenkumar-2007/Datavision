@@ -3,19 +3,22 @@ AUTONOMOUS DASHBOARD API - Power BI-Style Endpoint
 ====================================================
 
 API endpoint for generating autonomous dashboards.
+SECURED: Uses JWT authentication for proper user isolation.
 """
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Depends
 from typing import Optional
 from pydantic import BaseModel
 import json
+
+from api.deps import get_current_user_id
 
 router = APIRouter()
 
 
 class DashboardRequest(BaseModel):
     """Request model for dashboard generation"""
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None  # Legacy - ignored, use JWT instead
     refresh: bool = False
 
 
@@ -29,34 +32,20 @@ class DashboardResponse(BaseModel):
 @router.post("/generate")
 async def generate_dashboard(
     request: DashboardRequest = None,
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
-    authorization: Optional[str] = Header(None, alias="Authorization")
+    user_id: str = Depends(get_current_user_id)
 ):
     """
     Generate an autonomous dashboard from user's data.
+    SECURED: user_id extracted from JWT token, NOT from request body.
     
     This endpoint:
-    1. Loads user's uploaded data
+    1. Loads user's uploaded data (user-isolated)
     2. Analyzes it with AI
     3. Generates a complete dashboard
     4. Returns KPIs, charts, insights
     """
     try:
-        # Get user ID
-        user_id = None
-        if request and request.user_id:
-            user_id = request.user_id
-        elif x_user_id:
-            user_id = x_user_id
-        elif authorization and authorization.startswith("Bearer "):
-            try:
-                from database.auth import decode_jwt
-                token = authorization.split(" ")[1]
-                payload = decode_jwt(token)
-                user_id = payload.get("sub")
-            except:
-                pass
-        
+        # user_id is now securely obtained from JWT via get_current_user_id
         if not user_id:
             return DashboardResponse(
                 success=False,
@@ -97,15 +86,23 @@ async def generate_dashboard(
         )
 
 
-@router.get("/summary/{user_id}")
+@router.get("/summary/{path_user_id}")
 async def get_dashboard_summary(
-    user_id: str,
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+    path_user_id: str,
+    current_user_id: str = Depends(get_current_user_id)
 ):
     """
     Get a quick data summary for dashboard header.
+    SECURED: Validates that path user_id matches authenticated user.
     """
     try:
+        # Use authenticated user_id, not path parameter (for security)
+        user_id = current_user_id
+        
+        # Optionally verify path matches authenticated user (prevent URL manipulation)
+        if path_user_id != current_user_id and not current_user_id.startswith("guest_"):
+            return {"error": "Unauthorized access to another user's data"}
+        
         from api.v1.endpoints.charts import get_user_data
         from core.autonomous_dashboard import get_dashboard_summary as get_summary
         

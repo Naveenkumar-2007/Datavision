@@ -113,15 +113,27 @@ async def production_train(
         })
         
     except Exception as e:
-        if "Training cancelled" in str(e):
+        error_str = str(e)
+        if "Training cancelled" in error_str:
             print(f"🛑 Training stopped for user {user_id}")
             return {"success": False, "detail": "Training stopped by user request"}
 
         logger.error(f"Production train error: {e}")
         import traceback
         traceback.print_exc()
-        # User-friendly error message
-        user_message = "We encountered an issue while training your model. Please ensure your data is properly formatted and try again."
+        
+        # More specific error messages
+        if "target" in error_str.lower() or "column" in error_str.lower():
+            user_message = f"Target column issue: {error_str[:200]}. Please ensure your target column exists and has valid values."
+        elif "memory" in error_str.lower():
+            user_message = "Memory limit exceeded. Try with a smaller dataset or fewer features."
+        elif "fit" in error_str.lower() or "train" in error_str.lower():
+            user_message = f"Model training failed: {error_str[:200]}. Check your data for missing values or invalid formats."
+        elif "import" in error_str.lower():
+            user_message = "A required library is missing. Please contact support."
+        else:
+            user_message = f"AutoML failed: {error_str[:300]}. Please check your data format and try again."
+        
         raise HTTPException(status_code=500, detail=user_message)
 
 
@@ -227,15 +239,25 @@ async def ultra_train(
         })
         
     except Exception as e:
-        if "Training cancelled" in str(e):
+        error_str = str(e)
+        if "Training cancelled" in error_str:
             print(f"🛑 Training stopped for user {user_id}")
             return {"success": False, "detail": "Training stopped by user request"}
 
         logger.error(f"Ultra train error: {e}")
         import traceback
         traceback.print_exc()
-        # User-friendly error message
-        user_message = "We encountered an issue during maximum accuracy training. Please ensure your data is properly formatted and try again."
+        
+        # More specific error messages
+        if "target" in error_str.lower() or "column" in error_str.lower():
+            user_message = f"Target column issue: {error_str[:200]}. Please ensure your target column exists."
+        elif "memory" in error_str.lower():
+            user_message = "Memory limit exceeded. Try with a smaller dataset."
+        elif "fit" in error_str.lower() or "train" in error_str.lower():
+            user_message = f"Model training failed: {error_str[:200]}. Check data for issues."
+        else:
+            user_message = f"Ultra AutoML failed: {error_str[:300]}. Please check your data."
+        
         raise HTTPException(status_code=500, detail=user_message)
 
 
