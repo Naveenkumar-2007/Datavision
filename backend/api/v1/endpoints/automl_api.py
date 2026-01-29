@@ -46,24 +46,31 @@ def get_secure_user_id(
             payload = decode_supabase_jwt(token)
             user_id = payload.get("sub")
             if user_id:
+                logger.info(f"✅ JWT authenticated user: {user_id[:8]}...")
                 return user_id
+        except HTTPException:
+            # Re-raise HTTP exceptions (like 401 Unauthorized) - let them pass
+            pass
         except Exception as e:
-            logger.debug(f"JWT decode failed: {e}")
+            logger.debug(f"JWT decode failed (non-critical): {e}")
     
     # Fallback to X-User-ID header
     if x_user_id and x_user_id not in ["null", "undefined", "", "default"]:
+        logger.info(f"✅ Using X-User-ID header: {x_user_id[:8]}...")
         return x_user_id
     
     # Last resort: form data (but log warning)
     if form_user_id and form_user_id not in ["default", "null", "undefined", ""]:
-        logger.warning(f"⚠️ Using form user_id '{form_user_id}' - should use JWT")
+        logger.info(f"⚠️ Using form user_id: {form_user_id[:8]}...")
         return form_user_id
     
     # Generate guest ID
     import hashlib
     import time
     fingerprint = hashlib.sha256(f"guest_{time.time()}".encode()).hexdigest()[:12]
-    return f"guest_{fingerprint}"
+    guest_id = f"guest_{fingerprint}"
+    logger.info(f"🎫 Generated guest ID: {guest_id}")
+    return guest_id
 
 
 @router.post("/production_train")
@@ -160,25 +167,34 @@ async def production_train(
         
     except Exception as e:
         error_str = str(e)
+        error_type = type(e).__name__
+        
         if "Training cancelled" in error_str:
             print(f"🛑 Training stopped for user {user_id}")
             return {"success": False, "detail": "Training stopped by user request"}
 
-        logger.error(f"Production train error: {e}")
+        logger.error(f"Production train error [{error_type}]: {e}")
         import traceback
         traceback.print_exc()
         
-        # More specific error messages
+        # More specific error messages based on error type and content
         if "target" in error_str.lower() or "column" in error_str.lower():
             user_message = f"Target column issue: {error_str[:200]}. Please ensure your target column exists and has valid values."
         elif "memory" in error_str.lower():
             user_message = "Memory limit exceeded. Try with a smaller dataset or fewer features."
-        elif "fit" in error_str.lower() or "train" in error_str.lower():
-            user_message = f"Model training failed: {error_str[:200]}. Check your data for missing values or invalid formats."
-        elif "import" in error_str.lower():
-            user_message = "A required library is missing. Please contact support."
+        elif "fit" in error_str.lower():
+            user_message = f"Model fitting failed: {error_str[:200]}. Your data might have issues like all-NaN columns or constant values."
+        elif "import" in error_str.lower() or "module" in error_str.lower():
+            user_message = f"Missing dependency: {error_str[:100]}. Please contact support."
+        elif "key" in error_str.lower() and "error" in error_str.lower():
+            user_message = f"Data processing error: {error_str[:200]}. Please check your column names and data types."
+        elif "value" in error_str.lower() and "error" in error_str.lower():
+            user_message = f"Invalid data values: {error_str[:200]}. Please check for corrupted or malformed data."
+        elif "permission" in error_str.lower() or "access" in error_str.lower():
+            user_message = "Storage permission error. Please contact support."
         else:
-            user_message = f"AutoML failed: {error_str[:300]}. Please check your data format and try again."
+            # Show the actual error for debugging
+            user_message = f"Training failed ({error_type}): {error_str[:300]}"
         
         raise HTTPException(status_code=500, detail=user_message)
 
@@ -299,15 +315,18 @@ async def ultra_train(
         import traceback
         traceback.print_exc()
         
+        error_type = type(e).__name__
+        
         # More specific error messages
         if "target" in error_str.lower() or "column" in error_str.lower():
             user_message = f"Target column issue: {error_str[:200]}. Please ensure your target column exists."
         elif "memory" in error_str.lower():
             user_message = "Memory limit exceeded. Try with a smaller dataset."
-        elif "fit" in error_str.lower() or "train" in error_str.lower():
-            user_message = f"Model training failed: {error_str[:200]}. Check data for issues."
+        elif "fit" in error_str.lower():
+            user_message = f"Model fitting failed: {error_str[:200]}. Check data for issues."
         else:
-            user_message = f"Ultra AutoML failed: {error_str[:300]}. Please check your data."
+            # Show actual error for debugging
+            user_message = f"Ultra AutoML failed ({error_type}): {error_str[:300]}"
         
         raise HTTPException(status_code=500, detail=user_message)
 
@@ -573,11 +592,15 @@ async def train_automl(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"AutoML error: {e}")
+        error_str = str(e)
+        error_type = type(e).__name__
+        
+        logger.error(f"AutoML error [{error_type}]: {e}")
         import traceback
         traceback.print_exc()
-        # User-friendly error message
-        user_message = "We encountered an issue during training. Please ensure your data is properly formatted and try again."
+        
+        # Show actual error for better debugging
+        user_message = f"Training failed ({error_type}): {error_str[:350]}"
         raise HTTPException(status_code=500, detail=user_message)
 
 
