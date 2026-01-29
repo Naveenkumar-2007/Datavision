@@ -2608,8 +2608,14 @@ class ProductionMLEngine:
         
         # 6. Train all models
         # Pass mode to trainer ('fast' = 8 models, 'ultra' = 20+ with ensembles)
-        trainer = ProductionModelTrainer(self.task_type_simple, mode=mode)
+        # 🆕 Pass sample count for large dataset optimization
+        trainer = ProductionModelTrainer(self.task_type_simple, mode=mode, n_samples=len(X_train))
         logger.info(f"🎮 Training Mode: {mode.upper()}")
+        
+        # 🆕 Log large dataset detection
+        if len(X_train) > 50000:
+            logger.info(f"   📊 LARGE DATASET DETECTED: {len(X_train):,} training samples")
+            logger.info(f"   📊 Optimizing models for speed & memory efficiency")
         
         # Check cancellation before heavy training phase
         check_stop()
@@ -2620,7 +2626,8 @@ class ProductionMLEngine:
         ensemble = trainer.build_ensemble(X_train, y_train, X_test, y_test, top_n=3)
         
         # 8. Neural Architecture Search (Ultra Mode Only)
-        if mode == 'ultra':
+        # 🆕 Skip for very large datasets (memory intensive)
+        if mode == 'ultra' and len(X_train) <= 100000:
             try:
                 from ml.neural_architecture_engine import train_neural_models
                 logger.info("🧠 Starting Neural Architecture Search (Ultra Mode)...")
@@ -2669,6 +2676,9 @@ class ProductionMLEngine:
                     
             except Exception as e:
                 logger.warning(f"Neural engine skipped: {e}")
+        elif mode == 'ultra' and len(X_train) > 100000:
+            logger.info("   ⚠️ Skipping Neural Architecture Search for large dataset (>100k rows)")
+            logger.info("   📊 Using gradient boosting models (LightGBM, XGBoost) for best performance")
         
         # Store results
         self.model = trainer.best_model

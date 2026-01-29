@@ -467,15 +467,22 @@ class ProductionFeatureEngineer:
     ALL outputs are guaranteed to be numeric (float)
     """
     
-    def __init__(self, max_samples: int = 50000, mode: str = 'fast'):
+    def __init__(self, max_samples: int = None, mode: str = 'fast'):
         """
         Initialize feature engineer.
         
         Args:
-            max_samples: Maximum samples for large datasets
+            max_samples: Maximum samples for large datasets (None = auto-determine based on mode)
             mode: 'fast' (basic NLP) or 'ultra' (advanced NLP with embeddings)
         """
-        self.max_samples = max_samples
+        # 🆕 LARGE DATASET SUPPORT: Dynamic sample limits based on mode
+        # Fast mode: up to 100k samples (for speed)
+        # Ultra mode: up to 500k samples (for accuracy on large data)
+        if max_samples is None:
+            self.max_samples = 100000 if mode == 'fast' else 500000
+        else:
+            self.max_samples = max_samples
+        
         self.mode = mode  # 'fast' or 'ultra'
         self.is_fitted = False
         self.transformers = {}
@@ -665,10 +672,51 @@ class ProductionFeatureEngineer:
             if target_col in cols and target_col not in new_cols:
                 target_col = new_cols[cols.index(target_col)]
         
-        # Handle large datasets
+        # Handle large datasets with STRATIFIED SAMPLING for classification
+        self._original_size = len(df)
+        self._was_sampled = False
         if len(df) > self.max_samples:
-            print(f"   ⚠️ Large dataset ({len(df)} rows) - sampling {self.max_samples}")
-            df = df.sample(n=self.max_samples, random_state=42)
+            print(f"   ⚠️ Large dataset ({len(df):,} rows) - smart sampling to {self.max_samples:,}")
+            
+            # 🆕 STRATIFIED SAMPLING: Preserve class distribution for classification
+            if task_type == 'classification':
+                try:
+                    # Get target for stratification BEFORE dropping
+                    y_for_stratify = df[target_col].astype(str)
+                    
+                    # Check class distribution
+                    class_counts = y_for_stratify.value_counts()
+                    min_class_count = class_counts.min()
+                    
+                    # Only use stratified if minimum class has enough samples
+                    if min_class_count >= 10:
+                        from sklearn.model_selection import train_test_split
+                        
+                        # Calculate fraction to sample
+                        sample_frac = self.max_samples / len(df)
+                        
+                        # Use stratified split to get the sample
+                        _, df_sampled, _, _ = train_test_split(
+                            df, y_for_stratify,
+                            test_size=sample_frac,
+                            stratify=y_for_stratify,
+                            random_state=42
+                        )
+                        df = df_sampled
+                        print(f"   ✅ Stratified sampling: preserved class distribution")
+                    else:
+                        # Fallback to random sampling if stratification not possible
+                        df = df.sample(n=self.max_samples, random_state=42)
+                        print(f"   ⚠️ Random sampling (small minority class: {min_class_count})")
+                except Exception as e:
+                    print(f"   ⚠️ Stratified sampling failed: {str(e)[:50]}, using random")
+                    df = df.sample(n=self.max_samples, random_state=42)
+            else:
+                # Regression: random sampling is fine
+                df = df.sample(n=self.max_samples, random_state=42)
+            
+            self._was_sampled = True
+            print(f"   📊 Final training size: {len(df):,} rows")
         
         # Separate target
         y = df[target_col].values
@@ -1296,31 +1344,43 @@ class ProductionModelTrainer:
     3. Proper cross-validation
     4. Ensemble methods (voting, stacking)
     5. Comprehensive error handling
+    6. 🆕 LARGE DATASET OPTIMIZATION (100k+ rows)
     """
     
-    def __init__(self, task_type: str = 'classification', mode: str = 'fast'):
+    def __init__(self, task_type: str = 'classification', mode: str = 'fast', n_samples: int = None):
         """
         Initialize trainer with mode support.
         
         Args:
             task_type: 'classification' or 'regression'
             mode: 'fast' (8 quick models) or 'ultra' (20+ models with ensembles)
+            n_samples: Number of training samples (for large dataset optimization)
         """
         self.task_type = task_type
         self.mode = mode  # 'fast' or 'ultra'
+        self.n_samples = n_samples or 10000  # Default
+        self.is_large_data = n_samples and n_samples > 50000
         self.models = {}
         self.results = []
         self.best_model = None
         self.best_name = None
         self.best_score = -np.inf
+        
+        if self.is_large_data:
+            print(f"   📊 Large dataset mode: {n_samples:,} samples - optimizing for speed & memory")
     
     def get_models(self) -> Dict[str, Any]:
         """
         Get models based on mode:
         - FAST: 10 quick models (30-60 seconds) - ENHANCED
         - ULTRA: 25+ models with ensembles (2-10 minutes) - ENHANCED
+        
+        🆕 LARGE DATA OPTIMIZATION: For 100k+ rows, prioritize:
+        - LightGBM, HistGradientBoosting, CatBoost (memory efficient)
+        - Skip slow models like SVM, KNN (O(n²) complexity)
         """
         is_ultra = self.mode == 'ultra'
+        is_large = self.is_large_data
         
         if self.task_type == 'classification':
             # === FAST MODE: 10 Essential Models (WITH CLASS BALANCING) - ENHANCED ===
@@ -1333,54 +1393,61 @@ class ProductionModelTrainer:
                 
                 # Tree-based (core) - WITH CLASS WEIGHT BALANCING
                 'RandomForest': RandomForestClassifier(
-                    n_estimators=150 if not is_ultra else 250, 
-                    max_depth=12 if not is_ultra else 18, 
+                    n_estimators=100 if is_large else (150 if not is_ultra else 250), 
+                    max_depth=8 if is_large else (12 if not is_ultra else 18), 
                     min_samples_split=4, random_state=42, n_jobs=-1,
                     class_weight='balanced'  # CRITICAL: Handle imbalanced classes
                 ),
                 'GradientBoosting': GradientBoostingClassifier(
-                    n_estimators=120, max_depth=6, learning_rate=0.1, random_state=42,
+                    n_estimators=80 if is_large else 120, 
+                    max_depth=5 if is_large else 6, 
+                    learning_rate=0.1, random_state=42,
                     subsample=0.8  # Add subsampling for better generalization
                 ),
                 
                 # 🆕 HistGradientBoosting - FAST & POWERFUL (sklearn's native boosting)
+                # BEST for large datasets - O(n) complexity, native histograms
                 'HistGradientBoosting': HistGradientBoostingClassifier(
-                    max_iter=150 if not is_ultra else 250,
-                    max_depth=8 if not is_ultra else 12,
+                    max_iter=100 if is_large else (150 if not is_ultra else 250),
+                    max_depth=6 if is_large else (8 if not is_ultra else 12),
                     learning_rate=0.1, random_state=42,
                     class_weight='balanced'  # Native class balancing
                 ),
                 
-                # Neighbors
-                'KNN': KNeighborsClassifier(n_neighbors=7, weights='distance', n_jobs=-1),
-                
-                # Naive Bayes
+                # Naive Bayes - O(n) complexity, always fast
                 'GaussianNB': GaussianNB(),
                 
                 # 🆕 ExtraTrees - Fast mode now includes this powerful algorithm
                 'ExtraTrees': ExtraTreesClassifier(
-                    n_estimators=100 if not is_ultra else 200,
-                    max_depth=10 if not is_ultra else 15,
+                    n_estimators=80 if is_large else (100 if not is_ultra else 200),
+                    max_depth=8 if is_large else (10 if not is_ultra else 15),
                     random_state=42, n_jobs=-1,
                     class_weight='balanced'
                 ),
             }
             
+            # 🆕 SKIP KNN for large datasets (O(n) per prediction = very slow)
+            if not is_large:
+                models['KNN'] = KNeighborsClassifier(n_neighbors=7, weights='distance', n_jobs=-1)
+            
             # XGBoost/LightGBM for both modes - ENHANCED
+            # These are EXCELLENT for large data (histogram-based, parallelized)
             if HAS_XGBOOST:
                 models['XGBoost'] = xgb.XGBClassifier(
-                    n_estimators=150 if not is_ultra else 300, 
-                    max_depth=7 if not is_ultra else 10,
+                    n_estimators=100 if is_large else (150 if not is_ultra else 300), 
+                    max_depth=6 if is_large else (7 if not is_ultra else 10),
                     learning_rate=0.1 if not is_ultra else 0.05,
                     subsample=0.8, colsample_bytree=0.8,  # Regularization
                     random_state=42, n_jobs=-1, verbosity=0,
                     eval_metric='mlogloss',
+                    tree_method='hist' if is_large else 'auto',  # 🆕 Histogram for large data
                     scale_pos_weight=10  # CRITICAL: Balance classes
                 )
             if HAS_LIGHTGBM:
+                # LightGBM is the BEST for large datasets
                 models['LightGBM'] = lgb.LGBMClassifier(
-                    n_estimators=150 if not is_ultra else 300, 
-                    max_depth=7 if not is_ultra else 10,
+                    n_estimators=100 if is_large else (150 if not is_ultra else 300), 
+                    max_depth=6 if is_large else (7 if not is_ultra else 10),
                     learning_rate=0.1 if not is_ultra else 0.05,
                     num_leaves=31 if not is_ultra else 50,
                     subsample=0.8, colsample_bytree=0.8,  # Regularization
@@ -1398,239 +1465,268 @@ class ProductionModelTrainer:
             
             # === ULTRA MODE: Additional Models (15+ more) WITH CLASS BALANCING ===
             if is_ultra:
+                # 🆕 LARGE DATA OPTIMIZATION: Skip slow models for 100k+ rows
+                if not is_large:
+                    models.update({
+                        # 🆕 SVM variants - SKIP for large data (O(n²) complexity)
+                        'SVM_RBF': SVC(
+                            kernel='rbf', C=1.0, gamma='scale',
+                            probability=True, random_state=42,
+                            class_weight='balanced'
+                        ),
+                        'SVM_Linear': SVC(
+                            kernel='linear', C=0.5,
+                            probability=True, random_state=42,
+                            class_weight='balanced'
+                        ),
+                        
+                        # Discriminant Analysis - can be slow with many features
+                        'QDA': QuadraticDiscriminantAnalysis(),
+                        'LDA': LinearDiscriminantAnalysis(),
+                    })
+                
+                # These models are fast even for large data
                 models.update({
                     'RidgeClassifier': RidgeClassifier(alpha=1.0, random_state=42, class_weight='balanced'),
                     
-                    # 🆕 Enhanced MLP with better architecture
+                    # 🆕 Enhanced MLP - fast with mini-batches
                     'MLP': MLPClassifier(
-                        hidden_layer_sizes=(256, 128, 64, 32), max_iter=1500,
+                        hidden_layer_sizes=(128, 64) if is_large else (256, 128, 64, 32), 
+                        max_iter=500 if is_large else 1500,
                         learning_rate='adaptive', early_stopping=True,
+                        batch_size=256 if is_large else 'auto',  # 🆕 Mini-batch for large data
                         validation_fraction=0.1, random_state=42
                     ),
                     
-                    # 🆕 MLP with different architecture for diversity
-                    'MLP_Wide': MLPClassifier(
-                        hidden_layer_sizes=(512, 256), max_iter=1000,
-                        learning_rate='adaptive', random_state=42
-                    ),
-                    
-                    # Ensemble boosting methods
+                    # Ensemble boosting methods - FAST
                     'AdaBoost': AdaBoostClassifier(
-                        n_estimators=150, learning_rate=0.5, random_state=42
+                        n_estimators=100 if is_large else 150, 
+                        learning_rate=0.5, random_state=42
                     ),
                     'Bagging': BaggingClassifier(
-                        n_estimators=100, max_samples=0.8, max_features=0.8,
+                        n_estimators=50 if is_large else 100, 
+                        max_samples=0.5 if is_large else 0.8,  # 🆕 Smaller samples for speed
+                        max_features=0.8,
                         random_state=42, n_jobs=-1
                     ),
                     
-                    # Linear models
+                    # Linear models - VERY FAST (O(n))
                     'SGD': SGDClassifier(
                         loss='log_loss', max_iter=1500, random_state=42,
                         class_weight='balanced', early_stopping=True
                     ),
                     
-                    # Tree models
-                    'DecisionTree': DecisionTreeClassifier(
-                        max_depth=18, min_samples_split=3, random_state=42,
-                        class_weight='balanced'
-                    ),
-                    
-                    # Discriminant Analysis
-                    'QDA': QuadraticDiscriminantAnalysis(),
-                    'LDA': LinearDiscriminantAnalysis(),
-                    
-                    # Naive Bayes variants
-                    'BernoulliNB': BernoulliNB(alpha=0.5),
-                    'MultinomialNB_Shifted': GaussianNB(),  # Placeholder, MultinomialNB needs positive features
-                    
-                    # Passive Aggressive
+                    # Passive Aggressive - FAST (online learning)
                     'PassiveAggressive': PassiveAggressiveClassifier(
                         max_iter=1500, random_state=42, class_weight='balanced'
                     ),
                     
+                    # Tree models
+                    'DecisionTree': DecisionTreeClassifier(
+                        max_depth=12 if is_large else 18, 
+                        min_samples_split=3, random_state=42,
+                        class_weight='balanced'
+                    ),
+                    
+                    # Naive Bayes variants - VERY FAST
+                    'BernoulliNB': BernoulliNB(alpha=0.5),
+                    
                     # 🆕 Calibrated Classifiers for better probability estimates
                     'CalibratedRF': RandomForestClassifier(
-                        n_estimators=150, max_depth=12, random_state=42,
+                        n_estimators=100 if is_large else 150, 
+                        max_depth=10 if is_large else 12, 
+                        random_state=42,
                         n_jobs=-1, class_weight='balanced'
                     ),
                 })
                 
-                # 🆕 Enhanced CatBoost for Ultra mode
+                # 🆕 Enhanced CatBoost for Ultra mode (FAST even for large data)
                 if HAS_CATBOOST:
                     models['CatBoost'] = cb.CatBoostClassifier(
-                        iterations=300, depth=10, learning_rate=0.03,
+                        iterations=150 if is_large else 300, 
+                        depth=6 if is_large else 10, 
+                        learning_rate=0.05 if is_large else 0.03,
                         l2_leaf_reg=3, random_strength=1,
                         bagging_temperature=0.5,
                         random_state=42, verbose=False,
                         auto_class_weights='Balanced'
                     )
                 
-                # 🆕 SVM variants
-                models['SVM_RBF'] = SVC(
-                    kernel='rbf', C=1.0, gamma='scale',
-                    probability=True, random_state=42,
-                    class_weight='balanced'
-                )
-                models['SVM_Linear'] = SVC(
-                    kernel='linear', C=0.5,
-                    probability=True, random_state=42,
-                    class_weight='balanced'
-                )
-                
                 # 🆕 Enhanced Stacking Ensemble with more diverse base learners
-                from sklearn.ensemble import StackingClassifier
-                estimators = [
-                    ('rf', RandomForestClassifier(n_estimators=150, max_depth=12, random_state=42, n_jobs=-1, class_weight='balanced')),
-                    ('hgb', HistGradientBoostingClassifier(max_iter=150, max_depth=8, random_state=42, class_weight='balanced')),
-                    ('lr', LogisticRegression(max_iter=1000, random_state=42, class_weight='balanced')),
-                ]
-                if HAS_XGBOOST:
-                    estimators.append(('xgb', xgb.XGBClassifier(n_estimators=150, max_depth=8, random_state=42, verbosity=0, eval_metric='mlogloss')))
-                if HAS_LIGHTGBM:
-                    estimators.append(('lgb', lgb.LGBMClassifier(n_estimators=150, max_depth=8, random_state=42, verbose=-1, class_weight='balanced')))
-                
-                models['StackingEnsemble'] = StackingClassifier(
-                    estimators=estimators,
-                    final_estimator=LogisticRegression(max_iter=1500, C=0.5, random_state=42),
-                    cv=3, n_jobs=-1, passthrough=False
-                )
+                # SKIP for very large data (100k+) - too slow
+                if not is_large:
+                    from sklearn.ensemble import StackingClassifier
+                    estimators = [
+                        ('rf', RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1, class_weight='balanced')),
+                        ('hgb', HistGradientBoostingClassifier(max_iter=100, max_depth=6, random_state=42, class_weight='balanced')),
+                        ('lr', LogisticRegression(max_iter=1000, random_state=42, class_weight='balanced')),
+                    ]
+                    if HAS_XGBOOST:
+                        estimators.append(('xgb', xgb.XGBClassifier(n_estimators=100, max_depth=6, random_state=42, verbosity=0, eval_metric='mlogloss')))
+                    if HAS_LIGHTGBM:
+                        estimators.append(('lgb', lgb.LGBMClassifier(n_estimators=100, max_depth=6, random_state=42, verbose=-1, class_weight='balanced')))
+                    
+                    models['StackingEnsemble'] = StackingClassifier(
+                        estimators=estimators,
+                        final_estimator=LogisticRegression(max_iter=1500, C=0.5, random_state=42),
+                        cv=3, n_jobs=-1, passthrough=False
+                    )
                 
                 # 🆕 Voting Ensemble (soft voting for probability averaging)
                 from sklearn.ensemble import VotingClassifier
                 voting_estimators = [
-                    ('rf', RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1, class_weight='balanced')),
-                    ('hgb', HistGradientBoostingClassifier(max_iter=100, random_state=42, class_weight='balanced')),
+                    ('rf', RandomForestClassifier(n_estimators=50 if is_large else 100, random_state=42, n_jobs=-1, class_weight='balanced')),
+                    ('hgb', HistGradientBoostingClassifier(max_iter=50 if is_large else 100, random_state=42, class_weight='balanced')),
                 ]
+                if HAS_LIGHTGBM:
+                    voting_estimators.append(('lgb', lgb.LGBMClassifier(n_estimators=50 if is_large else 100, random_state=42, verbose=-1, class_weight='balanced')))
+                
                 models['VotingEnsemble'] = VotingClassifier(
                     estimators=voting_estimators,
                     voting='soft', n_jobs=-1
                 )
                 
                 # 🧠 DEEP LEARNING: TensorFlow DeepANN (Ultra Mode Only)
-                try:
-                    from ml.algorithm_selector import (
-                        create_deep_ann_classifier, 
-                        KerasClassifierWrapper
-                    )
-                    self._use_deep_ann = True
-                    print("   🧠 DeepANN (TensorFlow) will be trained in Ultra Mode")
-                except ImportError:
+                # Skip for large data unless explicitly requested
+                if not is_large:
+                    try:
+                        from ml.algorithm_selector import (
+                            create_deep_ann_classifier, 
+                            KerasClassifierWrapper
+                        )
+                        self._use_deep_ann = True
+                        print("   🧠 DeepANN (TensorFlow) will be trained in Ultra Mode")
+                    except ImportError:
+                        self._use_deep_ann = False
+                        print("   ⚠️ TensorFlow not available, skipping DeepANN")
+                else:
                     self._use_deep_ann = False
-                    print("   ⚠️ TensorFlow not available, skipping DeepANN")
+                    print("   ⚠️ Skipping DeepANN for large dataset (use Fast gradient boosting)")
         
         elif self.task_type == 'regression':
             # === FAST MODE: 10 Essential Models - ENHANCED ===
             models = {
-                # Linear models
+                # Linear models - ALWAYS FAST
                 'Ridge': Ridge(alpha=1.0, random_state=42),
                 'ElasticNet': ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=42, max_iter=2000),
                 
-                # Tree-based (core) - ENHANCED
+                # Tree-based (core) - ENHANCED with large data optimization
                 'RandomForest': RandomForestRegressor(
-                    n_estimators=150 if not is_ultra else 250, 
-                    max_depth=12 if not is_ultra else 18, 
+                    n_estimators=100 if is_large else (150 if not is_ultra else 250), 
+                    max_depth=8 if is_large else (12 if not is_ultra else 18), 
                     min_samples_split=4, random_state=42, n_jobs=-1
                 ),
                 'GradientBoosting': GradientBoostingRegressor(
-                    n_estimators=120, max_depth=6, learning_rate=0.1,
+                    n_estimators=80 if is_large else 120, 
+                    max_depth=5 if is_large else 6, 
+                    learning_rate=0.1,
                     subsample=0.8, random_state=42
                 ),
                 
-                # 🆕 HistGradientBoosting for Fast mode
+                # 🆕 HistGradientBoosting for Fast mode - BEST FOR LARGE DATA
                 'HistGradientBoosting': HistGradientBoostingRegressor(
-                    max_iter=150 if not is_ultra else 250,
-                    max_depth=8 if not is_ultra else 12,
+                    max_iter=100 if is_large else (150 if not is_ultra else 250),
+                    max_depth=6 if is_large else (8 if not is_ultra else 12),
                     learning_rate=0.1, random_state=42
                 ),
                 
-                # ExtraTrees
+                # ExtraTrees - parallelized
                 'ExtraTrees': ExtraTreesRegressor(
-                    n_estimators=100 if not is_ultra else 200,
-                    max_depth=10 if not is_ultra else 15,
+                    n_estimators=80 if is_large else (100 if not is_ultra else 200),
+                    max_depth=8 if is_large else (10 if not is_ultra else 15),
                     random_state=42, n_jobs=-1
                 ),
-                
-                # Neighbors
-                'KNN': KNeighborsRegressor(n_neighbors=5, weights='distance', n_jobs=1),
             }
             
-            # XGBoost/LightGBM for both modes - ENHANCED
+            # 🆕 Skip KNN for large data (O(n) per prediction)
+            if not is_large:
+                models['KNN'] = KNeighborsRegressor(n_neighbors=7, weights='distance', n_jobs=-1)
+            
+            # XGBoost/LightGBM for both modes - ENHANCED (histogram-based = fast for large data)
             if HAS_XGBOOST:
                 models['XGBoost'] = xgb.XGBRegressor(
-                    n_estimators=150 if not is_ultra else 300, 
-                    max_depth=7 if not is_ultra else 10,
+                    n_estimators=100 if is_large else (150 if not is_ultra else 300), 
+                    max_depth=6 if is_large else (7 if not is_ultra else 10),
                     learning_rate=0.1 if not is_ultra else 0.05,
                     subsample=0.8, colsample_bytree=0.8,
+                    tree_method='hist' if is_large else 'auto',  # 🆕 Histogram for large data
                     random_state=42, n_jobs=-1, verbosity=0
                 )
             if HAS_LIGHTGBM:
+                # LightGBM is BEST for large datasets
                 models['LightGBM'] = lgb.LGBMRegressor(
-                    n_estimators=150 if not is_ultra else 300, 
-                    max_depth=7 if not is_ultra else 10,
+                    n_estimators=100 if is_large else (150 if not is_ultra else 300), 
+                    max_depth=6 if is_large else (7 if not is_ultra else 10),
                     learning_rate=0.1 if not is_ultra else 0.05,
                     num_leaves=31 if not is_ultra else 50,
                     subsample=0.8, colsample_bytree=0.8,
                     random_state=42, n_jobs=-1, verbose=-1
                 )
             
-            # 🆕 CatBoost for Fast mode too
+            # 🆕 CatBoost for Fast mode too - FAST for large data
             if HAS_CATBOOST and not is_ultra:
                 models['CatBoost'] = cb.CatBoostRegressor(
-                    iterations=100, depth=6, learning_rate=0.1,
+                    iterations=80 if is_large else 100, 
+                    depth=5 if is_large else 6, 
+                    learning_rate=0.1,
                     random_state=42, verbose=False
                 )
             
-            # KNN
-            models['KNN'] = KNeighborsRegressor(n_neighbors=7, weights='distance', n_jobs=-1)
-            
             # === ULTRA MODE: Additional Models (15+ more) - ENHANCED ===
             if is_ultra:
+                # Models that scale well with large data
                 models.update({
-                    # Linear variants
+                    # Linear variants - ALWAYS FAST (O(n))
                     'Lasso': Lasso(alpha=0.01, random_state=42, max_iter=2000),
                     'BayesianRidge': BayesianRidge(),
                     
-                    # 🆕 Enhanced MLP
+                    # 🆕 Enhanced MLP with mini-batch for large data
                     'MLP': MLPRegressor(
-                        hidden_layer_sizes=(256, 128, 64, 32), max_iter=1500,
+                        hidden_layer_sizes=(128, 64) if is_large else (256, 128, 64, 32), 
+                        max_iter=500 if is_large else 1500,
+                        batch_size=256 if is_large else 'auto',  # 🆕 Mini-batch for large data
                         learning_rate='adaptive', early_stopping=True,
                         validation_fraction=0.1, random_state=42
                     ),
-                    'MLP_Wide': MLPRegressor(
-                        hidden_layer_sizes=(512, 256), max_iter=1000,
-                        learning_rate='adaptive', random_state=42
-                    ),
                     
-                    # Ensemble boosting
+                    # Ensemble boosting - parallelized
                     'AdaBoost': AdaBoostRegressor(
-                        n_estimators=150, learning_rate=0.5, random_state=42
+                        n_estimators=100 if is_large else 150, 
+                        learning_rate=0.5, random_state=42
                     ),
                     'Bagging': BaggingRegressor(
-                        n_estimators=100, max_samples=0.8, max_features=0.8,
+                        n_estimators=50 if is_large else 100, 
+                        max_samples=0.5 if is_large else 0.8,  # 🆕 Smaller samples for speed
+                        max_features=0.8,
                         random_state=42, n_jobs=-1
                     ),
                     
-                    # Linear models
+                    # Linear models - VERY FAST
                     'SGD': SGDRegressor(max_iter=1500, early_stopping=True, random_state=42),
                     
                     # Tree models
                     'DecisionTree': DecisionTreeRegressor(
-                        max_depth=18, min_samples_split=3, random_state=42
+                        max_depth=12 if is_large else 18, 
+                        min_samples_split=3, random_state=42
                     ),
                     
-                    # Robust regressors
-                    'HuberRegressor': HuberRegressor(max_iter=500, epsilon=1.35),
-                    'TheilSen': TheilSenRegressor(random_state=42, n_jobs=-1, max_subpopulation=1000),
-                    
-                    # SVR variants
-                    'SVR_RBF': SVR(kernel='rbf', C=1.0, gamma='scale'),
-                    'SVR_Linear': SVR(kernel='linear', C=0.5),
-                    
-                    # Passive Aggressive
+                    # Passive Aggressive - FAST online learning
                     'PassiveAggressive': PassiveAggressiveRegressor(
                         max_iter=1500, random_state=42
                     ),
                 })
+                
+                # 🆕 Skip slow models for large datasets
+                if not is_large:
+                    models.update({
+                        # Robust regressors - can be slow
+                        'HuberRegressor': HuberRegressor(max_iter=500, epsilon=1.35),
+                        'TheilSen': TheilSenRegressor(random_state=42, n_jobs=-1, max_subpopulation=1000),
+                        
+                        # SVR variants - O(n²) complexity, SKIP for large data
+                        'SVR_RBF': SVR(kernel='rbf', C=1.0, gamma='scale'),
+                        'SVR_Linear': SVR(kernel='linear', C=0.5),
+                    })
                 
                 # 🆕 Enhanced CatBoost for Ultra
                 if HAS_CATBOOST:
