@@ -3,7 +3,7 @@ import {
     LayoutDashboard, TrendingUp, TrendingDown,
     BarChart3, PieChart, LineChart, Loader2,
     Database, Calendar, Layers, Activity, Target, Zap,
-    RefreshCw, Maximize2, Grid3X3, List, Upload
+    RefreshCw, Maximize2, Grid3X3, List, Upload, Download, FileText
 } from 'lucide-react';
 import { Skeleton } from '../components/ui/Skeleton';
 import { useUserStore } from '../store/userStore';
@@ -61,6 +61,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [expandedChart, setExpandedChart] = useState<string | null>(null);
+    const [exporting, setExporting] = useState(false);
 
     // Theme configuration
     // Theme configuration - Using global consistency where possible
@@ -350,6 +351,45 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                     <List className="w-4 h-4" />
                                 </button>
                             </div>
+
+                            {/* Export PPT Button */}
+                            <button
+                                onClick={async () => {
+                                    if (!dashboard) return;
+                                    setExporting(true);
+                                    try {
+                                        const content = `# ${dashboard.dashboard_title}\n\n## Key Metrics\n${dashboard.kpis?.map(k => `- ${k.title}: ${k.value}`).join('\n') || 'No KPIs'}\n\n## Insights\n${dashboard.insights?.map(i => `- ${i}`).join('\n') || 'No insights'}\n\n## Recommendations\n${dashboard.recommendations?.map(r => `- ${r}`).join('\n') || 'No recommendations'}`;
+                                        const response = await fetch('/api/v1/exports/download/pptx', {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ content, title: dashboard.dashboard_title })
+                                        });
+                                        if (response.ok) {
+                                            const blob = await response.blob();
+                                            const url = URL.createObjectURL(blob);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = `dashboard_${Date.now()}.pptx`;
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            document.body.removeChild(a);
+                                            URL.revokeObjectURL(url);
+                                        } else {
+                                            console.error('Export failed:', await response.text());
+                                        }
+                                    } catch (e) {
+                                        console.error('Export failed:', e);
+                                    } finally {
+                                        setExporting(false);
+                                    }
+                                }}
+                                disabled={exporting}
+                                className={`p-2 rounded-lg transition-all flex items-center gap-1.5 ${isDark ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30' : 'bg-orange-100 text-orange-600 hover:bg-orange-200'} ${exporting ? 'opacity-50 cursor-wait' : ''}`}
+                                title="Export to PowerPoint"
+                            >
+                                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                                <span className="text-xs font-medium hidden sm:inline">PPT</span>
+                            </button>
 
                             <button onClick={loadDashboard} className={`p-2 rounded-lg transition-all ${isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                                 <RefreshCw className="w-5 h-5" />

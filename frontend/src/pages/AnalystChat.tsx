@@ -238,8 +238,17 @@ const ForecastChartBlock: React.FC<{ payload: Record<string, unknown> }> = ({ pa
   );
 };
 
-// PlotlyChartBlock for rendering interactive Plotly charts
-const PlotlyChartBlock: React.FC<{ data: any[]; layout: any }> = ({ data, layout }) => {
+// PlotlyChartBlock for rendering interactive Plotly charts - MEMOIZED for performance
+const PlotlyChartBlock: React.FC<{ data: any[]; layout: any }> = React.memo(({ data, layout }) => {
+  // PERFORMANCE FIX: Memoize chart data to prevent unnecessary re-renders
+  const chartData = React.useMemo(() => data, [JSON.stringify(data)]);
+  const chartLayout = React.useMemo(() => ({
+    ...layout,
+    autosize: true,
+    // Disable animations for better performance
+    transition: { duration: 0 },
+  }), [JSON.stringify(layout)]);
+
   return (
     <React.Suspense fallback={
       <div className="animate-pulse bg-[var(--bg-card)] rounded-xl h-64 flex items-center justify-center">
@@ -247,11 +256,15 @@ const PlotlyChartBlock: React.FC<{ data: any[]; layout: any }> = ({ data, layout
       </div>
     }>
       <div className="my-4 p-4 glass-card rounded-xl border border-[var(--border-color)]">
-        <PlotlyChart data={data} layout={layout} />
+        <PlotlyChart data={chartData} layout={chartLayout} />
       </div>
     </React.Suspense>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render if data/layout actually changed
+  return JSON.stringify(prevProps.data) === JSON.stringify(nextProps.data) &&
+         JSON.stringify(prevProps.layout) === JSON.stringify(nextProps.layout);
+});
 
 // MLChartBlock - Renders matplotlib/seaborn charts from Predict mode (base64 PNG)
 const MLChartBlock: React.FC<{
@@ -336,6 +349,22 @@ const TypewriterText: React.FC<{
       return;
     }
 
+    // PERFORMANCE FIX: Skip animation for content with charts/visualizations
+    // Charts cause heavy re-renders during typewriter animation
+    const hasCharts = content.includes('plotly_chart') || 
+                      content.includes('forecast_chart') || 
+                      content.includes('"data"') && content.includes('"layout"') ||
+                      content.includes('```') && content.length > 2000;
+    
+    if (hasCharts) {
+      // Show immediately without animation for chart content
+      setDisplayedContent(content);
+      setIsComplete(true);
+      hasAnimatedRef.current = true;
+      onCompleteRef.current?.();
+      return;
+    }
+
     // Mark as animating
     hasAnimatedRef.current = true;
 
@@ -347,10 +376,11 @@ const TypewriterText: React.FC<{
     const words = content.split(/(\s+)/);
     let currentIndex = 0;
 
+    // PERFORMANCE FIX: Use larger chunks (8 words) and longer interval (35ms)
     intervalRef.current = setInterval(() => {
       if (currentIndex < words.length) {
-        // Add 4 words at a time for faster animation
-        const nextIndex = Math.min(currentIndex + 4, words.length);
+        // Add 8 words at a time for faster, less CPU-intensive animation
+        const nextIndex = Math.min(currentIndex + 8, words.length);
         const wordsToAdd = words.slice(currentIndex, nextIndex).join('');
         setDisplayedContent(prev => prev + wordsToAdd);
         currentIndex = nextIndex;
@@ -362,7 +392,7 @@ const TypewriterText: React.FC<{
         setIsComplete(true);
         onCompleteRef.current?.();
       }
-    }, 25); // 25ms per chunk for smooth animation
+    }, 35); // 35ms per chunk - less CPU intensive
 
     return () => {
       if (intervalRef.current) {
@@ -1205,28 +1235,70 @@ const AnalystChat: React.FC = () => {
   }, [currentConversationId, addMessageToConversation]);
 
   // =========================================================================
-  // CHATGPT-STYLE SCROLL LOGIC
+  // CHATGPT-STYLE SCROLL LOGIC - OPTIMIZED TO PREVENT JITTER
   // =========================================================================
 
-  // Check if user is near the bottom of the chat (within 150px)
+  // Track previous message count to detect actual new messages
+  const prevMessageCountRef = useRef(messages.length);
+  const prevLoadingRef = useRef(isLoading);
+  const userScrolledUpRef = useRef(false);
+
+  // Check if user is near the bottom of the chat (within 200px)
   const isNearBottom = (): boolean => {
     const container = chatContainerRef.current;
     if (!container) return true;
-    return container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    return container.scrollHeight - container.scrollTop - container.clientHeight < 200;
   };
 
-  // Scroll to bottom using anchor element
+  // Scroll to bottom - instant for new messages, smooth for loading
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    }
   };
 
-  // Auto-scroll ONLY when user is near bottom OR when loading (doesn't interrupt reading)
+  // Track user scroll position to avoid interrupting reading
   useEffect(() => {
-    if (isNearBottom() || isLoading) {
-      // Small delay to ensure DOM has rendered
-      setTimeout(() => scrollToBottom('smooth'), 50);
+    const container = chatContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      // Mark that user has scrolled up if not near bottom
+      userScrolledUpRef.current = !isNearBottom();
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Auto-scroll ONLY when:
+  // 1. A NEW message is added (not re-renders)
+  // 2. Loading state changes to true (user sent a message)
+  // 3. User hasn't scrolled up to read
+  useEffect(() => {
+    const messageCountChanged = messages.length !== prevMessageCountRef.current;
+    const loadingStarted = isLoading && !prevLoadingRef.current;
+    
+    // Update refs
+    prevMessageCountRef.current = messages.length;
+    prevLoadingRef.current = isLoading;
+
+    // Only scroll if there's an actual new message or user started loading
+    if (messageCountChanged || loadingStarted) {
+      // Reset user scrolled flag when they send a new message
+      if (loadingStarted) {
+        userScrolledUpRef.current = false;
+      }
+      
+      // Don't scroll if user has scrolled up to read earlier messages
+      if (!userScrolledUpRef.current) {
+        // Use requestAnimationFrame for smooth scroll without jitter
+        requestAnimationFrame(() => {
+          scrollToBottom(loadingStarted ? 'smooth' : 'instant');
+        });
+      }
     }
-  }, [messages, isLoading]);
+  }, [messages.length, isLoading]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -1822,18 +1894,13 @@ const AnalystChat: React.FC = () => {
     <div className="flex h-screen sm:h-[100dvh] overflow-hidden bg-[var(--bg-primary)] w-full" {...getRootProps()}>
       <input {...getInputProps()} />
 
-      {/* Mobile Sidebar Overlay */}
-      <AnimatePresence>
-        {sidebarOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSidebarOpen(false)}
-            className="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
-          />
-        )}
-      </AnimatePresence>
+      {/* Mobile Sidebar Overlay - CSS transitions instead of Framer Motion for performance */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity duration-200"
+        />
+      )}
 
       {/* Sidebar - Desktop Fixed / Mobile Drawer */}
       <aside className={`
@@ -2205,44 +2272,42 @@ const AnalystChat: React.FC = () => {
                   </div>
                 ))}
 
-                {/* MCP Permission Dialog - Claude Style Allow/Deny */}
+                {/* MCP Permission Dialog - Fixed position to prevent layout shift */}
                 {mcpPermissionDialog.isOpen && (
-                  <div className="flex items-start gap-3 w-full max-w-full animate-fadeIn">
-                    <div className="w-8 h-8 flex-shrink-0 mt-1 flex items-center justify-center">
-                      <span className="text-xl">🔧</span>
-                    </div>
-                    <div className="flex-1 bg-[var(--bg-card)] border border-amber-500/50 rounded-xl p-4 shadow-xl">
+                  <div className="sticky bottom-4 z-30 mx-auto max-w-2xl">
+                    <div className="bg-[var(--bg-card)] border border-amber-500/50 rounded-xl p-4 shadow-2xl backdrop-blur-sm">
                       <div className="flex items-center gap-2 mb-3">
+                        <span className="text-lg">🔧</span>
                         <div className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></div>
                         <span className="text-sm text-amber-500 font-medium">Permission Required</span>
                       </div>
-                      <p className="text-gray-300 dark:text-gray-300 text-sm mb-3">
+                      <p className="text-gray-300 text-sm mb-3">
                         DataVision wants to use the following tools:
                       </p>
-                      <div className="space-y-2 mb-4">
+                      <div className="space-y-2 mb-4 max-h-40 overflow-y-auto">
                         {mcpPermissionDialog.pendingTools.map((tool) => (
                           <div
                             key={tool.name}
                             className="flex items-center gap-3 px-3 py-2 bg-[var(--bg-hover)]/50 border border-[var(--border-color)] rounded-lg"
                           >
                             <span className="text-lg">{tool.icon}</span>
-                            <div className="flex-1">
-                              <span className="text-sm font-medium text-gray-200">{tool.name}</span>
-                              <p className="text-xs text-gray-500">{tool.description}</p>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm font-medium text-gray-200 truncate block">{tool.name}</span>
+                              <p className="text-xs text-gray-500 truncate">{tool.description}</p>
                             </div>
                           </div>
                         ))}
                       </div>
-                      <div className="flex gap-2 justify-end">
+                      <div className="flex gap-3 justify-end">
                         <button
                           onClick={() => mcpPermissionDialog.onDeny?.()}
-                          className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 bg-[var(--bg-hover)] hover:bg-[var(--border-color)] rounded-lg transition-colors border border-transparent hover:border-[var(--border-color)]"
+                          className="px-5 py-2.5 text-sm font-medium text-gray-300 hover:text-white bg-[var(--bg-hover)] hover:bg-[var(--bg-secondary)] rounded-lg transition-colors border border-[var(--border-color)]"
                         >
                           Deny
                         </button>
                         <button
                           onClick={() => mcpPermissionDialog.onAllow?.()}
-                          className="px-4 py-2 text-sm text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors shadow-lg shadow-green-900/20"
+                          className="px-5 py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors shadow-lg"
                         >
                           Allow
                         </button>
@@ -2311,114 +2376,102 @@ const AnalystChat: React.FC = () => {
 
         {/* ========== GLOBAL DROPDOWNS - Both appear CENTERED below search box ========== */}
 
-        {/* Global MCP Dropdown */}
-        <AnimatePresence>
-          {mcpDropdownOpen && (
-            <motion.div
-              ref={mcpMenuRef}
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ duration: 0.2 }}
-              className={`fixed z-50 left-4 md:left-[calc(50%-384px)] w-80 max-w-[calc(100vw-2rem)] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl overflow-hidden ${messages.length === 0 ? 'top-1/2 mt-16' : 'bottom-28'}`}
-            >
-              <div className="p-3 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-secondary)]/50">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">MCP Servers</p>
-                <span className="text-xs text-green-400 font-medium">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length} active</span>
-              </div>
-              <div className="max-h-64 overflow-y-auto">
-                {mcpServers.map((mcp) => (
-                  <button
-                    key={mcp.id}
-                    onClick={() => setEnabledMcps(prev => ({ ...prev, [mcp.id]: !prev[mcp.id] }))}
-                    className="flex items-center gap-3 w-full p-3 hover:bg-[var(--bg-hover)] transition-colors"
-                  >
-                    <span className="text-lg">{mcp.icon}</span>
-                    <div className="flex-1 text-left">
-                      <p className={`text-sm font-medium ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
-                      <p className="text-xs text-gray-500 line-clamp-1">{mcp.description}</p>
-                    </div>
-                    <div className={`w-9 h-5 rounded-full transition-all duration-200 ${enabledMcps[mcp.id] ? 'bg-green-500' : 'bg-gray-700'} flex items-center`}>
-                      <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${enabledMcps[mcp.id] ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Global Mode Dropdown */}
-        <AnimatePresence>
-          {modeDropdownOpen && (
-            <motion.div
-              ref={modeMenuRef}
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ duration: 0.2 }}
-              className={`fixed z-50 right-4 md:right-[calc(50%-384px)] w-80 max-w-[calc(100vw-2rem)] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto ${messages.length === 0 ? 'top-1/2 mt-16' : 'bottom-28'}`}
-            >
-              {/* RAG Modes */}
-              <div className="p-2 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/50">
-                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2">📊 Data Modes</span>
-              </div>
-              {modes.filter(m => !m.isAI).map((m) => (
+        {/* Global MCP Dropdown - CSS transitions for performance */}
+        {mcpDropdownOpen && (
+          <div
+            ref={mcpMenuRef}
+            className={`fixed z-50 left-4 md:left-[calc(50%-384px)] w-80 max-w-[calc(100vw-2rem)] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl overflow-hidden transition-all duration-200 ${messages.length === 0 ? 'top-1/2 mt-16' : 'bottom-28'}`}
+          >
+            <div className="p-3 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-secondary)]/50">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">MCP Servers</p>
+              <span className="text-xs text-green-400 font-medium">{Object.values(enabledMcps).filter(Boolean).length}/{mcpServers.length} active</span>
+            </div>
+            <div className="max-h-64 overflow-y-auto">
+              {mcpServers.map((mcp) => (
                 <button
-                  key={m.id}
-                  onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
-                  className={`flex items-center gap-3 w-full p-3 hover:bg-[var(--bg-hover)] transition-colors ${mode === m.id ? 'bg-[var(--bg-hover)]' : ''}`}
+                  key={mcp.id}
+                  onClick={() => setEnabledMcps(prev => ({ ...prev, [mcp.id]: !prev[mcp.id] }))}
+                  className="flex items-center gap-3 w-full p-3 hover:bg-[var(--bg-hover)] transition-colors"
                 >
+                  <span className="text-lg">{mcp.icon}</span>
                   <div className="flex-1 text-left">
-                    <div className="flex items-center gap-2">
-                      <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
-                      {m.badge && (
-                        <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/20 text-green-400 rounded">
-                          {m.badge}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">{m.description}</p>
+                    <p className={`text-sm font-medium ${enabledMcps[mcp.id] ? 'text-gray-200' : 'text-gray-500'}`}>{mcp.name}</p>
+                    <p className="text-xs text-gray-500 line-clamp-1">{mcp.description}</p>
                   </div>
-                  {mode === m.id && <Check className="w-4 h-4 text-green-400" />}
+                  <div className={`w-9 h-5 rounded-full transition-all duration-200 ${enabledMcps[mcp.id] ? 'bg-green-500' : 'bg-gray-700'} flex items-center`}>
+                    <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${enabledMcps[mcp.id] ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </div>
                 </button>
               ))}
+            </div>
+          </div>
+        )}
 
-              {/* AI Models Divider */}
-              <div className="p-2 border-t border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/50">
-                <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider px-2">� AI Models</span>
-              </div>
-              {modes.filter(m => m.isAI).map((m: any) => (
-                <button
-                  key={m.id}
-                  onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
-                  className={`flex items-center gap-3 w-full p-3 hover:bg-[var(--bg-hover)] transition-colors ${mode === m.id ? 'bg-[var(--bg-hover)]' : ''}`}
-                >
-                  {m.logo && (
-                    <img
-                      src={m.logo}
-                      alt={m.label}
-                      className="w-6 h-6 rounded object-contain bg-white/10 p-0.5"
-                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                    />
-                  )}
-                  <div className="flex-1 text-left">
-                    <div className="flex items-center gap-2">
-                      <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
-                      {m.badge && (
-                        <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${m.badge === 'New' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>
-                          {m.badge}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500">{m.description}</p>
+        {/* Global Mode Dropdown - CSS transitions for performance */}
+        {modeDropdownOpen && (
+          <div
+            ref={modeMenuRef}
+            className={`fixed z-50 right-4 md:right-[calc(50%-384px)] w-80 max-w-[calc(100vw-2rem)] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl overflow-hidden max-h-[60vh] overflow-y-auto transition-all duration-200 ${messages.length === 0 ? 'top-1/2 mt-16' : 'bottom-28'}`}
+          >
+            {/* RAG Modes */}
+            <div className="p-2 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/50">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2">📊 Data Modes</span>
+            </div>
+            {modes.filter(m => !m.isAI).map((m) => (
+              <button
+                key={m.id}
+                onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
+                className={`flex items-center gap-3 w-full p-3 hover:bg-[var(--bg-hover)] transition-colors ${mode === m.id ? 'bg-[var(--bg-hover)]' : ''}`}
+              >
+                <div className="flex-1 text-left">
+                  <div className="flex items-center gap-2">
+                    <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
+                    {m.badge && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/20 text-green-400 rounded">
+                        {m.badge}
+                      </span>
+                    )}
                   </div>
-                  {mode === m.id && <Check className="w-4 h-4 text-green-400" />}
-                </button>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
+                  <p className="text-xs text-gray-500">{m.description}</p>
+                </div>
+                {mode === m.id && <Check className="w-4 h-4 text-green-400" />}
+              </button>
+            ))}
+
+            {/* AI Models Divider */}
+            <div className="p-2 border-t border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/50">
+              <span className="text-xs font-semibold text-purple-400 uppercase tracking-wider px-2">🤖 AI Models</span>
+            </div>
+            {modes.filter(m => m.isAI).map((m: any) => (
+              <button
+                key={m.id}
+                onClick={() => { setMode(m.id); setModeDropdownOpen(false); }}
+                className={`flex items-center gap-3 w-full p-3 hover:bg-[var(--bg-hover)] transition-colors ${mode === m.id ? 'bg-[var(--bg-hover)]' : ''}`}
+              >
+                {m.logo && (
+                  <img
+                    src={m.logo}
+                    alt={m.label}
+                    className="w-6 h-6 rounded object-contain bg-white/10 p-0.5"
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                  />
+                )}
+                <div className="flex-1 text-left">
+                  <div className="flex items-center gap-2">
+                    <p className={`text-sm font-medium ${mode === m.id ? 'text-white' : 'text-gray-200'}`}>{m.label}</p>
+                    {m.badge && (
+                      <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${m.badge === 'New' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'}`}>
+                        {m.badge}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500">{m.description}</p>
+                </div>
+                {mode === m.id && <Check className="w-4 h-4 text-green-400" />}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Global Hidden File Input - Always in DOM for WelcomeScreen and bottom input */}
         <input

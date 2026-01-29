@@ -1089,15 +1089,15 @@ const DataHub: React.FC = () => {
                 }`}>
                 {ultraMode ? (
                   <>
-                    <span className="text-sm font-medium">20+ Algorithms</span>
+                    <span className="text-sm font-medium">15+ Algorithms</span>
                     <span className="opacity-50">•</span>
                     <span className="text-sm font-medium">Ensembles</span>
                     <span className="opacity-50">•</span>
-                    <span className="text-sm font-medium">Deep Learning</span>
+                    <span className="text-sm font-medium">Auto-Tuning</span>
                   </>
                 ) : (
                   <>
-                    <span className="text-sm font-medium">7 Core Algorithms</span>
+                    <span className="text-sm font-medium">10 Core Algorithms</span>
                     <span className="opacity-50">•</span>
                     <span className="text-sm font-medium">Quick Training</span>
                   </>
@@ -1115,8 +1115,8 @@ const DataHub: React.FC = () => {
                 </p>
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                   {ultraMode
-                    ? '⏱️ Ultra mode: ~15-20 minutes for maximum accuracy.'
-                    : '⏱️ Fast mode: ~3 minutes for quick results.'
+                    ? '⏱️ Ultra mode: 3-8 minutes for maximum accuracy.'
+                    : '⏱️ Fast mode: 1-3 minutes for quick results.'
                   }
                 </p>
               </div>

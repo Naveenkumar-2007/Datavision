@@ -52,7 +52,7 @@ const HelpCenter: React.FC = () => {
             faqs: [
                 {
                     question: "What's the difference between Fast and Ultra mode?",
-                    answer: "**Fast Mode** (~3 minutes): Trains 15+ core algorithms quickly for rapid insights. Great for initial exploration.\n\n**Ultra Mode** (~15-20 minutes): Trains 20+ models including ensembles, with advanced hyperparameter tuning. Best for production-ready predictions.",
+                    answer: "**Fast Mode** (1-3 minutes): Trains 10 core algorithms quickly for rapid insights. Great for initial exploration and quick prototyping.\n\n**Ultra Mode** (3-8 minutes): Trains 15+ models including ensembles, with advanced hyperparameter auto-tuning. Best for production-ready predictions.",
                     icon: Zap
                 },
                 {

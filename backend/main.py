@@ -108,6 +108,11 @@ app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytic
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(email_prefs.router, prefix="/api/v1/settings", tags=["Settings"])
 
+# 📤 Exports API (PDF, PPTX, Email)
+from api.v1.endpoints import exports
+app.include_router(exports.router, prefix="/api/v1", tags=["Exports"])
+logger.info("✅ Exports API loaded (PDF, PPTX, Email)")
+
 
 # 🏆 Autonomous Dashboard API
 app.include_router(dashboard_api.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
