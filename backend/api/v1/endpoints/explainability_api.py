@@ -349,7 +349,7 @@ async def explain_prediction(
             base_value=0.5,
             prediction=prediction,
             prediction_contribution=sum(c.shap_value for c in contributions),
-            contributions=contributions[:15],
+            contributions=contributions[:50],  # Show up to 50 features
             explanation_text=explanation_text
         )
         

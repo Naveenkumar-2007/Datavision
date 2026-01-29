@@ -162,7 +162,7 @@ class SHAPExplainer:
                 "success": True,
                 "base_value": float(base_value),
                 "prediction_contribution": float(sum(shap_values)),
-                "contributions": contributions[:15],  # Top 15 features
+                "contributions": contributions[:50],  # Top 50 features (increased from 15)
                 "waterfall_chart": waterfall_chart
             }
             

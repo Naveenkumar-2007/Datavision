@@ -791,23 +791,35 @@ class ProductionFeatureEngineer:
                 
                 if nunique <= 10:
                     # One-hot encoding for low cardinality
-                    dummies = pd.get_dummies(series, prefix=col, drop_first=True)
-                    if dummies.shape[1] > 0:
-                        feature_parts.append(dummies.values.astype(float))
-                        feature_names.extend(dummies.columns.tolist())
-                        self.transformers[f'{col}_onehot'] = dummies.columns.tolist()
-                        print(f"   ✅ Categorical '{col}': {dummies.shape[1]} one-hot features")
+                    # CRITICAL FIX: For binary columns, always use LabelEncoder instead
+                    # to avoid empty features when all values are the same category
+                    if nunique <= 2:
+                        # Binary or constant column - use label encoding
+                        le = LabelEncoder()
+                        encoded = le.fit_transform(series)
+                        feature_parts.append(encoded.reshape(-1, 1).astype(float))
+                        feature_names.append(f"{col}_binary")
+                        self.encoders[col] = le
+                        print(f"   ✅ Binary '{col}': label encoded ({list(le.classes_)})")
+                    else:
+                        # 3-10 categories - use one-hot encoding
+                        dummies = pd.get_dummies(series, prefix=col, drop_first=False)  # Changed: don't drop first
+                        if dummies.shape[1] > 0:
+                            feature_parts.append(dummies.values.astype(float))
+                            feature_names.extend(dummies.columns.tolist())
+                            self.transformers[f'{col}_onehot'] = dummies.columns.tolist()
+                            print(f"   ✅ Categorical '{col}': {dummies.shape[1]} one-hot features")
                 elif task_type == 'regression' and nunique <= 100:
                     # 🌟 TARGET ENCODING for regression (encodes as mean of target)
                     # This is MUCH more powerful than label encoding!
                     try:
                         target_means = {}
-                        global_mean = y.mean() if hasattr(y, 'mean') else np.mean(y)
+                        global_mean = float(y.mean()) if hasattr(y, 'mean') else float(np.mean(y))
                         
                         for cat in series.unique():
                             mask = series == cat
                             if mask.sum() >= 5:  # Only if enough samples
-                                target_means[cat] = y[mask].mean()
+                                target_means[cat] = float(y[mask].mean())
                             else:
                                 target_means[cat] = global_mean
                         
@@ -824,8 +836,9 @@ class ProductionFeatureEngineer:
                         feature_parts.append(encoded.reshape(-1, 1).astype(float))
                         feature_names.append(f"{col}_encoded")
                         self.encoders[col] = le
+                        print(f"   ✅ Categorical '{col}': label encoded (fallback)")
                 else:
-                    # Label encoding for very high cardinality
+                    # Label encoding for very high cardinality (>100 unique values)
                     le = LabelEncoder()
                     encoded = le.fit_transform(series)
                     feature_parts.append(encoded.reshape(-1, 1).astype(float))
@@ -834,7 +847,17 @@ class ProductionFeatureEngineer:
                     print(f"   ✅ Categorical '{col}': label encoded ({nunique} categories)")
             
             except Exception as e:
-                print(f"   ⚠️ Categorical '{col}' error: {str(e)[:30]}, skipping")
+                # CRITICAL FALLBACK: Always encode the column somehow
+                print(f"   ⚠️ Categorical '{col}' error: {str(e)[:50]}, using fallback encoding")
+                try:
+                    le = LabelEncoder()
+                    series = df[col].fillna('_MISSING_').astype(str).str.strip()
+                    encoded = le.fit_transform(series)
+                    feature_parts.append(encoded.reshape(-1, 1).astype(float))
+                    feature_names.append(f"{col}_fallback")
+                    self.encoders[col] = le
+                except Exception as e2:
+                    print(f"   ⚠️ Fallback encoding also failed for '{col}': {str(e2)[:30]}")
         
         # ===== TEXT/NLP FEATURES =====
         is_ultra = self.mode == 'ultra'
@@ -973,26 +996,37 @@ class ProductionFeatureEngineer:
         # ===== FINAL SAFETY CHECK: FORCE NUMERIC =====
         # ALWAYS verify and convert to ensure no string values leak through
         print("   🛡️ Verifying all features are numeric...")
+        print(f"   🛡️ X shape: {X.shape}, dtype: {X.dtype}")
+        
+        # CRITICAL: Always force float64 conversion
         try:
-            X = np.asarray(X, dtype=float)
-        except (ValueError, TypeError):
-            print("   ⚠️ Non-numeric values detected, forcing conversion...")
+            X = np.asarray(X, dtype=np.float64)
+        except (ValueError, TypeError) as e:
+            print(f"   ⚠️ Non-numeric values detected: {str(e)[:100]}")
+            print("   🔧 Forcing column-by-column conversion...")
             # Column-by-column conversion with LabelEncoder fallback
-            X_clean = np.zeros(X.shape, dtype=float)
+            X_clean = np.zeros(X.shape, dtype=np.float64)
             for i in range(X.shape[1]):
                 col_data = X[:, i]
                 try:
                     # Try numeric conversion first
-                    X_clean[:, i] = pd.to_numeric(col_data, errors='coerce').fillna(0)
-                except Exception:
+                    numeric_vals = pd.to_numeric(pd.Series(col_data), errors='coerce')
+                    if numeric_vals.isna().all():
+                        # All values failed to convert - use LabelEncoder
+                        le = LabelEncoder()
+                        X_clean[:, i] = le.fit_transform(np.asarray(col_data).astype(str))
+                        print(f"      ✅ Column {i}: Label encoded (all non-numeric)")
+                    else:
+                        X_clean[:, i] = numeric_vals.fillna(0).values
+                except Exception as col_err:
                     try:
                         # Fallback: LabelEncode string values
                         le = LabelEncoder()
-                        X_clean[:, i] = le.fit_transform(col_data.astype(str))
+                        X_clean[:, i] = le.fit_transform(np.asarray(col_data).astype(str))
                         print(f"      ✅ Column {i}: Label encoded ({len(le.classes_)} classes)")
                     except Exception:
                         X_clean[:, i] = 0
-                        print(f"      ⚠️ Column {i}: Set to 0 (conversion failed)")
+                        print(f"      ⚠️ Column {i}: Set to 0 (conversion failed: {str(col_err)[:30]})")
             X = X_clean
         
         # Handle any remaining NaN/Inf
@@ -1845,6 +1879,13 @@ class ProductionModelTrainer:
         
         self.results = []
         failed_models = []
+        
+        # 🛡️ EXTRA SAFETY: Verify data is truly numeric before training
+        print(f"   🛡️ Final data check: X_train dtype={X_train.dtype}, X_test dtype={X_test.dtype}")
+        if X_train.dtype == object or str(X_train.dtype).startswith('object'):
+            print(f"   ⚠️ CRITICAL: X_train is still object type, forcing numeric conversion...")
+            X_train = force_numeric_array(X_train, "X_train (final)")
+            X_test = force_numeric_array(X_test, "X_test (final)")
         
         for name, model in models.items():
             # Check for user cancellation

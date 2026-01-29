@@ -907,7 +907,7 @@ def _generate_feature_importance_chart(
         if not feature_importance:
             return None
         
-        features = feature_importance[:15]
+        features = feature_importance[:50]  # Show up to 50 features
         names = [f.get('feature', f"Feature {i}")[:25] for i, f in enumerate(features)]
         values = [f.get('importance', 0) * 100 for f in features]
         
