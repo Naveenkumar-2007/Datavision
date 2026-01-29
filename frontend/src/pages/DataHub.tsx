@@ -649,7 +649,7 @@ const DataHub: React.FC = () => {
                     ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg'
                     : 'text-gray-400 hover:text-gray-200'
                     }`}
-                  title="Fast Mode: 7 models, ~30-60s training"
+                  title="Fast Mode: 10 models, ~5-10min training (up to 500k rows)"
                 >
                   <Zap className="w-4 h-4" />
                   Fast
@@ -661,7 +661,7 @@ const DataHub: React.FC = () => {
                     ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg'
                     : 'text-gray-400 hover:text-gray-200'
                     }`}
-                  title="Ultra Mode: 20+ models with ensembles, 2-10min training"
+                  title="Ultra Mode: 25+ models with ensembles, ~15-30min training (up to 1M rows)"
                 >
                   <Sparkles className="w-4 h-4" />
                   Ultra

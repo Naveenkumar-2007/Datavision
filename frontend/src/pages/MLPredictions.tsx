@@ -611,7 +611,7 @@ const MLPredictions: React.FC = () => {
                                         : ''
                                         }`}
                                     style={ultraMode ? { color: 'var(--text-muted)' } : undefined}
-                                    title="Fast Mode: 7 models, ~30-60s training"
+                                    title="Fast Mode: 10 models, ~5-10min training (up to 500k rows)"
                                 >
                                     <Zap className="w-4 h-4" />
                                     Fast
@@ -624,7 +624,7 @@ const MLPredictions: React.FC = () => {
                                         : ''
                                         }`}
                                     style={!ultraMode ? { color: 'var(--text-muted)' } : undefined}
-                                    title="Ultra Mode: 20+ models with ensembles, 2-10min training"
+                                    title="Ultra Mode: 25+ models with ensembles, ~15-30min training (up to 1M rows)"
                                 >
                                     <Sparkles className="w-4 h-4" />
                                     Ultra

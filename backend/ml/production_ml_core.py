@@ -476,10 +476,10 @@ class ProductionFeatureEngineer:
             mode: 'fast' (basic NLP) or 'ultra' (advanced NLP with embeddings)
         """
         # 🆕 LARGE DATASET SUPPORT: Dynamic sample limits based on mode
-        # Fast mode: up to 100k samples (for speed)
-        # Ultra mode: up to 500k samples (for accuracy on large data)
+        # Fast mode: up to 500k samples (for speed)
+        # Ultra mode: up to 1M samples (for accuracy on large data)
         if max_samples is None:
-            self.max_samples = 100000 if mode == 'fast' else 500000
+            self.max_samples = 500000 if mode == 'fast' else 1000000
         else:
             self.max_samples = max_samples
         
