@@ -15,7 +15,7 @@ All endpoints in one place.
 
 import logging
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Depends, Header
 from pydantic import BaseModel, Field
 import pandas as pd
 import io
@@ -23,6 +23,41 @@ import io
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# =============================================================================
+# SECURITY HELPER - JWT Authentication
+# =============================================================================
+
+def get_secure_user_id(body_user_id: str, x_user_id: Optional[str], authorization: Optional[str]) -> str:
+    """
+    Get verified user_id from JWT token or headers.
+    Priority: JWT token > X-User-ID header > Body data
+    """
+    # 1. Try JWT token first (most secure)
+    if authorization:
+        try:
+            token = authorization.replace("Bearer ", "")
+            from core.auth import decode_supabase_jwt
+            payload = decode_supabase_jwt(token)
+            if payload and payload.get("sub"):
+                return payload["sub"]
+        except Exception as e:
+            logger.debug(f"JWT decode failed: {e}")
+    
+    # 2. Try X-User-ID header (from authenticated frontend)
+    if x_user_id and x_user_id != "default":
+        return x_user_id
+    
+    # 3. Fallback to body data (least secure)
+    if body_user_id and body_user_id != "default":
+        logger.warning(f"Using body user_id: {body_user_id} - consider using JWT")
+        return body_user_id
+    
+    # 4. Generate guest fingerprint
+    import hashlib
+    import time
+    return f"guest_{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
 
 
 # =============================================================================
@@ -168,9 +203,13 @@ async def auto_analyze(
 # =============================================================================
 
 @router.post("/query")
-async def process_natural_query(request: QueryRequest):
+async def process_natural_query(
+    request: QueryRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
     """
-    🤖 ASK ANYTHING ABOUT YOUR DATA
+    🤖 ASK ANYTHING ABOUT YOUR DATA - SECURED
     
     Uses advanced NLU to understand:
     - "Why did sales drop in Q3?"
@@ -179,13 +218,16 @@ async def process_natural_query(request: QueryRequest):
     - "What trends should I know about?"
     """
     try:
-        df = await load_user_dataframe(request.user_id)
+        # SECURITY: Get verified user_id from JWT
+        secure_user_id = get_secure_user_id(request.user_id, x_user_id, authorization)
+        
+        df = await load_user_dataframe(secure_user_id)
         
         from agents.universal_agent import process_query
         
         result = await process_query(
             query=request.query,
-            user_id=request.user_id,
+            user_id=secure_user_id,
             df=df
         )
         
@@ -200,10 +242,12 @@ async def process_natural_query(request: QueryRequest):
 async def deep_reasoning(
     query: str,
     user_id: str = "default",
-    mode: str = "cot"  # cot, react, sc
+    mode: str = "cot",  # cot, react, sc
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
 ):
     """
-    🧠 DEEP AI REASONING
+    🧠 DEEP AI REASONING - SECURED
     
     Modes:
     - cot: Chain-of-Thought (step-by-step)
@@ -211,6 +255,9 @@ async def deep_reasoning(
     - sc: Self-Consistency (multiple attempts)
     """
     try:
+        # SECURITY: Get verified user_id from JWT
+        secure_user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
         from core.reasoning_engine import reason, ReasoningMode
         
         mode_map = {

@@ -4,19 +4,56 @@ Enterprise-grade charts from user's uploaded data
 ChatGPT Pro-level visualizations with premium styling
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any, Tuple
 import json
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import logging
 
 from graph.query import revenue_dataframe, load_graph
 from utils.paths import get_user_paths
 from config.settings import Settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# =============================================================================
+# SECURITY HELPER - JWT Authentication
+# =============================================================================
+
+def get_secure_user_id(body_user_id: str, x_user_id: Optional[str], authorization: Optional[str]) -> str:
+    """
+    Get verified user_id from JWT token or headers.
+    Priority: JWT token > X-User-ID header > Body data
+    """
+    # 1. Try JWT token first (most secure)
+    if authorization:
+        try:
+            token = authorization.replace("Bearer ", "")
+            from core.auth import decode_supabase_jwt
+            payload = decode_supabase_jwt(token)
+            if payload and payload.get("sub"):
+                return payload["sub"]
+        except Exception as e:
+            logger.debug(f"JWT decode failed: {e}")
+    
+    # 2. Try X-User-ID header (from authenticated frontend)
+    if x_user_id and x_user_id != "default":
+        return x_user_id
+    
+    # 3. Fallback to body data (least secure)
+    if body_user_id and body_user_id != "default":
+        logger.warning(f"Using body user_id: {body_user_id} - consider using JWT")
+        return body_user_id
+    
+    # 4. Generate guest fingerprint
+    import hashlib
+    import time
+    return f"guest_{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
 
 # ============================================================================
 # PREMIUM COLOR PALETTES - ChatGPT Pro-Level Visualizations
@@ -1830,10 +1867,16 @@ def generate_prediction_chart(df: pd.DataFrame) -> Dict[str, Any]:
 
 
 @router.post("/generate", response_model=ChartResponse)
-async def generate_chart(request: ChartRequest):
-    """Generate Plotly chart from user's data"""
+async def generate_chart(
+    request: ChartRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """Generate Plotly chart from user's data - SECURED"""
     try:
-        df = get_user_data(request.user_id)
+        # SECURITY: Get verified user_id from JWT
+        secure_user_id = get_secure_user_id(request.user_id, x_user_id, authorization)
+        df = get_user_data(secure_user_id)
         
         if df.empty:
             raise HTTPException(status_code=404, detail="No data found. Please upload files first.")

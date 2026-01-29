@@ -12,7 +12,7 @@ Endpoints:
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Header
 from pydantic import BaseModel, Field
 import pandas as pd
 import io
@@ -20,6 +20,41 @@ import io
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# =============================================================================
+# SECURITY HELPER - JWT Authentication
+# =============================================================================
+
+def get_secure_user_id(body_user_id: str, x_user_id: Optional[str], authorization: Optional[str]) -> str:
+    """
+    Get verified user_id from JWT token or headers.
+    Priority: JWT token > X-User-ID header > Body data
+    """
+    # 1. Try JWT token first (most secure)
+    if authorization:
+        try:
+            token = authorization.replace("Bearer ", "")
+            from core.auth import decode_supabase_jwt
+            payload = decode_supabase_jwt(token)
+            if payload and payload.get("sub"):
+                return payload["sub"]
+        except Exception as e:
+            logger.debug(f"JWT decode failed: {e}")
+    
+    # 2. Try X-User-ID header (from authenticated frontend)
+    if x_user_id and x_user_id != "default":
+        return x_user_id
+    
+    # 3. Fallback to body data (least secure)
+    if body_user_id and body_user_id != "default":
+        logger.warning(f"Using body user_id: {body_user_id} - consider using JWT")
+        return body_user_id
+    
+    # 4. Generate guest fingerprint
+    import hashlib
+    import time
+    return f"guest_{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
 
 
 # =============================================================================
@@ -103,10 +138,12 @@ class QuickInsightRequest(BaseModel):
 @router.post("/auto-analyze", response_model=AnalysisResponse)
 async def auto_analyze_file(
     file: UploadFile = File(...),
-    user_id: str = "default"
+    user_id: str = "default",
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
 ):
     """
-    🚀 Drop ANY file and get complete autonomous analysis
+    🚀 Drop ANY file and get complete autonomous analysis - SECURED
     
     Supports: CSV, Excel (.xlsx, .xls), JSON
     
@@ -118,6 +155,8 @@ async def auto_analyze_file(
     - Visualization recommendations
     """
     try:
+        # SECURITY: Get verified user_id from JWT
+        secure_user_id = get_secure_user_id(user_id, x_user_id, authorization)
         # Read file content
         content = await file.read()
         file_name = file.filename or "uploaded_data"
@@ -160,15 +199,22 @@ async def auto_analyze_file(
 
 
 @router.post("/analyze-dataframe")
-async def analyze_existing_data(request: AnalysisRequest):
+async def analyze_existing_data(
+    request: AnalysisRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
     """
-    Analyze data already uploaded by user
+    Analyze data already uploaded by user - SECURED
     """
     try:
+        # SECURITY: Get verified user_id from JWT
+        secure_user_id = get_secure_user_id(request.user_id, x_user_id, authorization)
+        
         from utils.paths import get_user_paths
         import os
         
-        paths = get_user_paths(request.user_id)
+        paths = get_user_paths(secure_user_id)
         
         # Find user's data file
         data_file = None

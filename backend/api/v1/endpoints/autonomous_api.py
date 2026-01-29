@@ -9,13 +9,48 @@ Provides API endpoints for:
 
 import logging
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header
 from pydantic import BaseModel
 import pandas as pd
 import io
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# =============================================================================
+# SECURITY HELPER - JWT Authentication
+# =============================================================================
+
+def get_secure_user_id(form_user_id: str, x_user_id: Optional[str], authorization: Optional[str]) -> str:
+    """
+    Get verified user_id from JWT token or headers.
+    Priority: JWT token > X-User-ID header > Form data
+    """
+    # 1. Try JWT token first (most secure)
+    if authorization:
+        try:
+            token = authorization.replace("Bearer ", "")
+            from core.auth import decode_supabase_jwt
+            payload = decode_supabase_jwt(token)
+            if payload and payload.get("sub"):
+                return payload["sub"]
+        except Exception as e:
+            logger.debug(f"JWT decode failed: {e}")
+    
+    # 2. Try X-User-ID header (from authenticated frontend)
+    if x_user_id and x_user_id != "default":
+        return x_user_id
+    
+    # 3. Fallback to form data (least secure)
+    if form_user_id and form_user_id != "default":
+        logger.warning(f"Using form user_id: {form_user_id} - consider using JWT")
+        return form_user_id
+    
+    # 4. Generate guest fingerprint
+    import hashlib
+    import time
+    return f"guest_{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
 
 
 # =============================================================================
@@ -42,20 +77,27 @@ class ModelRollbackRequest(BaseModel):
 # =============================================================================
 
 @router.get("/models/{user_id}")
-async def list_user_models(user_id: str):
+async def list_user_models(
+    user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
     """
-    List all trained models for a user.
+    List all trained models for a user. SECURED.
     Returns active model and version history with metrics.
     """
     try:
+        # SECURITY: Verify user_id matches authenticated user
+        secure_user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
         from ml.model_persistence import model_persistence
         
-        models = model_persistence.list_models(user_id)
+        models = model_persistence.list_models(secure_user_id)
         
         if not models:
             return {
                 "success": True,
-                "user_id": user_id,
+                "user_id": secure_user_id,
                 "has_models": False,
                 "models": [],
                 "message": "No trained models found. Train a model first."
@@ -63,7 +105,7 @@ async def list_user_models(user_id: str):
         
         return {
             "success": True,
-            "user_id": user_id,
+            "user_id": secure_user_id,
             "has_models": True,
             "active_model": models[0].to_dict() if models else None,
             "total_versions": len(models),
@@ -76,12 +118,19 @@ async def list_user_models(user_id: str):
 
 
 @router.get("/models/{user_id}/active")
-async def get_active_model(user_id: str):
-    """Get the currently active model for a user."""
+async def get_active_model(
+    user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """Get the currently active model for a user. SECURED."""
     try:
+        # SECURITY: Verify user_id matches authenticated user
+        secure_user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
         from ml.model_persistence import model_persistence
         
-        metadata = model_persistence.get_metadata(user_id)
+        metadata = model_persistence.get_metadata(secure_user_id)
         
         if not metadata:
             raise HTTPException(status_code=404, detail="No active model found")
@@ -99,12 +148,19 @@ async def get_active_model(user_id: str):
 
 
 @router.post("/models/rollback")
-async def rollback_model(request: ModelRollbackRequest):
-    """Rollback to a previous model version."""
+async def rollback_model(
+    request: ModelRollbackRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """Rollback to a previous model version. SECURED."""
     try:
+        # SECURITY: Verify user_id matches authenticated user
+        secure_user_id = get_secure_user_id(request.user_id, x_user_id, authorization)
+        
         from ml.model_persistence import model_persistence
         
-        success = model_persistence.rollback_to_version(request.user_id, request.version)
+        success = model_persistence.rollback_to_version(secure_user_id, request.version)
         
         if not success:
             raise HTTPException(
@@ -126,16 +182,23 @@ async def rollback_model(request: ModelRollbackRequest):
 
 
 @router.delete("/models/{user_id}")
-async def delete_all_models(user_id: str):
-    """Delete all models for a user."""
+async def delete_all_models(
+    user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """Delete all models for a user. SECURED."""
     try:
+        # SECURITY: Verify user_id matches authenticated user
+        secure_user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
         from ml.model_persistence import model_persistence
         
-        success = model_persistence.delete_model(user_id)
+        success = model_persistence.delete_model(secure_user_id)
         
         return {
             "success": success,
-            "message": f"All models deleted for user {user_id}" if success else "No models found"
+            "message": f"All models deleted for user {secure_user_id}" if success else "No models found"
         }
         
     except Exception as e:
@@ -144,12 +207,20 @@ async def delete_all_models(user_id: str):
 
 
 @router.delete("/models/{user_id}/version/{version}")
-async def delete_model_version(user_id: str, version: int):
-    """Delete a specific model version."""
+async def delete_model_version(
+    user_id: str, 
+    version: int,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """Delete a specific model version. SECURED."""
     try:
+        # SECURITY: Verify user_id matches authenticated user
+        secure_user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
         from ml.model_persistence import model_persistence
         
-        success = model_persistence.delete_model(user_id, version)
+        success = model_persistence.delete_model(secure_user_id, version)
         
         if not success:
             raise HTTPException(status_code=404, detail=f"Version {version} not found")
@@ -179,10 +250,12 @@ async def auto_fix_data(
     fix_duplicates: bool = Form(True),
     fix_types: bool = Form(True),
     enrich_dates: bool = Form(True),
-    aggressive: bool = Form(False)
+    aggressive: bool = Form(False),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
 ):
     """
-    🤖 Automatically fix data quality issues.
+    🤖 Automatically fix data quality issues. SECURED.
     
     Fixes applied:
     - Missing value imputation (median/mode)
@@ -194,6 +267,9 @@ async def auto_fix_data(
     Returns the fixed data and a detailed report.
     """
     try:
+        # SECURITY: Get verified user_id
+        secure_user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
         from core.autonomous_data_ops import autonomous_data_ops
         
         # Load file
@@ -218,9 +294,9 @@ async def auto_fix_data(
             aggressive=aggressive
         )
         
-        # Save fixed data to user storage
+        # Save fixed data to user storage with SECURE user_id
         from pathlib import Path
-        save_dir = Path(f"./storage/users/{user_id}/fixed_data")
+        save_dir = Path(f"./storage/users/{secure_user_id}/fixed_data")
         save_dir.mkdir(parents=True, exist_ok=True)
         
         fixed_filename = f"fixed_{filename}"

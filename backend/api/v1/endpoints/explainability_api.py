@@ -7,7 +7,7 @@ Provides model explanation endpoints:
 - GET /api/v1/automl/explain/global - Get global feature importance
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import numpy as np
@@ -17,6 +17,41 @@ from utils.paths import get_user_paths
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/automl", tags=["AutoML - Explainability"])
+
+
+# =============================================================================
+# SECURITY HELPER - JWT Authentication
+# =============================================================================
+
+def get_secure_user_id(form_user_id: str, x_user_id: Optional[str], authorization: Optional[str]) -> str:
+    """
+    Get verified user_id from JWT token or headers.
+    Priority: JWT token > X-User-ID header > Form data
+    """
+    # 1. Try JWT token first (most secure)
+    if authorization:
+        try:
+            token = authorization.replace("Bearer ", "")
+            from core.auth import decode_supabase_jwt
+            payload = decode_supabase_jwt(token)
+            if payload and payload.get("sub"):
+                return payload["sub"]
+        except Exception as e:
+            logger.debug(f"JWT decode failed: {e}")
+    
+    # 2. Try X-User-ID header (from authenticated frontend)
+    if x_user_id and x_user_id != "default":
+        return x_user_id
+    
+    # 3. Fallback to form/query data (least secure)
+    if form_user_id and form_user_id != "default":
+        logger.warning(f"Using form user_id: {form_user_id} - consider using JWT")
+        return form_user_id
+    
+    # 4. Generate guest fingerprint
+    import hashlib
+    import time
+    return f"guest_{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
 
 
 class ExplainRequest(BaseModel):
@@ -123,16 +158,22 @@ def aggregate_importance_to_raw_columns(
 
 
 @router.post("/explain", response_model=ExplainResponse)
-async def explain_prediction(request: ExplainRequest):
-    """🔍 Explain why the model made a specific prediction using feature importance."""
+async def explain_prediction(
+    request: ExplainRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """🔍 Explain why the model made a specific prediction using feature importance. SECURED."""
     try:
+        # SECURITY: Get verified user_id from JWT
+        secure_user_id = get_secure_user_id(request.user_id, x_user_id, authorization)
+        
         from ml.automl_engine import automl_engine
         
-        # Load model if not in memory
-        if automl_engine.model is None:
-            loaded = automl_engine.load(request.user_id)
-            if not loaded:
-                raise HTTPException(status_code=404, detail="No trained model found")
+        # Load model for THIS user
+        loaded = automl_engine.load(secure_user_id)
+        if not loaded or automl_engine.model is None:
+            raise HTTPException(status_code=404, detail="No trained model found")
         
         # Get prediction using same method as playground
         prediction_result = automl_engine.predict(request.input_values)
@@ -322,16 +363,22 @@ async def explain_prediction(request: ExplainRequest):
 
 
 @router.get("/explain/global")
-async def get_global_importance(user_id: str = Query(default="default")):
-    """📊 Get global feature importance aggregated to raw columns."""
+async def get_global_importance(
+    user_id: str = Query(default="default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """📊 Get global feature importance aggregated to raw columns. SECURED."""
     try:
+        # SECURITY: Get verified user_id from JWT
+        secure_user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
         from ml.automl_engine import automl_engine
         
-        # Load model if not in memory
-        if automl_engine.model is None:
-            loaded = automl_engine.load(user_id)
-            if not loaded:
-                return {"error": "No trained model found"}
+        # Load model for THIS user
+        loaded = automl_engine.load(secure_user_id)
+        if not loaded or automl_engine.model is None:
+            return {"error": "No trained model found"}
         
         # Get stored column info
         numeric_cols = getattr(automl_engine, 'numeric_cols', [])

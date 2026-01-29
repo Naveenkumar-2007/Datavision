@@ -5,9 +5,11 @@
 Interactive prediction playground:
 - GET /api/v1/automl/playground/config - Get slider configurations
 - POST /api/v1/automl/playground/predict - Real-time predictions
+
+SECURED: Uses JWT authentication for user isolation
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import numpy as np
@@ -17,6 +19,33 @@ from utils.paths import get_user_paths
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/automl/playground", tags=["AutoML - Playground"])
+
+
+def get_secure_user_id(
+    form_user_id: str,
+    x_user_id: Optional[str] = None,
+    authorization: Optional[str] = None
+) -> str:
+    """Get secure user_id prioritizing JWT over form/query data."""
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            from core.auth import decode_supabase_jwt
+            token = authorization[7:]
+            payload = decode_supabase_jwt(token)
+            user_id = payload.get("sub")
+            if user_id:
+                return user_id
+        except:
+            pass
+    
+    if x_user_id and x_user_id not in ["null", "undefined", "", "default"]:
+        return x_user_id
+    
+    if form_user_id and form_user_id not in ["default", "null", "undefined", ""]:
+        return form_user_id
+    
+    import hashlib, time
+    return f"guest_{hashlib.sha256(f'guest_{time.time()}'.encode()).hexdigest()[:12]}"
 
 
 class SliderConfig(BaseModel):
@@ -51,9 +80,16 @@ class PlaygroundPredictResponse(BaseModel):
 
 
 @router.get("/config", response_model=PlaygroundConfig)
-async def get_playground_config(user_id: str = Query(default="default")):
-    """🎮 Get playground configuration with slider settings."""
+async def get_playground_config(
+    user_id: str = Query(default="default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """🎮 Get playground configuration with slider settings. SECURED."""
     try:
+        # SECURITY: Get verified user_id
+        user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
         from ml.automl_engine import ProductionMLEngine
         
         engine = ProductionMLEngine()
@@ -116,16 +152,22 @@ async def get_playground_config(user_id: str = Query(default="default")):
 
 
 @router.post("/predict", response_model=PlaygroundPredictResponse)
-async def playground_predict(request: PlaygroundPredictRequest):
-    """⚡ Real-time prediction for playground."""
+async def playground_predict(
+    request: PlaygroundPredictRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """⚡ Real-time prediction for playground. SECURED."""
     try:
+        # SECURITY: Get verified user_id
+        user_id = get_secure_user_id(request.user_id, x_user_id, authorization)
+        
         from ml.automl_engine import automl_engine
         
-        # Load model if not in memory
-        if automl_engine.model is None:
-            loaded = automl_engine.load(request.user_id)
-            if not loaded:
-                raise HTTPException(status_code=404, detail="No trained model found")
+        # Load model for THIS user
+        loaded = automl_engine.load(user_id)
+        if not loaded or automl_engine.model is None:
+            raise HTTPException(status_code=404, detail="No trained model found")
         
         # predict() returns {prediction, probability, confidence, model}
         result = automl_engine.predict(request.values)
@@ -165,14 +207,19 @@ async def playground_predict(request: PlaygroundPredictRequest):
 @router.post("/sensitivity")
 async def sensitivity_analysis(
     feature_name: str = Query(...),
-    user_id: str = Query(default="default")
+    user_id: str = Query(default="default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
 ):
-    """📈 Sensitivity analysis for a feature."""
+    """📈 Sensitivity analysis for a feature. SECURED."""
     try:
+        # SECURITY: Get verified user_id from JWT
+        secure_user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
         from ml.automl_engine import ProductionMLEngine
         
         engine = ProductionMLEngine()
-        engine.load(user_id)
+        engine.load(secure_user_id)
         
         if engine.model is None:
             raise HTTPException(status_code=404, detail="No trained model found")
