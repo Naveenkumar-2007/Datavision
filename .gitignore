@@ -1,0 +1,86 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Storage (keep structure, ignore user data)
+storage/
+backend/storage/
+
+# Logs
+*.log
+logs/
+
+# CatBoost
+catboost_info/
+
+# Cache
+.cache/
+*.cache
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build (frontend/dist/ now tracked for HuggingFace deployment)
+
+# Temporary
+*.tmp
+*.temp
+
+# Lock files
+uv.lock
+
+# Model files
+*.bin
+*.ckpt
+*.pth
+*.safetensors
+*.onnx
+
+# Test output files
+*_results.txt
+*_output.txt
+models_list.txt
+push_log.txt
+
+# Large files
+*.zip
+*.tar.gz
+
+# Sample data (not needed for production)
+sample_data/
+
+# Backend uploads (user data)
+backend/uploads/
+
+# FAISS indexes
+*.faiss
+faiss/

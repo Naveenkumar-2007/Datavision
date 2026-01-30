@@ -1,0 +1,3406 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==================================================================
+   DATA VISION - UNIVERSAL ANALYTICS THEME SYSTEM
+   COMPLETE FIX FOR LIGHT/DARK MODE CONSISTENCY
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   CSS VARIABLES - THE FOUNDATION OF THEME SYSTEM
+   ------------------------------------------------------------------ */
+:root {
+  /* DARK MODE (Default) - High Contrast Colors */
+  --bg-primary: #0a0a0f;
+  --bg-secondary: #111118;
+  --bg-card: #18181b;
+  --bg-hover: #27272a;
+  --bg-active: #2a2a30;
+
+  --border-color: #3f3f46;
+  --border-hover: #52525b;
+
+  /* Text - HIGH VISIBILITY BOOSTED */
+  --text-primary: #ffffff;
+  --text-secondary: #e4e4e7;
+  /* Zinc 200 */
+  --text-tertiary: #d4d4d8;
+  /* Zinc 300 */
+  --text-muted: #a1a1aa;
+  /* Zinc 400 */
+
+  --accent-primary: #22c55e;
+  --accent-glow: rgba(34, 197, 94, 0.4);
+
+  /* Table */
+  --table-header-bg: rgba(34, 197, 94, 0.15);
+  --table-row-hover: rgba(255, 255, 255, 0.05);
+  --table-row-active: rgba(34, 197, 94, 0.1);
+
+  /* =========================================
+     PREMIUM DESIGN TOKENS - ChatGPT Level
+     ========================================= */
+
+  /* Spacing System (8px grid) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Shadows - Premium Depth */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  --shadow-glow-teal: 0 0 20px rgba(34, 197, 94, 0.3);
+  --shadow-glow-sm: 0 0 10px rgba(34, 197, 94, 0.2);
+  --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+
+  /* Animation Timing */
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --duration-slower: 500ms;
+
+  /* Border Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* Typography Scale */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+
+  /* Gradients - Premium */
+  --gradient-dark: linear-gradient(180deg, #0a0a0f 0%, #111118 100%);
+  --gradient-card: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+  --gradient-accent: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+  --gradient-glow: radial-gradient(ellipse at center, rgba(34, 197, 94, 0.15) 0%, transparent 70%);
+}
+
+/* LIGHT MODE - Complete Override */
+html.light-theme {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-active: #e2e8f0;
+
+  --border-color: #cbd5e1;
+  --border-hover: #94a3b8;
+
+  /* Text - DARK & READABLE */
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-tertiary: #475569;
+  --text-muted: #64748b;
+
+  --accent-primary: #16a34a;
+  --accent-glow: rgba(34, 197, 94, 0.3);
+
+  /* Table */
+  --table-header-bg: #f0fdfa;
+  --table-row-hover: #f8fafc;
+  --table-row-active: #ccfbf1;
+}
+
+/* ------------------------------------------------------------------
+   GLOBAL STYLES
+   ------------------------------------------------------------------ */
+html,
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  transition: background-color 0.2s ease, color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* GLOBAL SELECTION & FOCUS OVERRIDES */
+::selection {
+  background-color: rgba(34, 197, 94, 0.3) !important;
+  color: #f0fdfa !important;
+  /* Teal 50 */
+}
+
+/* Global Focus Ring */
+*:focus-visible {
+  outline: 2px solid #22c55e !important;
+  outline-offset: 2px;
+}
+
+/* ALL TEXT ELEMENTS - Use theme variables */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'Outfit', sans-serif;
+  color: var(--text-primary) !important;
+}
+
+p,
+span,
+div,
+label,
+a,
+li,
+td,
+th,
+pre,
+code {
+  color: inherit;
+}
+
+/* LIGHT MODE: Force dark text on ALL text elements */
+html.light-theme {
+  color: #0f172a !important;
+}
+
+html.light-theme h1,
+html.light-theme h2,
+html.light-theme h3,
+html.light-theme h4,
+html.light-theme h5,
+html.light-theme h6 {
+  color: #0f172a !important;
+}
+
+html.light-theme p,
+html.light-theme span,
+html.light-theme div,
+html.light-theme label,
+html.light-theme li,
+html.light-theme td,
+html.light-theme th,
+html.light-theme pre {
+  color: #1e293b !important;
+}
+
+/* ------------------------------------------------------------------
+   UNIVERSAL RESET - PREVENT FLASH ON CLICK
+   ------------------------------------------------------------------ */
+*,
+*::before,
+*::after {
+  -webkit-tap-highlight-color: transparent !important;
+}
+
+button:active,
+a:active,
+div:active,
+tr:active,
+td:active {
+  background-color: inherit !important;
+}
+
+/* ------------------------------------------------------------------
+   BACKGROUND UTILITIES (Theme-Aware)
+   ------------------------------------------------------------------ */
+.bg-dark-bg {
+  background-color: var(--bg-primary) !important;
+}
+
+.bg-dark-surface {
+  background-color: var(--bg-secondary) !important;
+}
+
+.bg-dark-card {
+  background-color: var(--bg-card) !important;
+}
+
+.bg-dark-hover {
+  background-color: var(--bg-hover) !important;
+}
+
+.border-dark-border {
+  border-color: var(--border-color) !important;
+}
+
+/* ------------------------------------------------------------------
+   TEXT COLOR UTILITIES - HIGH VISIBILITY
+   ------------------------------------------------------------------ */
+.text-white {
+  color: var(--text-primary) !important;
+}
+
+.text-gray-100 {
+  color: var(--text-primary) !important;
+}
+
+.text-gray-200 {
+  color: var(--text-secondary) !important;
+}
+
+.text-gray-300 {
+  color: var(--text-secondary) !important;
+}
+
+.text-gray-400 {
+  color: var(--text-tertiary) !important;
+}
+
+.text-gray-500 {
+  color: var(--text-muted) !important;
+}
+
+/* LIGHT MODE: Force text to be dark and readable */
+html.light-theme .text-white,
+html.light-theme .text-gray-100,
+html.light-theme .text-gray-200 {
+  color: #0f172a !important;
+}
+
+html.light-theme .text-gray-300,
+html.light-theme .text-gray-400 {
+  color: #475569 !important;
+}
+
+html.light-theme .text-gray-500 {
+  color: #64748b !important;
+}
+
+/* ====================================================================
+   LIGHT MODE: FIX GREEN/TEAL ACCENT COLORS FOR VISIBILITY
+   These light-400 shades are not visible on light backgrounds
+   ==================================================================== */
+html.light-theme .text-primary-400 {
+  color: #15803d !important; /* green-700 - much darker for visibility */
+}
+
+html.light-theme .text-primary-500 {
+  color: #16a34a !important; /* green-600 */
+}
+
+html.light-theme .text-emerald-400 {
+  color: #047857 !important; /* emerald-700 */
+}
+
+html.light-theme .text-emerald-500 {
+  color: #059669 !important; /* emerald-600 */
+}
+
+html.light-theme .text-green-400 {
+  color: #15803d !important; /* green-700 */
+}
+
+html.light-theme .text-green-500 {
+  color: #16a34a !important; /* green-600 */
+}
+
+html.light-theme .text-teal-400 {
+  color: #0f766e !important; /* teal-700 */
+}
+
+html.light-theme .text-teal-500 {
+  color: #0d9488 !important; /* teal-600 */
+}
+
+/* Other light accent colors that need darkening in light mode */
+html.light-theme .text-blue-400 {
+  color: #1d4ed8 !important; /* blue-700 */
+}
+
+html.light-theme .text-violet-400 {
+  color: #6d28d9 !important; /* violet-700 */
+}
+
+html.light-theme .text-purple-400 {
+  color: #7c3aed !important; /* purple-600 */
+}
+
+html.light-theme .text-amber-400 {
+  color: #b45309 !important; /* amber-700 */
+}
+
+html.light-theme .text-yellow-400 {
+  color: #a16207 !important; /* yellow-700 */
+}
+
+html.light-theme .text-orange-400 {
+  color: #c2410c !important; /* orange-700 */
+}
+
+html.light-theme .text-cyan-400 {
+  color: #0e7490 !important; /* cyan-700 */
+}
+
+html.light-theme .text-red-400 {
+  color: #b91c1c !important; /* red-700 */
+}
+
+html.light-theme .text-pink-400 {
+  color: #be185d !important; /* pink-700 */
+}
+
+/* KPI Cards, Glass Cards, Feature Cards - ensure dark text */
+html.light-theme .glass-card h1,
+html.light-theme .glass-card h2,
+html.light-theme .glass-card h3,
+html.light-theme .glass-card h4,
+html.light-theme .glass-card p,
+html.light-theme .glass-card span,
+html.light-theme .glass-card label,
+html.light-theme .glass-card div:not([class*="bg-"]):not([class*="gradient"]) {
+  color: #0f172a !important;
+}
+
+/* Main content areas */
+html.light-theme main h1,
+html.light-theme main h2,
+html.light-theme main h3,
+html.light-theme main h4,
+html.light-theme main h5,
+html.light-theme main h6,
+html.light-theme main p,
+html.light-theme main label,
+html.light-theme section h1,
+html.light-theme section h2,
+html.light-theme section h3,
+html.light-theme section p {
+  color: #0f172a !important;
+}
+
+/* CRITICAL EXCEPTIONS: Keep white text on colored backgrounds */
+html.light-theme .chat-bubble-user,
+html.light-theme .chat-bubble-user *,
+html.light-theme [class*="bg-purple-"],
+html.light-theme [class*="bg-purple-"] *,
+html.light-theme [class*="bg-primary-"],
+html.light-theme [class*="bg-primary-"] *,
+html.light-theme [class*="bg-gradient-to-r"][class*="from-primary-500"],
+html.light-theme [class*="bg-gradient-to-r"][class*="from-primary-500"] *,
+html.light-theme [class*="bg-gradient-to-br"][class*="from-purple"],
+html.light-theme [class*="bg-gradient-to-br"][class*="from-purple"] *,
+html.light-theme .bg-red-500,
+html.light-theme .bg-red-500 *,
+html.light-theme button[class*="bg-purple"],
+html.light-theme button[class*="bg-purple"] *,
+html.light-theme button[class*="bg-gradient"],
+html.light-theme button[class*="bg-gradient"] *,
+html.light-theme button[class*="bg-primary-5"],
+html.light-theme button[class*="bg-primary-5"] *,
+html.light-theme a[class*="bg-primary"],
+html.light-theme a[class*="bg-primary"] *,
+html.light-theme a[class*="bg-gradient"],
+html.light-theme a[class*="bg-gradient"] * {
+  color: #ffffff !important;
+}
+
+/* Selected report type cards - keep white text on purple background */
+html.light-theme button[class*="bg-primary-500/20"] div,
+html.light-theme button[class*="bg-primary-500/20"] span {
+  color: #0f172a !important;
+}
+
+/* Tooltip - keep as-is (dark on light) */
+html.light-theme .recharts-tooltip-wrapper {
+  color: #0f172a !important;
+}
+
+/* Ensure icons keep their colors */
+html.light-theme svg {
+  color: inherit !important;
+}
+
+/* Text inside colored accent buttons */
+html.light-theme .text-accent-green {
+  color: #059669 !important;
+}
+
+html.light-theme .text-accent-red {
+  color: #dc2626 !important;
+}
+
+html.light-theme .text-accent-orange {
+  color: #16a34a !important;
+}
+
+html.light-theme .text-accent-purple {
+  color: #22c55e !important;
+}
+
+html.light-theme .text-primary-400 {
+  color: #4ade80 !important;
+}
+
+html.light-theme .text-primary-500 {
+  color: #22c55e !important;
+}
+
+html.light-theme .text-purple-300 {
+  color: #4ade80 !important;
+}
+
+html.light-theme .text-purple-400 {
+  color: #22c55e !important;
+}
+
+/* Recharts Tooltips in Light Mode */
+html.light-theme .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+html.light-theme .recharts-tooltip-item,
+html.light-theme .recharts-tooltip-label {
+  color: #0f172a !important;
+}
+
+/* ------------------------------------------------------------------
+   GLASS CARD - Theme Aware
+   ------------------------------------------------------------------ */
+.glass-card {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  transition: all 0.3s var(--ease-smooth);
+}
+
+.glass-input {
+  background-color: rgba(18, 18, 21, 0.6) !important;
+  /* Slightly darker */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  /* Lighter, thinner border */
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  /* Deep shadow + Inner ring */
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-input:focus-within {
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  /* Teal accent on focus */
+  box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.3), 0 0 15px rgba(34, 197, 94, 0.1);
+}
+
+.glass-panel {
+  background-color: rgba(20, 20, 23, 0.85) !important;
+  backdrop-filter: blur(24px);
+  /* Heavier blur for panels */
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: var(--shadow-xl);
+}
+
+html.light-theme .glass-panel {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border-color: rgba(226, 232, 240, 0.8) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+html.light-theme .glass-card {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+html.light-theme .glass-input {
+  background-color: rgba(255, 255, 255, 0.8) !important;
+  border-color: rgba(226, 232, 240, 0.8) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+html.light-theme .glass-input:focus-within {
+  border-color: #16a34a !important;
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.1);
+}
+
+
+/* ------------------------------------------------------------------
+   FORM INPUTS - Proper Theme Colors
+   ------------------------------------------------------------------ */
+input,
+select,
+textarea {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+  transition: all 0.2s ease;
+}
+
+/* DARK MODE INPUT VISIBILITY BOOST */
+/* Make inputs slightly lighter than card background for contrast */
+input,
+select,
+textarea {
+  background-color: #27272a !important;
+  /* Zinc 800 */
+  border-color: #52525b !important;
+  /* Zinc 600 */
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent-primary) !important;
+  background-color: #27272a !important;
+  box-shadow: 0 0 0 3px var(--accent-glow) !important;
+  outline: none !important;
+}
+
+html.light-theme input,
+html.light-theme select,
+html.light-theme textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+/* Autofill Fix */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px var(--bg-card) inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* ------------------------------------------------------------------
+   SIDEBAR & NAVIGATION
+   ------------------------------------------------------------------ */
+.nav-item,
+.sidebar-item {
+  color: var(--text-secondary) !important;
+  background-color: transparent !important;
+  border: 1px solid transparent !important;
+  transition: all 0.15s ease;
+}
+
+.nav-item:hover,
+.sidebar-item:hover {
+  background-color: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.nav-item.active,
+.sidebar-item.active {
+  background-color: rgba(34, 197, 94, 0.15) !important;
+  color: var(--accent-primary) !important;
+  border-color: rgba(34, 197, 94, 0.3) !important;
+}
+
+html.light-theme .nav-item.active,
+html.light-theme .sidebar-item.active {
+  background-color: #f0fdfa !important;
+  color: #16a34a !important;
+  border-color: #99f6e4 !important;
+}
+
+/* ------------------------------------------------------------------
+   CHAT HISTORY ITEMS - NO DARK FLASH
+   ------------------------------------------------------------------ */
+.chat-item {
+  color: var(--text-secondary) !important;
+  background-color: transparent !important;
+  border: 1px solid transparent !important;
+  transition: all 0.15s ease;
+}
+
+.chat-item:hover {
+  background-color: var(--bg-hover) !important;
+}
+
+.chat-item.active {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+html.light-theme .chat-item.active {
+  background-color: #ffffff !important;
+  border-color: #4ade80 !important;
+}
+
+/* ------------------------------------------------------------------
+   NEW CHAT BUTTON
+   ------------------------------------------------------------------ */
+.btn-new-chat {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-color) !important;
+  transition: all 0.15s ease;
+}
+
+.btn-new-chat:hover {
+  background-color: var(--bg-hover) !important;
+  border-color: var(--accent-primary) !important;
+}
+
+html.light-theme .btn-new-chat {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.light-theme .btn-new-chat:hover {
+  background-color: #f8fafc !important;
+  border-color: #22c55e !important;
+}
+
+/* ------------------------------------------------------------------
+   CHAT BUBBLES - GEMINI STYLE
+   ------------------------------------------------------------------ */
+/* User Message - Subtle neutral pill (like Gemini) */
+.chat-bubble-user {
+  background-color: #374151 !important;
+  /* Gray 700 - subtle dark pill */
+  color: #ffffff !important;
+  box-shadow: none;
+  border-radius: 1.25rem;
+}
+
+.chat-bubble-user * {
+  color: #ffffff !important;
+}
+
+/* Light theme user bubble - slightly darker gray */
+html.light-theme .chat-bubble-user {
+  background-color: #4B5563 !important;
+  /* Gray 600 */
+  color: #ffffff !important;
+}
+
+html.light-theme .chat-bubble-user * {
+  color: #ffffff !important;
+}
+
+/* Bot Message - Clean text, no bubble (like Gemini) */
+.chat-bubble-bot {
+  background-color: transparent !important;
+  border: none !important;
+  color: var(--text-primary) !important;
+}
+
+html.light-theme .chat-bubble-bot {
+  background-color: transparent !important;
+  border: none !important;
+  color: #0f172a !important;
+}
+
+/* Prose content in bot messages - ensure visibility */
+.prose {
+  color: var(--text-primary) !important;
+}
+
+.prose p,
+.prose li,
+.prose span {
+  color: var(--text-secondary) !important;
+}
+
+.prose strong {
+  color: var(--text-primary) !important;
+}
+
+html.light-theme .prose,
+html.light-theme .prose p,
+html.light-theme .prose li,
+html.light-theme .prose span {
+  color: #1e293b !important;
+}
+
+html.light-theme .prose strong {
+  color: #0f172a !important;
+}
+
+/* ------------------------------------------------------------------
+   TABLES - FIXED HOVER/CLICK STATES
+   ------------------------------------------------------------------ */
+table {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+}
+
+thead,
+thead tr,
+thead th {
+  background-color: var(--table-header-bg) !important;
+  color: var(--text-primary) !important;
+}
+
+tbody tr {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  transition: background-color 0.1s ease;
+}
+
+tbody tr:hover {
+  background-color: var(--table-row-hover) !important;
+}
+
+tbody tr:active,
+tbody tr.active {
+  background-color: var(--table-row-active) !important;
+}
+
+td,
+th {
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+html.light-theme table {
+  background-color: #ffffff !important;
+}
+
+html.light-theme thead,
+html.light-theme thead tr,
+html.light-theme thead th {
+  background-color: #fff7ed !important;
+  color: #7c2d12 !important;
+}
+
+html.light-theme tbody tr {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+html.light-theme tbody tr:hover {
+  background-color: #f8fafc !important;
+}
+
+html.light-theme tbody tr:active,
+html.light-theme tbody tr.active {
+  background-color: #fff7ed !important;
+}
+
+html.light-theme td,
+html.light-theme th {
+  color: #0f172a !important;
+}
+
+/* ------------------------------------------------------------------
+   SCROLLBARS
+   ------------------------------------------------------------------ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* ------------------------------------------------------------------
+   ANIMATIONS
+   ------------------------------------------------------------------ */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Utility class for components using animate-fadeIn */
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* 🎯 Direct Answer Badge Animation - Highlight effect */
+@keyframes highlightPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 20px 5px rgba(34, 197, 94, 0.3);
+  }
+}
+
+.direct-answer-badge {
+  animation: fadeIn 0.4s ease-out, highlightPulse 2s ease-in-out;
+}
+
+/* Drag & Drop Overlay Animation */
+@keyframes dragPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.02);
+    opacity: 1;
+  }
+}
+
+.drag-overlay {
+  animation: dragPulse 1.5s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------
+   PURPLE/ACCENT BUTTONS - Always white text
+   ------------------------------------------------------------------ */
+button[class*="bg-purple"],
+button[class*="bg-primary"],
+button[class*="bg-gradient"],
+.bg-purple-600,
+.bg-purple-500,
+.bg-primary-500,
+.bg-primary-600 {
+  color: #ffffff !important;
+}
+
+/* CSS Overrides cleaned up - using Tailwind Config for primary colors */
+
+/* ------------------------------------------------------------------
+   CLAUDE-STYLE CHAT INTERFACE COMPONENTS
+   ------------------------------------------------------------------ */
+
+/* Claude-style Input Bar */
+.claude-input-bar {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 1rem;
+  transition: all 0.2s ease;
+}
+
+.claude-input-bar:focus-within {
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.1);
+}
+
+/* Claude-style Dropdown Menu */
+.claude-dropdown {
+  background-color: var(--bg-card) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.claude-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  width: 100%;
+  text-align: left;
+  transition: background-color 0.15s ease;
+  color: var(--text-secondary) !important;
+}
+
+.claude-dropdown-item:hover {
+  background-color: var(--bg-hover) !important;
+}
+
+.claude-dropdown-item.active {
+  background-color: var(--bg-hover) !important;
+}
+
+/* Claude-style Mode Selector Button */
+.claude-mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background-color: var(--bg-hover) !important;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary) !important;
+  transition: all 0.15s ease;
+}
+
+.claude-mode-selector:hover {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Claude-style Action Button */
+.claude-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  color: var(--text-muted) !important;
+  transition: all 0.15s ease;
+}
+
+.claude-action-btn:hover {
+  background-color: var(--bg-hover) !important;
+  color: var(--text-secondary) !important;
+}
+
+/* Claude-style Send Button */
+.claude-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+  border-radius: 0.75rem;
+  color: #ffffff !important;
+  transition: all 0.15s ease;
+}
+
+.claude-send-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+}
+
+.claude-send-btn:disabled {
+  background: var(--bg-hover) !important;
+  color: var(--text-muted) !important;
+  transform: none;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+/* Claude-style History Panel */
+.claude-history-panel {
+  background-color: var(--bg-secondary) !important;
+  border-right: 1px solid var(--border-color) !important;
+}
+
+/* Claude-style Chat Messages */
+.claude-message-user {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%) !important;
+  color: #ffffff !important;
+  padding: 0.75rem 1rem;
+  border-radius: 1.25rem;
+  border-bottom-right-radius: 0.375rem;
+  max-width: 85%;
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.25);
+}
+
+.claude-message-bot {
+  color: var(--text-primary) !important;
+}
+
+/* Badge Styles */
+.claude-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.625rem;
+  font-weight: 500;
+  background-color: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  border-radius: 0.25rem;
+}
+
+/* Claude-style MCP Toggle */
+.claude-mcp-toggle {
+  width: 2rem;
+  height: 1rem;
+  border-radius: 999px;
+  transition: background-color 0.2s ease;
+  position: relative;
+}
+
+.claude-mcp-toggle-thumb {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 999px;
+  background-color: #ffffff;
+  position: absolute;
+  top: 0.125rem;
+  transition: transform 0.2s ease;
+}
+
+.claude-mcp-toggle.active {
+  background-color: #22c55e;
+}
+
+.claude-mcp-toggle.active .claude-mcp-toggle-thumb {
+  transform: translateX(1rem);
+}
+
+.claude-mcp-toggle.inactive {
+  background-color: #3f3f46;
+}
+
+.claude-mcp-toggle.inactive .claude-mcp-toggle-thumb {
+  transform: translateX(0.125rem);
+}
+
+/* Spinner Animation for Claude-style Loading */
+@keyframes claude-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.claude-spinner {
+  animation: claude-spin 1s linear infinite;
+}
+
+/* Light Mode Overrides for Claude Components */
+html.light-theme .claude-input-bar {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+html.light-theme .claude-dropdown {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+}
+
+html.light-theme .claude-dropdown-item {
+  color: #334155 !important;
+}
+
+html.light-theme .claude-dropdown-item:hover {
+  background-color: #f1f5f9 !important;
+}
+
+html.light-theme .claude-mode-selector {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+html.light-theme .claude-mode-selector:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.light-theme .claude-action-btn {
+  color: #64748b !important;
+}
+
+html.light-theme .claude-action-btn:hover {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+html.light-theme .claude-message-bot {
+  color: #0f172a !important;
+}
+
+/* ==================================================================
+   $50,000 ENTERPRISE PREMIUM ANIMATIONS
+   Apple + OpenAI + Palantir Quality
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   CHART FADE-IN ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes chartFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(15px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chart-fade-in {
+  animation: chartFadeIn 0.4s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   INSIGHT CARD SLIDE-UP ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.slide-up {
+  animation: slideUp 0.4s ease-out forwards;
+}
+
+.slide-up-delay-1 {
+  animation-delay: 0.1s;
+  opacity: 0;
+}
+
+.slide-up-delay-2 {
+  animation-delay: 0.2s;
+  opacity: 0;
+}
+
+.slide-up-delay-3 {
+  animation-delay: 0.3s;
+  opacity: 0;
+}
+
+.slide-up-delay-4 {
+  animation-delay: 0.4s;
+  opacity: 0;
+}
+
+/* ------------------------------------------------------------------
+   TYPING ANIMATION (ChatGPT Style)
+   ------------------------------------------------------------------ */
+@keyframes typingBounce {
+
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+
+  30% {
+    transform: translateY(-4px);
+  }
+}
+
+.typing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #22c55e;
+  animation: typingBounce 1.4s ease-in-out infinite;
+}
+
+.typing-dot:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+/* ------------------------------------------------------------------
+   NUMBER COUNTER ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes countUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.count-up {
+  animation: countUp 0.6s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM CARD STYLES
+   ------------------------------------------------------------------ */
+.premium-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.premium-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.15);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+/* ------------------------------------------------------------------
+   INSIGHT CARD STYLES
+   ------------------------------------------------------------------ */
+.insight-card {
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(34, 197, 94, 0.05) 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  transition: all 0.3s ease;
+}
+
+.insight-card:hover {
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 8px 16px -4px rgba(34, 197, 94, 0.15);
+}
+
+.insight-card.risk {
+  border-left: 3px solid #ef4444;
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(239, 68, 68, 0.05) 100%);
+}
+
+.insight-card.opportunity {
+  border-left: 3px solid #22c55e;
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(34, 197, 94, 0.05) 100%);
+}
+
+.insight-card.trend {
+  border-left: 3px solid #3b82f6;
+  background: linear-gradient(135deg, var(--bg-card) 0%, rgba(59, 130, 246, 0.05) 100%);
+}
+
+/* ------------------------------------------------------------------
+   SUGGESTION CHIPS
+   ------------------------------------------------------------------ */
+.suggestion-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.suggestion-chip:hover {
+  background: var(--bg-hover);
+  border-color: #22c55e;
+  color: #22c55e;
+  transform: translateY(-1px);
+}
+
+.suggestion-chip:active {
+  transform: translateY(0);
+}
+
+/* ------------------------------------------------------------------
+   CONFIDENCE SCORE BADGE
+   ------------------------------------------------------------------ */
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.confidence-high {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.confidence-medium {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.confidence-low {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+/* ------------------------------------------------------------------
+   APPLE-STYLE BLUR BACKDROP
+   ------------------------------------------------------------------ */
+.apple-blur {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(17, 17, 24, 0.8);
+}
+
+html.light-theme .apple-blur {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+/* ------------------------------------------------------------------
+   DASHBOARD BAR CHART ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes barGrow {
+  from {
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+
+  to {
+    transform: scaleY(1);
+    transform-origin: bottom;
+  }
+}
+
+.bar-animate {
+  animation: barGrow 0.6s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   LINE CHART DRAW ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes lineDraw {
+  from {
+    stroke-dashoffset: 1000;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.line-animate {
+  stroke-dasharray: 1000;
+  animation: lineDraw 1.5s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   PIE CHART FILL ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes pieFill {
+  from {
+    stroke-dashoffset: 100;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.pie-animate {
+  animation: pieFill 1s ease-out forwards;
+}
+
+/* ------------------------------------------------------------------
+   FLOATING ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.float-animation {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------
+   PULSE GLOW ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes pulseGlow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+  }
+}
+
+.pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------
+   SHIMMER LOADING ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(90deg,
+      var(--bg-card) 25%,
+      var(--bg-hover) 50%,
+      var(--bg-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ------------------------------------------------------------------
+   RESPONSE SECTION STYLES
+   ------------------------------------------------------------------ */
+.response-section {
+  padding: 1rem;
+  margin: 0.75rem 0;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+}
+
+.response-section.summary {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, var(--bg-card) 100%);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.response-section.actions {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, var(--bg-card) 100%);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.response-section.risks {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, var(--bg-card) 100%);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.response-section.opportunities {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, var(--bg-card) 100%);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+/* ------------------------------------------------------------------
+   SOURCE CITATION CARD
+   ------------------------------------------------------------------ */
+.source-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: #4ade80;
+  transition: all 0.2s ease;
+}
+
+.source-card:hover {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+/* ------------------------------------------------------------------
+   STAGGER CHILDREN ANIMATION
+   ------------------------------------------------------------------ */
+.stagger-children>* {
+  opacity: 0;
+  animation: slideUp 0.4s ease-out forwards;
+}
+
+.stagger-children>*:nth-child(1) {
+  animation-delay: 0.05s;
+}
+
+.stagger-children>*:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.stagger-children>*:nth-child(3) {
+  animation-delay: 0.15s;
+}
+
+.stagger-children>*:nth-child(4) {
+  animation-delay: 0.2s;
+}
+
+.stagger-children>*:nth-child(5) {
+  animation-delay: 0.25s;
+}
+
+.stagger-children>*:nth-child(6) {
+  animation-delay: 0.3s;
+}
+
+.stagger-children>*:nth-child(7) {
+  animation-delay: 0.35s;
+}
+
+.stagger-children>*:nth-child(8) {
+  animation-delay: 0.4s;
+}
+
+/* ==================================================================
+   MOBILE RESPONSIVE - ENTERPRISE QUALITY
+   ChatGPT-style clean, focused, readable on all devices
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   MOBILE BREAKPOINT (max-width: 768px)
+   ------------------------------------------------------------------ */
+@media (max-width: 768px) {
+
+  /* CHAT CONTAINER - Single column, full width */
+  .chat-container,
+  .chat-main {
+    padding: 0.5rem !important;
+    max-width: 100% !important;
+  }
+
+  /* CHAT MESSAGES - Readable on mobile */
+  .chat-bubble-user,
+  .chat-bubble-bot,
+  .claude-message-user,
+  .claude-message-bot {
+    max-width: 95% !important;
+    padding: 0.875rem 1rem !important;
+    font-size: 0.9375rem !important;
+    line-height: 1.6 !important;
+    border-radius: 1rem !important;
+  }
+
+  /* MESSAGE CONTENT - Better spacing */
+  .message-content {
+    font-size: 0.9375rem !important;
+    line-height: 1.65 !important;
+  }
+
+  .message-content p {
+    margin-bottom: 0.75rem !important;
+  }
+
+  .message-content h1,
+  .message-content h2,
+  .message-content h3 {
+    margin-top: 1rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  /* TABLES - Horizontal scroll inside container */
+  .table-container,
+  .message-content table {
+    display: block !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    max-width: 100% !important;
+    margin: 0.75rem 0 !important;
+  }
+
+  .message-content table {
+    min-width: 400px !important;
+    font-size: 0.8125rem !important;
+  }
+
+  .message-content th,
+  .message-content td {
+    padding: 0.5rem 0.625rem !important;
+    white-space: nowrap !important;
+  }
+
+  /* CHARTS - Responsive sizing */
+  .chart-container,
+  .plotly-chart,
+  .recharts-wrapper,
+  [class*="plotly"] {
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 250px !important;
+    max-height: 350px !important;
+  }
+
+  .chart-container img,
+  .message-content img {
+    max-width: 100% !important;
+    height: auto !important;
+    border-radius: 0.75rem !important;
+  }
+
+  /* INPUT BAR - Full width, thumb-friendly */
+  .claude-input-bar,
+  .chat-input-container {
+    padding: 0.75rem !important;
+    border-radius: 1rem !important;
+    margin: 0 0.5rem 0.5rem 0.5rem !important;
+  }
+
+  .claude-input-bar textarea,
+  .chat-input-container textarea {
+    font-size: 1rem !important;
+    min-height: 44px !important;
+  }
+
+  /* BUTTONS - Thumb-friendly (min 44px touch target) */
+  .claude-action-btn,
+  .claude-send-btn,
+  button {
+    min-width: 44px !important;
+    min-height: 44px !important;
+    padding: 0.625rem !important;
+  }
+
+  .claude-send-btn {
+    padding: 0.75rem !important;
+  }
+
+  /* MODE SELECTOR - Larger touch target */
+  .claude-mode-selector {
+    padding: 0.5rem 0.875rem !important;
+    font-size: 0.875rem !important;
+  }
+
+  /* DROPDOWN MENU - Full width on mobile */
+  .claude-dropdown {
+    position: fixed !important;
+    left: 0.5rem !important;
+    right: 0.5rem !important;
+    bottom: 5rem !important;
+    width: auto !important;
+    max-height: 60vh !important;
+    overflow-y: auto !important;
+  }
+
+  .claude-dropdown-item {
+    padding: 1rem 0.875rem !important;
+    min-height: 48px !important;
+  }
+
+  /* SIDEBAR - Hidden by default on mobile */
+  .claude-history-panel,
+  .sidebar {
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    width: 85% !important;
+    max-width: 320px !important;
+    z-index: 100 !important;
+    transform: translateX(-100%) !important;
+    transition: transform 0.3s ease !important;
+  }
+
+  .claude-history-panel.open,
+  .sidebar.open {
+    transform: translateX(0) !important;
+  }
+
+  /* HEADER - Compact on mobile */
+  .chat-header {
+    padding: 0.75rem !important;
+  }
+
+  .chat-header h1,
+  .chat-header .title {
+    font-size: 1.125rem !important;
+  }
+
+  /* EXPORT/ACTION BUTTONS - Stack or hide */
+  .action-buttons-row {
+    flex-wrap: wrap !important;
+    gap: 0.5rem !important;
+  }
+
+  /* FILE ATTACHMENTS - Compact */
+  .file-attachment {
+    padding: 0.5rem !important;
+    font-size: 0.8125rem !important;
+  }
+
+  /* RESPONSE SECTIONS - Full width */
+  .response-section {
+    padding: 0.875rem !important;
+    margin: 0.5rem 0 !important;
+    border-radius: 0.75rem !important;
+  }
+
+  /* SOURCE CARDS - Wrap properly */
+  .source-card {
+    font-size: 0.6875rem !important;
+    padding: 0.25rem 0.5rem !important;
+  }
+
+  /* NO HORIZONTAL OVERFLOW */
+  body,
+  html,
+  #root,
+  .app-container {
+    overflow-x: hidden !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   SMALL MOBILE (max-width: 480px)
+   ------------------------------------------------------------------ */
+@media (max-width: 480px) {
+
+  /* Even tighter spacing */
+  .chat-bubble-user,
+  .chat-bubble-bot {
+    max-width: 98% !important;
+    padding: 0.75rem !important;
+    font-size: 0.875rem !important;
+  }
+
+  .message-content table {
+    font-size: 0.75rem !important;
+  }
+
+  .message-content th,
+  .message-content td {
+    padding: 0.375rem 0.5rem !important;
+  }
+
+  /* Charts even smaller */
+  .chart-container,
+  .plotly-chart {
+    min-height: 200px !important;
+    max-height: 280px !important;
+  }
+
+  /* Mode dropdown covers more */
+  .claude-dropdown {
+    bottom: 4rem !important;
+    max-height: 70vh !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   TABLET (769px - 1024px)
+   ------------------------------------------------------------------ */
+@media (min-width: 769px) and (max-width: 1024px) {
+
+  .chat-bubble-user,
+  .chat-bubble-bot {
+    max-width: 80% !important;
+  }
+
+  .chart-container,
+  .plotly-chart {
+    max-height: 400px !important;
+  }
+
+  .claude-dropdown {
+    width: 300px !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   DESKTOP (1025px+) - Ensure proper spacing
+   ------------------------------------------------------------------ */
+@media (min-width: 1025px) {
+  .chat-container {
+    max-width: 900px !important;
+    margin: 0 auto !important;
+    padding: 1.5rem !important;
+  }
+
+  .chat-bubble-user,
+  .chat-bubble-bot {
+    max-width: 75% !important;
+  }
+
+  .chart-container,
+  .plotly-chart {
+    max-height: 450px !important;
+  }
+
+  .message-content {
+    font-size: 1rem !important;
+    line-height: 1.7 !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   LAYOUT STABILITY - Prevent jumps
+   ------------------------------------------------------------------ */
+.chat-messages-container {
+  min-height: 100vh;
+  min-height: 100dvh;
+  /* Dynamic viewport height for mobile */
+}
+
+/* Prevent layout shift when charts load */
+.chart-placeholder {
+  aspect-ratio: 16 / 9;
+  background: var(--bg-hover);
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Smooth scroll behavior */
+.chat-messages-container,
+.messages-scroll {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ------------------------------------------------------------------
+   PRINT STYLES (for exports)
+   ------------------------------------------------------------------ */
+@media print {
+
+  .chat-input-container,
+  .claude-input-bar,
+  .sidebar,
+  .claude-history-panel,
+  .action-buttons-row,
+  button:not(.print-visible) {
+    display: none !important;
+  }
+
+  .chat-bubble-user,
+  .chat-bubble-bot {
+    max-width: 100% !important;
+    box-shadow: none !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}
+
+/* ------------------------------------------------------------------
+   CHATGPT-LIKE ANIMATIONS & CHART STYLING
+   ------------------------------------------------------------------ */
+
+/* Chart fade-in animation */
+@keyframes chartFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.chart-fade-in {
+  animation: chartFadeIn 0.5s ease-out forwards;
+}
+
+/* Enhanced chart container */
+.plotly-chart-container {
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  padding: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  margin: 16px 0;
+  animation: chartFadeIn 0.5s ease-out;
+}
+
+/* Stop button pulse */
+@keyframes stopPulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
+.stop-generating-btn:hover {
+  animation: stopPulse 1.5s ease-in-out infinite;
+}
+
+/* =============================================================================
+   MCP TOOL EXECUTION ANIMATIONS - Claude-style
+============================================================================= */
+
+/* Shimmer effect for progress bars */
+@keyframes mcp-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.mcp-shimmer {
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(45, 212, 191, 0.4) 50%,
+      transparent 100%);
+  background-size: 200% 100%;
+  animation: mcp-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Tool icon rotation */
+@keyframes mcp-tool-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  25% {
+    transform: rotate(10deg);
+  }
+
+  75% {
+    transform: rotate(-10deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+.mcp-tool-active {
+  animation: mcp-tool-spin 2s ease-in-out infinite;
+}
+
+/* Pulse glow effect */
+@keyframes mcp-pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.4);
+  }
+
+  50% {
+    box-shadow: 0 0 20px 5px rgba(45, 212, 191, 0.2);
+  }
+}
+
+.mcp-tool-running {
+  animation: mcp-pulse-glow 2s ease-in-out infinite;
+}
+
+/* Success checkmark animation */
+@keyframes mcp-success-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.mcp-success-icon {
+  animation: mcp-success-pop 0.4s ease-out forwards;
+}
+
+/* Error shake animation */
+@keyframes mcp-error-shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-5px);
+  }
+
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+.mcp-error-shake {
+  animation: mcp-error-shake 0.3s ease-in-out;
+}
+
+/* Tool chain arrow animation */
+@keyframes mcp-arrow-pulse {
+
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: translateX(0);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateX(3px);
+  }
+}
+
+.mcp-chain-arrow {
+  animation: mcp-arrow-pulse 1s ease-in-out infinite;
+}
+
+/* Permission dialog slide-in */
+@keyframes mcp-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mcp-permission-dialog {
+  animation: mcp-slide-in 0.3s ease-out forwards;
+}
+
+/* Tool execution card styles */
+.mcp-execution-card {
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
+}
+
+.mcp-execution-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Progress bar gradient animation */
+@keyframes mcp-progress-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.mcp-progress-bar {
+  background: linear-gradient(90deg,
+      #22c55e,
+      #06B6D4,
+      #0EA5E9,
+      #06B6D4,
+      #22c55e);
+  background-size: 200% 100%;
+  animation: mcp-progress-gradient 2s ease infinite;
+}
+
+/* Status dot pulse */
+@keyframes mcp-status-pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.3);
+  }
+}
+
+.mcp-status-dot-running {
+  animation: mcp-status-pulse 1s ease-in-out infinite;
+}
+
+/* Light mode adjustments */
+html.light-theme .mcp-execution-card {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: #e2e8f0;
+}
+
+html.light-theme .mcp-execution-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* ==================================================================
+   CHATGPT-STYLE ANIMATIONS & UI POLISH
+   Premium conversational interface animations
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   MESSAGE SLIDE-UP ANIMATION (Like ChatGPT)
+   ------------------------------------------------------------------ */
+@keyframes messageSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-slide-up {
+  animation: messageSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Staggered message animation for multiple messages */
+.message-stagger-1 {
+  animation-delay: 0.05s;
+}
+
+.message-stagger-2 {
+  animation-delay: 0.1s;
+}
+
+.message-stagger-3 {
+  animation-delay: 0.15s;
+}
+
+/* ------------------------------------------------------------------
+   SMOOTH SCROLL BEHAVIOR
+   ------------------------------------------------------------------ */
+.scroll-smooth {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for chat */
+.chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 3px;
+}
+
+.chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* ------------------------------------------------------------------
+   TYPING CURSOR ANIMATION (ChatGPT Style)
+   ------------------------------------------------------------------ */
+@keyframes typingCursor {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+.typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  margin-left: 2px;
+  animation: typingCursor 1s ease-in-out infinite;
+  border-radius: 1px;
+}
+
+/* ------------------------------------------------------------------
+   MESSAGE BUBBLE ANIMATIONS
+   ------------------------------------------------------------------ */
+.chat-bubble-user {
+  animation: messageSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chat-bubble-user:hover {
+  transform: scale(1.01);
+}
+
+/* Bot message with typewriter effect container */
+.bot-message-animate {
+  animation: messageSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ------------------------------------------------------------------
+   INPUT BAR ANIMATIONS
+   ------------------------------------------------------------------ */
+@keyframes inputFocusGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15);
+  }
+
+  100% {
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.1);
+  }
+}
+
+.input-glow-focus:focus-within {
+  animation: inputFocusGlow 0.4s ease forwards;
+  border-color: #22c55e !important;
+}
+
+/* Send button pulse on hover */
+@keyframes sendButtonPulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.send-button-pulse:hover {
+  animation: sendButtonPulse 0.6s ease;
+}
+
+/* ------------------------------------------------------------------
+   FLOATING ANIMATION (For logo and icons)
+   ------------------------------------------------------------------ */
+@keyframes floatAnimation {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.float-animation {
+  animation: floatAnimation 3s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------
+   WELCOME SCREEN ANIMATIONS
+   ------------------------------------------------------------------ */
+@keyframes welcomeFade {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.welcome-animate {
+  animation: welcomeFade 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Staggered children animation */
+.stagger-children>* {
+  opacity: 0;
+  animation: messageSlideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.stagger-children>*:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.stagger-children>*:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.stagger-children>*:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.stagger-children>*:nth-child(4) {
+  animation-delay: 0.25s;
+}
+
+.stagger-children>*:nth-child(5) {
+  animation-delay: 0.3s;
+}
+
+.stagger-children>*:nth-child(6) {
+  animation-delay: 0.35s;
+}
+
+/* ------------------------------------------------------------------
+   MESSAGE ACTION BUTTONS (Copy, Edit, etc.)
+   ------------------------------------------------------------------ */
+.message-actions {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: all 0.2s ease;
+}
+
+.group:hover .message-actions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ------------------------------------------------------------------
+   LOADING SHIMMER (For skeleton loading)
+   ------------------------------------------------------------------ */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.loading-shimmer {
+  background: linear-gradient(90deg,
+      var(--bg-card) 25%,
+      var(--bg-hover) 50%,
+      var(--bg-card) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* ------------------------------------------------------------------
+   CHAT CONTAINER TRANSITION
+   ------------------------------------------------------------------ */
+.chat-container {
+  transition: padding-bottom 0.3s ease;
+}
+
+/* When input is focused, add breathing room */
+.chat-container.input-focused {
+  padding-bottom: 2rem;
+}
+
+/* ------------------------------------------------------------------
+   SMOOTH MESSAGE DISAPPEAR (For editing)
+   ------------------------------------------------------------------ */
+@keyframes messageFadeOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+.message-fade-out {
+  animation: messageFadeOut 0.2s ease forwards;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM GLASS MORPHISM CHAT INPUT
+   ------------------------------------------------------------------ */
+.glass-input {
+  background: rgba(30, 41, 59, 0.7) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(148, 163, 184, 0.1) !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-input:focus-within {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.1),
+    0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+html.light-theme .glass-input {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-color: rgba(203, 213, 225, 0.8) !important;
+}
+
+html.light-theme .glass-input:focus-within {
+  background: #ffffff !important;
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.1),
+    0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+/* ------------------------------------------------------------------
+   RESPONSE STREAMING ANIMATION
+   ------------------------------------------------------------------ */
+@keyframes streamingDot {
+
+  0%,
+  20% {
+    opacity: 0.3;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  80%,
+  100% {
+    opacity: 0.3;
+  }
+}
+
+.streaming-indicator span {
+  animation: streamingDot 1.4s ease-in-out infinite;
+}
+
+.streaming-indicator span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.streaming-indicator span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* ==================================================================
+   INLINE CODE HIGHLIGHT - Theme Aware
+   For highlighted text in chat responses
+   ================================================================== */
+.inline-code-highlight {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.375rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.875em;
+  font-weight: 500;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+/* Dark mode inline code */
+html:not(.light-theme) .inline-code-highlight {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: #5eead4;
+  border-color: rgba(94, 234, 212, 0.3);
+}
+
+/* Light mode inline code - high contrast */
+html.light-theme .inline-code-highlight {
+  background-color: rgba(13, 148, 136, 0.12);
+  color: #0f766e;
+  border-color: rgba(13, 148, 136, 0.25);
+}
+
+/* ==================================================================
+   PREMIUM UI COMPONENTS - ChatGPT Level v2.0
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   CHATGPT-STYLE INPUT BAR
+   ------------------------------------------------------------------ */
+.chat-input-premium {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-2xl);
+  transition: all var(--duration-normal) var(--ease-smooth);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-input-premium:focus-within {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+  outline: none !important;
+}
+
+.chat-input-premium input,
+.chat-input-premium textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  resize: none;
+}
+
+.chat-input-premium input::placeholder,
+.chat-input-premium textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Send Button - Premium */
+.chat-send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--gradient-accent);
+  border: none;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-smooth);
+  box-shadow: var(--shadow-sm);
+}
+
+.chat-send-btn:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-glow-teal);
+}
+
+.chat-send-btn:active {
+  transform: scale(0.95);
+}
+
+.chat-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM CARD COMPONENT
+   ------------------------------------------------------------------ */
+.card-premium {
+  background: var(--bg-card);
+  background-image: var(--gradient-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  transition: all var(--duration-slow) var(--ease-smooth);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-premium:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+}
+
+/* Card with glow on hover */
+.card-glow:hover {
+  box-shadow: var(--shadow-glow-sm), var(--shadow-lg);
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM BUTTONS
+   ------------------------------------------------------------------ */
+.btn-premium {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  border-radius: var(--radius-lg);
+  border: none;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-smooth);
+}
+
+.btn-primary {
+  background: var(--gradient-accent);
+  color: #0a0a0f;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-primary:hover {
+  box-shadow: var(--shadow-glow-teal), var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-active);
+  border-color: var(--border-hover);
+}
+
+/* ------------------------------------------------------------------
+   CHATGPT-STYLE MESSAGE BUBBLES
+   ------------------------------------------------------------------ */
+.message-user {
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.15) 0%, rgba(34, 197, 94, 0.1) 100%);
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-sm) var(--radius-xl);
+  padding: var(--space-4) var(--space-5);
+}
+
+.message-ai {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl) var(--radius-xl) var(--radius-xl) var(--radius-sm);
+  padding: var(--space-4) var(--space-5);
+}
+
+/* ------------------------------------------------------------------
+   TYPING INDICATOR - ChatGPT Style
+   ------------------------------------------------------------------ */
+.typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-4);
+}
+
+.typing-indicator .dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  animation: typingBounce 1.4s infinite ease-in-out;
+}
+
+.typing-indicator .dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-indicator .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typingBounce {
+
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+
+  30% {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM SIDEBAR NAVIGATION
+   ------------------------------------------------------------------ */
+.nav-item-premium {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-smooth);
+  border: 1px solid transparent;
+}
+
+.nav-item-premium:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-item-premium.active {
+  background: rgba(45, 212, 191, 0.1);
+  color: var(--accent-primary);
+  border-color: rgba(45, 212, 191, 0.2);
+}
+
+/* ------------------------------------------------------------------
+   MOBILE-OPTIMIZED TOUCH TARGETS
+   ------------------------------------------------------------------ */
+@media (max-width: 768px) {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .mobile-spacing {
+    padding: var(--space-4);
+  }
+
+  .mobile-text {
+    font-size: var(--text-base);
+    line-height: 1.6;
+  }
+}
+
+/* ------------------------------------------------------------------
+   SMOOTH PAGE TRANSITIONS
+   ------------------------------------------------------------------ */
+.page-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all var(--duration-slow) var(--ease-smooth);
+}
+
+.page-exit {
+  opacity: 1;
+}
+
+.page-exit-active {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-smooth);
+}
+
+/* ------------------------------------------------------------------
+   GLASSMORPHISM EFFECT - Premium
+   ------------------------------------------------------------------ */
+.glass-premium {
+  background: rgba(24, 24, 27, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+html.light-theme .glass-premium {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* ------------------------------------------------------------------
+   SKELETON LOADING - Premium Animation
+   ------------------------------------------------------------------ */
+.skeleton {
+  background: linear-gradient(90deg,
+      var(--bg-hover) 25%,
+      var(--bg-active) 50%,
+      var(--bg-hover) 75%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.5s infinite;
+  border-radius: var(--radius-md);
+}
+
+@keyframes skeletonShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ------------------------------------------------------------------
+   FOCUS VISIBLE - Accessible Premium Focus Ring
+   ------------------------------------------------------------------ */
+.focus-ring:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent-primary);
+}
+
+/* ==================================================================
+   PREMIUM FIGMA-QUALITY DESIGN SYSTEM
+   $5M Silicon Valley MVP - Added Jan 2026
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   PREMIUM HOVER EFFECTS
+   ------------------------------------------------------------------ */
+.hover-lift {
+  transition: transform 0.2s var(--ease-smooth), box-shadow 0.2s var(--ease-smooth);
+}
+
+.hover-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+}
+
+.hover-glow {
+  transition: all 0.2s var(--ease-smooth);
+}
+
+.hover-glow:hover {
+  box-shadow: 0 0 25px rgba(34, 197, 94, 0.3);
+  border-color: var(--accent-primary) !important;
+}
+
+.hover-scale {
+  transition: transform 0.15s var(--ease-spring);
+}
+
+.hover-scale:hover {
+  transform: scale(1.02);
+}
+
+.hover-scale:active {
+  transform: scale(0.98);
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM CARD STYLES
+   ------------------------------------------------------------------ */
+.card-premium {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  transition: all 0.25s var(--ease-smooth);
+}
+
+.card-premium:hover {
+  border-color: rgba(34, 197, 94, 0.4);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12), 0 0 1px rgba(34, 197, 94, 0.3);
+}
+
+html.light-theme .card-premium {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+html.light-theme .card-premium:hover {
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+
+.card-glass {
+  background: rgba(24, 24, 27, 0.6);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+}
+
+html.light-theme .card-glass {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+.card-stats {
+  background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-secondary) 100%);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-stats::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #22c55e 0%, #22c55e 50%, #06b6d4 100%);
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM BUTTONS
+   ------------------------------------------------------------------ */
+.btn-primary {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: white !important;
+  padding: 12px 28px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s var(--ease-smooth);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.3);
+}
+
+.btn-secondary {
+  background: var(--bg-hover);
+  color: var(--text-primary) !important;
+  padding: 12px 28px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s var(--ease-smooth);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-active);
+  border-color: var(--accent-primary);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary) !important;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s var(--ease-smooth);
+}
+
+.btn-ghost:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary) !important;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s var(--ease-smooth);
+}
+
+.btn-icon:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM INPUTS
+   ------------------------------------------------------------------ */
+.input-premium {
+  width: 100%;
+  padding: 14px 18px;
+  background: var(--bg-hover) !important;
+  border: 2px solid transparent !important;
+  border-radius: 12px;
+  color: var(--text-primary) !important;
+  font-size: 0.9375rem;
+  transition: all 0.2s var(--ease-smooth);
+}
+
+.input-premium:focus {
+  background: var(--bg-card) !important;
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.15) !important;
+  outline: none !important;
+}
+
+.input-premium::placeholder {
+  color: var(--text-muted);
+}
+
+html.light-theme .input-premium {
+  background: #f1f5f9 !important;
+}
+
+html.light-theme .input-premium:focus {
+  background: #ffffff !important;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM BADGES
+   ------------------------------------------------------------------ */
+.badge-success {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border-radius: 20px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.badge-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border-radius: 20px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.badge-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border-radius: 20px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM DIVIDERS
+   ------------------------------------------------------------------ */
+.divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--border-color) 50%, transparent 100%);
+  margin: 24px 0;
+}
+
+.divider-vertical {
+  width: 1px;
+  height: 24px;
+  background: var(--border-color);
+}
+
+/* ------------------------------------------------------------------
+   SMOOTH CONTENT ANIMATIONS
+   ------------------------------------------------------------------ */
+.animate-slide-up {
+  animation: slideUp 0.4s var(--ease-smooth) forwards;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s var(--ease-spring) forwards;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-up {
+  animation: fadeUp 0.5s var(--ease-smooth) forwards;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Stagger animation delays */
+.stagger-1 {
+  animation-delay: 0.05s;
+}
+
+.stagger-2 {
+  animation-delay: 0.1s;
+}
+
+.stagger-3 {
+  animation-delay: 0.15s;
+}
+
+.stagger-4 {
+  animation-delay: 0.2s;
+}
+
+.stagger-5 {
+  animation-delay: 0.25s;
+}
+
+.stagger-6 {
+  animation-delay: 0.3s;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM SECTION HEADERS
+   ------------------------------------------------------------------ */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.section-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(34, 197, 94, 0.2) 100%);
+  border-radius: 12px;
+  color: #22c55e;
+}
+
+.section-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.section-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM TOOLTIPS
+   ------------------------------------------------------------------ */
+.tooltip-premium {
+  position: relative;
+}
+
+.tooltip-premium::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(5px);
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.2s var(--ease-smooth);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.tooltip-premium:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ------------------------------------------------------------------
+   KPI CARD PREMIUM STYLES
+   ------------------------------------------------------------------ */
+.kpi-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s var(--ease-smooth);
+}
+
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--kpi-color, #22c55e) 0%, transparent 100%);
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+  border-color: var(--kpi-color, #22c55e);
+}
+
+.kpi-value {
+  font-family: 'Outfit', sans-serif;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.kpi-label {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.kpi-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.kpi-trend.up {
+  color: #22c55e;
+}
+
+.kpi-trend.down {
+  color: #ef4444;
+}
+
+.kpi-trend.neutral {
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM EMPTY STATES
+   ------------------------------------------------------------------ */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.empty-state-icon {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-hover);
+  border-radius: 16px;
+  margin-bottom: 16px;
+  color: var(--text-muted);
+}
+
+.empty-state-title {
+  font-family: 'Outfit', sans-serif;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.empty-state-description {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  max-width: 300px;
+  margin-bottom: 20px;
+}
+
+/* ------------------------------------------------------------------
+   PREMIUM LOADING STATES
+   ------------------------------------------------------------------ */
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.loading-dots span {
+  width: 6px;
+  height: 6px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  animation: loadingDot 1.4s ease-in-out infinite;
+}
+
+.loading-dots span:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes loadingDot {
+
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
