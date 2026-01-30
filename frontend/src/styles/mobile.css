@@ -1,0 +1,128 @@
+/* Mobile Responsive Fixes for AnalystChat */
+
+/* Mobile responsive breakpoints */
+@media (max-width: 768px) {
+  /* Sidebar - Hidden by default on mobile */
+  .chat-sidebar {
+    position: fixed;
+    left: -100%;
+    width: 80%;
+    max-width: 320px;
+    height: 100vh;
+    z-index: 50;
+    transition: left 0.3s ease;
+  }
+  
+  .chat-sidebar.open {
+    left: 0;
+  }
+  
+  /* Chat container - Full width on mobile */
+  .chat-container {
+    width: 100%;
+    padding: 0;
+  }
+  
+  /* Input area - Fixed at bottom on mobile */
+  .chat-input-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px;
+    background: inherit;
+    border-top: 1px solid var(--border-color);
+    z-index: 40;
+  }
+  
+  /* Messages - Add bottom padding for fixed input */
+  .messages-container {
+    padding-bottom: 100px;
+  }
+  
+  /* Mode dropdown - Full width on mobile */
+  .mode-dropdown {
+    width: 100%;
+  }
+  
+  /* Touch-friendly buttons */
+  .touch-button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Hamburger menu button */
+  .mobile-menu-btn {
+    display: flex;
+    padding: 12px;
+  }
+  
+  /* Hide desktop-only elements */
+  .desktop-only {
+    display: none;
+  }
+}
+
+/* Tablet breakpoint */
+@media (min-width: 769px) and (max-width: 1024px) {
+  .chat-sidebar {
+    width: 280px;
+  }
+}
+
+/* Desktop */
+@media (min-width: 1025px) {
+  .mobile-menu-btn {
+    display: none;
+  }
+  
+  .mobile-only {
+    display: none;
+  }
+}
+
+/* Better loading states */
+.loading-skeleton {
+  background: linear-gradient(90deg, 
+    var(--skeleton-base) 25%, 
+    var(--skeleton-highlight) 50%, 
+    var(--skeleton-base) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* Streaming text cursor animation */
+.streaming-cursor::after {
+  content: '▊';
+  animation: blink 1s step-end infinite;
+  color: var(--primary);
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* Error state styling */
+.error-message {
+  background: rgba(239, 68, 68, 0.1);
+  border-left: 4px solid #ef4444;
+  padding: 12px 16px;
+  border-radius: 0 8px 8px 0;
+}
+
+/* Touch-friendly scrollbars on mobile */
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    background: rgba(128, 128, 128, 0.3);
+    border-radius: 4px;
+  }
+}

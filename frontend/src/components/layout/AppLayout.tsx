@@ -1,0 +1,286 @@
+import React, { useState, useEffect } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  BarChart3,
+  LayoutDashboard,
+  Database,
+  FileText,
+  MessageSquare,
+  Settings,
+  Sun,
+  Moon,
+  Menu,
+  X,
+  Home,
+  Sparkles,
+  LogOut,
+  Brain,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useUserStore } from '@/store/userStore';
+
+const AppLayout: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const { isDark, toggleTheme } = useUserStore();
+
+  useEffect(() => {
+    // Sync class with store state
+    if (!isDark) {
+      document.documentElement.classList.add('light-theme');
+    } else {
+      document.documentElement.classList.remove('light-theme');
+    }
+  }, [isDark]);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
+
+
+
+  // Check if ML results exist
+  const hasMLResults = typeof window !== 'undefined' && localStorage.getItem('hasMLResults') === 'true';
+
+  const navItems = [
+    { path: '/', label: 'Home', icon: Home },
+    { path: '/data-hub', label: 'Data Hub', icon: Database },
+    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }, // 🏆 AI Dashboard
+    { path: '/reports', label: 'Reports', icon: FileText },
+    { path: '/ml-predictions', label: 'ML Predictions', icon: Brain }, // Always visible
+    { path: '/chat', label: 'AI Analyst', icon: MessageSquare },
+    { path: '/settings', label: 'Settings', icon: Settings },
+  ];
+
+  const isActive = (path: string) => {
+    if (path === '/') return location.pathname === '/';
+    return location.pathname.startsWith(path);
+  };
+
+  return (
+    <div
+      className="flex h-screen overflow-hidden transition-colors duration-300"
+      style={{
+        backgroundColor: 'var(--bg-primary)',
+        color: 'var(--text-primary)'
+      }}
+    >
+      {/* Premium Sidebar */}
+      <motion.aside
+        initial={false}
+        className={`
+          fixed inset-y-0 left-0 z-50 flex flex-col border-r transition-all duration-300
+          ${isDark ? 'glass-premium' : 'bg-white/95 backdrop-blur-xl'}
+          md:static 
+          /* Slide logic handled by classes */
+          ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full md:translate-x-0'}
+          /* Widths */
+          w-[280px] md:w-20 
+          ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
+        `}
+        style={{
+          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+          boxShadow: isDark && isMobileMenuOpen ? '4px 0 24px rgba(0,0,0,0.5)' : (isDark ? '4px 0 24px rgba(0,0,0,0.3)' : '4px 0 24px rgba(0,0,0,0.05)')
+        }}
+      >
+        {/* Logo Section */}
+        <div
+          className={`h-16 flex items-center justify-between px-5 border-b transition-all duration-300
+            md:justify-center 
+            ${isSidebarCollapsed ? 'lg:justify-center' : 'lg:justify-start'}
+          `}
+          style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}
+        >
+          <div
+            className="flex items-center gap-3 cursor-pointer group"
+            onClick={() => navigate('/')}
+          >
+            <div className="relative shrink-0">
+              <img src="/logo.png" alt="DataVision" className="w-9 h-9 object-contain rounded-lg" />
+              <div className="absolute inset-0 bg-green-400/20 rounded-full blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+            <span
+              className={`text-lg font-semibold tracking-tight md:hidden whitespace-nowrap
+                ${isSidebarCollapsed ? 'lg:hidden' : 'lg:block'}
+              `}
+              style={{ color: isDark ? '#f8fafc' : '#0f172a' }}
+            >
+              DataVision
+            </span>
+          </div>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="md:hidden p-2 rounded-xl hover:bg-white/10 transition-colors touch-target"
+          >
+            <X className="w-5 h-5" style={{ color: isDark ? '#9ca3af' : '#64748b' }} />
+          </button>
+        </div>
+
+        {/* Navigation */}
+        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto overflow-x-hidden">
+          {navItems.map((item) => {
+            const active = isActive(item.path);
+            return (
+              <motion.button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className={`
+                  nav-item-premium w-full flex items-center gap-3 px-4 py-3
+                  md:justify-center md:px-0
+                  ${isSidebarCollapsed ? 'lg:justify-center lg:px-0' : 'lg:justify-start lg:px-4'}
+                  ${active ? 'active' : ''}
+                `}
+                title={item.label} // Tooltip for tablet/collapsed
+                style={{
+                  color: active
+                    ? '#2dd4bf'
+                    : (isDark ? '#9ca3af' : '#64748b'),
+                  background: active
+                    ? (isDark ? 'rgba(45, 212, 191, 0.1)' : 'rgba(20, 184, 166, 0.08)')
+                    : 'transparent',
+                  borderColor: active ? 'rgba(45, 212, 191, 0.2)' : 'transparent',
+                }}
+              >
+                <item.icon className="w-5 h-5 flex-shrink-0" />
+                <span className={`font-medium md:hidden whitespace-nowrap
+                  ${isSidebarCollapsed ? 'lg:hidden' : 'lg:block'}
+                `}>{item.label}</span>
+                {item.path === '/chat' && (
+                  <Sparkles className={`w-3.5 h-3.5 ml-auto text-green-400 opacity-60 md:hidden
+                    ${isSidebarCollapsed ? 'lg:hidden' : 'lg:inline-block'}
+                  `} />
+                )}
+              </motion.button>
+            );
+          })}
+        </nav>
+
+        {/* Footer - Sign Out Button */}
+        <div
+          className="p-4 border-t"
+          style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}
+        >
+          <button
+            onClick={() => {
+              if (confirm('Are you sure you want to sign out?')) {
+                signOut();
+              }
+            }}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 hover:bg-red-500/10 group
+              md:justify-center md:px-0 
+              ${isSidebarCollapsed ? 'lg:justify-center lg:px-0' : 'lg:justify-start lg:px-4'}
+            `}
+            style={{ color: isDark ? '#9ca3af' : '#64748b' }}
+            title="Sign Out"
+          >
+            <LogOut className="w-5 h-5 group-hover:text-red-400 transition-colors shrink-0" />
+            <span className={`font-medium group-hover:text-red-400 transition-colors md:hidden whitespace-nowrap
+              ${isSidebarCollapsed ? 'lg:hidden' : 'lg:block'}
+            `}>Sign Out</span>
+          </button>
+        </div>
+      </motion.aside>
+
+      {/* Mobile Backdrop */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Premium Header */}
+        <header
+          className={`
+            h-14 lg:h-16 flex items-center justify-between px-4 lg:px-6
+            border-b backdrop-blur-xl sticky top-0 z-30
+            ${isDark ? 'glass-premium' : 'bg-white/80'}
+          `}
+          style={{
+            borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+          }}
+        >
+          {/* Mobile Menu Toggle */}
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="lg:hidden p-2.5 rounded-xl hover:bg-white/10 transition-colors touch-target"
+          >
+            <Menu className="w-5 h-5" style={{ color: isDark ? '#9ca3af' : '#64748b' }} />
+          </button>
+
+          {/* Page Title with Breadcrumb feel + Desktop Toggle */}
+          <div className="flex items-center gap-4">
+            {/* Desktop Toggle Button */}
+            <button
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="hidden lg:flex p-2 rounded-xl hover:bg-white/5 transition-colors"
+              style={{ color: isDark ? '#9ca3af' : '#64748b' }}
+              title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
+            </button>
+
+            <motion.h1
+              key={location.pathname}
+              initial={{ opacity: 0, y: -5 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-lg font-semibold"
+              style={{ color: isDark ? '#f8fafc' : '#0f172a' }}
+            >
+              {navItems.find(item => isActive(item.path))?.label || 'DataVision'}
+            </motion.h1>
+          </div>
+
+          {/* Right Actions */}
+          <div className="flex items-center gap-2">
+            {/* Theme toggle visible on desktop in header */}
+            <button
+              onClick={toggleTheme}
+              className="hidden lg:flex items-center justify-center w-10 h-10 rounded-xl transition-all duration-200"
+              style={{
+                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+              }}
+            >
+              {isDark
+                ? <Sun className="w-5 h-5 text-amber-400" />
+                : <Moon className="w-5 h-5 text-slate-500" />
+              }
+            </button>
+          </div>
+        </header>
+
+        {/* Page Content with Smooth Transitions */}
+        <main className="flex-1 overflow-auto">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+            className="w-full h-full p-4 lg:p-6"
+          >
+            <Outlet context={{ isDark, cardBg: isDark ? '#141414' : '#ffffff', textPrimary: isDark ? '#f8fafc' : '#0f172a', textMuted: isDark ? '#9ca3af' : '#64748b', borderColor: isDark ? '#262626' : '#e2e8f0' }} />
+          </motion.div>
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default AppLayout;
