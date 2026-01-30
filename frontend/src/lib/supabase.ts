@@ -56,11 +56,8 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
 }
 // Helper to get the correct base URL for redirects
 const getBaseUrl = (): string => {
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        return window.location.origin;
-    }
-    // Production URL - Hugging Face Space
-    return 'https://killerkumar-ai-business-analyst.hf.space';
+    // Always use the current origin - works for any deployment
+    return window.location.origin;
 };
 
 // Simple auth helpers
