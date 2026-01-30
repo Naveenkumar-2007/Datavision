@@ -37,13 +37,16 @@ RUN mkdir -p /app/storage /app/backend/storage && \
 # Set ownership of entire app directory to non-root user
 RUN chown -R appuser:appuser /app
 
-# Set Python path
-ENV PYTHONPATH=/app/backend:/app
+# Set Python path - backend folder contains all imports
+ENV PYTHONPATH=/app/backend
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Switch to non-root user
 USER appuser
+
+# Set working directory to backend for correct imports
+WORKDIR /app/backend
 
 # Expose HuggingFace default port
 EXPOSE 7860
@@ -52,5 +55,5 @@ EXPOSE 7860
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:7860/api || exit 1
 
-# Start FastAPI server
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Start FastAPI server from backend directory
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
