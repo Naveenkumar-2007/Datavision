@@ -50,6 +50,8 @@ catboost_info/
 .ruff_cache/
 
 # Build (frontend/dist/ now tracked for HuggingFace deployment)
+# But ignore source maps (too large for HuggingFace)
+frontend/dist/assets/*.map
 
 # Temporary
 *.tmp
