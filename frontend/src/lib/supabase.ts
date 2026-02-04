@@ -5,6 +5,10 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+// Vite build-time replacement - must be at module level for static replacement
+const VITE_SUPABASE_URL_BUILD = import.meta.env.VITE_SUPABASE_URL || '';
+const VITE_SUPABASE_ANON_KEY_BUILD = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
 // Support runtime env injection for Docker (Hugging Face Spaces)
 // AND Vite dev mode (import.meta.env)
 const getEnv = (key: string): string => {
@@ -20,10 +24,9 @@ const getEnv = (key: string): string => {
         return win.ENV[key];
     }
 
-    // 3. Fallback to Vite build-time replacement (Local Dev)
-    // We MUST access these explicitly for Vite to replace them statically
-    if (key === 'VITE_SUPABASE_URL') return import.meta.env.VITE_SUPABASE_URL || '';
-    if (key === 'VITE_SUPABASE_ANON_KEY') return import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    // 3. Fallback to Vite build-time replacement
+    if (key === 'VITE_SUPABASE_URL') return VITE_SUPABASE_URL_BUILD;
+    if (key === 'VITE_SUPABASE_ANON_KEY') return VITE_SUPABASE_ANON_KEY_BUILD;
 
     return '';
 };
@@ -31,10 +34,10 @@ const getEnv = (key: string): string => {
 const SUPABASE_URL = getEnv('VITE_SUPABASE_URL');
 const SUPABASE_ANON_KEY = getEnv('VITE_SUPABASE_ANON_KEY');
 
-// Create Supabase client only if credentials are available
+// Create Supabase client - credentials should be embedded at build time
 let supabase: SupabaseClient;
 
-if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+if (SUPABASE_URL && SUPABASE_ANON_KEY && !SUPABASE_URL.includes('placeholder') && !SUPABASE_URL.includes('your-project')) {
     supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
             autoRefreshToken: true,
@@ -42,17 +45,24 @@ if (SUPABASE_URL && SUPABASE_ANON_KEY) {
             detectSessionInUrl: true
         }
     });
-    console.log('✅ Supabase client initialized');
+    console.log('✅ Supabase client initialized with:', SUPABASE_URL);
 } else {
-    // Create a mock/placeholder client that won't crash
-    console.warn('⚠️ Supabase credentials not configured - auth features disabled');
-    supabase = createClient('https://placeholder.supabase.co', 'placeholder-key', {
+    // Auth disabled - create dummy client that returns empty results
+    console.warn('⚠️ Supabase not configured - running in guest mode');
+    // Use a minimal mock that won't make network requests
+    supabase = {
         auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-            detectSessionInUrl: false
+            getSession: async () => ({ data: { session: null }, error: null }),
+            getUser: async () => ({ data: { user: null }, error: null }),
+            signInWithPassword: async () => ({ data: { user: null, session: null }, error: { message: 'Auth not configured' } }),
+            signUp: async () => ({ data: { user: null, session: null }, error: { message: 'Auth not configured' } }),
+            signOut: async () => ({ error: null }),
+            onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+            signInWithOtp: async () => ({ data: {}, error: { message: 'Auth not configured' } }),
+            signInWithOAuth: async () => ({ data: { url: null, provider: '' }, error: { message: 'Auth not configured' } }),
+            resetPasswordForEmail: async () => ({ data: {}, error: { message: 'Auth not configured' } }),
         }
-    });
+    } as unknown as SupabaseClient;
 }
 // Helper to get the correct base URL for redirects
 const getBaseUrl = (): string => {
