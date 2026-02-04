@@ -113,50 +113,53 @@ def get_optimal_model(query_type: str = None, reasoning_depth: str = None, conte
 # CHATGPT-STYLE SYSTEM PROMPT - Clean, Professional Responses
 # ============================================================================
 
-CHATGPT_SYSTEM_PROMPT = """You are a professional DataVision. You ONLY answer questions about the USER'S UPLOADED BUSINESS DATA.
+# Import product knowledge
+try:
+    from core.product_knowledge import DATAVISION_PRODUCT_KNOWLEDGE, is_product_question
+    PRODUCT_KNOWLEDGE_AVAILABLE = True
+except ImportError:
+    DATAVISION_PRODUCT_KNOWLEDGE = ""
+    PRODUCT_KNOWLEDGE_AVAILABLE = False
 
-## CRITICAL RULE #1 - HYBRID KNOWLEDGE SYSTEM:
+CHATGPT_SYSTEM_PROMPT = f"""You are DataVision AI Assistant - a professional data analyst and product guide.
 
-You are a HYBRID AI ASSISTANT (DataVision) with TWO knowledge sources:
+## YOUR THREE ROLES:
 
-📊 **From Your Data** - When answering about user's uploaded data (revenue, customers, products, etc.)
-🌐 **AI Knowledge** - When answering general questions (What is Python?, How does X work?, etc.)
+1. 📊 **DATA ANALYST** - Answer questions about user's uploaded data
+2. 🌐 **AI KNOWLEDGE** - Answer general questions using AI knowledge
+3. 💡 **PRODUCT GUIDE** - Help users navigate and use DataVision features
 
-RESPONSE FORMATTING:
-- For DATA questions: Start with "📊 **From Your Data:**" and use actual values
-- For GENERAL questions: Start with "🌐 **AI Knowledge:**" and provide helpful info
-- For HYBRID questions: Include BOTH sections
-
-## CRITICAL RULE #2 - NO HALLUCINATION (for data questions):
-
-1. When answering about USER DATA, ONLY use data that was provided
-2. NEVER make up numbers for data questions
-3. If you don't have data for something, say what you DO have
-4. Every number you mention about their data MUST be from uploaded files
-
-## CRITICAL RULE #3 - ALWAYS BE HELPFUL:
-
-1. NEVER refuse to answer - use the appropriate knowledge source
-2. General questions get 🌐 AI Knowledge responses
-3. Data questions get 📊 From Your Data responses
-4. Be friendly and informative
+{DATAVISION_PRODUCT_KNOWLEDGE if PRODUCT_KNOWLEDGE_AVAILABLE else ""}
 
 ## RESPONSE RULES:
 
-1. **BE DIRECT** - Answer the question first, then explain
-2. **BE ACCURATE** - Use appropriate knowledge source
-3. **BE HELPFUL** - Always provide value
+### For DATA Questions (about their uploaded files):
+📊 **From Your Data:**
+[Use actual numbers from their data - NEVER make up values]
 
-## EXAMPLE - HYBRID RESPONSES:
+### For GENERAL Questions (not about their data):
+🌐 **AI Knowledge:**
+[Provide helpful AI-powered answers]
 
-📊 Query: "What is my revenue?" → Use actual data with 📊 badge
-🌐 Query: "What is Python?" → General AI knowledge with 🌐 badge
-📊+🌐 Query: "How does my revenue compare to industry?" → Both badges
+### For PRODUCT Questions (how to use DataVision):
+💡 **How to do this:**
+[Step-by-step instructions with page names]
 
-❌ Query: "Write a Python function"
-✅ Response: "I specialize in business data analysis, not coding. I can help you with revenue forecasts, customer insights, or product analysis. What would you like to explore?"
+## CRITICAL RULES:
 
-Be like ChatGPT - but ONLY for business data analysis."""
+1. **NO HALLUCINATION** - For data questions, ONLY use actual provided data
+2. **ALWAYS BE HELPFUL** - Never refuse to answer, use appropriate knowledge source
+3. **BE DIRECT** - Answer first, then explain
+4. **GUIDE USERS** - If they're asking "how to" questions, give step-by-step help
+
+## DETECTING QUESTION TYPE:
+
+- "What are my sales?" → DATA question (use their data)
+- "What is machine learning?" → GENERAL question (use AI knowledge)
+- "How do I train a model?" → PRODUCT question (guide them)
+- "How do I upload data?" → PRODUCT question (guide them)
+
+Be friendly, professional, and genuinely helpful like ChatGPT!"""
 
 def chat(
     messages: Union[str, List[Dict[str, str]]], 
@@ -221,8 +224,7 @@ def chat(
     # =========================================================================
     primary_model = model or Settings.MODEL_NAME
     
-    # 🔑 KEY ROTATION LOGIC
-    # If no keys list found, fallback to single env var (captured in list anyway)
+    # 🔑 KEY ROTATION LOGIC with smart caching of failing keys
     keys_to_try = Settings.GROQ_API_KEYS if hasattr(Settings, 'GROQ_API_KEYS') and Settings.GROQ_API_KEYS else [os.environ.get("GROQ_API_KEY")]
     
     # Remove None values
@@ -230,15 +232,36 @@ def chat(
     
     if not keys_to_try:
         keys_to_try = ["MISSING_KEY"] # Try once to trigger error handling
+    
+    # 🚀 PERFORMANCE: Track failing keys to skip them (cache for 5 minutes)
+    global _failing_keys_cache
+    if '_failing_keys_cache' not in globals():
+        _failing_keys_cache = {}
+    
+    import time as time_module
+    current_time = time_module.time()
+    
+    # Clean old entries (older than 5 minutes)
+    _failing_keys_cache = {k: v for k, v in _failing_keys_cache.items() if current_time - v < 300}
+    
+    # Reorder keys - put non-failing keys first
+    working_keys = [k for k in keys_to_try if k not in _failing_keys_cache]
+    failing_keys = [k for k in keys_to_try if k in _failing_keys_cache]
+    keys_to_try = working_keys + failing_keys  # Try working keys first
         
     last_error = None
     
     for i, api_key in enumerate(keys_to_try):
+        # Skip keys that recently failed (but still in list as fallback)
+        if api_key in _failing_keys_cache and i < len(keys_to_try) - 1:
+            logger.info(f"⏭️ Skipping Key {i+1} (recently failed)")
+            continue
+            
         try:
             logger.info(f"☁️ Using Groq model: {primary_model} (Key {i+1}/{len(keys_to_try)})")
             
-            # RETRY LOGIC (3 attempts per key)
-            max_retries = 3
+            # 🚀 FAST RETRY LOGIC - Only 1 retry for speed
+            max_retries = 2  # Reduced from 3
             for attempt in range(max_retries):
                 try:
                     response = litellm.completion(
@@ -256,24 +279,33 @@ def chat(
                         result = ai_filter.filter_output(result)
                     return result
                 except Exception as e:
-                    # Reraise immediately if it's an auth error (no point retrying same key)
                     error_str = str(e).lower()
-                    if 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str or '401' in error_str:
-                        raise e
+                    
+                    # 🚀 FAST FAIL: Don't retry on auth/org/bad request errors
+                    is_fast_fail = any(x in error_str for x in [
+                        'api_key', 'unauthorized', 'authentication', '401',
+                        'organization', 'restricted', 'blocked', 'badrequest'
+                    ])
+                    
+                    if is_fast_fail:
+                        _failing_keys_cache[api_key] = current_time  # Cache failing key
+                        raise e  # Skip retries, go to next key immediately
                         
                     # If this was the last attempt, reraise to outer loop
                     if attempt == max_retries - 1:
                         raise e
                         
-                    # Otherwise wait and retry
-                    wait_time = (2 ** attempt) * 1  # 1s, 2s, 4s
+                    # Otherwise wait briefly and retry (reduced delay)
+                    wait_time = 0.5  # 🚀 Reduced from 1s, 2s
                     logger.warning(f"   ⚠️ Attempt {attempt+1}/{max_retries} failed ({str(e)[:50]}). Retrying in {wait_time}s...")
-                    import time
-                    time.sleep(wait_time)
+                    time_module.sleep(wait_time)
             
         except Exception as e:
             last_error = e
             error_str = str(e).lower()
+            
+            # Cache this key as failing
+            _failing_keys_cache[api_key] = current_time
             
             # Check if we should try next key
             is_rate_limit = 'rate_limit' in error_str or 'rate limit' in error_str or '429' in error_str

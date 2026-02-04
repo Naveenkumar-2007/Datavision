@@ -11,7 +11,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Sliders, RefreshCw, Sparkles, AlertCircle, Activity, ChevronDown, HelpCircle } from 'lucide-react';
+import { Sliders, RefreshCw, Sparkles, AlertCircle, Activity, ChevronDown, HelpCircle, Calendar } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import debounce from 'lodash/debounce';
 import ExplainModal from './ExplainModal';
@@ -19,12 +19,13 @@ import { getUserIdSync } from '@/utils/userId';
 
 interface SliderConfig {
     name: string;
-    type: 'numeric' | 'categorical';
-    min?: number;
-    max?: number;
+    type: 'numeric' | 'categorical' | 'text' | 'datetime';
+    min?: number | string;  // number for numeric, ISO string for datetime
+    max?: number | string;  // number for numeric, ISO string for datetime
     step?: number;
     default?: any;
     options?: string[];
+    placeholder?: string;
 }
 
 interface PlaygroundConfig {
@@ -33,13 +34,15 @@ interface PlaygroundConfig {
     target_column: string;
     sliders: SliderConfig[];
     class_names?: string[];
+    model_type?: 'traditional' | 'nlp' | 'deep_learning';
 }
 
 interface PlaygroundProps {
     onPredictionMade?: (prediction: any) => void;
+    mode?: 'traditional' | 'nlp' | 'deep_learning' | 'fast' | 'ultra' | 'auto';
 }
 
-const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
+const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade, mode = 'auto' }) => {
     const { isDark } = useUserStore();
     const [config, setConfig] = useState<PlaygroundConfig | null>(null);
     const [loading, setLoading] = useState(true);
@@ -56,7 +59,7 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
             try {
                 setLoading(true);
                 const userId = getUserIdSync();
-                const response = await fetch(`/api/v1/automl/playground/config?user_id=${userId}`);
+                const response = await fetch(`/api/v1/automl/playground/config?user_id=${userId}&mode=${mode}`);
                 const data = await response.json();
 
                 if (response.ok) {
@@ -64,8 +67,12 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                     // Initialize values with defaults
                     const initialValues: Record<string, any> = {};
                     data.sliders.forEach((slider: SliderConfig) => {
-                        initialValues[slider.name] = slider.default ??
-                            (slider.type === 'numeric' ? slider.min : slider.options?.[0]);
+                        if (slider.type === 'text') {
+                            initialValues[slider.name] = slider.default ?? '';
+                        } else {
+                            initialValues[slider.name] = slider.default ??
+                                (slider.type === 'numeric' ? slider.min : slider.options?.[0]);
+                        }
                     });
                     setValues(initialValues);
                     setError(null);
@@ -79,7 +86,7 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
             }
         };
         loadConfig();
-    }, []);
+    }, [mode]);
 
     // Debounced prediction
     const debouncedPredict = useCallback(
@@ -87,10 +94,21 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
             try {
                 setPredicting(true);
                 const userId = getUserIdSync();
+                
+                // For NLP mode, extract text from values
+                const textValue = config?.model_type === 'nlp' || mode === 'nlp' || mode === 'fast'
+                    ? Object.values(vals)[0]
+                    : undefined;
+                
                 const response = await fetch('/api/v1/automl/playground/predict', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ values: vals, user_id: userId })
+                    body: JSON.stringify({ 
+                        values: vals, 
+                        user_id: userId,
+                        mode: mode,
+                        text: textValue
+                    })
                 });
                 const data = await response.json();
 
@@ -105,7 +123,7 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                 setPredicting(false);
             }
         }, 300),
-        []
+        [mode, config]
     );
 
     // Handle value change
@@ -152,10 +170,12 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
                     </div>
                     <div>
                         <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>
-                            🎮 Interactive Playground
+                            🎮 {config.model_type === 'nlp' ? 'NLP Text Prediction' : 'Interactive Playground'}
                         </h3>
                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Adjust sliders to see predictions change in real-time
+                            {config.model_type === 'nlp' 
+                                ? 'Enter text to get predictions from your NLP model'
+                                : 'Adjust sliders to see predictions change in real-time'}
                         </p>
                     </div>
                 </div>
@@ -237,44 +257,90 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
             >
                 <h4 className="font-semibold mb-6 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                     <Activity className="w-5 h-5 text-green-400" />
-                    Adjust Feature Values
+                    {config.model_type === 'nlp' ? 'Enter Text for Prediction' : 'Adjust Feature Values'}
                     <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400 ml-2">
-                        {config.sliders.length} features
+                        {config.model_type === 'nlp' ? 'NLP Model' : `${config.sliders.length} features`}
                     </span>
                 </h4>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className={config.model_type === 'nlp' ? '' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'}>
                     {config.sliders.map((slider) => (
                         <div key={slider.name} className="space-y-2">
                             <div className="flex items-center justify-between">
                                 <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                                     {slider.name}
                                 </label>
-                                <span className="text-xs font-mono px-2 py-0.5 rounded"
-                                    style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb', color: 'var(--text-primary)' }}>
-                                    {slider.type === 'numeric'
-                                        ? Number(values[slider.name])?.toFixed(2)
-                                        : values[slider.name]}
-                                </span>
+                                {slider.type !== 'text' && slider.type !== 'datetime' && (
+                                    <span className="text-xs font-mono px-2 py-0.5 rounded"
+                                        style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb', color: 'var(--text-primary)' }}>
+                                        {slider.type === 'numeric'
+                                            ? Number(values[slider.name])?.toFixed(2)
+                                            : values[slider.name]}
+                                    </span>
+                                )}
+                                {slider.type === 'datetime' && (
+                                    <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 flex items-center gap-1">
+                                        <Calendar className="w-3 h-3" />
+                                        Date
+                                    </span>
+                                )}
                             </div>
 
-                            {slider.type === 'numeric' ? (
+                            {slider.type === 'text' ? (
+                                <div className="space-y-2">
+                                    <textarea
+                                        value={values[slider.name] ?? ''}
+                                        onChange={(e) => handleValueChange(slider.name, e.target.value)}
+                                        placeholder={slider.placeholder || `Enter ${slider.name}...`}
+                                        rows={6}
+                                        className="w-full p-4 rounded-xl border resize-none"
+                                        style={{
+                                            backgroundColor: 'var(--bg-secondary)',
+                                            borderColor: 'var(--border-color)',
+                                            color: 'var(--text-primary)'
+                                        }}
+                                    />
+                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        {values[slider.name]?.length || 0} characters
+                                    </p>
+                                </div>
+                            ) : slider.type === 'datetime' ? (
+                                <input
+                                    type="date"
+                                    value={values[slider.name] ?? ''}
+                                    onChange={(e) => handleValueChange(slider.name, e.target.value)}
+                                    min={typeof slider.min === 'string' ? slider.min.split('T')[0] : undefined}
+                                    max={typeof slider.max === 'string' ? slider.max.split('T')[0] : undefined}
+                                    className="w-full p-3 rounded-xl border"
+                                    style={{
+                                        backgroundColor: 'var(--bg-secondary)',
+                                        borderColor: 'var(--border-color)',
+                                        color: 'var(--text-primary)'
+                                    }}
+                                />
+                            ) : slider.type === 'numeric' ? (
                                 <div className="space-y-1">
                                     <input
                                         type="range"
-                                        min={slider.min}
-                                        max={slider.max}
+                                        min={typeof slider.min === 'number' ? slider.min : 0}
+                                        max={typeof slider.max === 'number' ? slider.max : 100}
                                         step={slider.step}
-                                        value={values[slider.name] ?? slider.min}
+                                        value={values[slider.name] ?? (typeof slider.min === 'number' ? slider.min : 0)}
                                         onChange={(e) => handleValueChange(slider.name, parseFloat(e.target.value))}
                                         className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-green-500"
                                         style={{
-                                            background: `linear-gradient(to right, #14b8a6 0%, #14b8a6 ${((values[slider.name] - (slider.min || 0)) / ((slider.max || 100) - (slider.min || 0))) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} ${((values[slider.name] - (slider.min || 0)) / ((slider.max || 100) - (slider.min || 0))) * 100}%, ${isDark ? '#374151' : '#e5e7eb'} 100%)`
+                                            background: (() => {
+                                                const minVal = typeof slider.min === 'number' ? slider.min : 0;
+                                                const maxVal = typeof slider.max === 'number' ? slider.max : 100;
+                                                const currentVal = values[slider.name] ?? minVal;
+                                                const percent = ((currentVal - minVal) / (maxVal - minVal)) * 100;
+                                                return `linear-gradient(to right, #14b8a6 0%, #14b8a6 ${percent}%, ${isDark ? '#374151' : '#e5e7eb'} ${percent}%, ${isDark ? '#374151' : '#e5e7eb'} 100%)`;
+                                            })()
                                         }}
                                     />
                                     <div className="flex justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
-                                        <span>{slider.min}</span>
-                                        <span>{slider.max}</span>
+                                        <span>{typeof slider.min === 'number' ? slider.min : 0}</span>
+                                        <span>{typeof slider.max === 'number' ? slider.max : 100}</span>
                                     </div>
                                 </div>
                             ) : (
@@ -304,7 +370,9 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade }) => {
 
             {/* Tips */}
             <div className="text-sm text-center" style={{ color: 'var(--text-muted)' }}>
-                💡 Predictions update automatically as you adjust the sliders
+                💡 {config.model_type === 'nlp' 
+                    ? 'Type your text and click Predict to get NLP predictions'
+                    : 'Predictions update automatically as you adjust the sliders'}
             </div>
 
             {/* SHAP Explain Modal */}

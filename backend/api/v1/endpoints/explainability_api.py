@@ -57,6 +57,7 @@ def get_secure_user_id(form_user_id: str, x_user_id: Optional[str], authorizatio
 class ExplainRequest(BaseModel):
     input_values: Dict[str, Any]
     user_id: str = "default"
+    mode: Optional[str] = "traditional"  # 'traditional', 'nlp', 'deep_learning'
 
 
 class ContributionItem(BaseModel):
@@ -167,25 +168,55 @@ async def explain_prediction(
     try:
         # SECURITY: Get verified user_id from JWT
         secure_user_id = get_secure_user_id(request.user_id, x_user_id, authorization)
+        mode = request.mode or "traditional"
         
-        from ml.automl_engine import automl_engine
+        # Load the correct engine based on mode
+        if mode == "nlp":
+            from ml.nlp_engine import nlp_engine
+            engine = nlp_engine
+            loaded = engine.load(secure_user_id)
+        elif mode == "deep_learning":
+            from ml.deep_learning_engine import deep_learning_engine
+            engine = deep_learning_engine
+            loaded = engine.load(secure_user_id)
+        else:
+            from ml.automl_engine import automl_engine
+            engine = automl_engine
+            loaded = engine.load(secure_user_id)
+            
+        if not loaded or engine.model is None:
+            raise HTTPException(status_code=404, detail=f"No trained {mode} model found")
         
-        # Load model for THIS user
-        loaded = automl_engine.load(secure_user_id)
-        if not loaded or automl_engine.model is None:
-            raise HTTPException(status_code=404, detail="No trained model found")
-        
-        # Get prediction using same method as playground
-        prediction_result = automl_engine.predict(request.input_values)
+        # Get prediction using correctly loaded engine
+        # For NLP, we need to extract text from input_values
+        if mode == "nlp":
+            text_input = ""
+            if isinstance(request.input_values, dict):
+                if len(request.input_values) == 1:
+                    text_input = list(request.input_values.values())[0]
+                else:
+                    for k, v in request.input_values.items():
+                        if isinstance(v, str) and len(v) > 5:
+                            text_input = v
+                            break
+                    if not text_input:
+                        text_input = str(list(request.input_values.values())[0])
+            else:
+                text_input = str(request.input_values)
+            
+            prediction_result = engine.predict(text_input, secure_user_id)
+        else:
+            prediction_result = engine.predict(request.input_values)
+            
         prediction = prediction_result.get("prediction")
         
         # Get stored column info
-        numeric_cols = getattr(automl_engine, 'numeric_cols', [])
-        categorical_cols = getattr(automl_engine, 'categorical_cols', [])
-        text_cols = getattr(automl_engine, 'text_cols', [])
-        feature_columns = getattr(automl_engine, 'feature_columns', [])
-        feature_metadata = getattr(automl_engine, 'feature_metadata', [])
-        model = automl_engine.model
+        numeric_cols = getattr(engine, 'numeric_cols', [])
+        categorical_cols = getattr(engine, 'categorical_cols', [])
+        text_cols = getattr(engine, 'text_cols', [])
+        feature_columns = getattr(engine, 'feature_columns', [])
+        feature_metadata = getattr(engine, 'feature_metadata', [])
+        model = engine.model
         
         logger.info(f"🔍 Explain request - Input values: {list(request.input_values.keys())}")
         logger.info(f"🔍 Stored columns - numeric: {numeric_cols}, categorical: {categorical_cols}, text: {text_cols}")

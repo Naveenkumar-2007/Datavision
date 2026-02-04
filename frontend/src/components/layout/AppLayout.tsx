@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserStore } from '@/store/userStore';
+import LogoImage from '@/components/LogoImage';
 
 const AppLayout: React.FC = () => {
   const location = useLocation();
@@ -103,7 +104,7 @@ const AppLayout: React.FC = () => {
             onClick={() => navigate('/')}
           >
             <div className="relative shrink-0">
-              <img src="/logo.png" alt="DataVision" className="w-9 h-9 object-contain rounded-lg" />
+              <LogoImage size={36} className="rounded-lg" />
               <div className="absolute inset-0 bg-green-400/20 rounded-full blur-lg opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
             <span

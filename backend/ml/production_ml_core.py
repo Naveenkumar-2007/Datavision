@@ -2668,3 +2668,187 @@ def production_train_pipeline(
         'y_test': y_test,
         'y_pred': trainer.best_model.predict(X_test)
     }
+
+
+# =============================================================================
+# BUILD SELECTED MODELS - For user-selected algorithm training
+# =============================================================================
+
+def build_selected_models(
+    selected_algorithms: List[str],
+    task_type: str = 'classification',
+    n_samples: int = 10000
+) -> Dict[str, Any]:
+    """
+    Build only the models selected by the user.
+    
+    Maps frontend algorithm keys to sklearn model instances.
+    
+    Args:
+        selected_algorithms: List of algorithm keys like ['random_forest', 'xgboost', 'lightgbm']
+        task_type: 'classification' or 'regression'
+        n_samples: Number of training samples (for optimization)
+    
+    Returns:
+        Dict mapping model names to model instances
+    """
+    is_large = n_samples > 50000
+    models = {}
+    
+    # Mapping of frontend keys to sklearn models
+    if task_type == 'classification':
+        model_map = {
+            # Tree-based
+            'random_forest': ('RandomForest', RandomForestClassifier(
+                n_estimators=100 if is_large else 150, max_depth=10, 
+                random_state=42, n_jobs=-1, class_weight='balanced'
+            )),
+            'xgboost': ('XGBoost', xgb.XGBClassifier(
+                n_estimators=100 if is_large else 150, max_depth=6,
+                learning_rate=0.1, random_state=42, n_jobs=-1, verbosity=0,
+                scale_pos_weight=10
+            )) if HAS_XGBOOST else None,
+            'lightgbm': ('LightGBM', lgb.LGBMClassifier(
+                n_estimators=100 if is_large else 150, max_depth=6,
+                learning_rate=0.1, random_state=42, n_jobs=-1, verbose=-1,
+                class_weight='balanced'
+            )) if HAS_LIGHTGBM else None,
+            'catboost': ('CatBoost', cb.CatBoostClassifier(
+                iterations=100 if is_large else 150, depth=6,
+                learning_rate=0.1, random_state=42, verbose=False,
+                auto_class_weights='Balanced'
+            )) if HAS_CATBOOST else None,
+            'decision_tree': ('DecisionTree', DecisionTreeClassifier(
+                max_depth=10, random_state=42, class_weight='balanced'
+            )),
+            'extra_trees': ('ExtraTrees', ExtraTreesClassifier(
+                n_estimators=100, max_depth=10, random_state=42, n_jobs=-1,
+                class_weight='balanced'
+            )),
+            'gradient_boosting': ('GradientBoosting', GradientBoostingClassifier(
+                n_estimators=80 if is_large else 120, max_depth=5,
+                learning_rate=0.1, random_state=42
+            )),
+            'hist_gradient_boosting': ('HistGradientBoosting', HistGradientBoostingClassifier(
+                max_iter=100 if is_large else 150, max_depth=6,
+                learning_rate=0.1, random_state=42, class_weight='balanced'
+            )),
+            
+            # Linear
+            'logistic_regression': ('LogisticRegression', LogisticRegression(
+                max_iter=2000, C=0.1, random_state=42, class_weight='balanced'
+            )),
+            'ridge': ('RidgeClassifier', RidgeClassifier(
+                alpha=1.0, random_state=42, class_weight='balanced'
+            )),
+            'sgd': ('SGDClassifier', SGDClassifier(
+                max_iter=1000, random_state=42, class_weight='balanced'
+            )),
+            
+            # SVM
+            'svm_linear': ('SVM_Linear', SVC(
+                kernel='linear', C=1.0, random_state=42, class_weight='balanced', probability=True
+            )),
+            'svm_rbf': ('SVM_RBF', SVC(
+                kernel='rbf', C=1.0, random_state=42, class_weight='balanced', probability=True
+            )),
+            'svm_poly': ('SVM_Poly', SVC(
+                kernel='poly', degree=3, C=1.0, random_state=42, class_weight='balanced', probability=True
+            )),
+            
+            # KNN
+            'knn_3': ('KNN_k3', KNeighborsClassifier(n_neighbors=3, weights='distance', n_jobs=-1)),
+            'knn_5': ('KNN_k5', KNeighborsClassifier(n_neighbors=5, weights='distance', n_jobs=-1)),
+            'knn_7': ('KNN_k7', KNeighborsClassifier(n_neighbors=7, weights='distance', n_jobs=-1)),
+            'knn_weighted': ('KNN_Weighted', KNeighborsClassifier(n_neighbors=5, weights='distance', n_jobs=-1)),
+            
+            # Naive Bayes
+            'gaussian_nb': ('GaussianNB', GaussianNB()),
+            'multinomial_nb': ('MultinomialNB', MultinomialNB()),
+            'bernoulli_nb': ('BernoulliNB', BernoulliNB()),
+            'complement_nb': ('ComplementNB', None),  # Will be created if sklearn has it
+            
+            # Ensemble
+            'adaboost': ('AdaBoost', AdaBoostClassifier(
+                n_estimators=50, learning_rate=0.1, random_state=42
+            )),
+            'bagging': ('Bagging', BaggingClassifier(
+                n_estimators=50, random_state=42, n_jobs=-1
+            )),
+            
+            # Other
+            'lda': ('LDA', LinearDiscriminantAnalysis()),
+            'qda': ('QDA', QuadraticDiscriminantAnalysis()),
+        }
+    else:
+        # Regression models
+        model_map = {
+            'random_forest': ('RandomForest', RandomForestRegressor(
+                n_estimators=100 if is_large else 150, max_depth=10,
+                random_state=42, n_jobs=-1
+            )),
+            'xgboost': ('XGBoost', xgb.XGBRegressor(
+                n_estimators=100 if is_large else 150, max_depth=6,
+                learning_rate=0.1, random_state=42, n_jobs=-1, verbosity=0
+            )) if HAS_XGBOOST else None,
+            'lightgbm': ('LightGBM', lgb.LGBMRegressor(
+                n_estimators=100 if is_large else 150, max_depth=6,
+                learning_rate=0.1, random_state=42, n_jobs=-1, verbose=-1
+            )) if HAS_LIGHTGBM else None,
+            'catboost': ('CatBoost', cb.CatBoostRegressor(
+                iterations=100 if is_large else 150, depth=6,
+                learning_rate=0.1, random_state=42, verbose=False
+            )) if HAS_CATBOOST else None,
+            'decision_tree': ('DecisionTree', DecisionTreeRegressor(
+                max_depth=10, random_state=42
+            )),
+            'extra_trees': ('ExtraTrees', ExtraTreesRegressor(
+                n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
+            )),
+            'gradient_boosting': ('GradientBoosting', GradientBoostingRegressor(
+                n_estimators=80 if is_large else 120, max_depth=5,
+                learning_rate=0.1, random_state=42
+            )),
+            'hist_gradient_boosting': ('HistGradientBoosting', HistGradientBoostingRegressor(
+                max_iter=100 if is_large else 150, max_depth=6,
+                learning_rate=0.1, random_state=42
+            )),
+            'ridge': ('Ridge', Ridge(alpha=1.0, random_state=42)),
+            'lasso': ('Lasso', Lasso(alpha=0.1, random_state=42)),
+            'elastic_net': ('ElasticNet', ElasticNet(alpha=0.1, l1_ratio=0.5, random_state=42)),
+            'sgd': ('SGDRegressor', SGDRegressor(max_iter=1000, random_state=42)),
+            'svm_linear': ('SVR_Linear', SVR(kernel='linear', C=1.0)),
+            'svm_rbf': ('SVR_RBF', SVR(kernel='rbf', C=1.0)),
+            'knn_3': ('KNN_k3', KNeighborsRegressor(n_neighbors=3, weights='distance', n_jobs=-1)),
+            'knn_5': ('KNN_k5', KNeighborsRegressor(n_neighbors=5, weights='distance', n_jobs=-1)),
+            'knn_7': ('KNN_k7', KNeighborsRegressor(n_neighbors=7, weights='distance', n_jobs=-1)),
+            'knn_weighted': ('KNN_Weighted', KNeighborsRegressor(n_neighbors=5, weights='distance', n_jobs=-1)),
+        }
+    
+    # Build only selected models
+    for algo_key in selected_algorithms:
+        if algo_key == 'auto':
+            continue  # Skip 'auto' - handled separately
+        
+        mapping = model_map.get(algo_key)
+        if mapping and mapping[1] is not None:
+            name, model = mapping
+            models[name] = model
+            print(f"   📦 Added: {name}")
+    
+    # If no models were added, use defaults
+    if not models:
+        print("   ⚠️ No valid algorithms selected, using defaults")
+        if task_type == 'classification':
+            models = {
+                'RandomForest': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1),
+                'LogisticRegression': LogisticRegression(max_iter=1000, random_state=42),
+            }
+        else:
+            models = {
+                'RandomForest': RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
+                'Ridge': Ridge(alpha=1.0, random_state=42),
+            }
+    
+    print(f"   🔧 Built {len(models)} models: {list(models.keys())}")
+    return models

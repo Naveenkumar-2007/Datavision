@@ -229,7 +229,14 @@ def detect_query_type(query: str, user_id: str = "") -> Tuple[QueryType, float, 
             r'(feature\s+)?importance\s+(chart|plot)',
             r'(class\s+)?distribution\s+(chart|plot)',
             r'calibration\s+(curve|plot)',
-            r'correlation\s+heatmap'
+            r'correlation\s+heatmap',
+            # NEW: Generic ML chart requests
+            r'(give|show|display|generate|create)\s+(me\s+)?(two|2|some|the|any|my)?\s*(ml|machine\s*learning)\s*(chart|graph|plot|visualization)s?',
+            r'(ml|machine\s*learning)\s*(chart|graph|plot|visualization)s?',
+            r'(two|2|some|any)\s*(chart|graph|plot|visualization)s?',
+            r'(give|show|display)\s+(me\s+)?(chart|graph|plot|visualization)s?',
+            r'(trained|my)\s*(model|data)?\s*(chart|graph|plot|visualization)s?',
+            r'based\s+on\s+(my\s+)?(trained|ml|model)\s*(data)?\s*(give|show|display)?',
         ]
     }
     
@@ -363,32 +370,68 @@ def _extract_feature_values(query: str) -> Dict[str, Any]:
 def get_stored_charts(user_id: str) -> Dict[str, Any]:
     """
     Retrieve charts generated during model training.
-    These are stored in storage/automl/{user_id}/
+    Uses model_persistence for proper storage location.
     """
     charts = {}
     
     try:
+        # PRIMARY: Try model_persistence (correct location)
+        try:
+            from ml.model_persistence import model_persistence
+            charts = model_persistence.get_charts(user_id) or {}
+            if charts:
+                logger.info(f"📊 Retrieved {len(charts)} charts from model_persistence for user {user_id}")
+                return charts
+        except Exception as e:
+            logger.debug(f"model_persistence not available: {e}")
+        
+        # FALLBACK: Try loading from automl engine saved state
+        try:
+            from ml.automl_engine import automl_engine
+            if automl_engine and hasattr(automl_engine, 'charts'):
+                engine_charts = automl_engine.charts or {}
+                if engine_charts:
+                    charts.update(engine_charts)
+                    logger.info(f"📊 Retrieved {len(charts)} charts from automl_engine")
+        except Exception as e:
+            logger.debug(f"automl_engine charts not available: {e}")
+        
+        # FALLBACK: Try NLP engine charts
+        try:
+            from ml.nlp_engine import NLPEngine
+            nlp_engine = NLPEngine()
+            nlp_engine.load(user_id)
+            if hasattr(nlp_engine, 'charts') and nlp_engine.charts:
+                for key, chart in nlp_engine.charts.items():
+                    charts[f"nlp_{key}"] = chart
+                logger.info(f"📊 Retrieved NLP charts for user {user_id}")
+        except Exception as e:
+            logger.debug(f"NLP charts not available: {e}")
+        
+        # FALLBACK: Try Deep Learning engine charts
+        try:
+            from ml.deep_learning_engine import DeepLearningEngine
+            dl_engine = DeepLearningEngine()
+            dl_engine.load(user_id)
+            if hasattr(dl_engine, 'charts') and dl_engine.charts:
+                for key, chart in dl_engine.charts.items():
+                    charts[f"dl_{key}"] = chart
+                logger.info(f"📊 Retrieved Deep Learning charts for user {user_id}")
+        except Exception as e:
+            logger.debug(f"DL charts not available: {e}")
+        
+        # FALLBACK: Check legacy storage path
         base_path = f"storage/automl/{user_id}"
+        if os.path.exists(base_path):
+            state_path = f"{base_path}/automl_state.pkl"
+            if os.path.exists(state_path):
+                import pickle
+                with open(state_path, 'rb') as f:
+                    state = pickle.load(f)
+                    if 'charts' in state:
+                        charts.update(state['charts'])
         
-        # Try to load from automl state
-        state_path = f"{base_path}/automl_state.pkl"
-        if os.path.exists(state_path):
-            import pickle
-            with open(state_path, 'rb') as f:
-                state = pickle.load(f)
-                if 'charts' in state:
-                    charts = state['charts']
-        
-        # Also check for chart JSON files
-        chart_dir = f"{base_path}/charts"
-        if os.path.exists(chart_dir):
-            for fname in os.listdir(chart_dir):
-                if fname.endswith('.json'):
-                    with open(f"{chart_dir}/{fname}") as f:
-                        chart_name = fname.replace('.json', '')
-                        charts[chart_name] = json.load(f)
-        
-        logger.info(f"📊 Retrieved {len(charts)} stored charts for user {user_id}")
+        logger.info(f"📊 Total charts retrieved for user {user_id}: {len(charts)}")
         
     except Exception as e:
         logger.error(f"Chart retrieval error: {e}")
@@ -543,8 +586,8 @@ Provide a helpful, accurate response. If it's about ML concepts, explain clearly
             QueryType.FEATURE_IMPORTANCE: _handle_feature_importance,
             QueryType.FEATURE_SPECIFIC: _handle_feature_specific,
             
-            # Chart requests
-            QueryType.SHOW_CHART: _handle_show_chart,
+            # Chart requests - pass user_id for stored charts
+            QueryType.SHOW_CHART: lambda q, d: _handle_show_chart(q, d, user_id),
             QueryType.CONFUSION_MATRIX: lambda q, d: _handle_specific_chart(q, d, user_id, 'confusion_matrix'),
             QueryType.ROC_CURVE: lambda q, d: _handle_specific_chart(q, d, user_id, 'roc_curve'),
             QueryType.PRECISION_RECALL: lambda q, d: _handle_specific_chart(q, d, user_id, 'precision_recall'),
@@ -566,7 +609,7 @@ Provide a helpful, accurate response. If it's about ML concepts, explain clearly
         try:
             if query_type in [QueryType.CONFUSION_MATRIX, QueryType.ROC_CURVE, 
                              QueryType.PRECISION_RECALL, QueryType.ACTUAL_VS_PREDICTED,
-                             QueryType.DASHBOARD]:
+                             QueryType.DASHBOARD, QueryType.SHOW_CHART]:
                 result = handler(query, df)
             elif query_type == QueryType.GENERAL_ML:
                 result = handler(query, df, context)
@@ -1104,30 +1147,70 @@ Based on the **{model}** model, these features have the highest predictive power
 
 
 def _get_feature_importance_data() -> List[Dict]:
-    """Get feature importance from trained model"""
+    """Get REAL feature importance from trained model - NO FAKE DATA"""
     try:
         model = automl_engine.model
         feature_names = automl_engine.feature_columns
         
-        # Try tree-based importance
+        logger.info(f"Getting feature importance for model type: {type(model).__name__}")
+        
+        importances = None
+        
+        # 1. Direct feature_importances_ (tree-based models, HistGradientBoosting, etc.)
         if hasattr(model, 'feature_importances_'):
             importances = model.feature_importances_
+            logger.info(f"Got feature_importances_: {len(importances)} features")
+        
+        # 2. Coefficients (linear models)
         elif hasattr(model, 'coef_'):
             importances = np.abs(model.coef_).flatten()
+            logger.info(f"Got coef_: {len(importances)} features")
+        
+        # 3. Pipeline with final estimator
+        elif hasattr(model, 'named_steps'):
+            final_step = list(model.named_steps.values())[-1]
+            if hasattr(final_step, 'feature_importances_'):
+                importances = final_step.feature_importances_
+                logger.info(f"Got feature_importances_ from pipeline final step")
+            elif hasattr(final_step, 'coef_'):
+                importances = np.abs(final_step.coef_).flatten()
+        
+        # 4. Ensemble with estimators_
         elif hasattr(model, 'estimators_'):
-            # Ensemble - average importances
-            importances = np.mean([
-                getattr(e, 'feature_importances_', np.zeros(len(feature_names)))
-                for e in model.estimators_ if hasattr(e, 'feature_importances_')
-            ], axis=0) if len(model.estimators_) > 0 else None
-        else:
+            valid_importances = []
+            for e in model.estimators_:
+                if hasattr(e, 'feature_importances_'):
+                    valid_importances.append(e.feature_importances_)
+            if valid_importances:
+                importances = np.mean(valid_importances, axis=0)
+                logger.info(f"Got averaged importances from {len(valid_importances)} estimators")
+        
+        # NO FALLBACK - Don't create fake/synthetic data
+        if importances is None:
+            logger.warning(f"No feature importance available for {type(model).__name__} - model doesn't support it")
             return []
         
-        if importances is None or len(importances) == 0:
+        if len(importances) == 0:
+            logger.warning("Feature importance is empty")
             return []
+        
+        # Handle length mismatch
+        if len(importances) != len(feature_names):
+            logger.warning(f"Length mismatch: {len(importances)} importances vs {len(feature_names)} features")
+            min_len = min(len(importances), len(feature_names))
+            importances = importances[:min_len]
+            feature_names = feature_names[:min_len]
+            # Truncate or pad
+            if len(importances) > len(feature_names):
+                importances = importances[:len(feature_names)]
+            else:
+                # Use first N features
+                feature_names = feature_names[:len(importances)]
         
         # Normalize
-        importances = importances / np.sum(importances) if np.sum(importances) > 0 else importances
+        total = np.sum(importances)
+        if total > 0:
+            importances = importances / total
         
         # Create list
         result = [
@@ -1136,10 +1219,13 @@ def _get_feature_importance_data() -> List[Dict]:
         ]
         result.sort(key=lambda x: x['importance'], reverse=True)
         
+        logger.info(f"Returning {len(result)} feature importances, top: {result[0] if result else 'none'}")
         return result
         
     except Exception as e:
         logger.error(f"Feature importance error: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 
@@ -1148,27 +1234,108 @@ def _get_feature_importance_data() -> List[Dict]:
 # =============================================================================
 
 def _handle_specific_chart(query: str, df, user_id: str, chart_type: str) -> Dict[str, Any]:
-    """Handle requests for specific chart types"""
+    """Handle requests for specific chart types - returns REAL charts from training"""
     result = {
         "answer": "",
         "mode": "predict",
         "confidence": 0.95,
         "sources": ["Chart Generator", automl_engine.model_name],
-        "ml_used": True
+        "ml_used": True,
+        "charts": [],
+        "mlCharts": []
     }
     
-    # Try to get stored chart
-    chart = get_chart_by_name(user_id, chart_type)
+    # Get stored charts first
+    stored_charts = get_stored_charts(user_id)
     
-    if chart:
-        response = f"""## 📊 {chart_type.replace('_', ' ').title()}
-
-Here is the **{chart_type.replace('_', ' ')}** from your trained model:
+    # Try to find matching chart from stored charts
+    chart = None
+    chart_data = None
+    
+    # Map requested chart type to possible storage keys
+    chart_keys_mapping = {
+        'confusion_matrix': ['confusion_matrix', 'confusion', 'cm'],
+        'roc_curve': ['roc_curve', 'roc', 'auc_roc'],
+        'precision_recall': ['precision_recall', 'pr_curve', 'precision_recall_curve'],
+        'feature_importance': ['feature_importance', 'importance', 'features'],
+        'actual_vs_predicted': ['actual_vs_predicted', 'predictions', 'actual_predicted'],
+        'class_distribution': ['class_distribution', 'distribution', 'target_distribution'],
+        'residuals': ['residuals', 'residual_plot'],
+        'correlation': ['correlation', 'correlation_heatmap', 'corr'],
+        'metrics': ['metrics', 'performance', 'model_metrics']
+    }
+    
+    # Find the chart
+    possible_keys = chart_keys_mapping.get(chart_type, [chart_type])
+    
+    if stored_charts:
+        for key in possible_keys:
+            for stored_key, stored_data in stored_charts.items():
+                if key.lower() in stored_key.lower():
+                    chart_data = stored_data
+                    chart = stored_data if isinstance(stored_data, dict) else None
+                    break
+            if chart_data:
+                break
+    
+    # Fallback to get_chart_by_name
+    if not chart_data:
+        chart = get_chart_by_name(user_id, chart_type)
+    
+    response = f"""## 📊 {chart_type.replace('_', ' ').title()}
 
 """
-        response += f"\n```plotly_chart\n{json.dumps(chart)}\n```"
+    
+    if chart_data:
+        # Check if it's a base64 image
+        if isinstance(chart_data, str):
+            if chart_data.startswith('data:image'):
+                # It's a base64 PNG image - add to mlCharts for frontend rendering
+                result["mlCharts"].append({
+                    "type": f"ml_{chart_type}",
+                    "image": chart_data,
+                    "title": chart_type.replace('_', ' ').title()
+                })
+                response += f"Here is the **{chart_type.replace('_', ' ')}** from your trained model:\n\n"
+                response += f"*[Base64 chart rendered in dashboard - see ML Predictions page for interactive view]*\n"
+                
+            elif chart_data.startswith('http'):
+                # It's a URL
+                response += f"![{chart_type}]({chart_data})\n"
+            else:
+                response += f"Chart data available but in unexpected format.\n"
+                
+        elif isinstance(chart_data, dict):
+            # Check if Plotly chart
+            if 'data' in chart_data or 'type' in chart_data:
+                response += f"Here is the **{chart_type.replace('_', ' ')}** from your trained model:\n\n"
+                response += f"\n```plotly_chart\n{json.dumps(chart_data)}\n```"
+                result["charts"].append(chart_data)
+            else:
+                # It's metrics or other dict data
+                response += f"**{chart_type.replace('_', ' ').title()} Data:**\n\n"
+                for k, v in chart_data.items():
+                    if isinstance(v, float):
+                        response += f"- **{k}**: {v:.4f}\n"
+                    else:
+                        response += f"- **{k}**: {v}\n"
         
         # Add interpretation
+        ml_context = {
+            'model_name': automl_engine.model_name,
+            'target': automl_engine.target_column,
+            'task_type': automl_engine.task_type,
+            'chart_type': chart_type
+        }
+        interpretation = generate_senior_explanation(chart_type, ml_context, query)
+        response += f"\n\n### 💡 Interpretation\n\n{interpretation}"
+        
+    elif chart:
+        # Got chart from get_chart_by_name
+        response += f"Here is the **{chart_type.replace('_', ' ')}** from your trained model:\n\n"
+        response += f"\n```plotly_chart\n{json.dumps(chart)}\n```"
+        result["charts"].append(chart)
+        
         ml_context = {
             'model_name': automl_engine.model_name,
             'target': automl_engine.target_column,
@@ -1178,48 +1345,347 @@ Here is the **{chart_type.replace('_', ' ')}** from your trained model:
         response += f"\n\n### 💡 Interpretation\n\n{interpretation}"
         
     else:
-        response = f"""## 📊 {chart_type.replace('_', ' ').title()}
+        # No chart found - generate one if possible
+        try:
+            metrics_data = automl_engine.get_model_metrics()
+            
+            if chart_type == 'confusion_matrix' and metrics_data.get('confusion_matrix'):
+                cm = metrics_data['confusion_matrix']
+                labels = ['Class 0', 'Class 1'] if len(cm) == 2 else [f'Class {i}' for i in range(len(cm))]
+                
+                target = automl_engine.target_column.lower()
+                if 'death' in target and len(cm) == 2:
+                    labels = ['Survived', 'Death']
+                
+                cm_chart = {
+                    "data": [{
+                        "type": "heatmap",
+                        "z": cm,
+                        "x": labels,
+                        "y": labels,
+                        "colorscale": [[0, "#dcfce7"], [0.5, "#22c55e"], [1, "#15803d"]],
+                        "showscale": True,
+                        "text": [[str(int(v)) for v in row] for row in cm],
+                        "texttemplate": "%{text}",
+                        "textfont": {"size": 18}
+                    }],
+                    "layout": {
+                        "title": {"text": "Confusion Matrix"},
+                        "xaxis": {"title": "Predicted"},
+                        "yaxis": {"title": "Actual", "autorange": "reversed"},
+                        "height": 400, "width": 450
+                    }
+                }
+                response += f"\n```plotly_chart\n{json.dumps(cm_chart)}\n```"
+                result["charts"].append(cm_chart)
+                
+            else:
+                response += f"""The **{chart_type.replace('_', ' ')}** chart was not found in storage.
 
-The **{chart_type.replace('_', ' ')}** chart is being generated...
+**To get this chart:**
+1. Go to **ML Predictions** page
+2. Charts are generated during model training
+3. Make sure you've trained a model with visualization enabled
 
-You can find all available charts on the **ML Predictions** page in the sidebar.
-
-### Available Charts:
+**Available chart types:**
 - Confusion Matrix
-- ROC Curve
+- ROC Curve  
 - Precision-Recall Curve
 - Feature Importance
 - Class Distribution
-- Calibration Curve
 """
+        except Exception as e:
+            logger.warning(f"Could not generate chart: {e}")
+            response += f"Chart not available. Visit **ML Predictions** page for full visualizations."
     
     result["answer"] = response
     return result
 
 
-def _handle_show_chart(query: str, df=None) -> Dict[str, Any]:
-    """Handle generic chart show requests"""
-    # Detect specific chart from query
-    q = query.lower()
-    
-    chart_mapping = {
-        'confusion': 'confusion_matrix',
-        'roc': 'roc_curve',
-        'precision': 'precision_recall',
-        'recall': 'precision_recall',
-        'feature': 'feature_importance',
-        'importance': 'feature_importance',
-        'distribution': 'class_distribution',
-        'calibration': 'calibration',
-        'correlation': 'correlation_heatmap'
+def _handle_show_chart(query: str, df=None, user_id: str = "") -> Dict[str, Any]:
+    """Handle chart requests - shows REAL ML charts with explanations"""
+    result = {
+        "answer": "",
+        "mode": "predict",
+        "confidence": 0.95,
+        "sources": ["ML Charts", automl_engine.model_name],
+        "ml_used": True,
+        "charts": [],
+        "mlCharts": []
     }
     
-    for keyword, chart_name in chart_mapping.items():
-        if keyword in q:
-            return _handle_feature_importance(query, df) if chart_name == 'feature_importance' else _handle_metrics(query, df)
+    q = query.lower()
+    model = automl_engine.model_name
+    target = automl_engine.target_column
+    task = automl_engine.task_type
     
-    # Default: show feature importance
-    return _handle_feature_importance(query, df)
+    logger.info(f"📊 _handle_show_chart: model={model}, target={target}, task={task}, user_id={user_id}")
+    
+    # Get model metrics (real from training)
+    try:
+        metrics_data = automl_engine.get_model_metrics()
+        metrics = metrics_data.get('metrics', {})
+        confusion_matrix = metrics_data.get('confusion_matrix')
+    except:
+        metrics = {}
+        confusion_matrix = None
+    
+    # Get stored charts
+    stored_charts = get_stored_charts(user_id) if user_id else {}
+    logger.info(f"📊 Stored charts: {list(stored_charts.keys()) if stored_charts else 'None'}")
+    
+    # Check what's available
+    has_confusion_matrix = confusion_matrix is not None and len(confusion_matrix) > 0
+    has_metrics = bool(metrics)
+    
+    # Check feature importance support
+    try:
+        model_obj = automl_engine.model
+        has_feature_importance = hasattr(model_obj, 'feature_importances_') or hasattr(model_obj, 'coef_')
+        logger.info(f"📊 Model type: {type(model_obj).__name__}, has_feature_importances: {has_feature_importance}")
+    except:
+        has_feature_importance = False
+    
+    # Build response
+    response = f"""## 📊 ML Charts - {model}
+
+**Model**: {model}  
+**Target**: {target}  
+**Task**: {task.replace('_', ' ').title()}
+
+---
+
+"""
+    
+    charts_added = 0
+    max_charts = 2 if ('two' in q or '2' in q) else 4
+    
+    # =========================================================================
+    # CHART 1: Feature Importance
+    # =========================================================================
+    if charts_added < max_charts and has_feature_importance:
+        try:
+            importance = _get_feature_importance_data()
+            if importance and len(importance) > 0:
+                feats = [f['feature'][:25] for f in importance[:10]]
+                vals = [f['importance'] * 100 for f in importance[:10]]
+                
+                fi_chart = {
+                    "data": [{
+                        "type": "bar",
+                        "y": feats[::-1],
+                        "x": vals[::-1],
+                        "orientation": "h",
+                        "marker": {"color": "#3b82f6"},
+                        "text": [f"{v:.1f}%" for v in vals[::-1]],
+                        "textposition": "outside"
+                    }],
+                    "layout": {
+                        "title": {"text": "🔑 Feature Importance", "font": {"size": 16}},
+                        "xaxis": {"title": "Importance (%)"},
+                        "margin": {"l": 180, "r": 60, "t": 50, "b": 50},
+                        "height": 400,
+                        "paper_bgcolor": "rgba(248,250,252,1)",
+                        "plot_bgcolor": "rgba(248,250,252,1)"
+                    }
+                }
+                response += f"### 🔑 Feature Importance\n\n"
+                response += f"**Top features driving {target} predictions:**\n"
+                for i, feat in enumerate(importance[:5]):
+                    response += f"- **{feat['feature']}**: {feat['importance']*100:.1f}%\n"
+                response += f"\n```plotly_chart\n{json.dumps(fi_chart)}\n```\n\n"
+                result["charts"].append(fi_chart)
+                charts_added += 1
+                logger.info(f"✅ Added Feature Importance chart with {len(importance)} features")
+        except Exception as e:
+            logger.error(f"Feature importance failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # =========================================================================
+    # CHART 2: Metrics Chart
+    # =========================================================================
+    if charts_added < max_charts and has_metrics:
+        try:
+            metric_names = []
+            metric_values = []
+            metric_colors = []
+            
+            if 'regression' in task.lower():
+                if 'r2' in metrics:
+                    r2_val = metrics['r2']
+                    metric_names.append('R² Score')
+                    metric_values.append(r2_val * 100)
+                    metric_colors.append('#22c55e' if r2_val > 0.7 else '#eab308' if r2_val > 0.5 else '#ef4444')
+                    
+                response += f"### 📈 Regression Metrics\n\n"
+                response += f"| Metric | Value | Interpretation |\n|--------|-------|----------------|\n"
+                if 'r2' in metrics:
+                    r2 = metrics['r2']
+                    interp = "Excellent" if r2 > 0.8 else "Good" if r2 > 0.6 else "Moderate" if r2 > 0.4 else "Weak"
+                    response += f"| **R² Score** | {r2:.4f} | {interp} fit |\n"
+                if 'mae' in metrics:
+                    response += f"| **MAE** | {metrics['mae']:,.2f} | Average error |\n"
+                if 'rmse' in metrics:
+                    response += f"| **RMSE** | {metrics['rmse']:,.2f} | Root mean squared error |\n"
+                response += "\n"
+            else:
+                if 'accuracy' in metrics:
+                    metric_names.append('Accuracy')
+                    metric_values.append(metrics['accuracy'] * 100)
+                    metric_colors.append('#22c55e')
+                if 'f1' in metrics:
+                    metric_names.append('F1 Score')
+                    metric_values.append(metrics['f1'] * 100)
+                    metric_colors.append('#3b82f6')
+                if 'precision' in metrics:
+                    metric_names.append('Precision')
+                    metric_values.append(metrics['precision'] * 100)
+                    metric_colors.append('#8b5cf6')
+                if 'recall' in metrics:
+                    metric_names.append('Recall')
+                    metric_values.append(metrics['recall'] * 100)
+                    metric_colors.append('#ec4899')
+                    
+                response += f"### 📈 Classification Metrics\n\n"
+                if 'accuracy' in metrics:
+                    acc = metrics['accuracy'] * 100
+                    response += f"- **Accuracy**: {acc:.1f}%\n"
+                if 'f1' in metrics:
+                    response += f"- **F1 Score**: {metrics['f1']*100:.1f}%\n"
+                response += "\n"
+            
+            if metric_names:
+                metrics_chart = {
+                    "data": [{
+                        "type": "bar",
+                        "x": metric_names,
+                        "y": metric_values,
+                        "marker": {"color": metric_colors},
+                        "text": [f"{v:.1f}%" for v in metric_values],
+                        "textposition": "outside"
+                    }],
+                    "layout": {
+                        "title": {"text": "📈 Model Performance", "font": {"size": 16}},
+                        "yaxis": {"title": "Score (%)", "range": [0, 110]},
+                        "height": 350,
+                        "paper_bgcolor": "rgba(248,250,252,1)",
+                        "plot_bgcolor": "rgba(248,250,252,1)"
+                    }
+                }
+                response += f"```plotly_chart\n{json.dumps(metrics_chart)}\n```\n\n"
+                result["charts"].append(metrics_chart)
+                charts_added += 1
+                logger.info(f"✅ Added Metrics chart")
+        except Exception as e:
+            logger.error(f"Metrics chart failed: {e}")
+    
+    # =========================================================================
+    # CHART 3: Confusion Matrix (classification only)
+    # =========================================================================
+    if charts_added < max_charts and has_confusion_matrix and 'classification' in task.lower():
+        try:
+            cm = confusion_matrix
+            labels = ['Class 0', 'Class 1'] if len(cm) == 2 else [f'Class {i}' for i in range(len(cm))]
+            
+            cm_chart = {
+                "data": [{
+                    "type": "heatmap",
+                    "z": cm,
+                    "x": labels,
+                    "y": labels,
+                    "colorscale": [[0, "#dcfce7"], [0.5, "#22c55e"], [1, "#15803d"]],
+                    "showscale": True,
+                    "text": [[str(int(v)) for v in row] for row in cm],
+                    "texttemplate": "%{text}",
+                    "textfont": {"size": 18}
+                }],
+                "layout": {
+                    "title": {"text": "📊 Confusion Matrix", "font": {"size": 16}},
+                    "xaxis": {"title": "Predicted"},
+                    "yaxis": {"title": "Actual", "autorange": "reversed"},
+                    "height": 400, "width": 450,
+                    "paper_bgcolor": "rgba(248,250,252,1)"
+                }
+            }
+            response += f"### 📊 Confusion Matrix\n\n"
+            response += f"```plotly_chart\n{json.dumps(cm_chart)}\n```\n\n"
+            result["charts"].append(cm_chart)
+            charts_added += 1
+            logger.info(f"✅ Added Confusion Matrix chart")
+        except Exception as e:
+            logger.error(f"Confusion matrix failed: {e}")
+    
+    # =========================================================================
+    # CHART 4: Try stored charts
+    # =========================================================================
+    if stored_charts and charts_added < max_charts:
+        for chart_key, chart_data in stored_charts.items():
+            if charts_added >= max_charts:
+                break
+            try:
+                if isinstance(chart_data, str) and chart_data.startswith('data:image'):
+                    result["mlCharts"].append({
+                        "type": chart_key,
+                        "image": chart_data,
+                        "title": chart_key.replace('_', ' ').title()
+                    })
+                    response += f"### {chart_key.replace('_', ' ').title()}\n\n*[Stored chart from training]*\n\n"
+                    charts_added += 1
+                elif isinstance(chart_data, dict) and 'data' in chart_data:
+                    response += f"### {chart_key.replace('_', ' ').title()}\n\n"
+                    response += f"```plotly_chart\n{json.dumps(chart_data)}\n```\n\n"
+                    result["charts"].append(chart_data)
+                    charts_added += 1
+            except:
+                continue
+    
+    # =========================================================================
+    # SUMMARY
+    # =========================================================================
+    if charts_added == 0:
+        response = f"""## ⚠️ Charts Not Available for Your Model
+
+**Model**: {model}  
+**Target**: {target}  
+**Task**: {task.replace('_', ' ').title()}
+
+---
+
+Your current model/data configuration does not support the requested charts:
+
+"""
+        if not has_feature_importance:
+            response += f"- ❌ **Feature Importance**: The {model} model doesn't expose feature importances\n"
+        if not has_metrics:
+            response += "- ❌ **Metrics**: No performance metrics saved during training\n"
+        if 'regression' in task.lower():
+            response += "- ℹ️ **Note**: Regression models don't have confusion matrix or ROC curves\n"
+        
+        response += """
+### 💡 What You Can Do:
+
+1. **View metrics**: Ask `Show model metrics` for R², MAE, RMSE values
+2. **Make predictions**: Ask `Predict for [feature]=value`
+3. **Retrain**: Use AutoML tab with a different model that supports feature importance
+
+"""
+    else:
+        response += f"\n---\n\n✅ **{charts_added} chart(s)** generated from your **{model}** model.\n\n"
+        
+        # Add interpretation
+        ml_context = {
+            'model_name': model,
+            'task_type': task,
+            'target': target,
+            'metrics': metrics
+        }
+        interpretation = generate_senior_explanation('charts', ml_context, query)
+        response += f"### 💡 Analysis\n\n{interpretation}\n"
+    
+    result["answer"] = response
+    logger.info(f"📊 _handle_show_chart completed: {charts_added} charts")
+    return result
 
 
 # =============================================================================
@@ -1227,13 +1693,15 @@ def _handle_show_chart(query: str, df=None) -> Dict[str, Any]:
 # =============================================================================
 
 def _handle_dashboard(query: str, df, user_id: str) -> Dict[str, Any]:
-    """Generate comprehensive dashboard with all charts and metrics"""
+    """Generate comprehensive dashboard with REAL charts and metrics from trained model"""
     result = {
         "answer": "",
         "mode": "predict",
         "confidence": 0.98,
         "sources": ["Full Dashboard", automl_engine.model_name],
-        "ml_used": True
+        "ml_used": True,
+        "charts": [],  # Return charts array for frontend
+        "mlCharts": []  # For matplotlib base64 charts
     }
     
     model = automl_engine.model_name
@@ -1244,8 +1712,10 @@ def _handle_dashboard(query: str, df, user_id: str) -> Dict[str, Any]:
     try:
         metrics_data = automl_engine.get_model_metrics()
         metrics = metrics_data.get('metrics', {})
+        cm = metrics_data.get('confusion_matrix')
     except:
         metrics = {}
+        cm = None
     
     response = f"""## 📊 Complete ML Dashboard
 
@@ -1264,32 +1734,99 @@ def _handle_dashboard(query: str, df, user_id: str) -> Dict[str, Any]:
 
 """
     
+    # Show all available metrics
     if metrics.get('accuracy'):
-        response += f"- **Accuracy**: {metrics['accuracy']*100:.1f}%\n"
+        acc = metrics['accuracy'] * 100
+        emoji = "🟢" if acc > 85 else "🟡" if acc > 70 else "🔴"
+        response += f"| **Accuracy** | {emoji} {acc:.2f}% |\n"
+    if metrics.get('precision'):
+        response += f"| **Precision** | {metrics['precision']*100:.2f}% |\n"
+    if metrics.get('recall'):
+        response += f"| **Recall** | {metrics['recall']*100:.2f}% |\n"
     if metrics.get('f1'):
-        response += f"- **F1 Score**: {metrics['f1']*100:.1f}%\n"
+        response += f"| **F1 Score** | {metrics['f1']*100:.2f}% |\n"
     if metrics.get('r2'):
-        response += f"- **R² Score**: {metrics['r2']:.4f}\n"
+        response += f"| **R² Score** | {metrics['r2']:.4f} |\n"
+    if metrics.get('rmse'):
+        response += f"| **RMSE** | {metrics['rmse']:.4f} |\n"
+    if metrics.get('mae'):
+        response += f"| **MAE** | {metrics['mae']:.4f} |\n"
+    
+    response += "\n---\n\n### 📈 Real Charts from Your Trained Model\n\n"
+    
+    # Get real charts from storage
+    stored_charts = get_stored_charts(user_id)
+    chart_count = 0
+    
+    if stored_charts:
+        # Priority charts to show
+        priority_charts = ['confusion_matrix', 'roc_curve', 'feature_importance', 'metrics', 
+                          'precision_recall', 'actual_vs_predicted', 'residuals', 'class_distribution']
+        
+        for chart_name in priority_charts:
+            for stored_name, chart_data in stored_charts.items():
+                if chart_name in stored_name.lower() and chart_count < 4:
+                    # Check if it's a base64 image or plotly chart
+                    if isinstance(chart_data, str) and chart_data.startswith('data:image'):
+                        # Base64 image chart
+                        result["mlCharts"].append({
+                            "type": f"ml_{chart_name}",
+                            "image": chart_data,
+                            "title": chart_name.replace('_', ' ').title()
+                        })
+                        response += f"📊 **{chart_name.replace('_', ' ').title()}** - Loaded from training\n\n"
+                        chart_count += 1
+                    elif isinstance(chart_data, dict) and ('data' in chart_data or 'type' in chart_data):
+                        # Plotly chart
+                        response += f"\n```plotly_chart\n{json.dumps(chart_data)}\n```\n"
+                        result["charts"].append(chart_data)
+                        chart_count += 1
+                    break
+        
+        # Show available charts summary
+        response += f"\n**{len(stored_charts)} charts available** from your training session.\n"
+        available_charts = list(stored_charts.keys())[:10]
+        response += "\nAvailable: " + ", ".join([c.replace('_', ' ').title() for c in available_charts])
+        
+    else:
+        response += "⚠️ No stored charts found. Visit **ML Predictions** page to view charts.\n"
+    
+    # Add confusion matrix if available in metrics
+    if cm and chart_count < 4:
+        labels = ['Class 0', 'Class 1'] if len(cm) == 2 else [f'Class {i}' for i in range(len(cm))]
+        if 'death' in target.lower() and len(cm) == 2:
+            labels = ['Survived', 'Death']
+        
+        cm_chart = {
+            "data": [{
+                "type": "heatmap",
+                "z": cm,
+                "x": labels,
+                "y": labels,
+                "colorscale": [[0, "#dcfce7"], [0.5, "#22c55e"], [1, "#15803d"]],
+                "showscale": True,
+                "text": [[str(int(v)) for v in row] for row in cm],
+                "texttemplate": "%{text}",
+                "textfont": {"size": 18, "color": "#1f2937"}
+            }],
+            "layout": {
+                "title": {"text": "📊 Confusion Matrix", "font": {"size": 16}},
+                "xaxis": {"title": "Predicted"},
+                "yaxis": {"title": "Actual", "autorange": "reversed"},
+                "paper_bgcolor": "rgba(0,0,0,0)",
+                "height": 400, "width": 450
+            }
+        }
+        response += f"\n\n```plotly_chart\n{json.dumps(cm_chart)}\n```"
+        result["charts"].append(cm_chart)
     
     response += """
----
-
-### 📈 Available Visualizations
-
-To view specific charts, ask me:
-- "Show confusion matrix"
-- "Show ROC curve"
-- "Show feature importance"
-- "Show precision-recall curve"
-- "Show class distribution"
-
-Or visit the **ML Predictions** page for the full interactive dashboard!
-
 ---
 
 ### 💡 Quick Actions
 
 - **Make Prediction**: "Predict for [feature]=value"
+- **Show Chart**: "Show confusion matrix" or "Show ROC curve"
 - **What-If Analysis**: "What if [feature] was [value]?"
 - **Explain**: "Why did the model predict this?"
 """

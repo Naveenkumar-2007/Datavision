@@ -722,6 +722,41 @@ async def gather_user_data_context(user_id: str) -> str:
                                         context_parts.append(f"      {idx}. {fname} (importance: {importance:.3f})")
                                     else:
                                         context_parts.append(f"      {idx}. {feat}")
+                            
+                            # Try to get sample predictions from stored model
+                            try:
+                                from ml.automl_engine import ProductionMLEngine
+                                engine = ProductionMLEngine()
+                                if engine.load(user_id):
+                                    # Read some sample data and make predictions
+                                    sample_preds = []
+                                    for data_file in data_files[:1]:
+                                        try:
+                                            sample_df = pd.read_csv(data_file) if data_file.suffix.lower() == '.csv' else pd.read_excel(data_file)
+                                            for row_idx, row in sample_df.head(3).iterrows():
+                                                try:
+                                                    row_dict = row.to_dict()
+                                                    X_sample = engine._preprocess_single(row_dict)
+                                                    pred = engine.model.predict([X_sample])[0]
+                                                    if hasattr(engine, 'target_encoder') and engine.target_encoder:
+                                                        try:
+                                                            pred_label = engine.target_encoder.inverse_transform([int(pred)])[0]
+                                                        except:
+                                                            pred_label = str(pred)
+                                                    else:
+                                                        pred_label = str(pred)
+                                                    sample_preds.append(pred_label)
+                                                except:
+                                                    continue
+                                        except:
+                                            continue
+                                    
+                                    if sample_preds:
+                                        context_parts.append(f"   🔮 SAMPLE PREDICTIONS:")
+                                        for idx, pred in enumerate(sample_preds[:3], 1):
+                                            context_parts.append(f"      {idx}. Predicted {target}: {pred}")
+                            except Exception as pred_err:
+                                logger.debug(f"Could not generate sample predictions: {pred_err}")
                     except Exception as e:
                         logger.warning(f"Error reading ML results: {e}")
         

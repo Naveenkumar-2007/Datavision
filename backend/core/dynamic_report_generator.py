@@ -282,7 +282,7 @@ class DynamicReportGenerator:
         Generate a report based on type.
         
         Args:
-            report_type: One of 'metrics', 'breakdown', 'summary', 'executive', 'predictive', 'anomaly'
+            report_type: One of 'metrics', 'summary', 'executive', 'predictive', 'anomaly'
             use_advanced: Use the new Advanced Report Agent (default: True)
             
         Returns:
@@ -311,7 +311,6 @@ class DynamicReportGenerator:
         # Fallback to legacy generators
         generators = {
             "metrics": self._generate_metrics_report,
-            "breakdown": self._generate_breakdown_report,
             "summary": self._generate_summary_report,
             "executive": self._generate_executive_report,
             "predictive": self._generate_predictive_report,
@@ -486,36 +485,73 @@ Key metrics:
     # =========================================================================
     
     def _generate_breakdown_report(self) -> Dict[str, Any]:
-        """Generate category breakdown report."""
+        """Generate category breakdown report with enhanced analysis."""
         categorical_cols = self.df.select_dtypes(include=['object']).columns.tolist()
         numeric_cols = self.df.select_dtypes(include=[np.number]).columns.tolist()
         
         sections = []
         
-        # Section 1: Category Overview
-        breakdown_content = f"**Categorical Columns**: {len(categorical_cols)}\n\n"
-        for col in categorical_cols[:5]:
-            unique_count = self.df[col].nunique()
-            breakdown_content += f"• **{col}**: {unique_count} unique values\n"
+        # Section 1: Data Overview - Always show meaningful stats
+        overview_content = f"**Dataset Overview**\n\n"
+        overview_content += f"• **Total Records**: {len(self.df):,}\n"
+        overview_content += f"• **Total Columns**: {len(self.df.columns)}\n"
+        overview_content += f"• **Numeric Columns**: {len(numeric_cols)}\n"
+        overview_content += f"• **Categorical Columns**: {len(categorical_cols)}\n\n"
+        
+        if categorical_cols:
+            overview_content += "**Categorical Column Details:**\n"
+            for col in categorical_cols[:5]:
+                unique_count = self.df[col].nunique()
+                overview_content += f"• **{col}**: {unique_count} unique values\n"
+        else:
+            overview_content += "**Key Insight**: This dataset is primarily numeric. "
+            overview_content += "Analysis will focus on numeric distributions and patterns.\n"
         
         sections.append({
-            "title": "Category Overview",
-            "content": breakdown_content
+            "title": "Data Overview",
+            "content": overview_content
         })
         
-        # Section 2-4: Pie charts for top categories
-        for col in categorical_cols[:3]:
-            dist = self.df[col].value_counts().head(8)
-            chart_data = [{"name": str(k), "value": int(v)} for k, v in dist.items()]
-            
-            sections.append({
-                "title": f"Distribution of {col}",
-                "content": f"Top {len(chart_data)} categories in {col}.",
-                "chartType": "pie",
-                "data": chart_data
-            })
+        # Section 2-4: If we have categorical columns, show pie charts
+        if categorical_cols:
+            for col in categorical_cols[:3]:
+                dist = self.df[col].value_counts().head(8)
+                chart_data = [{"name": str(k), "value": int(v)} for k, v in dist.items()]
+                
+                sections.append({
+                    "title": f"Distribution of {col}",
+                    "content": f"Top {len(chart_data)} categories in {col}.",
+                    "chartType": "pie",
+                    "data": chart_data
+                })
         
-        # Section 5: Category vs Numeric Analysis
+        # Section: Numeric Distribution Analysis (when no categorical cols or as additional)
+        if numeric_cols:
+            # Show distribution for top numeric columns
+            for col in numeric_cols[:3 if not categorical_cols else 2]:
+                try:
+                    col_data = self.df[col].dropna()
+                    if len(col_data) > 0:
+                        # Create histogram-like data
+                        hist_data = []
+                        min_val, max_val = col_data.min(), col_data.max()
+                        if max_val > min_val:
+                            bins = np.linspace(min_val, max_val, 8)
+                            for i in range(len(bins) - 1):
+                                count = ((col_data >= bins[i]) & (col_data < bins[i+1])).sum()
+                                label = f"{bins[i]:.1f}-{bins[i+1]:.1f}"
+                                hist_data.append({"name": label, "value": int(count)})
+                            
+                            sections.append({
+                                "title": f"Distribution of {col}",
+                                "content": f"Value distribution for {col}. Mean: {col_data.mean():.2f}, Median: {col_data.median():.2f}",
+                                "chartType": "bar",
+                                "data": hist_data
+                            })
+                except Exception:
+                    pass
+        
+        # Section: Category vs Numeric Analysis
         if categorical_cols and numeric_cols:
             cat_col = categorical_cols[0]
             num_col = numeric_cols[0]
@@ -530,23 +566,56 @@ Key metrics:
                 "data": chart_data
             })
         
-        # Section 6: AI-Powered Category Insights (LLM)
-        if LLM_AVAILABLE and len(categorical_cols) > 0:
-            insight_prompt = f"""Analyze this categorical data breakdown:
+        # Section: Numeric Correlations (when primarily numeric data)
+        if len(numeric_cols) >= 2:
+            # Find top correlations
+            try:
+                corr_matrix = self.df[numeric_cols].corr()
+                correlations = []
+                for i in range(len(numeric_cols)):
+                    for j in range(i+1, len(numeric_cols)):
+                        corr_val = corr_matrix.iloc[i, j]
+                        if not np.isnan(corr_val) and abs(corr_val) > 0.3:
+                            correlations.append({
+                                "name": f"{numeric_cols[i][:8]} vs {numeric_cols[j][:8]}",
+                                "value": round(corr_val, 3)
+                            })
+                
+                if correlations:
+                    # Sort by absolute value
+                    correlations.sort(key=lambda x: abs(x["value"]), reverse=True)
+                    sections.append({
+                        "title": "Numeric Correlations",
+                        "content": "Correlation analysis between numeric columns. Values close to 1 or -1 indicate strong relationships.",
+                        "chartType": "horizontal_bar",
+                        "data": correlations[:8]
+                    })
+            except Exception:
+                pass
+        
+        # Section: AI-Powered Insights (LLM)
+        if LLM_AVAILABLE:
+            insight_prompt = f"""Analyze this data breakdown:
 
-Dataset: {len(self.df):,} records
-Categories analyzed:
+Dataset: {len(self.df):,} records, {len(self.df.columns)} columns
+Numeric columns ({len(numeric_cols)}): {', '.join(numeric_cols[:5])}
 """
-            for col in categorical_cols[:3]:
-                top_vals = self.df[col].value_counts().head(3)
-                insight_prompt += f"- {col}: {self.df[col].nunique()} unique values. Top: {', '.join([f'{v} ({c})' for v, c in top_vals.items()])}\n"
+            if categorical_cols:
+                insight_prompt += f"\nCategorical columns ({len(categorical_cols)}):\n"
+                for col in categorical_cols[:3]:
+                    top_vals = self.df[col].value_counts().head(3)
+                    insight_prompt += f"- {col}: {self.df[col].nunique()} unique values. Top: {', '.join([f'{v} ({c})' for v, c in top_vals.items()])}\n"
+            else:
+                insight_prompt += "\nThis is a purely numeric dataset.\n"
+                for col in numeric_cols[:3]:
+                    insight_prompt += f"- {col}: Mean={self.df[col].mean():.2f}, Std={self.df[col].std():.2f}\n"
             
-            insight_prompt += "\nProvide 3 insights about category distribution patterns. Be specific."
+            insight_prompt += "\nProvide 3 specific insights about data patterns and distribution. Be actionable."
             
-            insight = self._generate_llm_insight(insight_prompt, max_tokens=200)
+            insight = self._generate_llm_insight(insight_prompt, max_tokens=250)
             if insight:
                 sections.append({
-                    "title": "AI Category Insights",
+                    "title": "AI Data Insights",
                     "content": insight
                 })
         

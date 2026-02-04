@@ -22,6 +22,8 @@ ALL calculations are REAL - done with pandas!
 
 import json
 import logging
+import hashlib
+import time as time_module
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
@@ -31,6 +33,10 @@ import random
 from core.llm import chat
 
 logger = logging.getLogger(__name__)
+
+# 🚀 DASHBOARD CACHE - Avoid regenerating same dashboard
+_dashboard_cache = {}
+_CACHE_TTL = 30  # 30 seconds cache
 
 
 def sanitize_for_json(obj):
@@ -2397,10 +2403,23 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
     
     ALL calculations are REAL - done with pandas!
     """
+    global _dashboard_cache
+    
     if df is None or df.empty:
         return {"error": "No data available. Please upload files first."}
     
     try:
+        # 🚀 CACHE CHECK - Return cached dashboard if still fresh
+        cache_key = f"{user_id}_{len(df)}_{len(df.columns)}_{list(df.columns)[:5]}"
+        cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
+        
+        current_time = time_module.time()
+        if cache_hash in _dashboard_cache:
+            cached_data, cached_time = _dashboard_cache[cache_hash]
+            if current_time - cached_time < _CACHE_TTL:
+                logger.info(f"⚡ CACHE HIT - Returning cached dashboard (age: {current_time - cached_time:.1f}s)")
+                return cached_data
+        
         logger.info(f"🤖 AUTONOMOUS Dashboard generation for {user_id}")
         logger.info(f"📊 Data: {len(df)} rows, {len(df.columns)} cols")
         
@@ -2426,23 +2445,35 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
         # Step 6: Generate recommendations
         recommendations = generate_recommendations(df)
         
-        # Step 7: Generate title (minimal LLM use)
-        try:
-            cols = list(df.columns)[:6]
-            # Ask for title
-            generated_title = chat(f"3-word dashboard title for: {cols}. Just title.", temperature=0.2, max_tokens=15).strip().strip('"\'')
-            
-            # Validate title (check if it's an error message or too long)
-            if any(err in generated_title.lower() for err in ['error', 'rate limit', 'busy', 'unable', 'connection']):
-                title = f"{domain.title()} Analytics Dashboard"
-            elif len(generated_title) > 50: # Too long for a title
-                title = f"{domain.title()} Analytics Dashboard"
-            else:
-                title = generated_title
-        except:
-            title = f"{domain.title()} Analytics Dashboard"
+        # Step 7: Generate title (FAST - use LLM only if quick, otherwise fallback)
+        title = f"{domain.title()} Analytics Dashboard"  # Default fallback
         
-        return sanitize_for_json({
+        try:
+            import asyncio
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+            
+            def get_llm_title():
+                cols = list(df.columns)[:6]
+                return chat(f"3-word dashboard title for: {cols}. Just title.", temperature=0.2, max_tokens=15).strip().strip('"\'')
+            
+            # 🚀 FAST: Use ThreadPoolExecutor with 2s timeout
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(get_llm_title)
+                try:
+                    generated_title = future.result(timeout=2.0)  # 2 second max
+                    
+                    # Validate title
+                    if generated_title and len(generated_title) < 50:
+                        if not any(err in generated_title.lower() for err in ['error', 'rate limit', 'busy', 'unable', 'connection']):
+                            title = generated_title
+                except FuturesTimeoutError:
+                    logger.info("⏱️ Title generation timeout - using fallback")
+                except:
+                    pass
+        except:
+            pass  # Use default title
+        
+        result = sanitize_for_json({
             "dashboard_title": title,
             "domain": domain,
             "theme": {"primary": palette['primary'][0], "accent": palette['accent'][0]},
@@ -2453,6 +2484,17 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
             "generated_at": datetime.now().isoformat(),
             "data_source": f"{len(df):,} rows × {len(df.columns)} columns"
         })
+        
+        # 🚀 CACHE the result
+        _dashboard_cache[cache_hash] = (result, current_time)
+        
+        # Clean old cache entries (keep only last 10)
+        if len(_dashboard_cache) > 10:
+            oldest_keys = sorted(_dashboard_cache.keys(), key=lambda k: _dashboard_cache[k][1])[:5]
+            for k in oldest_keys:
+                del _dashboard_cache[k]
+        
+        return result
         
     except Exception as e:
         logger.error(f"Dashboard error: {e}")

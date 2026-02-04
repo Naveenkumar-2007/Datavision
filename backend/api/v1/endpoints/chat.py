@@ -813,6 +813,7 @@ def clean_ai_response(response: str) -> str:
     """
     Post-process AI response to remove code blocks, tables, LaTeX.
     Ensures clean, professional output even if LLM ignores prompt.
+    PRODUCTION: Also removes debug footers like "Analysis Mode: X"
     """
     import re
     
@@ -852,6 +853,27 @@ def clean_ai_response(response: str) -> str:
     # Remove "Ready to drill deeper?" type endings
     response = re.sub(r'(?i)ready to drill deeper\?.*', '', response)
     response = re.sub(r'(?i)let me know if you.*', '', response)
+    
+    # =====================================================================
+    # PRODUCTION CLEANUP: Remove ALL debug footers
+    # =====================================================================
+    # Remove "Analysis Mode: X" footers (all variations)
+    response = re.sub(r'\n*---\n*\*?\*?📈?\s*\*?\*?Analysis Mode:?[^\n]*\*?\*?\n?', '', response, flags=re.IGNORECASE)
+    response = re.sub(r'\n*---\n*\*?Analysis mode:?\s*\*?\*?[A-Z]+\*?\*?\n?', '', response, flags=re.IGNORECASE)
+    response = re.sub(r'\*?Analysis Mode:\s*\*?\*?[A-Z]+\*?\*?', '', response, flags=re.IGNORECASE)
+    
+    # Remove "Accuracy Tier" text
+    response = re.sub(r'Accuracy Tier:[^\n]*\n?', '', response, flags=re.IGNORECASE)
+    
+    # Remove "Enterprise Intelligence mode" text
+    response = re.sub(r'\*?Enterprise Intelligence mode:?[^\n]*\*?\n?', '', response, flags=re.IGNORECASE)
+    
+    # Remove "Data Grounding:" debug text (but keep actual data grounding content)
+    response = re.sub(r'🔗\s*\*?\*?Data Grounding:\*?\*?[^\n]*entities found[^\n]*\n?', '', response, flags=re.IGNORECASE)
+    
+    # Clean up trailing dashes and empty lines
+    response = re.sub(r'\n*---\s*$', '', response)
+    response = re.sub(r'(---\s*\n\s*){2,}', '---\n', response)
     
     # Clean up excessive newlines
     while '\n\n\n' in response:
@@ -1458,8 +1480,22 @@ async def ai_model_response(user_id: str, query: str, model_key: str, conversati
         # =====================================================================
         # UNIVERSAL AI ANALYST PROMPT - Works for ANY domain
         # =====================================================================
-        system_prompt = f"""You are an AI Data Analyst. Your job is to answer questions ONLY from the user's uploaded data.
+        
+        # Build user memory section if we have stored info about the user
+        user_memory_section = ""
+        if user_name:
+            user_memory_section = f"""
+═══════════════════════════════════════════════════════════════
+                    USER MEMORY (remember this!)
+═══════════════════════════════════════════════════════════════
+User's Name: {user_name}
+{user_context if user_context else ""}
 
+IMPORTANT: Address the user by their name ({user_name}) when appropriate. You remember them from previous conversations.
+"""
+        
+        system_prompt = f"""You are an AI Data Analyst. Your job is to answer questions ONLY from the user's uploaded data.
+{user_memory_section}
 ═══════════════════════════════════════════════════════════════
                     DATA SUMMARY
 ═══════════════════════════════════════════════════════════════
@@ -1906,6 +1942,76 @@ async def send_message(
         conversation_id = request.conversationId or f"conv_{int(datetime.now().timestamp())}"
         compare_files = request.compareFiles
         
+        # =====================================================================
+        # ⚡ FAST-PATH: Instant responses for greetings/casual queries
+        # Skip ALL heavy processing (RAG, Graph, Mode engines) for simple chat
+        # =====================================================================
+        query_lower = query.lower().strip()
+        
+        # INSTANT GREETINGS - No need for RAG/AI for these
+        instant_greetings = {
+            'hi': "Hi! 👋 How can I help you analyze your data today?",
+            'hii': "Hi! 👋 How can I help you analyze your data today?",
+            'hiii': "Hi! 👋 How can I help you analyze your data today?",
+            'hello': "Hello! 👋 I'm ready to help with your data analysis. What would you like to know?",
+            'hey': "Hey! 👋 What data questions can I answer for you?",
+            'howdy': "Howdy! 🤠 Ready to dive into your data. What's on your mind?",
+            'yo': "Yo! 👋 Let's analyze some data. What would you like to know?",
+            'hola': "¡Hola! 👋 Ready to help with your data analysis!",
+            'good morning': "Good morning! ☀️ Ready to help with your data analysis today.",
+            'good afternoon': "Good afternoon! 🌤️ How can I assist with your data?",
+            'good evening': "Good evening! 🌙 What data insights can I help you find?",
+            'thanks': "You're welcome! 😊 Let me know if you need anything else.",
+            'thank you': "You're welcome! 😊 Happy to help. Any other questions?",
+            'thx': "You're welcome! 😊 Need anything else?",
+            'ty': "You're welcome! 😊",
+            'bye': "Goodbye! 👋 Come back anytime you need data insights!",
+            'goodbye': "Goodbye! 👋 Have a great day!",
+            'ok': "Great! 👍 What would you like to analyze next?",
+            'okay': "Great! 👍 What data question can I help with?",
+            'cool': "Glad to help! 😊 What else would you like to know?",
+            'nice': "Thanks! 😊 Ready for more data questions!",
+            'awesome': "Thanks! 🎉 What else can I help you with?",
+            'great': "Glad you think so! 😊 Any other questions?",
+        }
+        
+        # Only use fast-path for SHORT messages (5 words or less) that are EXACT matches
+        word_count = len(query_lower.split())
+        
+        if word_count <= 3 and query_lower in instant_greetings:
+            instant_response = instant_greetings[query_lower]
+            print(f"⚡ FAST-PATH: Instant greeting response for '{query}'")
+            return ChatResponse(
+                message=instant_response,
+                mode="chat",
+                sources=["Instant Response"],
+                conversationId=conversation_id,
+                timestamp=datetime.now().isoformat()
+            )
+        
+        # FAST conversational patterns (EXACT match only for short messages)
+        fast_patterns = {
+            'how are you': "I'm doing great, thanks for asking! 😊 How can I help you with your data today?",
+            "how's it going": "Going well! 😊 Ready to analyze your data. What would you like to know?",
+            "what's up": "Ready to help! 💪 What data insights are you looking for?",
+            'who are you': "I'm your AI Data Analyst! 🤖 I can analyze your uploaded data, answer questions, create charts, and provide insights. What would you like to know?",
+            'what are you': "I'm DataVision AI - your personal data analyst! 📊 Upload data and I'll help you find insights, create visualizations, and answer questions about your data.",
+            'what can you do': "I can help you:\n• 📊 Analyze your data and find patterns\n• 📈 Create charts and visualizations\n• 🔍 Answer questions about your data\n• 🎯 Make predictions with ML models\n\nUpload some data and ask me anything!",
+            "what's your name": "I'm DataVision AI, your personal data analyst! 🤖 How can I help you today?",
+            'your name': "I'm DataVision AI! 🤖 Ready to help with your data analysis.",
+        }
+        
+        # Only match if query is SHORT (5 words or less) AND matches pattern exactly
+        if word_count <= 5 and query_lower in fast_patterns:
+            print(f"⚡ FAST-PATH: Quick pattern response for '{query}'")
+            return ChatResponse(
+                message=fast_patterns[query_lower],
+                mode="chat",
+                sources=["Instant Response"],
+                conversationId=conversation_id,
+                timestamp=datetime.now().isoformat()
+            )
+        
         # 🔒 SECURITY: Check for prompt injection attacks
         if AI_SECURITY_AVAILABLE:
             is_suspicious, detected_pattern = detect_prompt_injection(query)
@@ -2284,6 +2390,16 @@ Please upload a data file first, then ask me any question about your data.
                                'customer', 'product', 'trend', 'sales', 'compare', 'analysis',
                                'total', 'average', 'highest', 'lowest', 'best', 'worst']
         is_data_query = any(kw in query_lower for kw in data_query_keywords)
+        
+        # ========================================
+        # 🖼️ AUTO-DETECT IMAGE: Force appropriate mode when image attached
+        # ========================================
+        if has_image and mode not in ['vision']:
+            # User attached image - auto-switch to vision-capable mode
+            # Use analyst mode which can handle both images and data
+            original_mode = mode
+            mode = 'analyst'  # Analyst can handle images via image_context
+            print(f"🖼️ AUTO-ROUTE: Image attached with mode '{original_mode}' → Switching to '{mode}' for image handling")
         
         # ========================================
         # NEW 5 UNIQUE MODE ENGINES (Silicon Valley Powerhouses)
@@ -2742,11 +2858,50 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
                 import traceback
                 traceback.print_exc()
         
+        # ========================================
+        # 🖼️ LEGACY MODE IMAGE HANDLING - Process images for RAG/Graph/Hybrid modes
+        # ========================================
+        legacy_image_context = ""
+        if has_image and mode in ["rag", "graph", "graphrag", "hybrid"]:
+            print(f"🖼️ Processing image for legacy mode: {mode}")
+            processed_files = []
+            if request.attachedFiles:
+                for att_file in request.attachedFiles:
+                    processed_files.append({
+                        'name': att_file.get('name', 'image'),
+                        'type': att_file.get('type', 'image/png'),
+                        'content': att_file.get('content', '')  # Base64 data URL
+                    })
+            
+            if processed_files:
+                for file_info in processed_files:
+                    file_content = file_info.get('content', '')
+                    file_name = file_info.get('name', 'image')
+                    
+                    if file_content.startswith('data:image'):
+                        try:
+                            from core.vision import analyze_image_with_groq
+                            analysis = analyze_image_with_groq(
+                                file_content,
+                                f"Describe this image in detail. User asks: {query}"
+                            )
+                            if not analysis.startswith("❌"):
+                                legacy_image_context += f"\n\n## 🖼️ Image Analysis ({file_name})\n{analysis}\n"
+                                print(f"✅ Legacy image analyzed: {len(analysis)} chars")
+                        except Exception as e:
+                            print(f"⚠️ Legacy vision error: {e}")
+        
         if mode == "rag":
             from agents.nodes import rag_answer
             from agents.state import AgentState
             
-            state = AgentState(company_id=user_id, question=query, route="rag", answer="", context={})
+            # Add image context to the query if available
+            modified_query = query
+            if legacy_image_context:
+                modified_query = f"{query}\n\n[IMAGE CONTEXT]:{legacy_image_context}"
+                print(f"🖼️ Added image context to RAG query")
+            
+            state = AgentState(company_id=user_id, question=modified_query, route="rag", answer="", context={})
             state = rag_answer(state)
             response = state.answer
             sources = state.sources
@@ -2806,9 +2961,11 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
             response = re.sub(r'\n{3,}', '\n\n', response)
             response = re.sub(r'(---\s*\n){2,}', '---\n', response)
             
-            if 'Analysis Mode: PREDICTION' not in response:
-                response += "\n\n---\n📈 **Analysis Mode: PREDICTION**\n"
-                response += "Accuracy Tier: TIER 3 (Scenario-Based) - Snapshot data used\n"
+            # PRODUCTION: Clean response without debug footers
+            # Remove any lingering Analysis Mode text
+            response = re.sub(r'\n*---\n*\*?\*?Analysis Mode:?[^\n]*\n?', '', response, flags=re.IGNORECASE)
+            response = re.sub(r'\n*---\n*📈\s*\*?\*?Analysis Mode:?[^\n]*\n?', '', response, flags=re.IGNORECASE)
+            response = re.sub(r'Accuracy Tier:[^\n]*\n?', '', response, flags=re.IGNORECASE)
             
             sources = ["Prediction Analysis"] + (state.sources if state.sources else [])
             

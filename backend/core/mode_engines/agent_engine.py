@@ -442,7 +442,53 @@ class ProAgentEngine:
         start_time = datetime.now()
         
         # =================================================================
-        # 🔄 DYNAMIC ROUTING: Check if query relates to actual data
+        # �️ CHECK FOR IMAGE CONTEXT FIRST - Takes priority
+        # =================================================================
+        has_image_context = context and "🖼️ Image Analysis" in context
+        
+        if has_image_context:
+            logger.info("🖼️ Agent: Image context detected - autonomous image analysis")
+            
+            try:
+                from core.llm import chat as llm_chat
+                
+                image_prompt = f"""You are an AI Agent analyzing an image autonomously.
+
+## IMAGE ANALYSIS:
+{context}
+
+## USER QUESTION:
+{query}
+
+Analyze the image and answer the user's question:
+1. What is shown in the image?
+2. What specific details are relevant?
+3. Are there any patterns or insights?
+
+Provide a comprehensive analysis."""
+
+                llm_response = llm_chat(image_prompt, temperature=0.4, max_tokens=800)
+                
+                result["answer"] = f"""## 🤖 Agent - Image Analysis
+
+{llm_response}
+
+---
+*🖼️ Autonomous analysis of uploaded image*"""
+                result["confidence"] = 0.90
+                result["sources"] = ["Agent Engine", "Vision Analysis"]
+                result["execution_log"].append("🖼️ Analyzed uploaded image")
+                
+            except Exception as e:
+                logger.error(f"Agent image error: {e}")
+                result["answer"] = f"🖼️ Image Analysis:\n\n{context}"
+            
+            exec_time = (datetime.now() - start_time).total_seconds()
+            result["execution_time"] = f"{exec_time:.2f}s"
+            return result
+        
+        # =================================================================
+        # �🔄 DYNAMIC ROUTING: Check if query relates to actual data
         # =================================================================
         q_lower = query.lower()
         

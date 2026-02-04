@@ -355,7 +355,51 @@ class ProDeepThinkEngine:
         start_time = datetime.now()
         
         # =================================================================
-        # 🔄 DYNAMIC ROUTING: Check if query relates to actual data
+        # �️ CHECK FOR IMAGE CONTEXT FIRST - Takes priority
+        # =================================================================
+        has_image_context = context and "🖼️ Image Analysis" in context
+        
+        if has_image_context:
+            logger.info("🖼️ DeepThink: Image context detected - deep image analysis")
+            
+            if LLM_AVAILABLE:
+                try:
+                    image_prompt = f"""You are a Deep Think AI analyzing an image with advanced reasoning.
+
+## IMAGE ANALYSIS:
+{context}
+
+## USER QUESTION:
+{query}
+
+Think through this systematically:
+1. What is shown in the image?
+2. What details are relevant to the user's question?
+3. What insights can be drawn?
+
+Provide a thoughtful, detailed analysis of the image content."""
+
+                    llm_response = llm_chat(image_prompt, temperature=0.4, max_tokens=800)
+                    
+                    result["answer"] = f"""## 🧠 Deep Think - Image Analysis
+
+{llm_response}
+
+---
+*🖼️ Deep analysis of uploaded image*"""
+                    result["confidence"] = 0.90
+                    result["sources"] = ["Deep Think Engine", "Vision Analysis"]
+                    
+                except Exception as e:
+                    logger.error(f"DeepThink image error: {e}")
+                    result["answer"] = f"🖼️ Image Analysis:\n\n{context}"
+            
+            exec_time = (datetime.now() - start_time).total_seconds()
+            result["execution_time"] = f"{exec_time:.2f}s"
+            return result
+        
+        # =================================================================
+        # �🔄 DYNAMIC ROUTING: Check if query relates to actual data
         # =================================================================
         q_lower = query.lower()
         

@@ -128,6 +128,7 @@ logger.info("✅ DataVision API v2 loaded")
 # 🤖 AutoML API (Production ML)
 from api.v1.endpoints import automl_api
 app.include_router(automl_api.router, prefix="/api/v2/automl", tags=["AutoML"])
+app.include_router(automl_api.router, prefix="/api/v1/automl", tags=["AutoML v1"])  # Also register at v1 for compatibility
 logger.info("✅ AutoML API loaded")
 
 # 🤖 Autonomous API (Model Management + Auto-Fix)
@@ -154,6 +155,11 @@ logger.info("✅ Playground API loaded")
 from api.v1.endpoints import explainability_api
 app.include_router(explainability_api.router, prefix="/api/v1", tags=["Explainability"])
 logger.info("✅ Explainability API loaded")
+
+# 🎯 Clustering API (Unsupervised Learning)
+from api.v1.endpoints import clustering_api
+app.include_router(clustering_api.router, prefix="/api/v1/ml", tags=["Clustering"])
+logger.info("✅ Clustering API loaded (K-Means, DBSCAN, GMM, Spectral)")
 
 from fastapi.responses import FileResponse
 

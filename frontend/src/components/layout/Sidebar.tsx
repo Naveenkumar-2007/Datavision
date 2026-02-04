@@ -9,6 +9,9 @@ import {
   Settings,
   LogOut,
   X,
+  Boxes,
+  Brain,
+  TrendingUp,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Logo from '@/components/Logo';
@@ -17,6 +20,10 @@ import { useAuth } from '@/contexts/AuthContext';
 const navItems = [
   { path: '/data-hub', icon: Database, label: 'Data Hub' },
   { path: '/chat', icon: MessageSquare, label: 'Chat' },
+  { path: '/automl', icon: Brain, label: 'AutoML' },
+  { path: '/ml-predictions', icon: TrendingUp, label: 'Predictions' },
+  { path: '/clustering', icon: Boxes, label: 'Clustering' },
+  { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/reports', icon: FileText, label: 'Reports' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
