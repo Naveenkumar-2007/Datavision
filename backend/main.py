@@ -166,6 +166,18 @@ from fastapi.responses import FileResponse
 # Frontend static directory (pre-built React app)
 frontend_static_dir = "/app/static"
 
+@app.get("/api/config")
+async def get_frontend_config():
+    """
+    Secure config endpoint for frontend.
+    Returns only PUBLIC keys needed for client-side auth.
+    Note: Supabase anon key is designed to be public (used with RLS).
+    """
+    return {
+        "VITE_SUPABASE_URL": os.environ.get("VITE_SUPABASE_URL", os.environ.get("SUPABASE_URL", "")),
+        "VITE_SUPABASE_ANON_KEY": os.environ.get("VITE_SUPABASE_ANON_KEY", os.environ.get("SUPABASE_ANON_KEY", ""))
+    }
+
 @app.get("/api")
 async def api_info():
     """API information endpoint"""
