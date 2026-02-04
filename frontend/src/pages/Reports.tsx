@@ -45,7 +45,7 @@ import {
 import { apiService } from '@/services/api';
 import { getCurrencySymbol, getUserPreferredCurrency } from '@/utils/currency';
 import { exportToPDF } from '@/utils/pdfExport';
-import { getUserIdSync } from '@/utils/userId';
+import { getUserIdSync, getAuthHeadersSync } from '@/utils/userId';
 
 interface ReportSection {
   title: string;
@@ -126,7 +126,9 @@ const Reports: React.FC = () => {
 
       // 1. Try Backend API first
       try {
-        const response = await fetch(`/api/v2/autonomous/models/${userId}`);
+        const response = await fetch(`/api/v2/autonomous/models/${userId}`, {
+          headers: getAuthHeadersSync()
+        });
         const data = await response.json();
         if (data.success && data.has_models) {
           setHasMLModel(true);

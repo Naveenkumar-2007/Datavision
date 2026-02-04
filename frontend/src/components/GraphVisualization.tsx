@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Network, ZoomIn, ZoomOut, Maximize2, Download, X, Minimize2 } from 'lucide-react';
+import { getAuthHeadersSync } from '@/utils/userId';
 
 interface GraphNode {
   id: string;
@@ -89,7 +90,9 @@ const GraphVisualization: React.FC<GraphVisualizationProps> = ({ userId, maxNode
   const fetchGraphData = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`/api/v1/graph/${userId}/visualization?max_nodes=${maxNodes}`);
+      const response = await fetch(`/api/v1/graph/${userId}/visualization?max_nodes=${maxNodes}`, {
+        headers: getAuthHeadersSync()
+      });
       if (!response.ok) throw new Error('Failed to fetch graph data');
       const data: GraphData = await response.json();
       setGraphData(data);

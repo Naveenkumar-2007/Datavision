@@ -8,7 +8,7 @@ import {
 import { Skeleton } from '../components/ui/Skeleton';
 import { useUserStore } from '../store/userStore';
 import { api } from '../services/api';
-import { getUserIdSync } from '../utils/userId';
+import { getUserIdSync, getAuthHeadersSync } from '../utils/userId';
 
 // Dynamic Plotly import
 const Plot = lazy(() => import('react-plotly.js'));
@@ -389,7 +389,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                         const apiBase = import.meta.env.VITE_API_URL || '';
                                         const response = await fetch(`${apiBase}/api/v1/exports/download/pptx`, {
                                             method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
+                                            headers: getAuthHeadersSync(),
                                             body: JSON.stringify({ 
                                                 content, 
                                                 title: dashboard.dashboard_title,

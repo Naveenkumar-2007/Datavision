@@ -26,6 +26,7 @@ import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
 import { api } from '@/services/api';
 import LogoImage from '@/components/LogoImage';
+import { getAuthHeadersSync } from '@/utils/userId';
 
 
 
@@ -120,7 +121,9 @@ const Settings: React.FC = () => {
         // Get files count from correct API endpoint
         let filesCount = 0;
         try {
-          const filesRes = await fetch(`/api/v1/files/list/${userId}`);
+          const filesRes = await fetch(`/api/v1/files/list/${userId}`, {
+            headers: getAuthHeadersSync()
+          });
           if (filesRes.ok) {
             const filesData = await filesRes.json();
             filesCount = Array.isArray(filesData) ? filesData.length :
@@ -453,7 +456,9 @@ const Settings: React.FC = () => {
   const handleExportData = async () => {
     try {
       const userId = localStorage.getItem('userId') || 'user_001';
-      const response = await fetch(`/api/v1/files/list/${userId}`);
+      const response = await fetch(`/api/v1/files/list/${userId}`, {
+        headers: getAuthHeadersSync()
+      });
       const data = await response.json();
 
       const exportData = {
