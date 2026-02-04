@@ -1460,7 +1460,7 @@ const AutoML: React.FC = () => {
                                     </p>
                                     <div className="space-y-4">
                                         <a
-                                            href={`/api/v1/files/${localStorage.getItem('userId') || 'default'}/${result.cleaned_file}/download`}
+                                            href={`/api/v1/files/${getUserIdSync()}/${result.cleaned_file}/download`}
                                             className="inline-flex items-center gap-3 px-8 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-emerald-500/20 transition-all hover:scale-105"
                                         >
                                             <Download className="w-6 h-6" />
@@ -1484,7 +1484,7 @@ const AutoML: React.FC = () => {
                                         Download your trained ML model for production deployment. The model includes all preprocessing pipelines.
                                     </p>
                                     <a
-                                        href={`/api/v2/automl/download-model?user_id=${localStorage.getItem('userId') || 'default'}`}
+                                        href={`/api/v2/automl/download-model?user_id=${getUserIdSync()}`}
                                         className="inline-flex items-center gap-3 px-8 py-4 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-purple-500/20 transition-all hover:scale-105"
                                     >
                                         <Download className="w-6 h-6" />

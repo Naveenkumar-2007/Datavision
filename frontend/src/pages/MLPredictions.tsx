@@ -435,10 +435,13 @@ const MLPredictions: React.FC = () => {
         }
     };
 
-    // Load results on mount
+    // Load results on mount - with proper cleanup for memory leak prevention
     useEffect(() => {
+        let isMounted = true; // Prevent state updates after unmount
+        const abortCtrl = new AbortController();
+
         const loadResults = async () => {
-            const userId = localStorage.getItem('userId') || 'default';
+            const userId = getUserIdSync(); // CONSISTENT user ID handling
 
             const addChartsFromStorage = async (result: MLResult): Promise<MLResult> => {
                 if (!result.charts || Object.keys(result.charts).length === 0) {
@@ -553,6 +556,7 @@ const MLPredictions: React.FC = () => {
             if (location.state?.automlResult) {
                 const navResult = location.state.automlResult;
                 const resultWithCharts = await addChartsFromStorage(navResult);
+                if (!isMounted) return; // Prevent state updates if unmounted
                 setResult(resultWithCharts);
                 setActiveTab('overview'); // Reset to overview when loading results
                 try {
@@ -572,19 +576,22 @@ const MLPredictions: React.FC = () => {
                         sessionStorage.setItem(`mlCharts_${userId}`, JSON.stringify(resultWithCharts.charts));
                     } catch (e) { }
                 }
-                setLoading(false);
+                if (isMounted) setLoading(false);
                 return;
             }
 
             // Priority 2: Try loading from backend FIRST (persisted across logout/refresh)
             // This ensures data survives logout and browser refresh
             try {
-                const backendResponse = await fetch(`/api/v1/automl/saved-result?user_id=${userId}&mode=auto`);
+                const backendResponse = await fetch(`/api/v1/automl/saved-result?user_id=${userId}&mode=auto`, {
+                    signal: abortCtrl.signal
+                });
                 const backendResult = await backendResponse.json();
                 
                 if (backendResult.success && backendResult.best_model) {
                     console.log('[MLPredictions] Loaded from backend API (persisted data)');
                     const resultWithCharts = await addChartsFromStorage(backendResult);
+                    if (!isMounted) return;
                     setResult(resultWithCharts);
                     setActiveTab('overview'); // Reset to overview when loading results
                     
@@ -595,10 +602,11 @@ const MLPredictions: React.FC = () => {
                         sessionStorage.setItem(`mlResultsSession_${userId}`, JSON.stringify(backendResult));
                     } catch (e) {}
                     
-                    setLoading(false);
+                    if (isMounted) setLoading(false);
                     return;
                 }
             } catch (err) {
+                if ((err as Error).name === 'AbortError') return; // Ignore abort errors
                 console.warn('[MLPredictions] Backend API not available, trying localStorage:', err);
             }
 
@@ -609,6 +617,7 @@ const MLPredictions: React.FC = () => {
                     let parsedSession = JSON.parse(sessionSaved);
                     // Don't sync - use session results as-is (they're from current session)
                     const resultWithCharts = await addChartsFromStorage(parsedSession);
+                    if (!isMounted) return;
                     setResult(resultWithCharts);
                     setActiveTab('overview'); // Reset to overview when loading results
                     setLoading(false);
@@ -616,13 +625,14 @@ const MLPredictions: React.FC = () => {
                 } catch (e) { }
             }
 
-            // Priority 3: User-specific localStorage (sync with active model)
+            // Priority 4: User-specific localStorage (sync with active model)
             const saved = localStorage.getItem(`mlResults_${userId}`);
             if (saved) {
                 try {
                     let parsedSaved = JSON.parse(saved);
                     parsedSaved = await syncWithActiveModel(parsedSaved);
                     const resultWithCharts = await addChartsFromStorage(parsedSaved);
+                    if (!isMounted) return;
                     setResult(resultWithCharts);
                     setActiveTab('overview'); // Reset to overview when loading results
                     setLoading(false);
@@ -630,13 +640,14 @@ const MLPredictions: React.FC = () => {
                 } catch (e) { }
             }
 
-            // Priority 3: Legacy migration (sync with active model)
+            // Priority 5: Legacy migration (sync with active model)
             const legacySaved = localStorage.getItem('mlResults');
             if (legacySaved) {
                 try {
                     let parsed = JSON.parse(legacySaved);
                     parsed = await syncWithActiveModel(parsed);
                     const resultWithCharts = await addChartsFromStorage(parsed);
+                    if (!isMounted) return;
                     setResult(resultWithCharts);
                     setActiveTab('overview'); // Reset to overview when loading results
                     localStorage.setItem(`mlResults_${userId}`, legacySaved);
@@ -648,7 +659,7 @@ const MLPredictions: React.FC = () => {
 
             // No results - load existing files
             await loadExistingFiles();
-            setLoading(false);
+            if (isMounted) setLoading(false);
         };
 
         loadResults();
@@ -661,11 +672,17 @@ const MLPredictions: React.FC = () => {
             // Reset to overview when navigating to page without explicit tab
             setActiveTab('overview');
         }
+
+        // Cleanup function to prevent memory leaks
+        return () => {
+            isMounted = false;
+            abortCtrl.abort();
+        };
     }, [location.state, location.key]);
 
     // 🔄 Refresh overview when model changes (rollback/delete)
     const handleModelChange = async () => {
-        const userId = localStorage.getItem('userId') || 'default';
+        const userId = getUserIdSync();
         try {
             const response = await fetch(`/api/v2/autonomous/models/${userId}`);
             const data = await response.json();
@@ -699,7 +716,7 @@ const MLPredictions: React.FC = () => {
     // Fetch columns from existing file - SAME AS DATAHUB
     const fetchColumnsFromFile = async (fileName: string) => {
         try {
-            const userId = localStorage.getItem('userId') || 'default';
+            const userId = getUserIdSync();
             // Download file and parse columns
             const fileResponse = await fetch(`/api/v1/files/${userId}/${fileName}/download`);
             if (!fileResponse.ok) return;
@@ -739,7 +756,7 @@ const MLPredictions: React.FC = () => {
 
         try {
             // Get the file from server and send to AutoML - SAME AS DATAHUB
-            const userId = localStorage.getItem('userId') || 'default';
+            const userId = getUserIdSync();
             const fileResponse = await fetch(`/api/v1/files/${userId}/${selectedFile.name}/download`, {
                 signal: controller.signal
             });
@@ -965,7 +982,7 @@ const MLPredictions: React.FC = () => {
 
         // Signal Backend to Stop Permanently
         try {
-            const userId = localStorage.getItem('userId') || 'default';
+            const userId = getUserIdSync();
             const formData = new FormData();
             formData.append('user_id', userId);
             await fetch('/api/v2/automl/stop_training', {
@@ -2716,7 +2733,7 @@ const MLPredictions: React.FC = () => {
                                 <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>Charts may not have been generated during training.</p>
                                 <button
                                     onClick={async () => {
-                                        const userId = localStorage.getItem('userId') || 'default';
+                                        const userId = getUserIdSync();
                                         setChartsLoading(true);
                                         const charts = await fetchChartsFromAPI(userId);
                                         if (Object.keys(charts).length > 0) {
@@ -3020,7 +3037,7 @@ const MLPredictions: React.FC = () => {
                 {activeTab === 'history' && (
                     <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                         <ModelHistory
-                            userId={localStorage.getItem('userId') || 'default'}
+                            userId={getUserIdSync()}
                             onModelChange={handleModelChange}
                         />
                     </div>
@@ -3052,7 +3069,7 @@ const MLPredictions: React.FC = () => {
                                         Download the trained ML model (.pkl) for deployment in your applications.
                                     </p>
                                     <a
-                                        href={`/api/v2/automl/download-model?user_id=${localStorage.getItem('userId') || 'default'}`}
+                                        href={`/api/v2/automl/download-model?user_id=${getUserIdSync()}`}
                                         className="inline-flex items-center gap-2 px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
                                     >
                                         <Download className="w-5 h-5" />
@@ -3077,7 +3094,7 @@ const MLPredictions: React.FC = () => {
                                             Production-ready data (Missing values imputed, Categorical encoded, Features scaled).
                                         </p>
                                         <a
-                                            href={`/api/v1/files/${localStorage.getItem('userId') || 'default'}/${result.cleaned_file}/download`}
+                                            href={`/api/v1/files/${getUserIdSync()}/${result.cleaned_file}/download`}
                                             className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
                                         >
                                             <Download className="w-5 h-5" />

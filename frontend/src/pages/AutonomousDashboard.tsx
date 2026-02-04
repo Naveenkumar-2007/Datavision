@@ -8,6 +8,7 @@ import {
 import { Skeleton } from '../components/ui/Skeleton';
 import { useUserStore } from '../store/userStore';
 import { api } from '../services/api';
+import { getUserIdSync } from '../utils/userId';
 
 // Dynamic Plotly import
 const Plot = lazy(() => import('react-plotly.js'));
@@ -90,7 +91,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
     };
 
     const loadDashboard = useCallback(async () => {
-        const userId = user?.id || localStorage.getItem('userId') || 'guest';
+        const userId = user?.id || getUserIdSync();
         setLoading(true);
         setError(null);
 

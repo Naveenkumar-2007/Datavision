@@ -279,7 +279,7 @@ const DataHub: React.FC = () => {
       console.log('🛑 HTTP request aborted');
     }
 
-    const userId = localStorage.getItem('userId') || 'default';
+    const userId = getUserIdSync();
 
     // 2. Notify backend to stop processing (sets cancellation flag)
     try {
@@ -342,7 +342,7 @@ const DataHub: React.FC = () => {
 
     try {
       // Get the file from server and send to AutoML
-      const userId = localStorage.getItem('userId') || 'default';
+      const userId = getUserIdSync();
       const fileResponse = await fetch(`/api/v1/files/${userId}/${dataFiles[0].name}/download`, {
         signal: controller.signal
       });
@@ -375,7 +375,7 @@ const DataHub: React.FC = () => {
 
       if (automlResult.success) {
         // Save to localStorage with USER-SPECIFIC key for data isolation
-        const userId = localStorage.getItem('userId') || 'default';
+        const userId = getUserIdSync();
 
         try {
           // Save full result including charts to localStorage
@@ -461,7 +461,7 @@ const DataHub: React.FC = () => {
         setFiles(files.filter(f => f.id !== fileId));
 
         // Clear cached ML results since the model may have been trained on this file
-        const userId = localStorage.getItem('userId') || 'default';
+        const userId = getUserIdSync();
         localStorage.removeItem(`mlResults_${userId}`);
         localStorage.removeItem(`hasMLResults_${userId}`);
         sessionStorage.removeItem(`mlCharts_${userId}`);
@@ -505,7 +505,7 @@ const DataHub: React.FC = () => {
       if (response.data.success) {
         setFiles([]);
         // Clear cached ML results when files are deleted
-        const userId = localStorage.getItem('userId') || 'default';
+        const userId = getUserIdSync();
         localStorage.removeItem(`mlResults_${userId}`);
         localStorage.removeItem(`hasMLResults_${userId}`);
         sessionStorage.removeItem(`mlCharts_${userId}`);
@@ -547,7 +547,7 @@ const DataHub: React.FC = () => {
 
   const handleDownload = async (fileId: string) => {
     try {
-      const userId = localStorage.getItem('userId') || 'user_001';
+      const userId = getUserIdSync();
       const response = await fetch(`/api/v1/files/${userId}/${fileId}/download`);
       if (!response.ok) throw new Error('Download failed');
       const blob = await response.blob();
@@ -1128,7 +1128,7 @@ const DataHub: React.FC = () => {
 
                   // Signal Backend to Stop Permanently
                   try {
-                    const userId = localStorage.getItem('userId') || 'default';
+                    const userId = getUserIdSync();
                     const formData = new FormData();
                     formData.append('user_id', userId);
                     await fetch('/api/v2/automl/stop_training', {
