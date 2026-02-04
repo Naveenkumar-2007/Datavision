@@ -5,6 +5,7 @@ API v1 Router
 from fastapi import APIRouter
 from api.v1.endpoints import files, chat, analytics, reports, email_prefs, onboarding, insights, exports
 from api.v1.endpoints import data_health_api, explainability_api, playground_api
+from api.v1.endpoints import clustering_api
 
 router = APIRouter()
 
@@ -22,3 +23,7 @@ router.include_router(exports.router, tags=["Exports"])
 router.include_router(data_health_api.router, tags=["AutoML - Data Health"])
 router.include_router(explainability_api.router, tags=["AutoML - Explainability"])
 router.include_router(playground_api.router, tags=["AutoML - Playground"])
+
+# Clustering / Unsupervised Learning API
+router.include_router(clustering_api.router, prefix="/ml", tags=["Clustering"])
+

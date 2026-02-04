@@ -842,42 +842,44 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
 
 // Animated Logo for AI Assistant - Uses actual DataVision logo with subtle animation
 // Adapts to light/dark mode automatically
-const AnimatedBotIcon: React.FC<{ size?: number; isDark?: boolean }> = ({ size = 28, isDark = true }) => (
-  <div
-    className="relative flex items-center justify-center flex-shrink-0 rounded-lg"
-    style={{ 
-      width: size, 
-      height: size, 
-      minWidth: size, 
-      minHeight: size,
-      // In light mode, add a subtle dark background so logo is visible
-      backgroundColor: isDark ? 'transparent' : 'rgba(15, 23, 42, 0.9)',
-      padding: isDark ? '0' : '2px',
-    }}
-  >
-    <img
-      src="/datavision_icon_v3.png"
-      alt="DataVision"
-      className="w-full h-full object-contain"
-      style={{
-        animation: 'pulse-glow 2s ease-in-out infinite',
-        borderRadius: isDark ? '0' : '4px',
+const AnimatedBotIcon: React.FC<{ size?: number; isDark?: boolean }> = ({ size = 28, isDark = true }) => {
+  // Determine the logo to use based on theme
+  const logoSrc = isDark ? '/datavision-logo-dark.jpg' : '/datavision-logo-light.jpg';
+  
+  return (
+    <div
+      className="relative flex items-center justify-center flex-shrink-0 rounded-lg overflow-hidden"
+      style={{ 
+        width: size, 
+        height: size, 
+        minWidth: size, 
+        minHeight: size,
       }}
-    />
-    <style>{`
-      @keyframes pulse-glow {
-        0%, 100% { 
-          filter: drop-shadow(0 0 2px rgba(20, 184, 166, 0.4));
-          opacity: 1;
+    >
+      <img
+        src={logoSrc}
+        alt="DataVision"
+        className="w-full h-full object-cover"
+        style={{
+          animation: 'pulse-glow 2s ease-in-out infinite',
+        }}
+        onError={(e) => { (e.target as HTMLImageElement).src = '/logo.svg'; }}
+      />
+      <style>{`
+        @keyframes pulse-glow {
+          0%, 100% { 
+            filter: drop-shadow(0 0 2px rgba(20, 184, 166, 0.4));
+            opacity: 1;
+          }
+          50% { 
+            filter: drop-shadow(0 0 6px rgba(20, 184, 166, 0.5));
+            opacity: 0.9;
+          }
         }
-        50% { 
-          filter: drop-shadow(0 0 6px rgba(20, 184, 166, 0.5));
-          opacity: 0.9;
-        }
-      }
-    `}</style>
-  </div>
-);
+      `}</style>
+    </div>
+  );
+};
 
 // Mode-specific thinking messages (Clean & Simple)
 const getModeThinkingText = (modeId: string): string => {
@@ -951,11 +953,26 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
     { icon: Network, text: "Find patterns and correlations" },
   ];
 
+  // Use state for logo to ensure reactivity
+  const [logoSrc, setLogoSrc] = React.useState('/datavision-logo-dark.jpg');
+  
+  React.useEffect(() => {
+    const updateLogo = () => {
+      const isDarkTheme = !document.documentElement.classList.contains('light-theme');
+      setLogoSrc(isDarkTheme ? '/datavision-logo-dark.jpg' : '/datavision-logo-light.jpg');
+    };
+    updateLogo();
+    // Listen for theme changes
+    const observer = new MutationObserver(updateLogo);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className="flex flex-col items-center justify-center h-full px-4">
-      {/* Logo */}
-      <div className="w-14 h-14 mb-4">
-        <img src="/logo.png" alt="DataVision" className="w-full h-full object-contain" />
+      {/* Logo - Theme Aware */}
+      <div className="w-16 h-16 mb-4 rounded-xl overflow-hidden shadow-lg">
+        <img src={logoSrc} alt="DataVision" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = '/logo.svg'; }} />
       </div>
 
       {/* Title - ChatGPT style */}
@@ -2080,7 +2097,7 @@ const AnalystChat: React.FC = () => {
   }, [mcpDropdownOpen, modeDropdownOpen]);
 
   return (
-    <div className="flex h-screen sm:h-[100dvh] overflow-hidden bg-[var(--bg-primary)] w-full" {...getRootProps()}>
+    <div className="flex h-screen sm:h-[100dvh] overflow-hidden bg-[var(--bg-primary)] w-full max-w-[100vw]" style={{ overflowX: 'hidden' }} {...getRootProps()}>
       <input {...getInputProps()} />
 
       {/* 📎 DRAG OVERLAY - Visual feedback when dragging files */}

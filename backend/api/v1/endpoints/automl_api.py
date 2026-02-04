@@ -12,7 +12,7 @@ SECURED: Uses JWT authentication for user isolation
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header, Depends, Query
 from pydantic import BaseModel
 import pandas as pd
 import io
@@ -22,11 +22,15 @@ from api.deps import get_current_user_id
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Global training stop flag - shared across endpoints
+TRAINING_STOP_FLAG = {}
+
 
 class PredictRequest(BaseModel):
     user_id: str  # Legacy - will be overridden by JWT
     model_name: str
     data: dict
+    mode: Optional[str] = "traditional"  # 'traditional', 'nlp', 'deep_learning'
 
 
 def get_secure_user_id(
@@ -77,12 +81,13 @@ def get_secure_user_id(
 async def production_train(
     file: UploadFile = File(...),
     target_column: Optional[str] = Form(None),
+    algorithm: Optional[str] = Form(None),  # Specific algorithm or 'auto'
     user_id: str = Form("default"),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
     authorization: Optional[str] = Header(None, alias="Authorization")
 ):
     """
-    🚀 SILICON VALLEY GRADE ML TRAINING
+    🚀 PRODUCTION ML TRAINING
     SECURED: Uses JWT authentication for user isolation
     
     Uses production-grade pipeline for 80%+ accuracy:
@@ -90,11 +95,14 @@ async def production_train(
     - Advanced feature engineering
     - 15+ algorithms (XGBoost, LightGBM, CatBoost, etc.)
     - Ensemble methods
+    
+    If algorithm is specified (not 'auto'), trains only that algorithm.
     """
     try:
         # SECURITY: Get verified user_id from JWT, not from form
         user_id = get_secure_user_id(user_id, x_user_id, authorization)
-        print(f"🚀 [PRODUCTION] Silicon Valley Grade Training for user: {user_id}")
+        algo_msg = f" with {algorithm}" if algorithm and algorithm != 'auto' else ""
+        print(f"🚀 [PRODUCTION] AutoML Training{algo_msg} for user: {user_id}")
         
         content = await file.read()
         filename = file.filename or "data.csv"
@@ -113,9 +121,14 @@ async def production_train(
         import asyncio
         loop = asyncio.get_running_loop()
         print(f"🧵 Offloading training to thread pool for user {user_id}")
+        
+        # Pass algorithm to production_train if specified
         result = await loop.run_in_executor(
             None, 
-            lambda: automl_engine.production_train(df, target_column, user_id, mode='fast')
+            lambda: automl_engine.production_train(
+                df, target_column, user_id, mode='fast',
+                algorithm=algorithm if algorithm and algorithm != 'auto' else None
+            )
         )
         
         # Use charts already generated during training
@@ -159,7 +172,7 @@ async def production_train(
             "feature_columns": result.feature_columns,  # For predictions
             "feature_metadata": getattr(result, 'feature_metadata', []),
             "insights": [
-                f"🚀 Silicon Valley Grade Pipeline",
+                f"🚀 Production ML Pipeline",
                 f"🏆 Best: {result.best_model_name}",
                 f"📊 Trained with 15+ algorithms"
             ]
@@ -478,7 +491,7 @@ async def train_automl(
             raise HTTPException(status_code=400, detail="Empty dataset")
         
         # =========================================
-        # SUPERVISED LEARNING (SILICON VALLEY GRADE)
+        # SUPERVISED LEARNING (PRODUCTION ML)
         # =========================================
         from ml.automl_engine import automl_engine
         import asyncio
@@ -604,39 +617,7 @@ async def train_automl(
         raise HTTPException(status_code=500, detail=user_message)
 
 
-@router.post("/predict")
-async def predict(request: PredictRequest):
-    """Make prediction"""
-    try:
-        from ml.automl_engine import automl_engine
-        
-        print(f"🔮 [PREDICT] Input: {request.data}")
-        
-        # Load model if not in memory
-        if automl_engine.model is None:
-            loaded = automl_engine.load(request.user_id)
-            if not loaded:
-                raise HTTPException(status_code=400, detail="No model trained. Please train first.")
-        
-        result = automl_engine.predict(request.data)
-        print(f"🔮 [PREDICT] Output: {result}")
-        
-        return {
-            "success": True,
-            "prediction": result['prediction'],
-            "probability": result.get('probability'),
-            "confidence": result.get('confidence'),
-            "model": result.get('model'),
-            "message": f"Predicted using {result.get('model')}"
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Prediction error: {e}")
-        # User-friendly error message
-        user_message = "We couldn't complete your prediction. Please ensure the input data matches the training format."
-        raise HTTPException(status_code=500, detail=user_message)
+# Duplicate predict endpoint removed in favor of unified version at line 1008
 
 
 @router.get("/status")
@@ -655,6 +636,217 @@ async def get_status():
         return {"ready": True, "model_trained": False}
 
 
+@router.get("/saved-result")
+async def get_saved_result(
+    user_id: str = Query(default="default"),
+    mode: str = Query(default="auto"),  # 'traditional', 'nlp', 'deep_learning', 'auto'
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    📊 Get saved training result with full feature_metadata for Predict/Playground tabs
+    
+    This endpoint loads the user's saved model and returns:
+    - feature_metadata (for input forms)
+    - best_model info
+    - task_type, target_column
+    - metrics
+    - charts (from all trained modes if multi-mode)
+    
+    SECURED: Uses JWT authentication
+    """
+    try:
+        user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
+        result = {
+            "success": False,
+            "feature_metadata": [],
+            "feature_columns": [],
+            "best_model": None,
+            "task_type": None,
+            "target_column": None,
+            "metrics": {}
+        }
+        
+        # For AUTO mode, first check if there's multimode metadata
+        if mode == "auto":
+            from ml.model_persistence import model_persistence
+            import json
+            
+            try:
+                user_dir = model_persistence._get_user_dir(user_id)
+                multimode_path = user_dir / "multimode_metadata.json"
+                
+                if multimode_path.exists():
+                    with open(multimode_path, 'r') as f:
+                        multimode_meta = json.load(f)
+                    
+                    # Load all charts from all modes
+                    all_charts = model_persistence.get_charts(user_id) or {}
+                    
+                    # Get data_summary from saved metadata
+                    data_summary = multimode_meta.get('data_summary', {})
+                    
+                    # Build all_models from leaderboard for display
+                    leaderboard = multimode_meta.get('leaderboard', [])
+                    all_models = [
+                        {"name": item.get('model', 'Unknown'), "metrics": item.get('metrics', {}), "score": item.get('score', 0)}
+                        for item in leaderboard
+                    ]
+                    
+                    result = {
+                        "success": True,
+                        "mode": multimode_meta.get('best_mode', 'traditional'),
+                        "modes_trained": multimode_meta.get('modes_trained', []),
+                        "feature_metadata": multimode_meta.get('feature_metadata', []),
+                        "feature_columns": multimode_meta.get('feature_columns', []),
+                        "best_model": multimode_meta.get('best_overall', {}),
+                        "best_overall": multimode_meta.get('best_overall', {}),
+                        "task_type": multimode_meta.get('task_type', 'classification'),
+                        "target_column": multimode_meta.get('target_column', ''),
+                        "results_per_mode": multimode_meta.get('results_per_mode', {}),
+                        "primary_text_col": multimode_meta.get('primary_text_col'),
+                        "charts": all_charts,
+                        "metrics": multimode_meta.get('best_overall', {}).get('metrics', {}),
+                        # Include data_summary and all_models for proper display after reload
+                        "data_summary": data_summary,
+                        "all_models": all_models,
+                        "leaderboard": leaderboard,
+                    }
+                    logger.info(f"[saved-result] Loaded multimode metadata for user {user_id}")
+                    return result
+            except Exception as e:
+                logger.warning(f"[saved-result] No multimode metadata: {e}, falling back to mode detection")
+            
+            # Fallback: try each mode to find a model
+            for try_mode in ['traditional', 'nlp', 'deep_learning']:
+                try:
+                    if try_mode == 'traditional':
+                        from ml.automl_engine import ProductionMLEngine
+                        engine = ProductionMLEngine()
+                        if engine.load(user_id) and engine.model:
+                            mode = 'traditional'
+                            break
+                    elif try_mode == 'nlp':
+                        from ml.nlp_engine import NLPEngine
+                        engine = NLPEngine()
+                        if engine.load(user_id) and engine.model:
+                            mode = 'nlp'
+                            break
+                    elif try_mode == 'deep_learning':
+                        from ml.deep_learning_engine import DeepLearningEngine
+                        engine = DeepLearningEngine()
+                        if engine.load(user_id) and engine.model:
+                            mode = 'deep_learning'
+                            break
+                except:
+                    continue
+        
+        # Try to load based on mode
+        if mode == "nlp" or mode == "fast":
+            from ml.nlp_engine import NLPEngine
+            engine = NLPEngine()
+            if engine.load(user_id):
+                feature_columns = getattr(engine, 'original_feature_columns', [])
+                n_rows = getattr(engine, 'n_rows', 0) or 0
+                n_cols = getattr(engine, 'n_cols', 0) or len(feature_columns) + 1
+                
+                result = {
+                    "success": True,
+                    "mode": "nlp",
+                    "feature_metadata": getattr(engine, 'feature_metadata', []),
+                    "feature_columns": feature_columns,
+                    "best_model": {"name": getattr(engine, 'algorithm', 'NLP Model'), "metrics": getattr(engine, 'metrics', {})},
+                    "task_type": getattr(engine, 'task_type', 'classification'),
+                    "target_column": getattr(engine, 'target_column', ''),
+                    "text_column": getattr(engine, 'text_column', ''),
+                    "metrics": getattr(engine, 'metrics', {}),
+                    "charts": {f"nlp_{k}": v for k, v in getattr(engine, 'charts', {}).items()},
+                    # Include data_summary for proper display
+                    "data_summary": {
+                        "rows": n_rows,
+                        "columns": n_cols,
+                        "features_engineered": len(feature_columns) if feature_columns else 0
+                    },
+                    "all_models": [{"name": getattr(engine, 'algorithm', 'NLP Model'), "metrics": getattr(engine, 'metrics', {})}],
+                }
+                
+        elif mode == "deep_learning" or mode == "ultra":
+            from ml.deep_learning_engine import DeepLearningEngine
+            engine = DeepLearningEngine()
+            if engine.load(user_id):
+                feature_columns = getattr(engine, 'feature_columns', [])
+                n_rows = getattr(engine, 'n_rows', 0) or 0
+                n_cols = getattr(engine, 'n_cols', 0) or len(feature_columns) + 1
+                
+                result = {
+                    "success": True,
+                    "mode": "deep_learning",
+                    "feature_metadata": getattr(engine, 'feature_metadata', []),
+                    "feature_columns": feature_columns,
+                    "best_model": {"name": getattr(engine, 'algorithm', 'Deep Learning'), "metrics": getattr(engine, 'metrics', {})},
+                    "task_type": getattr(engine, 'task_type', 'classification'),
+                    "target_column": getattr(engine, 'target_column', ''),
+                    "metrics": getattr(engine, 'metrics', {}),
+                    "charts": {f"dl_{k}": v for k, v in getattr(engine, 'charts', {}).items()},
+                    # Include data_summary for proper display
+                    "data_summary": {
+                        "rows": n_rows,
+                        "columns": n_cols,
+                        "features_engineered": len(feature_columns) if feature_columns else 0
+                    },
+                    "all_models": [{"name": getattr(engine, 'algorithm', 'Deep Learning'), "metrics": getattr(engine, 'metrics', {})}],
+                }
+        else:
+            # Traditional ML
+            from ml.automl_engine import ProductionMLEngine
+            from ml.model_persistence import model_persistence
+            engine = ProductionMLEngine()
+            if engine.load(user_id):
+                # Get charts from model_persistence (traditional ML stores charts there)
+                charts = {}
+                try:
+                    stored_charts = model_persistence.get_charts(user_id)
+                    if stored_charts:
+                        charts = {f"ml_{k}": v for k, v in stored_charts.items()}
+                except:
+                    pass
+                
+                # Get data_summary from engine
+                n_rows = getattr(engine, 'n_rows', 0) or 0
+                n_cols = getattr(engine, 'n_cols', 0) or 0
+                feature_columns = getattr(engine, 'feature_columns', [])
+                leaderboard = getattr(engine, 'leaderboard', []) or []
+                
+                result = {
+                    "success": True,
+                    "mode": "traditional",
+                    "feature_metadata": getattr(engine, 'feature_metadata', []),
+                    "feature_columns": feature_columns,
+                    "best_model": {"name": getattr(engine, 'model_name', 'Model'), "metrics": getattr(engine, 'metrics', {})},
+                    "task_type": getattr(engine, 'task_type', 'classification'),
+                    "target_column": getattr(engine, 'target_column', ''),
+                    "metrics": getattr(engine, 'metrics', {}),
+                    "charts": charts,
+                    # Include data_summary and all_models for proper display
+                    "data_summary": {
+                        "rows": n_rows,
+                        "columns": n_cols,
+                        "features_engineered": len(feature_columns) if feature_columns else 0
+                    },
+                    "all_models": [
+                        {"name": item.get('name', 'Unknown'), "metrics": item.get('metrics', {}), "score": item.get('score', 0)}
+                        for item in leaderboard[:10]
+                    ] if leaderboard else [],
+                }
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Get saved result error: {e}")
+        return {"success": False, "error": str(e)}
+
+
 @router.post("/stop_training")
 async def stop_training(
     user_id: str = Form(...),
@@ -662,19 +854,244 @@ async def stop_training(
     authorization: Optional[str] = Header(None, alias="Authorization")
 ):
     """
-    ⛔ stop current training task for user
-    Sets the cancellation flag which checked by the training engine loop.
+    ⛔ Stop current training task for user
+    Sets the cancellation flag which is checked by the training engine loop.
+    Works for both single-mode and multi-mode training.
     SECURED: Uses JWT authentication
     """
+    global TRAINING_STOP_FLAG
     try:
         # SECURITY: Get verified user_id from JWT
         user_id = get_secure_user_id(user_id, x_user_id, authorization)
         print(f"🛑 [STOP] Received stop request for user: {user_id}")
+        
+        # Set global stop flag for multi-mode training
+        TRAINING_STOP_FLAG[user_id] = True
+        
+        # Also call the automl engine's cancel function for single-mode
         from ml.automl_engine import cancel_training
         cancel_training(user_id)
-        return {"success": True, "message": "Training stop signal sent"}
+        
+        return {"success": True, "message": "Training stop signal sent to all modes"}
     except Exception as e:
         logger.error(f"Stop error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/validate_predictions/{path_user_id}")
+async def validate_predictions(
+    path_user_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    🔍 VALIDATE PREDICTIONS - Test model on saved test data
+    Returns actual vs predicted for verification
+    
+    This helps diagnose if predictions are working correctly.
+    """
+    try:
+        user_id = get_secure_user_id(path_user_id, x_user_id, authorization)
+        
+        from ml.model_persistence import ModelPersistenceManager
+        from ml.automl_engine import ProductionMLEngine
+        import numpy as np
+        
+        # Load model state
+        persistence = ModelPersistenceManager()
+        engine_state = persistence.load_model(user_id)
+        
+        if not engine_state:
+            return {"success": False, "error": "No model found"}
+        
+        # Get test data if saved
+        y_test = engine_state.get('y_test')
+        y_pred = engine_state.get('y_pred')
+        
+        if y_test is None or y_pred is None:
+            return {"success": False, "error": "No test data saved with model"}
+        
+        # Calculate metrics
+        task_type = engine_state.get('task_type_simple', 'classification')
+        target_encoder = engine_state.get('target_encoder')
+        
+        # Convert to lists for JSON
+        y_test_list = y_test.tolist() if hasattr(y_test, 'tolist') else list(y_test)
+        y_pred_list = y_pred.tolist() if hasattr(y_pred, 'tolist') else list(y_pred)
+        
+        # Calculate accuracy for classification
+        if task_type == 'classification':
+            correct = sum(1 for a, p in zip(y_test_list, y_pred_list) if a == p)
+            total = len(y_test_list)
+            accuracy = correct / total if total > 0 else 0
+            
+            # Sample comparisons
+            samples = []
+            for i in range(min(10, len(y_test_list))):
+                actual = y_test_list[i]
+                predicted = y_pred_list[i]
+                
+                # Decode if encoder available
+                if target_encoder:
+                    try:
+                        actual = target_encoder.inverse_transform([int(actual)])[0]
+                        predicted = target_encoder.inverse_transform([int(predicted)])[0]
+                    except:
+                        pass
+                
+                samples.append({
+                    "row": i + 1,
+                    "actual": str(actual),
+                    "predicted": str(predicted),
+                    "match": actual == predicted or str(actual) == str(predicted)
+                })
+            
+            return {
+                "success": True,
+                "task_type": "classification",
+                "model_name": engine_state.get('model_name', 'Unknown'),
+                "total_test_samples": len(y_test_list),
+                "correct_predictions": correct,
+                "accuracy": f"{accuracy * 100:.2f}%",
+                "samples": samples,
+                "message": "✅ Predictions validated against test set"
+            }
+        else:
+            # Regression
+            from sklearn.metrics import r2_score, mean_absolute_error
+            
+            r2 = r2_score(y_test_list, y_pred_list)
+            mae = mean_absolute_error(y_test_list, y_pred_list)
+            
+            samples = []
+            for i in range(min(10, len(y_test_list))):
+                actual = float(y_test_list[i])
+                predicted = float(y_pred_list[i])
+                error_pct = abs(actual - predicted) / abs(actual) * 100 if actual != 0 else 0
+                
+                samples.append({
+                    "row": i + 1,
+                    "actual": round(actual, 4),
+                    "predicted": round(predicted, 4),
+                    "error_percent": round(error_pct, 2)
+                })
+            
+            return {
+                "success": True,
+                "task_type": "regression",
+                "model_name": engine_state.get('model_name', 'Unknown'),
+                "total_test_samples": len(y_test_list),
+                "r2_score": f"{r2:.4f}",
+                "mean_absolute_error": round(mae, 4),
+                "samples": samples,
+                "message": "✅ Predictions validated against test set"
+            }
+            
+    except Exception as e:
+        logger.error(f"Validation error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/debug_prediction/{path_user_id}")
+async def debug_prediction(
+    path_user_id: str,
+    data: dict,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    🔍 DEBUG PREDICTION - Shows exactly what happens during prediction
+    
+    Returns detailed info about:
+    - Model state (production_mode, feature columns)
+    - Input processing
+    - Feature transformation
+    - Prediction result
+    """
+    try:
+        user_id = get_secure_user_id(path_user_id, x_user_id, authorization)
+        
+        from ml.automl_engine import ProductionMLEngine
+        import numpy as np
+        
+        engine = ProductionMLEngine()
+        loaded = engine.load(user_id)
+        
+        if not loaded:
+            return {"success": False, "error": "No model found for user"}
+        
+        debug_info = {
+            "model_name": engine.model_name,
+            "task_type": engine.task_type,
+            "production_mode": getattr(engine, 'production_mode', False),
+            "has_production_engineer": hasattr(engine, 'production_engineer') and engine.production_engineer is not None,
+            "feature_columns": engine.feature_columns,
+            "numeric_cols": getattr(engine, 'numeric_cols', []),
+            "categorical_cols": getattr(engine, 'categorical_cols', []),
+            "text_cols": getattr(engine, 'text_cols', []),
+            "target_column": engine.target_column,
+            "has_target_encoder": engine.target_encoder is not None,
+            "input_data": data,
+            "input_keys": list(data.keys()),
+            "missing_features": [f for f in engine.feature_columns if f not in data],
+            "extra_features": [f for f in data.keys() if f not in engine.feature_columns]
+        }
+        
+        # Try to preprocess and get shape
+        try:
+            if getattr(engine, 'production_mode', False) and hasattr(engine, 'production_engineer') and engine.production_engineer is not None:
+                X = engine._preprocess_single_production(data)
+                debug_info["preprocessing_pipeline"] = "PRODUCTION"
+            else:
+                X = engine._preprocess_single(data)
+                debug_info["preprocessing_pipeline"] = "LEGACY"
+            
+            debug_info["preprocessed_shape"] = X.shape
+            debug_info["preprocessed_sample"] = X[0, :10].tolist() if X.shape[1] >= 10 else X[0].tolist()
+            
+            # Get expected shape from model
+            if hasattr(engine.model, 'n_features_in_'):
+                debug_info["model_expects_features"] = engine.model.n_features_in_
+                debug_info["feature_match"] = X.shape[1] == engine.model.n_features_in_
+            
+            # Make prediction
+            raw_pred = engine.model.predict(X)[0]
+            debug_info["raw_prediction"] = str(raw_pred)
+            
+            # Decode
+            if engine.target_encoder:
+                try:
+                    decoded = engine.target_encoder.inverse_transform([int(raw_pred)])[0]
+                    debug_info["decoded_prediction"] = str(decoded)
+                    debug_info["target_classes"] = list(engine.target_encoder.classes_)
+                except Exception as e:
+                    debug_info["decode_error"] = str(e)
+            
+            # Get probabilities if available
+            if hasattr(engine.model, 'predict_proba'):
+                try:
+                    proba = engine.model.predict_proba(X)[0]
+                    debug_info["probabilities"] = [round(float(p), 4) for p in proba]
+                    debug_info["confidence"] = round(float(max(proba)), 4)
+                except Exception as e:
+                    debug_info["proba_error"] = str(e)
+            
+            debug_info["success"] = True
+            
+        except Exception as e:
+            debug_info["preprocessing_error"] = str(e)
+            import traceback
+            debug_info["preprocessing_traceback"] = traceback.format_exc()
+            debug_info["success"] = False
+        
+        return debug_info
+        
+    except Exception as e:
+        logger.error(f"Debug prediction error: {e}")
         import traceback
         traceback.print_exc()
         return {"success": False, "error": str(e)}
@@ -690,154 +1107,165 @@ async def make_prediction(
     🔮 MAKE PREDICTION - Use trained model to predict new data
     SECURED: Uses JWT authentication for user isolation
     
-    Uses AutoMLEngine hydration to ensure exact feature pipeline replication.
+    Supports ALL modes: Traditional ML, NLP, and Deep Learning.
     """
     try:
-        # SECURITY: Get verified user_id from JWT, not from request body
+        # SECURITY: Get verified user_id from JWT
         user_id = get_secure_user_id(request.user_id, x_user_id, authorization)
-        print(f"🔮 [PREDICT] Request for user: {user_id}")
+        mode = request.mode or "traditional"
+        print(f"🔮 [PREDICT] Request for user: {user_id}, mode: {mode}")
         
-        from ml.model_persistence import ModelPersistenceManager
-        from ml.automl_engine import ProductionMLEngine
-        import numpy as np
-        
-        # Load the model state
-        persistence = ModelPersistenceManager()
-        engine_state = persistence.load_model(user_id)
-        
-        if not engine_state:
-            return {
-                "success": False,
-                "error": "No trained model found. Please train a model first."
-            }
+        # =====================================================================
+        # 🧪 1. NLP MODE
+        # =====================================================================
+        if mode == "nlp":
+            from ml.nlp_engine import nlp_engine
+            # Try to handle both dict input and single text input
+            text_input = ""
+            if isinstance(request.data, dict):
+                if len(request.data) == 1:
+                    text_input = list(request.data.values())[0]
+                else:
+                    for k, v in request.data.items():
+                        if isinstance(v, str) and len(v) > 5:
+                            text_input = v
+                            break
+                    if not text_input:
+                        text_input = str(list(request.data.values())[0])
+            else:
+                text_input = str(request.data)
+                
+            result = nlp_engine.predict(text_input, user_id)
+            if result.get('success'):
+                return {
+                    "success": True,
+                    "prediction": result['prediction'],
+                    "probability": result.get('probabilities'),
+                    "confidence": result.get('confidence'),
+                    "model": result.get('algorithm', 'NLP Model'),
+                    "mode": "nlp"
+                }
+            else:
+                return {"success": False, "error": result.get('error', 'NLP prediction failed')}
+
+        # =====================================================================
+        # 🧠 2. DEEP LEARNING MODE
+        # =====================================================================
+        elif mode == "deep_learning":
+            from ml.deep_learning_engine import deep_learning_engine
+            result = deep_learning_engine.predict(request.data, user_id)
+            if result.get('success'):
+                return {
+                    "success": True,
+                    "prediction": result['prediction'],
+                    "probability": result.get('probabilities'),
+                    "confidence": result.get('confidence'),
+                    "model": result.get('algorithm', 'Deep Learning'),
+                    "mode": "deep_learning"
+                }
+            else:
+                return {"success": False, "error": result.get('error', 'Deep Learning prediction failed')}
+
+        # =====================================================================
+        # 🚀 3. TRADITIONAL ML MODE (Default)
+        # =====================================================================
+        else:
+            from ml.model_persistence import ModelPersistenceManager
+            from ml.automl_engine import ProductionMLEngine
+            import numpy as np
             
-        # 1. Hydrate ProductionMLEngine (Silicon Valley V2)
-        # matches the definition in automl_engine.py
-        try:
-            # Create fresh engine
+            # Load the model state
+            persistence = ModelPersistenceManager()
+            engine_state = persistence.load_model(user_id)
+            
+            if not engine_state:
+                # Fallback to singleton engine
+                from ml.automl_engine import automl_engine
+                if automl_engine.model is None:
+                    automl_engine.load(user_id)
+                
+                if automl_engine.model is not None:
+                    result = automl_engine.predict(request.data)
+                    return {
+                        "success": True,
+                        "prediction": result.get('prediction'),
+                        "probability": result.get('probability'),
+                        "model": result.get('model', 'Traditional ML'),
+                        "mode": "traditional"
+                    }
+                
+                return {
+                    "success": False,
+                    "error": "No trained model found. Please train a model first."
+                }
+                
+            # Hydrate ProductionMLEngine
             engine = ProductionMLEngine()
-            
-            # Load state dict into engine instance
             if isinstance(engine_state, dict):
-                # Manually restore critical attributes for _preprocess_single
-                # (ProductionMLEngine uses these keys)
                 engine.model = engine_state.get('model') or engine_state.get('best_model')
                 engine.numeric_cols = engine_state.get('numeric_cols', [])
                 engine.categorical_cols = engine_state.get('categorical_cols', [])
-                engine.text_cols = engine_state.get('text_cols', [])
-                engine.numeric_fill_values = engine_state.get('numeric_fill_values', {})
-                engine.scaler = engine_state.get('scaler')
+                engine.feature_columns = engine_state.get('feature_columns', [])
+                engine.target_column = engine_state.get('target_column', '')
                 engine.label_encoders = engine_state.get('label_encoders', {})
-                engine.text_vectorizers = engine_state.get('text_vectorizers', {})
-                engine.text_svd_transformers = engine_state.get('text_svd_transformers', {})
-                engine.is_nlp_task = engine_state.get('is_nlp_task', False)
-                engine.primary_text_col = engine_state.get('primary_text_col')
-                engine.task_type_simple = engine_state.get('task_type_simple', 'regression')
-                engine.target_encoder = engine_state.get('target_encoder')
-                
-                # Restore feature engineer (Critical for Poly features)
-                engine.feature_engineer = engine_state.get('feature_engineer')
-                
-                # Also restore production engineer if present
+                engine.scaler = engine_state.get('scaler')
+                engine.production_mode = engine_state.get('production_mode', False)
                 engine.production_engineer = engine_state.get('production_engineer')
-            else:
-                # Fallback for old simple model saves
-                engine.model = engine_state
-        
-            if engine.model is None:
-                 return {"success": False, "error": "Model object missing in saved state"}
-                 
-        except Exception as e:
-            logger.error(f"Hydration failed: {e}")
-            return {"success": False, "error": f"Failed to load model architecture: {e}"}
+                engine.task_type_simple = engine_state.get('task_type_simple', 'classification')
+                engine.target_encoder = engine_state.get('target_encoder')
+                engine.model_name = engine_state.get('model_name', 'Traditional ML')
+            
+            # Preprocess and Predict
+            try:
+                production_engineer = engine_state.get('production_engineer') or engine_state.get('engineer')
+                if production_engineer is not None:
+                    X_input = production_engineer.transform_single(request.data)
+                else:
+                    X_input = engine._preprocess_single(request.data)
+                
+                prediction = engine.model.predict(X_input)
+                
+                # Format Output
+                label = str(prediction[0])
+                target_encoder = engine.target_encoder
+                if target_encoder:
+                    try: label = target_encoder.inverse_transform(prediction)[0]
+                    except: pass
+                
+                # Convert numpy types to native Python
+                def convert_types(obj):
+                    if isinstance(obj, (np.integer, np.int64, np.int32)): return int(obj)
+                    if isinstance(obj, (np.floating, np.float32, np.float64)): return float(obj)
+                    if isinstance(obj, np.ndarray): return obj.tolist()
+                    return obj
 
-        # 2. Preprocess Input
-        # Use production_engineer if available (production_train pipeline)
-        # Otherwise fall back to old _preprocess_single method
-        try:
-            # Check both key names for backward compatibility
-            # production_train_pipeline saves as 'engineer', _save method saves as 'production_engineer'
-            production_engineer = engine_state.get('production_engineer') or engine_state.get('engineer')
-            production_mode = engine_state.get('production_mode', True)  # Assume production mode if engineer exists
-            
-            if production_engineer is not None:
-                print("🔮 [PREDICT] Using ProductionFeatureEngineer.transform_single...")
-                X_input = production_engineer.transform_single(request.data)
-                print(f"🔮 [PREDICT] Processed input shape: {X_input.shape}")
-            else:
-                print("🔮 [PREDICT] Using legacy _preprocess_single...")
-                X_input = engine._preprocess_single(request.data)
-                print(f"🔮 [PREDICT] Processed input shape: {X_input.shape}")
-        except Exception as pre_err:
-            logger.error(f"Preprocessing failed: {pre_err}")
-            import traceback
-            traceback.print_exc()
-            return {"success": False, "error": f"Data preprocessing failed: {pre_err}"}
-            
-        # 3. Predict
-        prediction = engine.model.predict(X_input)
-        
-        # 4. Format Output
-        if engine.task_type_simple == 'classification':
-            # Handle classification output
-            label = str(prediction[0])
-            
-            # Get target encoder from engine or directly from state
-            target_encoder = engine.target_encoder or engine_state.get('target_encoder')
-            
-            if target_encoder:
-                try:
-                    label = target_encoder.inverse_transform(prediction)[0]
-                except:
-                    pass
-            elif hasattr(engine, 'label_encoders') and 'target' in engine.label_encoders:
-                 # Fallback if target was encoded as a feature
-                 pass
-            
-            # Probabilities
-            probs = None
-            if hasattr(engine.model, 'predict_proba'):
-                try:
-                    probs_arr = engine.model.predict_proba(X_input)[0]
-                    if target_encoder:
-                         probs = {str(target_encoder.inverse_transform([i])[0]): float(p) for i, p in enumerate(probs_arr)}
-                    else:
-                         probs = {f"class_{i}": float(p) for i, p in enumerate(probs_arr)}
-                except:
-                    pass
+                probs = None
+                if hasattr(engine.model, 'predict_proba'):
+                    try:
+                        probs_arr = engine.model.predict_proba(X_input)[0]
+                        if target_encoder:
+                             probs = {str(target_encoder.inverse_transform([i])[0]): float(p) for i, p in enumerate(probs_arr)}
+                        else:
+                             probs = {f"class_{i}": float(p) for i, p in enumerate(probs_arr)}
+                    except: pass
 
-            return {
-                "success": True,
-                "task_type": "classification",
-                "prediction": label,
-                "probabilities": probs,
-                "confidence": max(probs.values()) if probs else None,
-                "model_used": type(engine.model).__name__
-            }
-        else:
-            # Regression
-            val = float(prediction[0])
-            
-            # IMPORTANT: Current engine does NOT scale Y for regression, 
-            # so raw output is correct.
-            
-            return {
-                "success": True,
-                "task_type": "regression",
-                "prediction": val,
-                "formatted_prediction": f"{val:,.4f}",
-                "confidence": None,  # No confidence for regression
-                "model_used": type(engine.model).__name__
-            }
+                return {
+                    "success": True,
+                    "prediction": convert_types(label),
+                    "probability": convert_types(probs),
+                    "model": engine.model_name,
+                    "mode": "traditional"
+                }
+            except Exception as e:
+                logger.error(f"Traditional prediction error: {e}")
+                return {"success": False, "error": f"Prediction failed: {str(e)}"}
 
     except Exception as e:
-        logger.error(f"Prediction error: {e}")
+        logger.error(f"Global prediction error: {e}")
         import traceback
         traceback.print_exc()
-        return {
-            "success": False,
-            "error": str(e)
-        }
+        return {"success": False, "error": str(e)}
+
 
 
 @router.get("/charts/{path_user_id}")
@@ -932,3 +1360,1136 @@ async def get_ml_charts(
             "error": str(e),
             "charts": {}
         }
+
+
+# =============================================================================
+# 🔤 NLP TRAINING ENDPOINTS
+# =============================================================================
+
+@router.post("/nlp/train")
+async def nlp_train(
+    file: UploadFile = File(...),
+    target_column: Optional[str] = Form(None),
+    text_column: Optional[str] = Form(None),
+    algorithm: Optional[str] = Form("auto"),
+    user_id: str = Form("default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    🔤 NLP TEXT CLASSIFICATION TRAINING
+    
+    Uses TF-IDF vectorization with various classifiers:
+    - auto: Tries all algorithms, picks best
+    - tfidf_lr: Logistic Regression
+    - tfidf_svm: Support Vector Machine
+    - tfidf_nb: Naive Bayes
+    - tfidf_rf: Random Forest
+    - tfidf_xgb: XGBoost
+    """
+    try:
+        user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        print(f"🔤 [NLP] Text Classification Training for user: {user_id}")
+        
+        content = await file.read()
+        filename = file.filename or "data.csv"
+        
+        if filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+        
+        print(f"📂 File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
+        
+        from ml.nlp_engine import nlp_engine
+        
+        # Run training
+        import asyncio
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, 
+            lambda: nlp_engine.train(
+                df=df,
+                target_column=target_column,
+                text_column=text_column,
+                algorithm=algorithm,
+                user_id=user_id
+            )
+        )
+        
+        charts = result.get('charts', {})
+        print(f"📊 NLP Charts available: {list(charts.keys())}")
+        
+        # JSON safe helper
+        def json_safe(obj):
+            import math
+            import numpy as np
+            if obj is None: return None
+            if isinstance(obj, (np.integer,)): return int(obj)
+            if isinstance(obj, (np.floating,)):
+                return None if math.isnan(obj) or math.isinf(obj) else float(obj)
+            if isinstance(obj, float):
+                return None if math.isnan(obj) or math.isinf(obj) else obj
+            if isinstance(obj, dict): return {k: json_safe(v) for k, v in obj.items()}
+            if isinstance(obj, list): return [json_safe(v) for v in obj]
+            if isinstance(obj, np.ndarray): return json_safe(obj.tolist())
+            return obj
+        
+        return json_safe({
+            "success": True,
+            "pipeline": "NLP_TEXT_CLASSIFICATION",
+            "task_type": "classification",
+            "target_column": result.get('target_column'),
+            "text_column": result.get('text_column'),
+            "data_summary": {
+                "rows": result.get('n_samples', df.shape[0]),
+                "columns": df.shape[1],
+                "classes": result.get('n_classes', 0)
+            },
+            "best_model": {
+                "name": result.get('best_algorithm', 'Unknown'),
+                "metrics": result.get('metrics', {})
+            },
+            "all_models": result.get('all_models', []),
+            "charts": charts,
+            "processing_time_seconds": result.get('training_time', 0),
+            "insights": [
+                f"🔤 NLP Pipeline: {result.get('best_algorithm', 'TF-IDF')}",
+                f"📊 Text samples: {result.get('n_samples', 0)}",
+                f"🏷️ Classes: {result.get('n_classes', 0)}"
+            ]
+        })
+        
+    except Exception as e:
+        error_str = str(e)
+        error_type = type(e).__name__
+        logger.error(f"NLP train error [{error_type}]: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"NLP training failed: {error_str[:300]}")
+
+
+@router.post("/nlp/predict")
+async def nlp_predict(
+    text: str = Form(...),
+    user_id: str = Form("default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    🔤 NLP TEXT PREDICTION
+    
+    Predicts class for input text using trained NLP model.
+    """
+    try:
+        user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
+        from ml.nlp_engine import nlp_engine
+        
+        result = nlp_engine.predict(text, user_id)
+        
+        return {
+            "success": True,
+            "text": text[:100] + "..." if len(text) > 100 else text,
+            "prediction": result.get('prediction'),
+            "confidence": result.get('confidence'),
+            "all_probabilities": result.get('all_probabilities', {})
+        }
+        
+    except Exception as e:
+        logger.error(f"NLP predict error: {e}")
+        raise HTTPException(status_code=500, detail=f"NLP prediction failed: {str(e)[:200]}")
+
+
+# =============================================================================
+# 🧠 DEEP LEARNING TRAINING ENDPOINTS
+# =============================================================================
+
+@router.post("/deep_learning/train")
+async def deep_learning_train(
+    file: UploadFile = File(...),
+    target_column: Optional[str] = Form(None),
+    architecture: Optional[str] = Form("auto"),
+    user_id: str = Form("default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    🧠 DEEP LEARNING NEURAL NETWORK TRAINING
+    
+    Uses Multi-Layer Perceptron (MLP) with various architectures:
+    - auto: Tries all architectures, picks best
+    - mlp_small: (64, 32) - Fast, small data
+    - mlp_medium: (128, 64, 32) - Balanced
+    - mlp_large: (256, 128, 64) - Complex patterns
+    - mlp_wide: (512, 256) - High-dimensional
+    - mlp_deep: (128, 128, 128, 128) - Deep representation
+    """
+    try:
+        user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        print(f"🧠 [DEEP LEARNING] Neural Network Training for user: {user_id}")
+        
+        content = await file.read()
+        filename = file.filename or "data.csv"
+        
+        if filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+        
+        print(f"📂 File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
+        
+        from ml.deep_learning_engine import deep_learning_engine
+        
+        # Run training
+        import asyncio
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, 
+            lambda: deep_learning_engine.train(
+                df=df,
+                target_column=target_column,
+                architecture=architecture,
+                user_id=user_id
+            )
+        )
+        
+        charts = result.get('charts', {})
+        print(f"📊 Deep Learning Charts available: {list(charts.keys())}")
+        
+        # JSON safe helper
+        def json_safe(obj):
+            import math
+            import numpy as np
+            if obj is None: return None
+            if isinstance(obj, (np.integer,)): return int(obj)
+            if isinstance(obj, (np.floating,)):
+                return None if math.isnan(obj) or math.isinf(obj) else float(obj)
+            if isinstance(obj, float):
+                return None if math.isnan(obj) or math.isinf(obj) else obj
+            if isinstance(obj, dict): return {k: json_safe(v) for k, v in obj.items()}
+            if isinstance(obj, list): return [json_safe(v) for v in obj]
+            if isinstance(obj, np.ndarray): return json_safe(obj.tolist())
+            return obj
+        
+        return json_safe({
+            "success": True,
+            "pipeline": "DEEP_LEARNING_MLP",
+            "task_type": result.get('task_type', 'classification'),
+            "target_column": result.get('target_column'),
+            "data_summary": {
+                "rows": result.get('n_samples', df.shape[0]),
+                "columns": result.get('n_features', df.shape[1] - 1),
+                "features_used": result.get('n_features', 0)
+            },
+            "best_model": {
+                "name": result.get('best_architecture', 'MLP'),
+                "metrics": result.get('metrics', {})
+            },
+            "architecture_details": result.get('architecture_details', {}),
+            "all_models": result.get('all_models', []),
+            "charts": charts,
+            "processing_time_seconds": result.get('training_time', 0),
+            "feature_columns": result.get('feature_columns', []),
+            "insights": [
+                f"🧠 Neural Network: {result.get('best_architecture', 'MLP')}",
+                f"📊 Layers: {result.get('architecture_details', {}).get('layers', 'N/A')}",
+                f"⚡ Training epochs: {result.get('architecture_details', {}).get('epochs', 200)}"
+            ]
+        })
+        
+    except Exception as e:
+        error_str = str(e)
+        error_type = type(e).__name__
+        logger.error(f"Deep Learning train error [{error_type}]: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Deep Learning training failed: {error_str[:300]}")
+
+
+@router.post("/deep_learning/predict")
+async def deep_learning_predict(
+    data: dict,
+    user_id: str = Form("default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    🧠 DEEP LEARNING PREDICTION
+    
+    Predicts using trained neural network model.
+    """
+    try:
+        user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
+        from ml.deep_learning_engine import deep_learning_engine
+        
+        # Convert dict to DataFrame for prediction
+        df = pd.DataFrame([data])
+        
+        result = deep_learning_engine.predict(df, user_id)
+        
+        return {
+            "success": True,
+            "prediction": result.get('prediction'),
+            "confidence": result.get('confidence'),
+            "probabilities": result.get('probabilities', {})
+        }
+        
+    except Exception as e:
+        logger.error(f"Deep Learning predict error: {e}")
+        raise HTTPException(status_code=500, detail=f"Deep Learning prediction failed: {str(e)[:200]}")
+
+
+@router.post("/multi_mode/train")
+async def multi_mode_train(
+    file: UploadFile = File(...),
+    target_column: Optional[str] = Form(None),
+    modes: str = Form('["traditional"]'),  # JSON array of modes
+    algorithms: str = Form('{}'),  # JSON object of algorithms per mode
+    ultra_mode: str = Form('false'),
+    user_id: str = Form("default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    🚀 MULTI-MODE ML TRAINING - Modern Architectures
+    
+    Train ONLY the user-selected ML modes:
+    - Traditional ML (XGBoost, LightGBM, CatBoost, Random Forest, etc.)
+    - NLP (TF-IDF, BOW, N-grams, Embeddings, Transformers, Ensembles)
+    - Deep Learning (ANN, RNN, LSTM, GRU, CNN, Transformer, Autoencoder)
+    
+    Features:
+    - Only trains modes the user explicitly selects
+    - Generates mode-specific charts
+    - Combines results for hybrid predictions
+    - Stop training support via global flag
+    """
+    import json
+    import asyncio
+    
+    # Global training stop flag check
+    global TRAINING_STOP_FLAG
+    
+    try:
+        user_id = get_secure_user_id(user_id, x_user_id, authorization)
+        
+        # Reset stop flag at start
+        if hasattr(TRAINING_STOP_FLAG, 'get'):
+            TRAINING_STOP_FLAG[user_id] = False
+        
+        # Parse modes and algorithms
+        try:
+            selected_modes = json.loads(modes)
+            selected_algorithms = json.loads(algorithms)
+        except json.JSONDecodeError:
+            selected_modes = ['traditional']
+            selected_algorithms = {'traditional': ['auto'], 'nlp': ['auto'], 'deep_learning': ['auto']}
+        
+        is_ultra = ultra_mode.lower() == 'true'
+        
+        print(f"🚀 [MULTI-MODE] Training with modes: {selected_modes}")
+        print(f"   Algorithms: {selected_algorithms}")
+        print(f"   Ultra mode: {is_ultra}")
+        
+        # Read file
+        content = await file.read()
+        filename = file.filename or "data.csv"
+        
+        if filename.endswith('.csv'):
+            df = pd.read_csv(io.BytesIO(content))
+        else:
+            df = pd.read_excel(io.BytesIO(content))
+        
+        print(f"📂 File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
+        
+        # ============================================================
+        # SAVE CLEANED DATA UPFRONT (for all modes to use)
+        # ============================================================
+        cleaned_file_path = None
+        try:
+            from utils.paths import get_user_paths
+            from datetime import datetime
+            
+            user_paths = get_user_paths(user_id)
+            upload_dir = user_paths['files']
+            
+            # Clean data: handle missing values, encode categoricals, etc.
+            df_for_cleaning = df.copy()
+            
+            # Basic cleaning: fill NaN for numeric columns with median, categorical with mode
+            for col in df_for_cleaning.columns:
+                if col == target_column:
+                    continue
+                if df_for_cleaning[col].dtype in ['float64', 'int64']:
+                    df_for_cleaning[col].fillna(df_for_cleaning[col].median(), inplace=True)
+                elif df_for_cleaning[col].dtype == 'object':
+                    df_for_cleaning[col].fillna(df_for_cleaning[col].mode().iloc[0] if len(df_for_cleaning[col].mode()) > 0 else 'Unknown', inplace=True)
+            
+            # Drop rows where target is NaN
+            df_for_cleaning = df_for_cleaning.dropna(subset=[target_column])
+            
+            # Save cleaned data
+            cleaned_filename = f"cleaned_{int(datetime.now().timestamp())}.csv"
+            cleaned_full_path = upload_dir / cleaned_filename
+            df_for_cleaning.to_csv(cleaned_full_path, index=False)
+            cleaned_file_path = cleaned_filename
+            print(f"💾 Saved cleaned data to: {cleaned_full_path}")
+        except Exception as e:
+            print(f"⚠️ Failed to save cleaned data: {e}")
+            cleaned_file_path = None
+        
+        # Collect results from each mode
+        all_results = {}
+        all_charts = {}
+        all_metrics = {}
+        best_overall_model = None
+        best_overall_score = 0
+        leaderboard = []
+        
+        loop = asyncio.get_running_loop()
+        
+        # Helper to check if training should stop
+        def should_stop():
+            if hasattr(TRAINING_STOP_FLAG, 'get'):
+                return TRAINING_STOP_FLAG.get(user_id, False)
+            return False
+        
+        # Train ONLY the selected modes
+        for mode in selected_modes:
+            # Check stop flag before each mode
+            if should_stop():
+                print(f"   ⏹️ Training stopped by user before {mode}")
+                break
+                
+            try:
+                mode_algos = selected_algorithms.get(mode, ['auto'])
+                is_auto = 'auto' in mode_algos or len(mode_algos) == 0
+                print(f"   🔄 Training {mode} with algorithms: {mode_algos} (auto={is_auto})")
+                
+                if mode == 'traditional':
+                    from ml.automl_engine import automl_engine
+                    
+                    # Determine training mode based on user selection
+                    # - If user selected 'auto': use 'fast' or 'ultra' based on flag
+                    # - If user selected specific algorithms: pass them to train only those
+                    if is_auto:
+                        # Auto mode - let the engine pick best algorithms
+                        train_mode = 'ultra' if is_ultra else 'fast'
+                        # Create a copy to avoid closure issues
+                        df_copy = df.copy()
+                        target_copy = target_column
+                        user_copy = user_id
+                        mode_copy = train_mode
+                        
+                        def train_auto():
+                            return automl_engine.production_train(
+                                df_copy, target_copy, user_copy,
+                                mode=mode_copy
+                            )
+                        
+                        result = await loop.run_in_executor(None, train_auto)
+                    else:
+                        # User selected specific algorithms - train those
+                        # Create copies to avoid closure issues
+                        df_copy = df.copy()
+                        target_copy = target_column
+                        user_copy = user_id
+                        algos_copy = list(mode_algos)  # Copy the list
+                        
+                        def train_selected():
+                            return automl_engine.production_train_selected(
+                                df_copy, target_copy, user_copy,
+                                selected_algorithms=algos_copy
+                            )
+                        
+                        result = await loop.run_in_executor(None, train_selected)
+                    
+                    if should_stop():
+                        break
+                    
+                    all_results['traditional'] = {
+                        'success': True,
+                        'best_model': result.best_model_name,
+                        'metrics': result.best_model_metrics,
+                        'leaderboard': result.leaderboard[:5] if result.leaderboard else [],
+                        'task_type': 'classification' if result.task_type == 'classification' else 'regression',
+                        'algorithms_used': mode_algos if not is_auto else 'auto',
+                        # Add full result data for frontend compatibility
+                        'feature_columns': result.feature_columns,
+                        'feature_importance': result.feature_importance,
+                        'feature_metadata': result.feature_metadata,
+                        'n_rows': result.n_rows,
+                        'n_cols': result.n_cols,
+                        'cleaned_file_path': getattr(result, 'cleaned_file_path', None),
+                    }
+                    
+                    # Add traditional ML charts with proper prefixes
+                    if result.charts:
+                        for k, v in result.charts.items():
+                            all_charts[f"ml_{k}"] = v
+                    
+                    # Track best model - use appropriate metric based on task type
+                    if result.best_model_metrics:
+                        if result.task_type == 'classification':
+                            acc = result.best_model_metrics.get('accuracy', 0)
+                        else:
+                            # For regression, use R² score
+                            acc = result.best_model_metrics.get('r2', 0)
+                    else:
+                        acc = 0
+                    
+                    if acc > best_overall_score:
+                        best_overall_score = acc
+                        best_overall_model = {'mode': 'traditional', 'name': result.best_model_name, 'metrics': result.best_model_metrics}
+                    
+                    # Add to leaderboard
+                    if result.leaderboard:
+                        for item in result.leaderboard[:3]:
+                            leaderboard.append({
+                                'mode': 'Traditional ML',
+                                'model': item.get('name', 'Unknown'),
+                                'score': item.get('score', 0),
+                                'metrics': item.get('metrics', {})
+                            })
+                    
+                    metric_name = 'Accuracy' if result.task_type == 'classification' else 'R²'
+                    print(f"   ✅ Traditional ML: {result.best_model_name} ({metric_name}: {acc:.2%})")
+                    
+                elif mode == 'nlp':
+                    from ml.nlp_engine import nlp_engine
+                    
+                    algo = mode_algos[0] if mode_algos else 'auto'
+                    # Create copies to avoid closure issues
+                    df_copy = df.copy()
+                    target_copy = target_column
+                    algo_copy = algo
+                    user_copy = user_id
+                    
+                    def train_nlp():
+                        return nlp_engine.train(df_copy, target_copy, algorithm=algo_copy, user_id=user_copy)
+                    
+                    result = await loop.run_in_executor(None, train_nlp)
+                    
+                    if should_stop():
+                        break
+                    
+                    if result.get('success'):
+                        text_col = result.get('text_column')
+                        # Get full feature_metadata from the NLP engine (includes ALL columns)
+                        nlp_feature_metadata = getattr(nlp_engine, 'feature_metadata', [])
+                        nlp_feature_columns = getattr(nlp_engine, 'original_feature_columns', [])
+                        
+                        # If feature_metadata is empty, create basic one from text column
+                        if not nlp_feature_metadata and text_col:
+                            nlp_feature_metadata = [{
+                                'name': text_col,
+                                'type': 'text',
+                                'placeholder': f'Enter {text_col} for NLP prediction...'
+                            }]
+                            nlp_feature_columns = [text_col]
+                        
+                        all_results['nlp'] = {
+                            'success': True,
+                            'algorithm': result.get('algorithm'),
+                            'algorithm_key': result.get('algorithm_key'),
+                            'metrics': result.get('metrics', {}),
+                            'text_column': text_col,
+                            'classes': result.get('classes', []),
+                            'task_type': result.get('task_type', 'classification'),
+                            # Include FULL feature_metadata from engine - has ALL user's columns
+                            'feature_metadata': nlp_feature_metadata,
+                            'feature_columns': nlp_feature_columns,
+                        }
+                        
+                        # Add NLP-specific charts
+                        if result.get('charts'):
+                            for k, v in result.get('charts', {}).items():
+                                all_charts[f"nlp_{k}"] = v
+                        
+                        acc = result.get('metrics', {}).get('accuracy', 0)
+                        if acc > best_overall_score:
+                            best_overall_score = acc
+                            best_overall_model = {'mode': 'nlp', 'name': result.get('algorithm'), 'metrics': result.get('metrics', {})}
+                        
+                        # Add to leaderboard
+                        leaderboard.append({
+                            'mode': 'NLP',
+                            'model': result.get('algorithm', 'Unknown'),
+                            'score': acc,
+                            'metrics': result.get('metrics', {})
+                        })
+                        
+                        # Add algorithms tried if available
+                        if hasattr(nlp_engine, 'algorithms_used') and nlp_engine.algorithms_used:
+                            for algo_info in nlp_engine.algorithms_used:
+                                leaderboard.append({
+                                    'mode': 'NLP',
+                                    'model': algo_info.get('name', 'Unknown'),
+                                    'score': algo_info.get('score', 0),
+                                })
+                        
+                        print(f"   ✅ NLP: {result.get('algorithm')} ({acc:.2%})")
+                    else:
+                        all_results['nlp'] = {'success': False, 'error': result.get('error', 'Unknown error')}
+                        print(f"   ❌ NLP failed: {result.get('error')}")
+                    
+                elif mode == 'deep_learning':
+                    from ml.deep_learning_engine import deep_learning_engine
+                    
+                    arch = mode_algos[0] if mode_algos else 'auto'
+                    # Create copies to avoid closure issues
+                    df_copy = df.copy()
+                    target_copy = target_column
+                    arch_copy = arch
+                    user_copy = user_id
+                    
+                    def train_dl():
+                        return deep_learning_engine.train(df_copy, target_copy, algorithm=arch_copy, user_id=user_copy)
+                    
+                    result = await loop.run_in_executor(None, train_dl)
+                    
+                    if should_stop():
+                        break
+                    
+                    if result.get('success'):
+                        # Get feature_metadata from engine for Deep Learning
+                        dl_feature_metadata = getattr(deep_learning_engine, 'feature_metadata', [])
+                        dl_feature_columns = getattr(deep_learning_engine, 'feature_columns', [])
+                        
+                        all_results['deep_learning'] = {
+                            'success': True,
+                            'architecture': result.get('algorithm'),
+                            'algorithm_key': result.get('algorithm_key'),
+                            'metrics': result.get('metrics', {}),
+                            'task_type': result.get('task_type_display', 'Deep Learning'),
+                            'epochs_completed': result.get('epochs_completed', 0),
+                            # Include feature_metadata for Deep Learning
+                            'feature_metadata': dl_feature_metadata,
+                            'feature_columns': dl_feature_columns,
+                        }
+                        
+                        # Add Deep Learning specific charts
+                        if result.get('charts'):
+                            for k, v in result.get('charts', {}).items():
+                                all_charts[f"dl_{k}"] = v
+                        
+                        acc = result.get('metrics', {}).get('accuracy', result.get('metrics', {}).get('r2', 0))
+                        if acc > best_overall_score:
+                            best_overall_score = acc
+                            best_overall_model = {'mode': 'deep_learning', 'name': result.get('algorithm'), 'metrics': result.get('metrics', {})}
+                        
+                        # Add to leaderboard
+                        leaderboard.append({
+                            'mode': 'Deep Learning',
+                            'model': result.get('algorithm', 'Unknown'),
+                            'score': acc,
+                            'metrics': result.get('metrics', {})
+                        })
+                        
+                        # Add architectures tried if available
+                        if hasattr(deep_learning_engine, 'architectures_used') and deep_learning_engine.architectures_used:
+                            for arch_info in deep_learning_engine.architectures_used:
+                                leaderboard.append({
+                                    'mode': 'Deep Learning',
+                                    'model': arch_info.get('name', 'Unknown'),
+                                    'score': arch_info.get('score', 0),
+                                })
+                        
+                        print(f"   ✅ Deep Learning: {result.get('algorithm')} ({acc:.2%})")
+                    else:
+                        all_results['deep_learning'] = {'success': False, 'error': result.get('error', 'Unknown error')}
+                        print(f"   ❌ Deep Learning failed: {result.get('error')}")
+                        
+            except Exception as e:
+                print(f"   ⚠️ {mode} failed: {e}")
+                import traceback
+                traceback.print_exc()
+                all_results[mode] = {'success': False, 'error': str(e)}
+        
+        # Sort leaderboard by score
+        leaderboard = sorted(leaderboard, key=lambda x: x.get('score', 0), reverse=True)[:10]
+        
+        # Aggregate metrics
+        for mode, result_data in all_results.items():
+            if result_data.get('success') and result_data.get('metrics'):
+                all_metrics[mode] = result_data['metrics']
+        
+        # =====================================================================
+        # GENERATE COMBINED CHARTS FOR MULTI-MODE TRAINING
+        # =====================================================================
+        # Generate comparison charts if multiple modes were successfully trained
+        successful_modes = [m for m in selected_modes if all_results.get(m, {}).get('success')]
+        if len(successful_modes) >= 2:
+            try:
+                from ml.combined_charts import generate_combined_charts
+                print(f"📊 Generating combined charts for {len(successful_modes)} modes...")
+                
+                combined = generate_combined_charts(all_results, leaderboard, best_overall_model)
+                
+                # Add combined charts to all_charts with 'combined_' prefix
+                for chart_name, chart_data in combined.items():
+                    all_charts[chart_name] = chart_data
+                
+                print(f"   ✅ Generated {len(combined)} combined charts")
+            except Exception as e:
+                logger.warning(f"Failed to generate combined charts: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Determine if training was stopped
+        was_stopped = should_stop()
+        
+        # Get the primary result for frontend compatibility
+        primary_result = None
+        primary_task_type = 'classification'
+        feature_columns = []
+        feature_importance = []
+        feature_metadata = []
+        # NOTE: cleaned_file_path was already saved upfront at the start of training
+        # So we don't need to get it from mode_result anymore
+        n_rows = df.shape[0]
+        n_cols = df.shape[1]
+        
+        # Get data from the first successful mode - USE STORED RESULT DATA
+        for mode in selected_modes:
+            mode_result = all_results.get(mode, {})
+            if mode_result.get('success'):
+                if mode == 'traditional':
+                    # Use data stored in the result directly
+                    feature_columns = mode_result.get('feature_columns', []) or []
+                    feature_importance = mode_result.get('feature_importance', []) or []
+                    feature_metadata = mode_result.get('feature_metadata', []) or []
+                    primary_task_type = mode_result.get('task_type', 'classification')
+                    n_rows = mode_result.get('n_rows', df.shape[0])
+                    n_cols = mode_result.get('n_cols', df.shape[1])
+                    # If traditional mode has a better cleaned file, use it
+                    if mode_result.get('cleaned_file_path') and not cleaned_file_path:
+                        cleaned_file_path = mode_result.get('cleaned_file_path')
+                    break
+                elif mode == 'nlp':
+                    # For NLP, get FULL feature_metadata from result (includes ALL columns)
+                    feature_metadata = mode_result.get('feature_metadata', []) or []
+                    feature_columns = mode_result.get('feature_columns', []) or []
+                    primary_task_type = mode_result.get('task_type', 'NLP Classification')
+                    break
+                elif mode == 'deep_learning':
+                    # For Deep Learning, get feature_metadata from the engine
+                    from ml.deep_learning_engine import deep_learning_engine
+                    dl_feature_metadata = getattr(deep_learning_engine, 'feature_metadata', [])
+                    dl_feature_columns = getattr(deep_learning_engine, 'feature_columns', [])
+                    if dl_feature_metadata:
+                        feature_metadata = dl_feature_metadata
+                    if dl_feature_columns:
+                        # Use original column names, not one-hot encoded names
+                        feature_columns = list(set([c.split('_')[0] if '_' in c else c for c in dl_feature_columns]))
+                    primary_task_type = mode_result.get('task_type', 'Deep Learning')
+                    break
+        
+        # Fallback: if no feature columns, use all non-target columns
+        if not feature_columns:
+            feature_columns = [c for c in df.columns if c != target_column]
+        
+        # Build response in SAME FORMAT as /train endpoint for frontend compatibility
+        # Determine the best mode for predictions
+        best_mode = best_overall_model['mode'] if best_overall_model else 'traditional'
+        
+        # SAVE combined charts and metadata for persistence across page reloads
+        try:
+            from ml.model_persistence import model_persistence
+            
+            # Save all charts (from all modes)
+            if all_charts:
+                model_persistence.save_charts(user_id, all_charts)
+                logger.info(f"[MultiMode] Saved {len(all_charts)} charts for user {user_id}")
+            
+            # Save multi-mode metadata for the saved-result endpoint
+            multimode_metadata = {
+                'modes_trained': [m for m in selected_modes if all_results.get(m, {}).get('success')],
+                'best_mode': best_mode,
+                'best_overall': best_overall_model,
+                'feature_metadata': feature_metadata,
+                'feature_columns': feature_columns,
+                'target_column': target_column,
+                'task_type': primary_task_type,
+                'results_per_mode': all_results,
+                'primary_text_col': all_results.get('nlp', {}).get('text_column'),
+                # Include data_summary for page reloads
+                'data_summary': {
+                    'rows': n_rows,
+                    'columns': n_cols,
+                    'features_engineered': len(feature_columns) if feature_columns else n_cols - 1
+                },
+                # Include all_models count for display
+                'all_models_count': len(leaderboard) if leaderboard else 0,
+                'leaderboard': leaderboard[:10] if leaderboard else [],
+            }
+            
+            # Save multimode metadata
+            user_dir = model_persistence._get_user_dir(user_id)
+            import json
+            with open(user_dir / "multimode_metadata.json", 'w') as f:
+                json.dump(multimode_metadata, f, indent=2, default=str)
+            logger.info(f"[MultiMode] Saved multimode metadata for user {user_id}")
+            
+        except Exception as e:
+            logger.warning(f"[MultiMode] Failed to save charts/metadata: {e}")
+        
+        return {
+            "success": True,
+            "pipeline": "MULTI_MODE_ML",
+            "task_type": primary_task_type,
+            "target_column": target_column,
+            "mode": best_mode,  # CRITICAL: Set mode for prediction routing
+            "best_overall": best_overall_model,  # Full best model info with mode
+            "data_summary": {
+                "rows": n_rows,
+                "columns": n_cols,
+                "features_engineered": len(feature_columns) if feature_columns else n_cols - 1
+            },
+            "best_model": {
+                "name": best_overall_model['name'] if best_overall_model else 'Unknown',
+                "metrics": best_overall_model.get('metrics', {}) if best_overall_model else {}
+            },
+            "all_models": [
+                {"name": item.get('model', 'Unknown'), "metrics": item.get('metrics', {}), "score": item.get('score', 0)}
+                for item in leaderboard
+            ],
+            "feature_importance": feature_importance,
+            "feature_metadata": feature_metadata,
+            "feature_columns": feature_columns if feature_columns else [c for c in df.columns if c != target_column],
+            "cleaned_file": cleaned_file_path,
+            "charts": all_charts,
+            "processing_time_seconds": 0,
+            "modes_trained": [m for m in selected_modes if all_results.get(m, {}).get('success')],
+            "modes_requested": selected_modes,
+            "results_per_mode": all_results,
+            "combined_metrics": all_metrics,
+            "leaderboard": leaderboard,
+            "was_stopped": was_stopped,
+            # For NLP mode, include the text column
+            "primary_text_col": all_results.get('nlp', {}).get('text_column'),
+            "is_nlp_task": 'nlp' in [m for m in selected_modes if all_results.get(m, {}).get('success')],
+            "insights": [
+                f"🎯 Trained {len([m for m in selected_modes if all_results.get(m, {}).get('success')])} of {len(selected_modes)} mode(s)",
+                f"🏆 Best: {best_overall_model['mode'].upper()} - {best_overall_model['name']}" if best_overall_model else "No successful training",
+                f"📊 Best score: {best_overall_score:.2%}" if best_overall_score > 0 else "N/A",
+                f"⏹️ Training was stopped by user" if was_stopped else f"✅ Training completed successfully"
+            ],
+            "recommendations": [
+                "Use the 'Predict' tab to make real-time predictions",
+                "View 'ML Charts' tab to see model performance visualizations"
+            ]
+        }
+        
+    except Exception as e:
+        error_str = str(e)
+        error_type = type(e).__name__
+        logger.error(f"Multi-mode train error [{error_type}]: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Multi-mode training failed: {error_str[:300]}")
+
+
+# ============================================================================
+# MODEL DOWNLOAD ENDPOINT
+# ============================================================================
+
+@router.get("/download-model")
+async def download_trained_model(
+    user_id: str = Query(default="default"),
+    mode: str = Query(default="auto"),  # 'traditional', 'nlp', 'deep_learning', 'auto'
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    📥 Download trained model as .pkl file
+    
+    Downloads the user's trained model for:
+    - Deployment in production environments
+    - Integration with other systems
+    - Backup purposes
+    """
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+    import os
+    
+    # Resolve user_id from JWT if available
+    actual_user_id = user_id
+    if x_user_id:
+        actual_user_id = x_user_id
+    elif authorization and authorization.startswith("Bearer "):
+        try:
+            from core.auth import decode_supabase_jwt
+            payload = decode_supabase_jwt(authorization[7:])
+            if payload and payload.get('sub'):
+                actual_user_id = payload['sub']
+        except:
+            pass
+    
+    try:
+        from ml.model_persistence import model_persistence
+        from utils.paths import get_user_paths
+        from config.settings import Settings
+        
+        # Get base storage path from settings (absolute path)
+        base_storage = Settings.STORAGE
+        
+        # Try multiple model locations
+        model_path = None
+        model_name = "trained_model"
+        
+        # Location 1: AutoML engine storage path (PRIMARY - most likely location!)
+        if not model_path:
+            try:
+                # This is the MAIN location where automl_engine saves models
+                automl_path = base_storage / "automl" / actual_user_id / "model.pkl"
+                logger.info(f"Checking AutoML path: {automl_path}")
+                if automl_path.exists():
+                    model_path = automl_path
+                    logger.info(f"✅ Found AutoML model at: {model_path}")
+            except Exception as e:
+                logger.warning(f"AutoML path error: {e}")
+        
+        # Location 2: Model persistence manager (active_model.pkl)
+        if not model_path:
+            try:
+                user_dir = model_persistence._get_user_dir(actual_user_id)
+                candidate = user_dir / "active_model.pkl"
+                logger.info(f"Checking persistence path: {candidate}")
+                if candidate.exists():
+                    model_path = candidate
+                    logger.info(f"✅ Found model at: {model_path}")
+            except Exception as e:
+                logger.warning(f"Model persistence path error: {e}")
+        
+        # Location 3: Models storage directory
+        if not model_path:
+            try:
+                models_path = base_storage / "models" / actual_user_id / "active_model.pkl"
+                logger.info(f"Checking models path: {models_path}")
+                if models_path.exists():
+                    model_path = models_path
+                    logger.info(f"✅ Found model at: {models_path}")
+            except Exception as e:
+                logger.warning(f"Models path error: {e}")
+        
+        # Location 4: Users storage directory
+        if not model_path:
+            try:
+                users_path = base_storage / "users" / actual_user_id / "model.pkl"
+                logger.info(f"Checking users path: {users_path}")
+                if users_path.exists():
+                    model_path = users_path
+                    logger.info(f"✅ Found model at: {users_path}")
+            except Exception as e:
+                logger.warning(f"Users path error: {e}")
+        
+        # Location 5: Files storage directory
+        if not model_path:
+            try:
+                paths = get_user_paths(actual_user_id)
+                candidate = paths.get('files', base_storage / 'files') / actual_user_id / "model.pkl"
+                logger.info(f"Checking files path: {candidate}")
+                if candidate.exists():
+                    model_path = candidate
+                    logger.info(f"✅ Found legacy model at: {model_path}")
+            except Exception as e:
+                logger.warning(f"Legacy path error: {e}")
+        
+        # Location 6: NLP model
+        if not model_path and mode in ['nlp', 'auto']:
+            try:
+                nlp_paths = [
+                    base_storage / "automl" / actual_user_id / "nlp_model.pkl",
+                    base_storage / actual_user_id / "nlp_model.pkl",
+                    base_storage / "files" / actual_user_id / "nlp_model.pkl",
+                ]
+                
+                for candidate in nlp_paths:
+                    logger.info(f"Checking NLP path: {candidate}")
+                    if candidate.exists():
+                        model_path = candidate
+                        model_name = "nlp_model"
+                        logger.info(f"✅ Found NLP model at: {model_path}")
+                        break
+            except Exception as e:
+                logger.warning(f"NLP path search error: {e}")
+        
+        # Location 7: Deep learning model
+        if not model_path and mode in ['deep_learning', 'auto']:
+            try:
+                dl_paths = [
+                    base_storage / "automl" / actual_user_id / "deep_learning_model.pkl",
+                    base_storage / actual_user_id / "deep_learning_model.pkl",
+                    base_storage / "files" / actual_user_id / "deep_learning_model.pkl",
+                ]
+                
+                for candidate in dl_paths:
+                    logger.info(f"Checking DL path: {candidate}")
+                    if candidate.exists():
+                        model_path = candidate
+                        model_name = "deep_learning_model"
+                        logger.info(f"✅ Found DL model at: {model_path}")
+                        break
+            except Exception as e:
+                logger.warning(f"DL path search error: {e}")
+        
+        if not model_path:
+            # List all available files for debugging
+            logger.error(f"❌ No model found for user {actual_user_id}")
+            logger.error(f"   Base storage: {base_storage}")
+            logger.error(f"   Expected AutoML path: {base_storage / 'automl' / actual_user_id / 'model.pkl'}")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No trained model found for user. Please train a model first using the AutoML page."
+            )
+        
+        # Try to get better model name from metadata
+        try:
+            metadata_path = model_path.parent / "active_metadata.json"
+            if metadata_path.exists():
+                import json
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                model_name = metadata.get('model_name', model_name).replace(' ', '_').lower()
+        except:
+            pass
+        
+        filename = f"{model_name}_{actual_user_id[:8]}.pkl"
+        
+        return FileResponse(
+            path=str(model_path),
+            filename=filename,
+            media_type='application/octet-stream',
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Model download error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to download model: {str(e)}")
+
+
+@router.get("/model-info")
+async def get_model_info(
+    user_id: str = Query(default="default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    📊 Get information about the trained model
+    
+    Returns model metadata including:
+    - Model name and type
+    - Training date
+    - Feature columns
+    - Metrics
+    - File size
+    """
+    from pathlib import Path
+    import json
+    import os
+    
+    # Resolve user_id from JWT if available
+    actual_user_id = user_id
+    if x_user_id:
+        actual_user_id = x_user_id
+    elif authorization and authorization.startswith("Bearer "):
+        try:
+            from core.auth import decode_supabase_jwt
+            payload = decode_supabase_jwt(authorization[7:])
+            if payload and payload.get('sub'):
+                actual_user_id = payload['sub']
+        except:
+            pass
+    
+    try:
+        from ml.model_persistence import model_persistence
+        from utils.paths import get_user_paths
+        from config.settings import Settings
+        
+        # Get base storage path from settings (absolute path)
+        base_storage = Settings.STORAGE
+        
+        # Try multiple model locations (same as download endpoint)
+        model_path = None
+        metadata = {}
+        
+        # Location 1: AutoML engine storage path (PRIMARY!)
+        try:
+            automl_path = base_storage / "automl" / actual_user_id / "model.pkl"
+            logger.info(f"Checking AutoML path: {automl_path}")
+            if automl_path.exists():
+                model_path = automl_path
+        except:
+            pass
+        
+        # Location 2: Model persistence manager
+        if not model_path:
+            try:
+                user_dir = model_persistence._get_user_dir(actual_user_id)
+                candidate = user_dir / "active_model.pkl"
+                if candidate.exists():
+                    model_path = candidate
+                    metadata_path = user_dir / "active_metadata.json"
+                    if metadata_path.exists():
+                        with open(metadata_path, 'r') as f:
+                            metadata = json.load(f)
+            except:
+                pass
+        
+        # Location 3: Models storage
+        if not model_path:
+            try:
+                model_files = [
+                    base_storage / "models" / actual_user_id / "active_model.pkl",
+                    base_storage / "files" / actual_user_id / "model.pkl",
+                    base_storage / "users" / actual_user_id / "model.pkl",
+                    base_storage / actual_user_id / "nlp_model.pkl",
+                    base_storage / actual_user_id / "deep_learning_model.pkl",
+                ]
+                
+                for candidate in model_files:
+                    if candidate.exists():
+                        model_path = candidate
+                        break
+            except:
+                pass
+        
+        if not model_path:
+            return {
+                "available": False,
+                "message": "No trained model found"
+            }
+        
+        # Get file size
+        file_size = os.path.getsize(model_path)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        return {
+            "available": True,
+            "model_name": metadata.get('model_name', 'Trained Model'),
+            "task_type": metadata.get('task_type', 'Unknown'),
+            "target_column": metadata.get('target_column', 'Unknown'),
+            "training_date": metadata.get('training_date', 'Unknown'),
+            "feature_count": len(metadata.get('feature_columns', [])),
+            "metrics": metadata.get('metrics', {}),
+            "file_size_mb": round(file_size_mb, 2),
+            "version": metadata.get('version', 1),
+            "model_path": str(model_path)
+        }
+        
+    except Exception as e:
+        logger.error(f"Model info error: {e}")
+        return {
+            "available": False,
+            "message": f"Error retrieving model info: {str(e)}"
+        }
+

@@ -42,9 +42,10 @@ interface ExplainModalProps {
     isOpen: boolean;
     onClose: () => void;
     inputValues: Record<string, any>;
+    mode?: string;
 }
 
-const ExplainModal: React.FC<ExplainModalProps> = ({ isOpen, onClose, inputValues }) => {
+const ExplainModal: React.FC<ExplainModalProps> = ({ isOpen, onClose, inputValues, mode = 'traditional' }) => {
     const { isDark } = useUserStore();
     const [loading, setLoading] = useState(true);  // Start with loading=true
     const [explanation, setExplanation] = useState<ExplainResponse | null>(null);
@@ -63,7 +64,8 @@ const ExplainModal: React.FC<ExplainModalProps> = ({ isOpen, onClose, inputValue
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     input_values: inputValues,
-                    user_id: userId
+                    user_id: userId,
+                    mode: mode
                 })
             });
 

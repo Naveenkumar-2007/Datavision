@@ -1088,6 +1088,279 @@ ULTRA_PALETTE = [
 ]
 
 
+def generate_learning_curve_chart(
+    model,
+    X: np.ndarray,
+    y: np.ndarray,
+    model_name: str = "Model",
+    cv: int = 5,
+    train_sizes: List[float] = None
+) -> Optional[str]:
+    """
+    🎓 Generate Learning Curve chart showing model performance vs training data size.
+    
+    This is a premium chart that helps identify:
+    - Overfitting (high training score, low validation score)
+    - Underfitting (both scores low)
+    - Ideal model fit (both scores high and converging)
+    
+    Args:
+        model: Trained sklearn model
+        X: Feature matrix
+        y: Target array
+        model_name: Name for chart title
+        cv: Number of cross-validation folds
+        train_sizes: Training sizes to evaluate (default: [0.1, 0.3, 0.5, 0.7, 0.9, 1.0])
+    
+    Returns:
+        Base64 encoded PNG image or None
+    """
+    try:
+        from sklearn.model_selection import learning_curve
+        
+        if train_sizes is None:
+            train_sizes = [0.1, 0.3, 0.5, 0.7, 0.9, 1.0]
+        
+        # Limit data size for performance
+        max_samples = min(5000, len(X))
+        if len(X) > max_samples:
+            indices = np.random.choice(len(X), max_samples, replace=False)
+            X_sample, y_sample = X[indices], y[indices]
+        else:
+            X_sample, y_sample = X, y
+        
+        # Calculate learning curve
+        train_sizes_abs, train_scores, val_scores = learning_curve(
+            model, X_sample, y_sample,
+            train_sizes=train_sizes,
+            cv=min(cv, 5),
+            n_jobs=-1,
+            scoring='accuracy' if hasattr(model, 'predict_proba') else 'r2',
+            shuffle=True,
+            random_state=42
+        )
+        
+        # Calculate mean and std
+        train_mean = np.mean(train_scores, axis=1)
+        train_std = np.std(train_scores, axis=1)
+        val_mean = np.mean(val_scores, axis=1)
+        val_std = np.std(val_scores, axis=1)
+        
+        # Create chart
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Plot training scores
+        ax.fill_between(train_sizes_abs, train_mean - train_std, train_mean + train_std,
+                       alpha=0.15, color=ULTRA_PALETTE[0])
+        ax.plot(train_sizes_abs, train_mean, 'o-', color=ULTRA_PALETTE[0], 
+               linewidth=2, markersize=8, label='Training Score')
+        
+        # Plot validation scores
+        ax.fill_between(train_sizes_abs, val_mean - val_std, val_mean + val_std,
+                       alpha=0.15, color=ULTRA_PALETTE[4])
+        ax.plot(train_sizes_abs, val_mean, 's-', color=ULTRA_PALETTE[4], 
+               linewidth=2, markersize=8, label='Validation Score')
+        
+        # Add annotations for final values
+        ax.annotate(f'{train_mean[-1]:.3f}', 
+                   xy=(train_sizes_abs[-1], train_mean[-1]),
+                   xytext=(5, 10), textcoords='offset points',
+                   fontsize=10, fontweight='bold', color=ULTRA_PALETTE[0])
+        ax.annotate(f'{val_mean[-1]:.3f}', 
+                   xy=(train_sizes_abs[-1], val_mean[-1]),
+                   xytext=(5, -15), textcoords='offset points',
+                   fontsize=10, fontweight='bold', color=ULTRA_PALETTE[4])
+        
+        # Calculate and display gap (overfitting indicator)
+        gap = train_mean[-1] - val_mean[-1]
+        gap_color = '#10B981' if gap < 0.05 else ('#F59E0B' if gap < 0.15 else '#EF4444')
+        ax.text(0.95, 0.05, f'Gap: {gap:.3f}', transform=ax.transAxes,
+               ha='right', va='bottom', fontsize=11, fontweight='bold',
+               color=gap_color, bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        ax.set_xlabel('Training Examples', fontsize=12, color='#333333')
+        ax.set_ylabel('Score', fontsize=12, color='#333333')
+        ax.set_title(f'📈 Learning Curve - {model_name}', fontsize=14, color='#333333', pad=15)
+        ax.legend(loc='lower right', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        
+        # Set reasonable y-axis limits
+        min_score = max(0, min(train_mean.min(), val_mean.min()) - 0.1)
+        max_score = min(1.0, max(train_mean.max(), val_mean.max()) + 0.1)
+        ax.set_ylim(min_score, max_score)
+        
+        plt.tight_layout()
+        return _fig_to_base64(fig)
+        
+    except Exception as e:
+        logger.warning(f"Learning curve generation error: {e}")
+        return None
+
+
+def generate_model_comparison_radar(
+    leaderboard: List[Dict],
+    metric_names: List[str] = None,
+    top_n: int = 5
+) -> Optional[str]:
+    """
+    🎯 Generate multi-model comparison radar chart.
+    
+    Compares top models across multiple metrics in a radar/spider chart format.
+    
+    Args:
+        leaderboard: List of model results with metrics
+        metric_names: Metrics to compare (default: accuracy, precision, recall, f1)
+        top_n: Number of top models to include
+    
+    Returns:
+        Base64 encoded PNG image or None
+    """
+    try:
+        if not leaderboard or len(leaderboard) < 2:
+            return None
+        
+        if metric_names is None:
+            metric_names = ['accuracy', 'precision', 'recall', 'f1']
+        
+        # Get top models
+        top_models = leaderboard[:min(top_n, len(leaderboard))]
+        
+        # Extract metrics for each model
+        model_data = []
+        for model in top_models:
+            metrics = model.get('metrics', {})
+            values = []
+            for metric in metric_names:
+                val = metrics.get(metric, 0)
+                if isinstance(val, (int, float)):
+                    values.append(float(val))
+                else:
+                    values.append(0)
+            model_data.append({
+                'name': model.get('name', 'Unknown')[:20],
+                'values': values
+            })
+        
+        if not model_data:
+            return None
+        
+        # Create radar chart
+        fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(polar=True))
+        
+        # Calculate angles
+        n_metrics = len(metric_names)
+        angles = np.linspace(0, 2 * np.pi, n_metrics, endpoint=False).tolist()
+        angles += angles[:1]  # Close the polygon
+        
+        # Plot each model
+        for i, model in enumerate(model_data):
+            values = model['values'] + [model['values'][0]]  # Close polygon
+            color = ULTRA_PALETTE[i % len(ULTRA_PALETTE)]
+            
+            ax.fill(angles, values, color=color, alpha=0.1)
+            ax.plot(angles, values, 'o-', color=color, linewidth=2, 
+                   markersize=6, label=model['name'])
+        
+        # Set labels
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels([m.title() for m in metric_names], size=11, color='#333333')
+        ax.set_ylim(0, 1)
+        
+        # Add legend
+        ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0), fontsize=9)
+        
+        ax.set_title('🎯 Model Comparison Radar', size=14, y=1.1, color='#333333', fontweight='bold')
+        
+        plt.tight_layout()
+        return _fig_to_base64(fig)
+        
+    except Exception as e:
+        logger.warning(f"Model comparison radar error: {e}")
+        return None
+
+
+def generate_training_history_chart(
+    history: Dict[str, List[float]],
+    model_name: str = "Deep Learning Model"
+) -> Optional[str]:
+    """
+    📊 Generate training history chart for deep learning models.
+    
+    Shows loss and metric curves over training epochs.
+    
+    Args:
+        history: Dictionary with 'loss', 'val_loss', 'accuracy', 'val_accuracy' etc.
+        model_name: Name for chart title
+    
+    Returns:
+        Base64 encoded PNG image or None
+    """
+    try:
+        if not history:
+            return None
+        
+        # Create 2x1 subplot for loss and accuracy
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+        
+        epochs = range(1, len(history.get('loss', [])) + 1)
+        
+        # Left: Loss curves
+        ax1 = axes[0]
+        if 'loss' in history:
+            ax1.plot(epochs, history['loss'], 'o-', color=ULTRA_PALETTE[0], 
+                    linewidth=2, markersize=4, label='Training Loss')
+        if 'val_loss' in history:
+            ax1.plot(epochs, history['val_loss'], 's-', color=ULTRA_PALETTE[4], 
+                    linewidth=2, markersize=4, label='Validation Loss')
+        
+        ax1.set_xlabel('Epoch', fontsize=11)
+        ax1.set_ylabel('Loss', fontsize=11)
+        ax1.set_title('📉 Training & Validation Loss', fontsize=12, color='#333333')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        
+        # Find best validation loss epoch
+        if 'val_loss' in history:
+            best_epoch = np.argmin(history['val_loss']) + 1
+            ax1.axvline(best_epoch, color='green', linestyle='--', alpha=0.7,
+                       label=f'Best: Epoch {best_epoch}')
+        
+        # Right: Accuracy curves (if available)
+        ax2 = axes[1]
+        has_accuracy = 'accuracy' in history or 'val_accuracy' in history
+        
+        if has_accuracy:
+            if 'accuracy' in history:
+                ax2.plot(epochs, history['accuracy'], 'o-', color=ULTRA_PALETTE[1], 
+                        linewidth=2, markersize=4, label='Training Accuracy')
+            if 'val_accuracy' in history:
+                ax2.plot(epochs, history['val_accuracy'], 's-', color=ULTRA_PALETTE[3], 
+                        linewidth=2, markersize=4, label='Validation Accuracy')
+            
+            ax2.set_xlabel('Epoch', fontsize=11)
+            ax2.set_ylabel('Accuracy', fontsize=11)
+            ax2.set_title('📈 Training & Validation Accuracy', fontsize=12, color='#333333')
+            ax2.legend()
+            ax2.grid(True, alpha=0.3)
+        else:
+            # If no accuracy, show a summary box
+            ax2.text(0.5, 0.5, f'Training Complete\n\nFinal Loss: {history.get("loss", [0])[-1]:.4f}',
+                    ha='center', va='center', fontsize=14, transform=ax2.transAxes,
+                    bbox=dict(boxstyle='round', facecolor=ULTRA_PALETTE[1], alpha=0.3))
+            ax2.set_title('📊 Training Summary', fontsize=12, color='#333333')
+            ax2.axis('off')
+        
+        fig.suptitle(f'🧠 Training History - {model_name}', fontsize=14, y=1.02, color='#333333')
+        plt.tight_layout()
+        
+        return _fig_to_base64(fig)
+        
+    except Exception as e:
+        logger.warning(f"Training history chart error: {e}")
+        return None
+
+
+
 def generate_ultra_charts(
     task_type: str,
     y_test: np.ndarray,
@@ -1499,3 +1772,364 @@ def generate_ultra_charts(
         traceback.print_exc()
     
     return charts
+
+
+# =============================================================================
+# 📈 STOCK/FINANCIAL DATA CHARTS
+# =============================================================================
+
+def detect_stock_data(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Detect if the DataFrame contains stock/financial data.
+    Returns detected column mappings for OHLCV data.
+    """
+    result = {
+        'is_stock_data': False,
+        'date_col': None,
+        'open_col': None,
+        'high_col': None,
+        'low_col': None,
+        'close_col': None,
+        'volume_col': None,
+        'adj_close_col': None,
+        'price_cols': [],
+        'has_ohlc': False
+    }
+    
+    cols_lower = {col.lower().strip(): col for col in df.columns}
+    
+    # Detect date column
+    date_keywords = ['date', 'time', 'timestamp', 'datetime', 'period']
+    for kw in date_keywords:
+        for col_lower, col in cols_lower.items():
+            if kw in col_lower:
+                result['date_col'] = col
+                break
+        if result['date_col']:
+            break
+    
+    # Also check for datetime dtype columns
+    if not result['date_col']:
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                result['date_col'] = col
+                break
+    
+    # Detect OHLCV columns
+    ohlcv_mappings = {
+        'open': ['open', 'opening', 'open_price'],
+        'high': ['high', 'highest', 'high_price', 'max_price'],
+        'low': ['low', 'lowest', 'low_price', 'min_price'],
+        'close': ['close', 'closing', 'close_price', 'last', 'price'],
+        'volume': ['volume', 'vol', 'qty', 'quantity', 'traded_volume'],
+        'adj_close': ['adj close', 'adj_close', 'adjusted close', 'adjusted_close']
+    }
+    
+    for field, keywords in ohlcv_mappings.items():
+        for kw in keywords:
+            for col_lower, col in cols_lower.items():
+                if kw == col_lower or kw in col_lower:
+                    if field == 'open':
+                        result['open_col'] = col
+                    elif field == 'high':
+                        result['high_col'] = col
+                    elif field == 'low':
+                        result['low_col'] = col
+                    elif field == 'close':
+                        result['close_col'] = col
+                    elif field == 'volume':
+                        result['volume_col'] = col
+                    elif field == 'adj_close':
+                        result['adj_close_col'] = col
+                    break
+    
+    # Check if we have OHLC data
+    result['has_ohlc'] = all([
+        result['open_col'], result['high_col'], 
+        result['low_col'], result['close_col']
+    ])
+    
+    # Collect all price-like columns
+    price_keywords = ['price', 'close', 'open', 'high', 'low', 'value', 'rate']
+    for col_lower, col in cols_lower.items():
+        for kw in price_keywords:
+            if kw in col_lower and pd.api.types.is_numeric_dtype(df[col]):
+                if col not in result['price_cols']:
+                    result['price_cols'].append(col)
+    
+    # Determine if it's stock data
+    stock_indicators = 0
+    if result['has_ohlc']:
+        stock_indicators += 3
+    if result['volume_col']:
+        stock_indicators += 1
+    if result['date_col']:
+        stock_indicators += 1
+    if len(result['price_cols']) >= 2:
+        stock_indicators += 1
+    
+    # Also check column names for stock-related terms
+    stock_terms = ['stock', 'ticker', 'symbol', 'share', 'equity', 'nifty', 'sensex', 'nasdaq', 'spy', 'return']
+    for col_lower in cols_lower.keys():
+        if any(term in col_lower for term in stock_terms):
+            stock_indicators += 1
+            break
+    
+    result['is_stock_data'] = stock_indicators >= 3
+    
+    return result
+
+
+def generate_stock_charts(
+    df: pd.DataFrame,
+    stock_info: Dict[str, Any],
+    target_col: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    Generate stock/financial specific charts.
+    Returns dict of chart_name -> base64 encoded image.
+    """
+    charts = {}
+    
+    try:
+        # Ensure date column is datetime
+        date_col = stock_info.get('date_col')
+        if date_col and date_col in df.columns:
+            df = df.copy()
+            df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+            df = df.dropna(subset=[date_col])
+            df = df.sort_values(date_col)
+        
+        # 1. PRICE TREND CHART (Line chart with price over time)
+        price_col = stock_info.get('close_col') or stock_info.get('adj_close_col')
+        if date_col and price_col and price_col in df.columns:
+            try:
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                ax.plot(df[date_col], df[price_col], linewidth=2, color='#2196F3', label='Price')
+                
+                # Add moving averages
+                if len(df) >= 20:
+                    ma20 = df[price_col].rolling(window=20).mean()
+                    ax.plot(df[date_col], ma20, linewidth=1.5, color='#FF9800', 
+                            label='20-Day MA', linestyle='--')
+                
+                if len(df) >= 50:
+                    ma50 = df[price_col].rolling(window=50).mean()
+                    ax.plot(df[date_col], ma50, linewidth=1.5, color='#E91E63', 
+                            label='50-Day MA', linestyle='-.')
+                
+                ax.fill_between(df[date_col], df[price_col], alpha=0.1, color='#2196F3')
+                ax.set_xlabel('Date', fontsize=12)
+                ax.set_ylabel('Price', fontsize=12)
+                ax.set_title('📈 Stock Price Trend with Moving Averages', fontsize=14, fontweight='bold')
+                ax.legend(loc='upper left')
+                ax.grid(True, alpha=0.3)
+                plt.xticks(rotation=45)
+                plt.tight_layout()
+                
+                charts['stock_price_trend'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Price trend chart error: {e}")
+        
+        # 2. CANDLESTICK CHART (if OHLC data available)
+        if stock_info.get('has_ohlc') and date_col:
+            try:
+                from mplfinance.original_flavor import candlestick_ohlc
+                import matplotlib.dates as mdates
+                
+                fig, ax = plt.subplots(figsize=(14, 7))
+                
+                # Prepare data for candlestick
+                df_ohlc = df[[date_col, stock_info['open_col'], stock_info['high_col'], 
+                              stock_info['low_col'], stock_info['close_col']]].copy()
+                df_ohlc.columns = ['Date', 'Open', 'High', 'Low', 'Close']
+                df_ohlc['Date'] = mdates.date2num(df_ohlc['Date'])
+                
+                # Limit to last 60 candles for readability
+                df_plot = df_ohlc.tail(60)
+                
+                candlestick_ohlc(ax, df_plot.values, width=0.6, 
+                                colorup='#26A69A', colordown='#EF5350')
+                
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+                ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
+                plt.xticks(rotation=45)
+                ax.set_xlabel('Date', fontsize=12)
+                ax.set_ylabel('Price', fontsize=12)
+                ax.set_title('🕯️ Candlestick Chart (Last 60 Periods)', fontsize=14, fontweight='bold')
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                
+                charts['stock_candlestick'] = _fig_to_base64(fig)
+            except ImportError:
+                # Fallback: Create a simple OHLC chart without mplfinance
+                try:
+                    fig, ax = plt.subplots(figsize=(14, 7))
+                    
+                    df_plot = df.tail(60).copy()
+                    x = range(len(df_plot))
+                    
+                    # Plot high-low range as lines
+                    for i, (_, row) in enumerate(df_plot.iterrows()):
+                        color = '#26A69A' if row[stock_info['close_col']] >= row[stock_info['open_col']] else '#EF5350'
+                        ax.vlines(i, row[stock_info['low_col']], row[stock_info['high_col']], color=color, linewidth=1)
+                        ax.vlines(i, row[stock_info['open_col']], row[stock_info['close_col']], color=color, linewidth=4)
+                    
+                    ax.set_xlabel('Period', fontsize=12)
+                    ax.set_ylabel('Price', fontsize=12)
+                    ax.set_title('🕯️ OHLC Chart (Last 60 Periods)', fontsize=14, fontweight='bold')
+                    ax.grid(True, alpha=0.3)
+                    plt.tight_layout()
+                    
+                    charts['stock_ohlc'] = _fig_to_base64(fig)
+                except Exception as e:
+                    logger.warning(f"OHLC fallback chart error: {e}")
+            except Exception as e:
+                logger.warning(f"Candlestick chart error: {e}")
+        
+        # 3. VOLUME CHART
+        volume_col = stock_info.get('volume_col')
+        if date_col and volume_col and volume_col in df.columns:
+            try:
+                fig, ax = plt.subplots(figsize=(12, 4))
+                
+                df_plot = df.tail(100)
+                colors = ['#26A69A' if df_plot[stock_info.get('close_col', price_col)].iloc[i] >= 
+                         df_plot[stock_info.get('open_col', price_col)].iloc[i] 
+                         else '#EF5350' for i in range(len(df_plot))]
+                
+                ax.bar(range(len(df_plot)), df_plot[volume_col], color=colors, alpha=0.7)
+                ax.set_xlabel('Period', fontsize=12)
+                ax.set_ylabel('Volume', fontsize=12)
+                ax.set_title('📊 Trading Volume (Last 100 Periods)', fontsize=14, fontweight='bold')
+                ax.grid(True, alpha=0.3, axis='y')
+                
+                # Format y-axis for large numbers
+                ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1e6:.1f}M' if x >= 1e6 else f'{x/1e3:.0f}K' if x >= 1e3 else f'{x:.0f}'))
+                plt.tight_layout()
+                
+                charts['stock_volume'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Volume chart error: {e}")
+        
+        # 4. DAILY RETURNS DISTRIBUTION
+        if price_col and price_col in df.columns:
+            try:
+                fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+                
+                # Calculate returns
+                returns = df[price_col].pct_change().dropna() * 100
+                
+                # Histogram of returns
+                axes[0].hist(returns, bins=50, color='#2196F3', alpha=0.7, edgecolor='white')
+                axes[0].axvline(returns.mean(), color='red', linestyle='--', label=f'Mean: {returns.mean():.2f}%')
+                axes[0].axvline(0, color='black', linestyle='-', alpha=0.5)
+                axes[0].set_xlabel('Daily Return (%)', fontsize=12)
+                axes[0].set_ylabel('Frequency', fontsize=12)
+                axes[0].set_title('📊 Daily Returns Distribution', fontsize=14, fontweight='bold')
+                axes[0].legend()
+                axes[0].grid(True, alpha=0.3)
+                
+                # Cumulative returns
+                cumulative_returns = (1 + returns/100).cumprod() - 1
+                axes[1].plot(range(len(cumulative_returns)), cumulative_returns * 100, 
+                            color='#4CAF50', linewidth=2)
+                axes[1].fill_between(range(len(cumulative_returns)), 
+                                    cumulative_returns * 100, alpha=0.2, color='#4CAF50')
+                axes[1].axhline(0, color='black', linestyle='-', alpha=0.5)
+                axes[1].set_xlabel('Period', fontsize=12)
+                axes[1].set_ylabel('Cumulative Return (%)', fontsize=12)
+                axes[1].set_title('📈 Cumulative Returns', fontsize=14, fontweight='bold')
+                axes[1].grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                charts['stock_returns'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Returns chart error: {e}")
+        
+        # 5. VOLATILITY ANALYSIS
+        if price_col and price_col in df.columns and len(df) >= 30:
+            try:
+                fig, ax = plt.subplots(figsize=(12, 5))
+                
+                returns = df[price_col].pct_change().dropna()
+                
+                # Rolling volatility (20-day)
+                rolling_vol = returns.rolling(window=20).std() * np.sqrt(252) * 100  # Annualized
+                
+                ax.plot(range(len(rolling_vol)), rolling_vol, color='#9C27B0', linewidth=2)
+                ax.fill_between(range(len(rolling_vol)), rolling_vol, alpha=0.2, color='#9C27B0')
+                ax.axhline(rolling_vol.mean(), color='red', linestyle='--', 
+                          label=f'Average: {rolling_vol.mean():.1f}%')
+                ax.set_xlabel('Period', fontsize=12)
+                ax.set_ylabel('Annualized Volatility (%)', fontsize=12)
+                ax.set_title('📉 Rolling Volatility (20-Day Window)', fontsize=14, fontweight='bold')
+                ax.legend()
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                
+                charts['stock_volatility'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Volatility chart error: {e}")
+        
+        # 6. PRICE WITH BOLLINGER BANDS
+        if date_col and price_col and price_col in df.columns and len(df) >= 20:
+            try:
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                df_plot = df.tail(100).copy()
+                
+                # Calculate Bollinger Bands
+                ma20 = df_plot[price_col].rolling(window=20).mean()
+                std20 = df_plot[price_col].rolling(window=20).std()
+                upper_band = ma20 + (std20 * 2)
+                lower_band = ma20 - (std20 * 2)
+                
+                ax.plot(range(len(df_plot)), df_plot[price_col], color='#2196F3', 
+                       linewidth=2, label='Price')
+                ax.plot(range(len(df_plot)), ma20, color='#FF9800', 
+                       linewidth=1.5, label='20-Day MA')
+                ax.fill_between(range(len(df_plot)), upper_band, lower_band, 
+                               alpha=0.2, color='#9C27B0', label='Bollinger Bands (2σ)')
+                
+                ax.set_xlabel('Period', fontsize=12)
+                ax.set_ylabel('Price', fontsize=12)
+                ax.set_title('📊 Price with Bollinger Bands', fontsize=14, fontweight='bold')
+                ax.legend(loc='upper left')
+                ax.grid(True, alpha=0.3)
+                plt.tight_layout()
+                
+                charts['stock_bollinger'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Bollinger bands chart error: {e}")
+        
+        # 7. CORRELATION WITH OTHER PRICE COLUMNS
+        price_cols = stock_info.get('price_cols', [])
+        if len(price_cols) >= 2:
+            try:
+                fig, ax = plt.subplots(figsize=(8, 6))
+                
+                price_df = df[price_cols].dropna()
+                if len(price_df) > 10:
+                    corr_matrix = price_df.corr()
+                    
+                    sns.heatmap(corr_matrix, annot=True, fmt='.2f', cmap='RdYlGn', 
+                               center=0, ax=ax, square=True,
+                               linewidths=0.5, cbar_kws={'shrink': 0.8})
+                    ax.set_title('🔗 Price Correlations', fontsize=14, fontweight='bold')
+                    plt.tight_layout()
+                    
+                    charts['stock_price_correlation'] = _fig_to_base64(fig)
+            except Exception as e:
+                logger.warning(f"Price correlation chart error: {e}")
+        
+        logger.info(f"📈 Generated {len(charts)} stock charts: {list(charts.keys())}")
+        
+    except Exception as e:
+        logger.error(f"Stock chart generation error: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return charts
+

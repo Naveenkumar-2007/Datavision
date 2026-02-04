@@ -680,10 +680,9 @@ def _build_source_citations(sources: List[str], mode: str) -> str:
     if not sources:
         return ""
     
-    # Frontend already shows sources in a small "Sources" section
-    # Just add Analysis Mode footer - no need for duplicate table
-    citation = f"\n\n---\n*Analysis Mode: **{mode.upper()}***"
-    return citation
+    # PRODUCTION: No footer needed - frontend shows sources cleanly
+    # Remove "Analysis Mode: X" debug footer for clean professional output
+    return ""
 
 
 def _clean_response_formatting(answer: str, context: str = "") -> str:
@@ -3176,10 +3175,10 @@ Ignore the Total Dataset Stats if they contradict what was shown in the chart.
             except Exception as e:
                 print(f"⚠️ Pro-Viz Engine global failure: {e}")
 
-        # Final Summary Branding
-        if "Analysis mode:" not in answer:
-            answer += f"\n\n---\n🔗 **Data Grounding:** Analysis reflects {stats.get('total_nodes', 0)} entities found in the Knowledge Graph."
-            answer += f"\n*Enterprise Intelligence mode: GRAPHRAG*"
+        # Final Summary - PRODUCTION: No debug footers
+        # Remove any Analysis mode text that might have been added
+        if "Analysis mode:" in answer:
+            answer = re.sub(r'\n*---\n*\*?Analysis mode:?[^\n]*\*?\n?', '', answer, flags=re.IGNORECASE)
         
         # Anti-Artifact cleaning
         answer = _clean_response_formatting(answer)
@@ -3849,12 +3848,10 @@ Based on the user's question and the data provided, give a direct answer. If use
         # Clean up multiple dashes
         answer = re.sub(r'(---\s*\n\s*){2,}', '---\n', answer)
         
-        # Add clean prediction footer if not present
-        if 'PREDICTION' not in answer.upper():
-            answer += "\n\n---\n📈 **Analysis Mode: PREDICTION**\n"
-            answer += "Accuracy Tier: TIER 3 (Scenario-Based) - Snapshot data used\n"
-        elif 'Tier' not in answer:
-            answer += "\nAccuracy Tier: TIER 3 (Scenario-Based) - Snapshot data used\n"
+        # PRODUCTION: Remove all Analysis Mode footers for clean output
+        answer = re.sub(r'\n*---\n*\*?\*?Analysis Mode:?[^\n]*\n?', '', answer, flags=re.IGNORECASE)
+        answer = re.sub(r'\n*---\n*📈\s*\*?\*?Analysis Mode:?[^\n]*\n?', '', answer, flags=re.IGNORECASE)
+        answer = re.sub(r'Accuracy Tier:[^\n]*\n?', '', answer, flags=re.IGNORECASE)
     
     state.answer = answer
     state.route = "prediction" if is_prediction_mode else "hybrid"

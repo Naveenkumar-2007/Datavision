@@ -560,7 +560,55 @@ class ProAnalystEngine:
         start_time = datetime.now()
         
         # =================================================================
-        # 🔄 DYNAMIC ROUTING: Check if query relates to actual data
+        # �️ CHECK FOR IMAGE CONTEXT FIRST - Takes priority over data
+        # =================================================================
+        has_image_context = context and "🖼️ Image Analysis" in context
+        
+        if has_image_context:
+            logger.info("🖼️ Analyst: Image context detected - routing to IMAGE ANALYSIS")
+            
+            if LLM_AVAILABLE:
+                try:
+                    image_prompt = f"""You are an AI assistant analyzing an image.
+
+## IMAGE ANALYSIS CONTENT:
+{context}
+
+## USER QUESTION:
+{query}
+
+INSTRUCTIONS:
+1. Answer based ONLY on the image analysis provided above
+2. Describe what's visible in the image (objects, text, charts, patterns)
+3. If the user asks "what do you see", describe the image content in detail
+4. Extract any data, numbers, or text visible in the image
+5. Be specific and accurate - don't make up things not in the image analysis
+
+Provide a helpful, detailed response about the image."""
+
+                    llm_response = llm_chat(image_prompt, temperature=0.3, max_tokens=800)
+                    
+                    result["answer"] = f"""## 📊 Analyst - Image Analysis
+
+{llm_response}
+
+---
+*🖼️ This analysis is based on the uploaded image.*"""
+                    result["sources"] = ["Analyst Engine", "Vision Analysis"]
+                    result["confidence"] = 0.90
+                    
+                except Exception as e:
+                    logger.error(f"Image analysis error: {e}")
+                    result["answer"] = f"🖼️ Image content:\n\n{context}"
+            else:
+                result["answer"] = f"🖼️ Image Analysis:\n\n{context}"
+            
+            exec_time = (datetime.now() - start_time).total_seconds()
+            result["execution_time"] = f"{exec_time:.2f}s"
+            return result
+        
+        # =================================================================
+        # �🔄 DYNAMIC ROUTING: Check if query relates to actual data
         # =================================================================
         q_lower = query.lower()
         

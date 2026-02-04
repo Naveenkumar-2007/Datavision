@@ -163,7 +163,7 @@ except ImportError:
 
 from ml.feature_engineer import AdvancedFeatureEngineer
 
-# Import Production ML Core (Silicon Valley Grade Pipeline)
+# Import Production ML Core (AutoML Pipeline)
 try:
     from ml.production_ml_core import (
         ProductionDataCleaner, ProductionFeatureEngineer, 
@@ -646,9 +646,113 @@ class ProductionMLEngine:
         """
         Calculate metadata (min, max, mean, type) for RAW columns.
         This allows the Frontend to show correct placeholders (e.g. 50,000 instead of 50).
+        Now includes datetime columns for date picker UI support.
+        
+        IMPORTANT: Auto-detects column types from DataFrame if self.numeric_cols etc. are empty.
         """
         metadata = []
-        for col in self.numeric_cols:
+        
+        # Get target column to exclude it
+        target_col = getattr(self, 'target_column', None) or getattr(self, 'target_col', None)
+        
+        # Auto-detect column types if not already set
+        numeric_cols = list(self.numeric_cols) if hasattr(self, 'numeric_cols') and self.numeric_cols else []
+        categorical_cols = list(self.categorical_cols) if hasattr(self, 'categorical_cols') and self.categorical_cols else []
+        text_cols = list(self.text_cols) if hasattr(self, 'text_cols') and self.text_cols else []
+        datetime_cols = []
+        
+        # Date patterns for detection
+        date_patterns = ['date', 'time', 'timestamp', 'created', 'updated', 'modified', 'datetime', 'dt']
+        # ID patterns to skip
+        id_patterns = ['id', '_id', 'index', 'guid', 'uuid', 'pk', 'fk', 'unnamed']
+        
+        # If column lists are empty, auto-detect from DataFrame
+        if not numeric_cols and not categorical_cols and not text_cols:
+            logger.info("[feature_metadata] Auto-detecting column types from DataFrame")
+            
+            for col in df.columns:
+                # Skip target column
+                if col == target_col:
+                    continue
+                
+                col_lower = col.lower()
+                
+                # Skip ID columns
+                if any(pat in col_lower for pat in id_patterns):
+                    continue
+                
+                # Check if datetime
+                is_datetime = False
+                if pd.api.types.is_datetime64_any_dtype(df[col]):
+                    is_datetime = True
+                elif any(x in col_lower for x in date_patterns):
+                    # Verify it's actually a date by trying to parse
+                    try:
+                        sample = df[col].dropna().head(5)
+                        if len(sample) > 0:
+                            pd.to_datetime(sample.iloc[0])
+                            is_datetime = True
+                    except:
+                        pass
+                
+                if is_datetime:
+                    datetime_cols.append(col)
+                    continue
+                
+                # Check if numeric
+                if pd.api.types.is_numeric_dtype(df[col]):
+                    numeric_cols.append(col)
+                    continue
+                
+                # Check if categorical vs text (based on unique values and avg length)
+                try:
+                    n_unique = df[col].nunique()
+                    avg_len = df[col].astype(str).str.len().mean()
+                    
+                    if n_unique <= 50 and avg_len < 50:
+                        categorical_cols.append(col)
+                    else:
+                        text_cols.append(col)
+                except:
+                    categorical_cols.append(col)
+        else:
+            # Use existing column lists, but still detect datetime columns
+            for col in df.columns:
+                if col == target_col:
+                    continue
+                if col in numeric_cols or col in categorical_cols or col in text_cols:
+                    continue
+                
+                col_lower = col.lower()
+                is_datetime = False
+                
+                # Check by column name pattern
+                if any(x in col_lower for x in date_patterns):
+                    is_datetime = True
+                elif col_lower in ['year', 'month', 'day']:
+                    is_datetime = True
+                
+                # Check by dtype
+                if pd.api.types.is_datetime64_any_dtype(df[col]):
+                    is_datetime = True
+                
+                # Check by parsing attempt
+                if not is_datetime and df[col].dtype == 'object':
+                    try:
+                        sample = df[col].dropna().head(5)
+                        if len(sample) > 0:
+                            pd.to_datetime(sample.iloc[0])
+                            is_datetime = True
+                    except:
+                        pass
+                
+                if is_datetime:
+                    datetime_cols.append(col)
+        
+        logger.info(f"[feature_metadata] Detected: {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, {len(text_cols)} text, {len(datetime_cols)} datetime")
+        
+        # Add numeric features
+        for col in numeric_cols:
             if col in df.columns:
                 try:
                     metadata.append({
@@ -661,7 +765,8 @@ class ProductionMLEngine:
                 except:
                     pass
         
-        for col in self.categorical_cols:
+        # Add categorical features
+        for col in categorical_cols:
             if col in df.columns:
                 try:
                     # Limit options to top 10 for UI performance
@@ -673,14 +778,40 @@ class ProductionMLEngine:
                     })
                 except:
                     pass
-                    
-        for col in self.text_cols:
-             metadata.append({
-                 'name': col,
-                 'type': 'text'
-             })
+        
+        # Add text features            
+        for col in text_cols:
+            if col in df.columns:
+                metadata.append({
+                    'name': col,
+                    'type': 'text',
+                    'placeholder': f'Enter {col}...'
+                })
+        
+        # Add datetime features for date picker UI
+        for col in datetime_cols:
+            if col in df.columns:
+                try:
+                    dt_series = pd.to_datetime(df[col], errors='coerce')
+                    min_date = dt_series.min()
+                    max_date = dt_series.max()
+                    metadata.append({
+                        'name': col,
+                        'type': 'datetime',
+                        'min': min_date.isoformat() if pd.notna(min_date) else None,
+                        'max': max_date.isoformat() if pd.notna(max_date) else None,
+                        'placeholder': 'Select date...'
+                    })
+                except Exception as e:
+                    # Fallback: add as text input
+                    metadata.append({
+                        'name': col,
+                        'type': 'datetime',
+                        'placeholder': 'Enter date (YYYY-MM-DD)...'
+                    })
              
         self.feature_metadata = metadata
+        logger.info(f"[feature_metadata] Total features for UI: {len(metadata)}")
         return metadata
 
     # =========================================================================
@@ -1137,11 +1268,38 @@ class ProductionMLEngine:
     def _get_adaptive_models(self) -> Dict[str, Tuple[Any, Dict]]:
         """
         PRODUCTION-LEVEL: Return models adapted to data profile.
-        Instead of hardcoded model list, this selects optimal algorithms
-        based on data characteristics analyzed by _analyze_data_profile.
+        ANTI-OVERFITTING: Uses stronger regularization for smaller datasets.
         """
         profile = self.data_profile
         recommended = profile.get('recommended_algorithms', [])
+        n_samples = profile.get('n_samples', 1000)
+        
+        # ===== ANTI-OVERFITTING: Scale regularization based on dataset size =====
+        if n_samples < 500:
+            # Very small dataset - strong regularization
+            tree_max_depth = [3, 5, 7]
+            tree_min_samples = [5, 10, 20]
+            n_estimators = [30, 50, 75]
+            C_values = [0.01, 0.1, 0.5]
+            alpha_values = [1.0, 5.0, 10.0]
+            mlp_alpha = [0.01, 0.05, 0.1]
+            logger.info(f"   📐 Small dataset ({n_samples} samples): Using strong regularization")
+        elif n_samples < 2000:
+            # Medium dataset - moderate regularization
+            tree_max_depth = [5, 8, 12]
+            tree_min_samples = [3, 5, 10]
+            n_estimators = [50, 100]
+            C_values = [0.1, 0.5, 1.0]
+            alpha_values = [0.1, 1.0, 5.0]
+            mlp_alpha = [0.001, 0.01, 0.05]
+        else:
+            # Large dataset - lighter regularization
+            tree_max_depth = [8, 12, 20]
+            tree_min_samples = [2, 5]
+            n_estimators = [100, 200]
+            C_values = [0.5, 1.0, 5.0]
+            alpha_values = [0.01, 0.1, 1.0]
+            mlp_alpha = [0.0001, 0.001, 0.01]
         
         # === NLP SPECIFIC MODELS ===
         if profile.get('is_nlp_task', False):
@@ -1154,11 +1312,11 @@ class ProductionMLEngine:
                     # Regularized Linear Models (good for high-dim text)
                     'Ridge': (
                         Ridge(random_state=42),
-                        {'alpha': [0.01, 0.1, 1.0, 10.0, 100.0]}
+                        {'alpha': alpha_values}
                     ),
                     'ElasticNet': (
                         ElasticNet(random_state=42, max_iter=2000),
-                        {'alpha': [0.01, 0.1, 1.0], 'l1_ratio': [0.3, 0.5, 0.7]}
+                        {'alpha': [0.1, 0.5, 1.0], 'l1_ratio': [0.3, 0.5, 0.7]}
                     ),
                     'BayesianRidge': (
                         BayesianRidge(),
@@ -1170,101 +1328,103 @@ class ProductionMLEngine:
                 if HAS_XGB:
                     models['XGBoost'] = (
                         xgb.XGBRegressor(
-                            n_estimators=200, max_depth=6, learning_rate=0.1,
-                            subsample=0.8, colsample_bytree=0.8,
+                            n_estimators=n_estimators[0], max_depth=tree_max_depth[0], learning_rate=0.1,
+                            subsample=0.8, colsample_bytree=0.8, reg_lambda=1.0, reg_alpha=0.1,
                             random_state=42, n_jobs=-1, verbosity=0
                         ),
-                        {'n_estimators': [100, 200], 'max_depth': [4, 6, 8], 'learning_rate': [0.05, 0.1]}
+                        {'n_estimators': n_estimators, 'max_depth': tree_max_depth, 'learning_rate': [0.05, 0.1]}
                     )
                 
                 # Add LightGBM if available (fast and accurate)
                 if HAS_LGB:
                     models['LightGBM'] = (
                         lgb.LGBMRegressor(
-                            n_estimators=200, max_depth=6, learning_rate=0.1,
+                            n_estimators=n_estimators[0], max_depth=tree_max_depth[0], learning_rate=0.1,
+                            reg_lambda=1.0, reg_alpha=0.1, min_child_samples=10,
                             random_state=42, n_jobs=-1, verbose=-1
                         ),
-                        {'n_estimators': [100, 200], 'max_depth': [4, 6, 8]}
+                        {'n_estimators': n_estimators, 'max_depth': tree_max_depth}
                     )
                 
                 # Gradient Boosting (sklearn - always available)
                 models['GradientBoosting'] = (
                     GradientBoostingRegressor(
-                        n_estimators=100, max_depth=5, learning_rate=0.1,
-                        random_state=42
+                        n_estimators=n_estimators[0], max_depth=tree_max_depth[0], learning_rate=0.1,
+                        min_samples_leaf=tree_min_samples[0], random_state=42
                     ),
-                    {'n_estimators': [100, 200], 'max_depth': [3, 5, 7]}
+                    {'n_estimators': n_estimators, 'max_depth': tree_max_depth}
                 )
                 
                 # Random Forest (robust, handles noise well)
                 models['RandomForest'] = (
                     RandomForestRegressor(
-                        n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
+                        n_estimators=n_estimators[0], max_depth=tree_max_depth[-1], 
+                        min_samples_leaf=tree_min_samples[0], random_state=42, n_jobs=-1
                     ),
-                    {'n_estimators': [100, 200], 'max_depth': [5, 10, 15]}
+                    {'n_estimators': n_estimators, 'max_depth': tree_max_depth}
                 )
                 
                 return models
             else:
                 return {
-                    'MultinomialNB': (MultinomialNB(), {'alpha': [0.01, 0.1, 0.5, 1.0]}),
-                    'BernoulliNB': (BernoulliNB(), {'alpha': [0.01, 0.1, 0.5, 1.0], 'binarize': [0.0, 0.5]}),
-                    'ComplementNB': (ComplementNB(), {'alpha': [0.01, 0.1, 0.5, 1.0]}),
+                    'MultinomialNB': (MultinomialNB(), {'alpha': [0.5, 1.0, 2.0]}),
+                    'BernoulliNB': (BernoulliNB(), {'alpha': [0.5, 1.0, 2.0], 'binarize': [0.0, 0.5]}),
+                    'ComplementNB': (ComplementNB(), {'alpha': [0.5, 1.0, 2.0]}),
                     'LogisticRegression': (
                         LogisticRegression(max_iter=2000, n_jobs=-1, solver='saga', penalty='l2'),
-                        {'C': [0.1, 1, 10]}
+                        {'C': C_values}
                     ),
                     'SGDClassifier': (
                         SGDClassifier(max_iter=2000, n_jobs=-1, loss='hinge', penalty='l2'),
-                        {'alpha': [1e-4, 1e-3, 1e-2]}
+                        {'alpha': [1e-3, 1e-2, 1e-1]}
                     ),
                     'LinearSVC': (
                         LinearSVC(max_iter=2000),
-                        {'C': [0.1, 1, 10]}
+                        {'C': C_values}
                     ),
                     'PassiveAggressive': (
                         PassiveAggressiveClassifier(max_iter=2000),
-                        {'C': [0.01, 0.1, 1.0]}
+                        {'C': C_values}
                     )
                 }
         
-        # All available models
+        # All available models - with ANTI-OVERFITTING parameters
         all_classification_models = {
             'LogisticRegression': (
                 LogisticRegression(max_iter=1000, random_state=42, n_jobs=-1),
-                {'C': [0.1, 1, 10], 'penalty': ['l1', 'l2'], 'solver': ['saga']}
+                {'C': C_values, 'penalty': ['l1', 'l2'], 'solver': ['saga']}
             ),
             'SGDClassifier': (
                 SGDClassifier(random_state=42, max_iter=1000, early_stopping=True),
-                {'alpha': [0.0001, 0.001, 0.01], 'penalty': ['l1', 'l2', 'elasticnet']}
+                {'alpha': [0.001, 0.01, 0.1], 'penalty': ['l1', 'l2', 'elasticnet']}
             ),
             'DecisionTree': (
                 DecisionTreeClassifier(random_state=42),
-                {'max_depth': [5, 10, 20, None], 'min_samples_split': [2, 5, 10]}
+                {'max_depth': tree_max_depth, 'min_samples_split': tree_min_samples}
             ),
             'RandomForest': (
-                RandomForestClassifier(n_jobs=-1, random_state=42),
-                {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}
+                RandomForestClassifier(n_jobs=-1, random_state=42, min_samples_leaf=tree_min_samples[0]),
+                {'n_estimators': n_estimators, 'max_depth': tree_max_depth}
             ),
             'ExtraTrees': (
-                ExtraTreesClassifier(n_jobs=-1, random_state=42),
-                {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}
+                ExtraTreesClassifier(n_jobs=-1, random_state=42, min_samples_leaf=tree_min_samples[0]),
+                {'n_estimators': n_estimators, 'max_depth': tree_max_depth}
             ),
             'HistGradientBoosting': (
-                HistGradientBoostingClassifier(random_state=42, early_stopping=True),
-                {'max_iter': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+                HistGradientBoostingClassifier(random_state=42, early_stopping=True, min_samples_leaf=tree_min_samples[0]),
+                {'max_iter': n_estimators, 'max_depth': tree_max_depth, 'learning_rate': [0.05, 0.1]}
             ),
             'AdaBoost': (
                 AdaBoostClassifier(random_state=42),
-                {'n_estimators': [50, 100, 200], 'learning_rate': [0.1, 0.5, 1.0]}
+                {'n_estimators': n_estimators, 'learning_rate': [0.1, 0.5, 1.0]}
             ),
             'SVM': (
                 SVC(random_state=42, probability=True),
-                {'C': [0.1, 1, 10], 'kernel': ['rbf', 'linear']}
+                {'C': C_values, 'kernel': ['rbf', 'linear']}
             ),
             'LinearSVC': (
                 LinearSVC(random_state=42, max_iter=2000, dual=False),
-                {'C': [0.1, 1, 10]}
+                {'C': C_values}
             ),
             'GaussianNB': (
                 GaussianNB(),
@@ -1272,15 +1432,15 @@ class ProductionMLEngine:
             ),
             'MultinomialNB': (
                 MultinomialNB(),
-                {'alpha': [0.01, 0.1, 0.5, 1.0]}
+                {'alpha': [0.5, 1.0, 2.0]}
             ),
             'ComplementNB': (
                 ComplementNB(),
-                {'alpha': [0.01, 0.1, 0.5, 1.0]}
+                {'alpha': [0.5, 1.0, 2.0]}
             ),
             'MLP': (
-                MLPClassifier(random_state=42, max_iter=500, early_stopping=True),
-                {'hidden_layer_sizes': [(100,), (100, 50)], 'alpha': [0.0001, 0.001]}
+                MLPClassifier(random_state=42, max_iter=500, early_stopping=True, validation_fraction=0.15),
+                {'hidden_layer_sizes': [(64, 32), (100, 50)], 'alpha': mlp_alpha}
             ),
             'KNN': (
                 KNeighborsClassifier(n_jobs=-1),
@@ -1288,63 +1448,67 @@ class ProductionMLEngine:
             ),
             'PassiveAggressive': (
                 PassiveAggressiveClassifier(random_state=42, max_iter=1000),
-                {'C': [0.01, 0.1, 1.0]}
+                {'C': C_values}
             ),
         }
         
         all_regression_models = {
-            'Ridge': (Ridge(random_state=42), {'alpha': [0.01, 0.1, 1, 10, 100]}),
-            'Lasso': (Lasso(random_state=42, max_iter=2000), {'alpha': [0.01, 0.1, 1, 10]}),
+            'Ridge': (Ridge(random_state=42), {'alpha': alpha_values}),
+            'Lasso': (Lasso(random_state=42, max_iter=2000), {'alpha': [0.1, 0.5, 1.0, 5.0]}),
             'ElasticNet': (ElasticNet(random_state=42, max_iter=2000), 
-                          {'alpha': [0.01, 0.1, 1], 'l1_ratio': [0.2, 0.5, 0.8]}),
+                          {'alpha': [0.1, 0.5, 1.0], 'l1_ratio': [0.2, 0.5, 0.8]}),
             'SGDRegressor': (SGDRegressor(random_state=42, max_iter=1000, early_stopping=True),
-                            {'alpha': [0.0001, 0.001, 0.01]}),
+                            {'alpha': [0.001, 0.01, 0.1]}),
             'DecisionTree': (DecisionTreeRegressor(random_state=42),
-                            {'max_depth': [5, 10, 20, None], 'min_samples_split': [2, 5, 10]}),
-            'RandomForest': (RandomForestRegressor(n_jobs=-1, random_state=42),
-                            {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}),
-            'ExtraTrees': (ExtraTreesRegressor(n_jobs=-1, random_state=42),
-                          {'n_estimators': [100, 200], 'max_depth': [10, 20, None]}),
-            'HistGradientBoosting': (HistGradientBoostingRegressor(random_state=42, early_stopping=True),
-                                    {'max_iter': [100, 200], 'max_depth': [5, 10]}),
+                            {'max_depth': tree_max_depth, 'min_samples_split': tree_min_samples}),
+            'RandomForest': (RandomForestRegressor(n_jobs=-1, random_state=42, min_samples_leaf=tree_min_samples[0]),
+                            {'n_estimators': n_estimators, 'max_depth': tree_max_depth}),
+            'ExtraTrees': (ExtraTreesRegressor(n_jobs=-1, random_state=42, min_samples_leaf=tree_min_samples[0]),
+                          {'n_estimators': n_estimators, 'max_depth': tree_max_depth}),
+            'HistGradientBoosting': (HistGradientBoostingRegressor(random_state=42, early_stopping=True, min_samples_leaf=tree_min_samples[0]),
+                                    {'max_iter': n_estimators, 'max_depth': tree_max_depth}),
             'AdaBoost': (AdaBoostRegressor(random_state=42),
-                        {'n_estimators': [50, 100, 200], 'learning_rate': [0.1, 0.5, 1.0]}),
-            'SVR': (SVR(), {'C': [0.1, 1, 10], 'kernel': ['rbf', 'linear']}),
-            'MLP': (MLPRegressor(random_state=42, max_iter=500, early_stopping=True),
-                   {'hidden_layer_sizes': [(100,), (100, 50)], 'alpha': [0.0001, 0.001]}),
+                        {'n_estimators': n_estimators, 'learning_rate': [0.1, 0.5, 1.0]}),
+            'SVR': (SVR(), {'C': C_values, 'kernel': ['rbf', 'linear']}),
+            'MLP': (MLPRegressor(random_state=42, max_iter=500, early_stopping=True, validation_fraction=0.15),
+                   {'hidden_layer_sizes': [(64, 32), (100, 50)], 'alpha': mlp_alpha}),
             'KNN': (KNeighborsRegressor(n_jobs=-1), 
                    {'n_neighbors': [3, 5, 7], 'weights': ['uniform', 'distance']}),
         }
         
-        # Add gradient boosting libraries if available
+        # Add gradient boosting libraries if available - with regularization
         if HAS_XGB:
             all_classification_models['XGBoost'] = (
-                xgb.XGBClassifier(n_jobs=-1, random_state=42, verbosity=0, eval_metric='logloss'),
-                {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+                xgb.XGBClassifier(n_jobs=-1, random_state=42, verbosity=0, eval_metric='logloss',
+                                  reg_lambda=1.0, reg_alpha=0.1, min_child_weight=3),
+                {'n_estimators': n_estimators, 'max_depth': tree_max_depth, 'learning_rate': [0.05, 0.1]}
             )
             all_regression_models['XGBoost'] = (
-                xgb.XGBRegressor(n_jobs=-1, random_state=42, verbosity=0),
-                {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+                xgb.XGBRegressor(n_jobs=-1, random_state=42, verbosity=0,
+                                 reg_lambda=1.0, reg_alpha=0.1, min_child_weight=3),
+                {'n_estimators': n_estimators, 'max_depth': tree_max_depth, 'learning_rate': [0.05, 0.1]}
             )
         
         if HAS_LGB:
             all_classification_models['LightGBM'] = (
-                lgb.LGBMClassifier(n_jobs=-1, random_state=42, verbose=-1),
-                {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+                lgb.LGBMClassifier(n_jobs=-1, random_state=42, verbose=-1,
+                                   reg_lambda=1.0, reg_alpha=0.1, min_child_samples=10),
+                {'n_estimators': n_estimators, 'max_depth': tree_max_depth, 'learning_rate': [0.05, 0.1]}
             )
             all_regression_models['LightGBM'] = (
-                lgb.LGBMRegressor(n_jobs=-1, random_state=42, verbose=-1),
-                {'n_estimators': [100, 200], 'max_depth': [5, 10], 'learning_rate': [0.05, 0.1]}
+                lgb.LGBMRegressor(n_jobs=-1, random_state=42, verbose=-1,
+                                  reg_lambda=1.0, reg_alpha=0.1, min_child_samples=10),
+                {'n_estimators': n_estimators, 'max_depth': tree_max_depth, 'learning_rate': [0.05, 0.1]}
             )
         
         if HAS_CATBOOST:
             all_classification_models['CatBoost'] = (
-                CatBoostClassifier(random_state=42, verbose=0, thread_count=-1),
-                {'iterations': [100, 200], 'depth': [6, 8], 'learning_rate': [0.05, 0.1]}
+                CatBoostClassifier(random_state=42, verbose=0, thread_count=-1, l2_leaf_reg=3.0),
+                {'iterations': n_estimators, 'depth': tree_max_depth, 'learning_rate': [0.05, 0.1]}
             )
             all_regression_models['CatBoost'] = (
-                CatBoostRegressor(random_state=42, verbose=0, thread_count=-1),
-                {'iterations': [100, 200], 'depth': [6, 8], 'learning_rate': [0.05, 0.1]}
+                CatBoostRegressor(random_state=42, verbose=0, thread_count=-1, l2_leaf_reg=3.0),
+                {'iterations': n_estimators, 'depth': tree_max_depth, 'learning_rate': [0.05, 0.1]}
             )
         
         # Select models based on task type
@@ -1910,11 +2074,13 @@ class ProductionMLEngine:
         return X_processed, y_processed
     
     def _preprocess_single(self, data: Dict[str, Any]) -> np.ndarray:
-        """Preprocess single input for prediction"""
+        """Preprocess single input for prediction - LEGACY PIPELINE"""
+        logger.info(f"🔧 Legacy preprocessing: {len(data)} input features")
         parts = []
         
         # Numeric
         if self.numeric_cols:
+            logger.info(f"   Processing {len(self.numeric_cols)} numeric columns")
             numeric_vals = []
             for col in self.numeric_cols:
                 val = data.get(col, self.numeric_fill_values.get(col, 0))
@@ -1928,13 +2094,23 @@ class ProductionMLEngine:
                 parts.append(self.scaler.transform(numeric_array))
             else:
                 parts.append(numeric_array)
+            logger.info(f"   Numeric features shape: {parts[-1].shape if parts else 'none'}")
         
         # Categorical
+        if self.categorical_cols:
+            logger.info(f"   Processing {len(self.categorical_cols)} categorical columns")
         for col in self.categorical_cols:
             encoder = self.label_encoders.get(col)
             if encoder:
                 val = str(data.get(col, '_MISSING_')).strip()
-                encoded = encoder.transform([val])[0] if val in encoder.classes_ else 0
+                try:
+                    if hasattr(encoder, 'classes_') and val in encoder.classes_:
+                        encoded = encoder.transform([val])[0]
+                    else:
+                        encoded = 0  # Unknown category defaults to 0
+                except Exception as e:
+                    logger.warning(f"   ⚠️ Encoding failed for {col}={val}: {e}")
+                    encoded = 0
                 parts.append(np.array([[float(encoded)]]))
         
         # Text
@@ -1994,6 +2170,7 @@ class ProductionMLEngine:
                     parts.append(tfidf_sparse.toarray())
         
         X_processed = np.hstack(parts) if parts else np.array([[0]])
+        logger.info(f"   Combined features shape before poly: {X_processed.shape}")
         
         # === Apply Advanced Feature Engineering (Poly) ===
         try:
@@ -2018,7 +2195,25 @@ class ProductionMLEngine:
                         X_processed = X_poly
         except Exception as e:
             logger.warning(f"⚠️ Prediction feature engineering error: {e}")
-            
+        
+        # === FEATURE DIMENSION VALIDATION ===
+        if hasattr(self, 'model') and hasattr(self.model, 'n_features_in_'):
+            expected = self.model.n_features_in_
+            actual = X_processed.shape[1]
+            if actual != expected:
+                logger.warning(f"⚠️ FEATURE MISMATCH: Model expects {expected}, got {actual}")
+                # Try to fix by padding or truncating
+                if actual < expected:
+                    padding = np.zeros((1, expected - actual))
+                    X_processed = np.hstack([X_processed, padding])
+                    logger.info(f"   Padded to {X_processed.shape[1]} features")
+                else:
+                    X_processed = X_processed[:, :expected]
+                    logger.info(f"   Truncated to {X_processed.shape[1]} features")
+            else:
+                logger.info(f"   ✅ Feature count matches: {actual}")
+        
+        logger.info(f"   Final preprocessed shape: {X_processed.shape}")
         return X_processed
     
     # =========================================================================
@@ -2397,7 +2592,7 @@ class ProductionMLEngine:
             return KFold(n_splits=n_splits, shuffle=True, random_state=42)
     
     # =========================================================================
-    # PRODUCTION TRAINING (SILICON VALLEY GRADE)
+    # PRODUCTION TRAINING (AUTOML)
     # =========================================================================
     
     async def train_with_test_set(
@@ -2428,16 +2623,20 @@ class ProductionMLEngine:
         df: pd.DataFrame,
         target_col: Optional[str] = None,
         user_id: str = "default",
-        mode: str = "fast"  # 'fast' or 'ultra'
+        mode: str = "fast",  # 'fast' or 'ultra'
+        algorithm: Optional[str] = None  # Specific algorithm or None for auto-select
     ) -> 'TrainResult':
         """
-        🚀 SILICON VALLEY GRADE ML PIPELINE
+        🚀 PRODUCTION AUTOML PIPELINE
         
         Uses the production_ml_core module for:
         - Smart data cleaning
         - Advanced feature engineering
         - 15+ production algorithms (XGBoost, LightGBM, CatBoost, etc.)
         - Ensemble methods for best accuracy
+        
+        If algorithm is specified, trains only that algorithm.
+        Otherwise, trains multiple and picks the best.
         
         Expected accuracy: 80%+
         """
@@ -2456,7 +2655,7 @@ class ProductionMLEngine:
         
         
         logger.info("=" * 60)
-        logger.info("🚀 SILICON VALLEY GRADE ML PIPELINE")
+        logger.info("🚀 PRODUCTION AUTOML PIPELINE")
         logger.info("=" * 60)
         
         # 🆕 Use Smart Data Analyzer for improved target detection and insights
@@ -2577,26 +2776,153 @@ class ProductionMLEngine:
         engineer = ProductionFeatureEngineer(mode=mode)
         
         # EXTRACT METADATA FOR PREDICTIONS TAB (INPUT SCHEMA) --
+        # This must capture ORIGINAL columns BEFORE feature engineering!
+        # Must match EXACTLY how NLP engine does it for consistency
         self.feature_metadata = []
+        
+        # Columns to skip (ID columns, index columns, internal columns)
+        skip_patterns = ['unnamed', 'index', '_id', 'id']
+        
         for col in df_clean.columns:
             if col == target_col:
                 continue
-                
-            col_type = 'numeric' if pd.api.types.is_numeric_dtype(df_clean[col]) else 'categorical'
-            meta = {
-                'name': col,
-                'type': col_type
-            }
             
-            if col_type == 'numeric':
-                meta['min'] = float(df_clean[col].min())
-                meta['max'] = float(df_clean[col].max())
-                meta['mean'] = float(df_clean[col].mean())
+            # Skip ID/index columns - they shouldn't be user inputs
+            col_lower = col.lower().strip()
+            if col_lower in skip_patterns or col_lower.startswith('unnamed'):
+                continue
+            if col_lower == 'id' and df_clean[col].nunique() == len(df_clean):
+                # Skip if it's a unique ID column
+                continue
+            
+            # Detect column type: numeric, text, datetime, or categorical
+            # Use SAME logic as NLP engine for consistency
+            
+            # Check for datetime first
+            if pd.api.types.is_datetime64_any_dtype(df_clean[col]):
+                # Datetime column - treat as date input
+                self.feature_metadata.append({
+                    'name': col,
+                    'type': 'date',
+                    'format': 'YYYY-MM-DD'
+                })
+            elif pd.api.types.is_numeric_dtype(df_clean[col]):
+                col_type = 'numeric'
+                meta = {
+                    'name': col,
+                    'type': 'numeric'
+                }
+                try:
+                    meta['min'] = float(df_clean[col].min())
+                    meta['max'] = float(df_clean[col].max())
+                    meta['mean'] = float(df_clean[col].mean())
+                except:
+                    meta['min'] = 0
+                    meta['max'] = 100
+                    meta['mean'] = 50
+                self.feature_metadata.append(meta)
+                    
+            elif df_clean[col].dtype == 'object' or str(df_clean[col].dtype) == 'string':
+                # String column - detect text vs categorical vs date using NLP engine logic
+                sample = df_clean[col].dropna().astype(str)
+                if len(sample) > 0:
+                    avg_len = sample.str.len().mean()
+                    unique_ratio = df_clean[col].nunique() / len(df_clean)
+                    
+                    # First check if it looks like a date column
+                    is_date_like = False
+                    col_lower = col.lower()
+                    if any(kw in col_lower for kw in ['date', 'time', 'created', 'updated', 'timestamp']):
+                        # Column name suggests date, try parsing
+                        try:
+                            pd.to_datetime(sample.head(10), errors='raise')
+                            is_date_like = True
+                        except:
+                            pass
+                    elif unique_ratio > 0.5 and avg_len <= 25:
+                        # High unique ratio and short strings - might be dates
+                        date_patterns = ['/', '-', ':']
+                        if any(any(pat in str(v) for pat in date_patterns) for v in sample.head(5)):
+                            try:
+                                pd.to_datetime(sample.head(10), errors='raise')
+                                is_date_like = True
+                            except:
+                                pass
+                    
+                    if is_date_like:
+                        self.feature_metadata.append({
+                            'name': col,
+                            'type': 'date',
+                            'format': 'YYYY-MM-DD'
+                        })
+                    elif avg_len < 30 and unique_ratio < 0.5:
+                        # Categorical dropdown
+                        try:
+                            options = df_clean[col].dropna().unique().tolist()[:50]
+                            self.feature_metadata.append({
+                                'name': col,
+                                'type': 'categorical',
+                                'options': [str(x) for x in options]
+                            })
+                        except:
+                            self.feature_metadata.append({
+                                'name': col,
+                                'type': 'categorical',
+                                'options': []
+                            })
+                    else:
+                        # Text input (long text or high uniqueness like titles)
+                        self.feature_metadata.append({
+                            'name': col,
+                            'type': 'text',
+                            'placeholder': f'Enter {col}...'
+                        })
+                else:
+                    self.feature_metadata.append({
+                        'name': col,
+                        'type': 'text',
+                        'placeholder': f'Enter {col}...'
+                    })
             else:
-                # Top 50 options for dropdowns
-                meta['options'] = [str(x) for x in df_clean[col].unique()[:50]]
-            
-            self.feature_metadata.append(meta)
+                # Other types - check for datetime-like strings or treat as categorical
+                # Try to detect if this looks like a date column
+                is_date_like = False
+                try:
+                    sample = df_clean[col].dropna().head(10).astype(str)
+                    date_patterns = ['/', '-', ':']
+                    if any(any(pat in str(v) for pat in date_patterns) for v in sample):
+                        # Try parsing as date
+                        try:
+                            pd.to_datetime(sample, errors='raise')
+                            is_date_like = True
+                        except:
+                            pass
+                except:
+                    pass
+                
+                if is_date_like:
+                    self.feature_metadata.append({
+                        'name': col,
+                        'type': 'date',
+                        'format': 'YYYY-MM-DD'
+                    })
+                else:
+                    # Treat as categorical
+                    try:
+                        options = df_clean[col].dropna().unique().tolist()[:50]
+                        self.feature_metadata.append({
+                            'name': col,
+                            'type': 'categorical',
+                            'options': [str(x) for x in options]
+                        })
+                    except:
+                        self.feature_metadata.append({
+                            'name': col,
+                            'type': 'text',
+                            'placeholder': f'Enter {col}...'
+                        })
+        
+        logger.info(f"   Feature metadata: {len(self.feature_metadata)} features for Predict tab")
         # --------------------------------------------------------
 
         X, y, feature_names = engineer.fit_transform(df_clean, target_col, self.task_type_simple)
@@ -2750,10 +3076,20 @@ class ProductionMLEngine:
         try:
             from ml.chart_generator import (
                 generate_ml_charts, generate_model_comparison_chart,
-                generate_correlation_heatmap, generate_distribution_grid, generate_boxplot_grid
+                generate_correlation_heatmap, generate_distribution_grid, generate_boxplot_grid,
+                detect_stock_data, generate_stock_charts
             )
+            
+            # 📈 DETECT STOCK/FINANCIAL DATA AND GENERATE STOCK CHARTS
+            stock_info = detect_stock_data(df_clean)
+            if stock_info['is_stock_data']:
+                logger.info("📈 Stock/Financial data detected! Generating stock-specific charts...")
+                stock_charts = generate_stock_charts(df_clean, stock_info, target_col)
+                charts.update(stock_charts)
+                logger.info(f"   📊 Generated {len(stock_charts)} stock charts")
+            
             class_names = self.target_encoder.classes_.tolist() if self.target_encoder else None
-            charts = generate_ml_charts(
+            ml_charts = generate_ml_charts(
                 task_type=self.task_type,
                 y_test=y_test,
                 y_pred=self._y_pred,
@@ -2762,6 +3098,7 @@ class ProductionMLEngine:
                 class_names=class_names,
                 model_name=trainer.best_name
             )
+            charts.update(ml_charts)
             comparison_chart = generate_model_comparison_chart(trainer.results)
             if comparison_chart:
                 charts['model_comparison'] = comparison_chart
@@ -2833,6 +3170,317 @@ class ProductionMLEngine:
             best_model_metrics=best_metrics,
             leaderboard=[{'name': r['name'], 'metrics': r['metrics']} for r in trainer.results],
             feature_importance=self._get_importance(self.model),
+            y_test=y_test,
+            y_pred=self._y_pred,
+            y_proba=y_proba,
+            feature_metadata=getattr(self, 'feature_metadata', []),
+            n_rows=len(df),
+            n_cols=len(df.columns),
+            processing_time=elapsed,
+            charts=charts,
+            is_nlp_task=False,
+            primary_text_col=None,
+            cleaned_file_path=cleaned_file_path
+        )
+    
+    def production_train_selected(
+        self,
+        df: pd.DataFrame,
+        target_col: Optional[str] = None,
+        user_id: str = "default",
+        selected_algorithms: List[str] = None
+    ) -> 'TrainResult':
+        """
+        🎯 TRAIN ONLY USER-SELECTED ALGORITHMS
+        
+        Instead of training all fast/ultra models, train only the specific
+        algorithms the user selected in the UI.
+        
+        Args:
+            df: Input dataframe
+            target_col: Target column name
+            user_id: User ID for model storage
+            selected_algorithms: List of algorithm keys like ['random_forest', 'xgboost', 'lightgbm']
+        
+        Returns:
+            TrainResult with best model from selected algorithms
+        """
+        from sklearn.model_selection import train_test_split
+        
+        if not selected_algorithms:
+            # Fallback to fast mode if no algorithms selected
+            return self.production_train(df, target_col, user_id, mode='fast')
+        
+        # Reset cancellation flag
+        CANCELLATION_FLAGS[user_id] = False
+        cleaned_file_path = None
+        
+        self.errors = []
+        start = datetime.now()
+        
+        logger.info("=" * 60)
+        logger.info("🎯 TRAINING USER-SELECTED ALGORITHMS")
+        logger.info(f"   Algorithms: {selected_algorithms}")
+        logger.info("=" * 60)
+        
+        # Detect target if not provided
+        if not target_col:
+            target_col = self._detect_target(df)
+        
+        self.target_column = target_col
+        logger.info(f"🎯 Target: {target_col}")
+        logger.info(f"📊 Data: {df.shape[0]} rows, {df.shape[1]} columns")
+        
+        # 1. Clean data
+        cleaner = ProductionDataCleaner()
+        df_clean = cleaner.clean(df, target_col)
+        
+        # Drop NaN targets
+        df_clean = df_clean.dropna(subset=[target_col])
+        
+        # Save cleaned data
+        try:
+            from utils.paths import get_user_paths
+            user_paths = get_user_paths(user_id)
+            upload_dir = user_paths['files']
+            cleaned_filename = f"cleaned_{int(datetime.now().timestamp())}.csv"
+            cleaned_full_path = upload_dir / cleaned_filename
+            df_clean.to_csv(cleaned_full_path, index=False)
+            cleaned_file_path = cleaned_filename
+        except Exception as e:
+            logger.error(f"Failed to save cleaned data: {e}")
+        
+        # 2. Detect task type
+        y_temp = df_clean[target_col]
+        unique_ratio = len(y_temp.unique()) / len(y_temp)
+        
+        if y_temp.dtype == 'object' or (y_temp.dtype in ['int64', 'float64'] and len(y_temp.unique()) <= 20):
+            self.task_type = 'classification'
+            self.task_type_simple = 'classification'
+        else:
+            self.task_type = 'regression'
+            self.task_type_simple = 'regression'
+        
+        logger.info(f"🔍 Task Type: {self.task_type}")
+        
+        # 3. Feature engineering
+        engineer = ProductionFeatureEngineer()
+        X, y, feature_names = engineer.fit_transform(df_clean, target_col)
+        
+        # Calculate feature metadata for Playground tab
+        self._calculate_feature_metadata(df_clean.drop(columns=[target_col]))
+        
+        # 4. Train/test split
+        if self.task_type_simple == 'classification':
+            try:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42, stratify=y
+                )
+            except ValueError:
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42
+                )
+        else:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+        
+        logger.info(f"   Train: {len(X_train)} | Test: {len(X_test)}")
+        
+        # 5. Build ONLY the selected models
+        from ml.production_ml_core import build_selected_models
+        
+        models = build_selected_models(
+            selected_algorithms, 
+            self.task_type_simple, 
+            n_samples=len(X_train)
+        )
+        
+        logger.info(f"🔧 Training {len(models)} selected models: {list(models.keys())}")
+        
+        # 6. Train each model
+        results = []
+        best_model = None
+        best_name = None
+        best_score = -np.inf
+        
+        for name, model in models.items():
+            try:
+                check_cancellation(user_id)
+                
+                logger.info(f"   Training {name}...")
+                model.fit(X_train, y_train)
+                
+                if self.task_type_simple == 'classification':
+                    score = model.score(X_test, y_test)
+                    y_pred_temp = model.predict(X_test)
+                    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+                    metrics = {
+                        'accuracy': accuracy_score(y_test, y_pred_temp),
+                        'f1': f1_score(y_test, y_pred_temp, average='weighted', zero_division=0),
+                        'precision': precision_score(y_test, y_pred_temp, average='weighted', zero_division=0),
+                        'recall': recall_score(y_test, y_pred_temp, average='weighted', zero_division=0)
+                    }
+                else:
+                    from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
+                    y_pred_temp = model.predict(X_test)
+                    score = r2_score(y_test, y_pred_temp)
+                    metrics = {
+                        'r2': score,
+                        'rmse': np.sqrt(mean_squared_error(y_test, y_pred_temp)),
+                        'mae': mean_absolute_error(y_test, y_pred_temp)
+                    }
+                
+                results.append({
+                    'name': name,
+                    'model': model,
+                    'score': score,
+                    'metrics': metrics
+                })
+                
+                if score > best_score:
+                    best_score = score
+                    best_model = model
+                    best_name = name
+                
+                logger.info(f"   ✅ {name}: {score:.4f}")
+                
+            except Exception as e:
+                logger.warning(f"   ❌ {name} failed: {e}")
+        
+        if not best_model:
+            # Return a proper TrainResult with empty/default values
+            elapsed = (datetime.now() - start).total_seconds()
+            return TrainResult(
+                success=False,
+                task_type=self.task_type or 'classification',
+                target_column=target_col or '',
+                feature_columns=[],
+                best_model_name='None',
+                best_model_metrics={},
+                leaderboard=[],
+                feature_importance=[],
+                y_test=np.array([]),
+                y_pred=np.array([]),
+                y_proba=None,
+                feature_metadata=[],
+                n_rows=len(df),
+                n_cols=len(df.columns),
+                processing_time=elapsed,
+                charts={},
+                is_nlp_task=False,
+                primary_text_col=None,
+                cleaned_file_path=None
+            )
+        
+        # Store results
+        self.model = best_model
+        self.model_name = best_name
+        self._y_test = y_test
+        self._y_pred = best_model.predict(X_test)
+        self.production_engineer = engineer
+        self.production_mode = True
+        self.feature_columns = feature_names  # Store for external access
+        
+        # Get probabilities if classification
+        y_proba = None
+        if self.task_type_simple == 'classification' and hasattr(best_model, 'predict_proba'):
+            try:
+                y_proba = best_model.predict_proba(X_test)
+            except:
+                pass
+        
+        # Build best metrics FROM RESULTS (not empty)
+        best_metrics = {}
+        for r in results:
+            if r['name'] == best_name:
+                best_metrics = r['metrics']
+                break
+        
+        # IMPORTANT: Store metrics on self so they're saved to persistence
+        self.metrics = best_metrics
+        
+        elapsed = (datetime.now() - start).total_seconds()
+        logger.info(f"⏱️ Training completed in {elapsed:.1f}s")
+        
+        # Generate charts - SAME AS production_train
+        charts = {}
+        try:
+            from ml.chart_generator import (
+                generate_ml_charts, generate_model_comparison_chart,
+                generate_correlation_heatmap, generate_distribution_grid, generate_boxplot_grid,
+                detect_stock_data, generate_stock_charts
+            )
+            
+            # 📈 DETECT STOCK/FINANCIAL DATA AND GENERATE STOCK CHARTS
+            stock_info = detect_stock_data(df_clean)
+            if stock_info['is_stock_data']:
+                logger.info("📈 Stock/Financial data detected! Generating stock-specific charts...")
+                stock_charts = generate_stock_charts(df_clean, stock_info, target_col)
+                charts.update(stock_charts)
+                logger.info(f"   📊 Generated {len(stock_charts)} stock charts")
+            
+            # Get class names for classification
+            class_names = None
+            if self.task_type_simple == 'classification':
+                class_names = list(np.unique(y_test))
+            
+            charts.update(generate_ml_charts(
+                task_type=self.task_type,
+                y_test=y_test,
+                y_pred=self._y_pred,
+                y_proba=y_proba,
+                feature_importance=self._get_importance(best_model),
+                class_names=class_names,
+                model_name=best_name
+            ))
+            
+            # Model comparison chart
+            comparison_chart = generate_model_comparison_chart(results)
+            if comparison_chart:
+                charts['model_comparison'] = comparison_chart
+            
+            # Correlation Heatmap
+            numeric_df = df_clean.select_dtypes(include=[np.number])
+            if len(numeric_df.columns) >= 2:
+                corr_chart = generate_correlation_heatmap(numeric_df, "Feature Correlations")
+                if corr_chart:
+                    charts['correlation_heatmap'] = corr_chart
+            
+            # Distribution Grid
+            if len(numeric_df.columns) >= 1:
+                dist_chart = generate_distribution_grid(numeric_df, "Feature Distributions")
+                if dist_chart:
+                    charts['distribution_grid'] = dist_chart
+            
+            # Box Plot Grid
+            if len(numeric_df.columns) >= 1:
+                box_chart = generate_boxplot_grid(numeric_df, "Feature Box Plots")
+                if box_chart:
+                    charts['boxplot_grid'] = box_chart
+            
+            logger.info(f"📊 Generated {len(charts)} charts: {list(charts.keys())}")
+            
+        except Exception as e:
+            logger.warning(f"Chart generation error: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        # Save model
+        try:
+            self._save(user_id, charts=charts)
+        except Exception as e:
+            logger.warning(f"Model save error: {e}")
+        
+        return TrainResult(
+            success=True,
+            task_type=self.task_type,
+            target_column=target_col,
+            feature_columns=engineer.original_columns,
+            best_model_name=best_name,
+            best_model_metrics=best_metrics,
+            leaderboard=[{'name': r['name'], 'metrics': r['metrics'], 'score': r['score']} for r in results],
+            feature_importance=self._get_importance(best_model),
             y_test=y_test,
             y_pred=self._y_pred,
             y_proba=y_proba,
@@ -3521,23 +4169,35 @@ class ProductionMLEngine:
                 print(f"   Row {i}: ERROR - {e}")
     
     def predict(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Make prediction"""
+        """Make prediction with comprehensive logging"""
         if self.model is None:
             raise ValueError("No model trained")
         
+        logger.info(f"🔮 Prediction request with {len(data)} features")
+        logger.info(f"   Input features: {list(data.keys())}")
+        logger.info(f"   Production mode: {getattr(self, 'production_mode', False)}")
+        logger.info(f"   Has production_engineer: {hasattr(self, 'production_engineer') and self.production_engineer is not None}")
+        
         # Check if using production pipeline
-        if getattr(self, 'production_mode', False) and hasattr(self, 'production_engineer'):
+        if getattr(self, 'production_mode', False) and hasattr(self, 'production_engineer') and self.production_engineer is not None:
+            logger.info("   Using PRODUCTION pipeline")
             X = self._preprocess_single_production(data)
         else:
+            logger.info("   Using LEGACY pipeline")
             X = self._preprocess_single(data)
-            
+        
+        logger.info(f"   Preprocessed X shape: {X.shape}")
+        
         pred = self.model.predict(X)[0]
+        logger.info(f"   Raw prediction: {pred}")
         
         if self.target_encoder:
             try:
+                original_pred = pred
                 pred = self.target_encoder.inverse_transform([int(pred)])[0]
-            except:
-                pass
+                logger.info(f"   Decoded prediction: {original_pred} -> {pred}")
+            except Exception as e:
+                logger.warning(f"   Target decoder failed: {e}")
         
         prob = None
         conf = None
@@ -3546,9 +4206,11 @@ class ProductionMLEngine:
                 proba = self.model.predict_proba(X)[0]
                 prob = [float(p) for p in proba]
                 conf = float(max(proba))
+                logger.info(f"   Confidence: {conf:.2%}")
             except:
                 pass
         
+        logger.info(f"✅ Final prediction: {pred}")
         return {'prediction': str(pred), 'probability': prob, 'confidence': conf, 'model': self.model_name}
     
     def _preprocess_single_production(self, data: Dict[str, Any]) -> np.ndarray:
@@ -3657,13 +4319,33 @@ class ProductionMLEngine:
                 self.target_encoder = result.get('target_encoder')
                 self.n_classes = result.get('n_classes', 2)
                 
-                # Also load preprocessing objects if available
+                # Load preprocessing objects
                 self.label_encoders = result.get('label_encoders', {})
                 self.text_vectorizers = result.get('text_vectorizers', {})
                 self.scaler = result.get('scaler')
                 self.production_engineer = result.get('production_engineer')
                 
+                # Load additional preprocessing attributes
+                self.numeric_cols = result.get('numeric_cols', [])
+                self.categorical_cols = result.get('categorical_cols', [])
+                self.text_cols = result.get('text_cols', [])
+                self.numeric_fill_values = result.get('numeric_fill_values', {})
+                
+                # CRITICAL FIX: Use saved production_mode OR infer from production_engineer
+                # Priority: saved value > inferred from production_engineer
+                saved_production_mode = result.get('production_mode', None)
+                if saved_production_mode is not None:
+                    self.production_mode = saved_production_mode
+                else:
+                    self.production_mode = self.production_engineer is not None
+                
+                # Also load feature_engineer for legacy pipeline
+                if 'feature_engineer' in result:
+                    self.feature_engineer = result['feature_engineer']
+                
                 print(f"📂 Loaded {self.model_name} from model_persistence (latest)")
+                print(f"   Production mode: {self.production_mode}")
+                print(f"   Features: {len(self.feature_columns)}, Target: {self.target_column}")
                 return True
         except Exception as e:
             logger.warning(f"⚠️ Model persistence load failed: {e}, trying legacy...")

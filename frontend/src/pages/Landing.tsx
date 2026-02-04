@@ -18,6 +18,7 @@ import {
     PanelLeftClose, PanelLeftOpen, LogOut
 } from 'lucide-react';
 import AnimatedLogo from '../components/AnimatedLogo';
+import LogoImage from '../components/LogoImage';
 
 import { useUserStore } from '@/store/userStore';
 
@@ -413,7 +414,7 @@ const Landing: React.FC = () => {
                             >
                                 <div className="p-3 border-b-0 md:border-b border-r md:border-r-0 flex items-center justify-between" style={{ borderColor: demoBorder }}>
                                     <div className="flex items-center gap-2 overflow-hidden">
-                                        <img src="/logo.png" alt="" className="w-5 h-5 rounded-sm flex-shrink-0" />
+                                        <LogoImage size={20} className="rounded-sm flex-shrink-0" />
                                         {isSidebarOpen && (
                                             <motion.span
                                                 initial={{ opacity: 0 }}
@@ -1019,7 +1020,7 @@ const Landing: React.FC = () => {
                                                 {/* Welcome */}
                                                 <div className="flex gap-3 mb-4">
                                                     <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${accent}20` }}>
-                                                        <img src="/logo.png" alt="" className="w-4 h-4 rounded-sm" />
+                                                        <LogoImage size={16} className="rounded-sm" />
                                                     </div>
                                                     <p className="text-sm" style={{ color: demoText }}>
                                                         Hello! I'm your AI Data Analyst. Upload any data file and I'll help you analyze it.
@@ -1081,7 +1082,7 @@ const Landing: React.FC = () => {
                                                         {/* Searching documents... */}
                                                         <div className="flex gap-3">
                                                             <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${accent}20` }}>
-                                                                <img src="/logo.png" alt="" className="w-4 h-4 rounded-sm" />
+                                                                <LogoImage size={16} className="rounded-sm" />
                                                             </div>
                                                             <div className="flex items-center gap-2">
                                                                 <motion.span
@@ -1112,7 +1113,7 @@ const Landing: React.FC = () => {
                                                 {responseText && (
                                                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
                                                         <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: `${accent}20` }}>
-                                                            <img src="/logo.png" alt="" className="w-4 h-4 rounded-sm" />
+                                                            <LogoImage size={16} className="rounded-sm" />
                                                         </div>
                                                         <div className="flex-1 text-sm" style={{ color: demoText }}>
                                                             {responseText.split('\n').map((line, i) => (
@@ -1178,7 +1179,7 @@ const Landing: React.FC = () => {
                                             <div className="mb-4">
                                                 <p className="text-sm font-medium mb-3" style={{ color: demoText }}>Generate New Report</p>
                                                 <div className="grid grid-cols-4 gap-3">
-                                                    {['Metrics Analysis', 'Data Breakdown', 'Data Summary', 'Executive Summary'].map((report, i) => (
+                                                {['Metrics Analysis', 'Data Summary', 'Executive Summary', 'Predictive Report'].map((report, i) => (
                                                         <div key={i} className="p-3 rounded-xl" style={{ backgroundColor: i === 0 ? `${accent}15` : demoCard, border: i === 0 ? `2px solid ${accent}` : `1px solid ${demoBorder}` }}>
                                                             <PieChart className="w-4 h-4 mb-1" style={{ color: i === 0 ? accent : demoMuted }} />
                                                             <p className="text-xs font-medium" style={{ color: demoText }}>{report}</p>
@@ -1437,7 +1438,7 @@ const Landing: React.FC = () => {
                             'Ultra AutoML: Train 15+ algorithms with one click, get the champion model',
                             'Autonomous Dashboards: 15+ intelligent visualizations generated automatically',
                             'LLM-Powered Analyst: Ask questions in natural language, get executive answers',
-                            '6 Report Types: Metrics, Breakdown, Summary, Executive, Predictive, Anomaly',
+                            '5 Report Types: Metrics, Summary, Executive, Predictive, Anomaly',
                             'Production-Ready Predictions: Make real predictions on new data instantly',
                         ].map((item, i) => (
                             <motion.div

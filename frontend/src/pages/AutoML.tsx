@@ -1446,36 +1446,51 @@ const AutoML: React.FC = () => {
                             animate={{ scale: 1, opacity: 1 }}
                             className="max-w-md mx-auto"
                         >
-                            <div className="w-20 h-20 mx-auto bg-blue-500/20 rounded-full flex items-center justify-center mb-6">
-                                <Database className="w-10 h-10 text-blue-400" />
-                            </div>
-                            <h2 className="text-2xl font-bold mb-4" style={{ color: theme.textPrimary }}>
-                                Production Cleaned Dataset
-                            </h2>
-                            <p className="mb-8 leading-relaxed" style={{ color: theme.textMuted }}>
-                                Download the exact dataset used for training. This data has been processed by our
-                                Silicon Valley Grade pipeline (Imputed, Encoded, Scaled, and Cleaned).
-                            </p>
-
                             {result.cleaned_file ? (
-                                <div className="space-y-4">
+                                <>
+                                    <div className="w-20 h-20 mx-auto bg-emerald-500/20 rounded-full flex items-center justify-center mb-6">
+                                        <Database className="w-10 h-10 text-emerald-400" />
+                                    </div>
+                                    <h2 className="text-2xl font-bold mb-4" style={{ color: theme.textPrimary }}>
+                                        Production Cleaned Dataset
+                                    </h2>
+                                    <p className="mb-8 leading-relaxed" style={{ color: theme.textMuted }}>
+                                        Download the exact dataset used for training. This data has been processed by our
+                                        Production ML pipeline (Missing values imputed, Categorical encoded, Features scaled).
+                                    </p>
+                                    <div className="space-y-4">
+                                        <a
+                                            href={`/api/v1/files/${localStorage.getItem('userId') || 'default'}/${result.cleaned_file}/download`}
+                                            className="inline-flex items-center gap-3 px-8 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-emerald-500/20 transition-all hover:scale-105"
+                                        >
+                                            <Download className="w-6 h-6" />
+                                            Download Cleaned CSV
+                                        </a>
+                                        <p className="text-xs opacity-60 flex items-center justify-center gap-2" style={{ color: theme.textMuted }}>
+                                            <CheckCircle className="w-3 h-3 text-emerald-400" />
+                                            Ready for Production Deployment
+                                        </p>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="w-20 h-20 mx-auto bg-blue-500/20 rounded-full flex items-center justify-center mb-6">
+                                        <Database className="w-10 h-10 text-blue-400" />
+                                    </div>
+                                    <h2 className="text-2xl font-bold mb-4" style={{ color: theme.textPrimary }}>
+                                        Download Trained Model
+                                    </h2>
+                                    <p className="mb-8 leading-relaxed" style={{ color: theme.textMuted }}>
+                                        Download your trained ML model for production deployment. The model includes all preprocessing pipelines.
+                                    </p>
                                     <a
-                                        href={`/api/v1/files/${localStorage.getItem('userId') || 'default'}/${result.cleaned_file}/download`}
-                                        className="inline-flex items-center gap-3 px-8 py-4 bg-primary-500 hover:bg-primary-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-primary-500/20 transition-all hover:scale-105"
+                                        href={`/api/v2/automl/download-model?user_id=${localStorage.getItem('userId') || 'default'}`}
+                                        className="inline-flex items-center gap-3 px-8 py-4 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-purple-500/20 transition-all hover:scale-105"
                                     >
                                         <Download className="w-6 h-6" />
-                                        Download Cleaned CSV
+                                        Download Model (.pkl)
                                     </a>
-                                    <p className="text-xs opacity-60 flex items-center justify-center gap-2" style={{ color: theme.textMuted }}>
-                                        <CheckCircle className="w-3 h-3 text-emerald-400" />
-                                        Ready for Production Deployment
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="p-4 bg-amber-500/10 text-amber-500 rounded-lg inline-flex items-center gap-2">
-                                    <AlertTriangle className="w-5 h-5" />
-                                    <span>Cleaned dataset not available for this session.</span>
-                                </div>
+                                </>
                             )}
                         </motion.div>
                     </div>

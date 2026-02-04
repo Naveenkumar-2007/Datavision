@@ -24,6 +24,8 @@ import AutonomousDashboard from './pages/AutonomousDashboard';
 import AutoML from './pages/AutoML';
 // 🧠 ML Predictions - Real ML Charts & Predictions
 import MLPredictions from './pages/MLPredictions';
+// 🎯 Clustering - Unsupervised Learning
+import Clustering from './pages/Clustering';
 // 📋 Legal & Help Pages
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfService from './pages/TermsOfService';
@@ -105,6 +107,8 @@ function App() {
                 {/* 🧠 ML Predictions - Real
                  ML Charts */}
                 <Route path="/ml-predictions" element={<MLPredictions />} />
+                {/* 🎯 Clustering - Unsupervised Learning */}
+                <Route path="/clustering" element={<Clustering />} />
               </Route>
             </Routes>
           </ToastProvider>

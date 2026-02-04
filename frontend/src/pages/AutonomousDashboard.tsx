@@ -235,61 +235,41 @@ const VisualIntelligenceDashboard: React.FC = () => {
         return BarChart3;
     };
 
-    // Loading state with Skeleton
+    // Loading state - Building Dashboard Message
     if (loading) {
         return (
-            <div className={`min-h-screen`} style={{ backgroundColor: 'var(--bg-primary)' }}>
-                {/* Header Skeleton */}
-                <div className={`border-b border-[var(--border-color)] ${isDark ? 'glass-panel' : 'bg-white/90'} px-6 py-3`}>
-                    <div className="flex justify-between items-center max-w-[1920px] mx-auto">
-                        <div className="flex items-center gap-3">
-                            <Skeleton className="w-10 h-10 rounded-xl" />
-                            <div className="space-y-2">
-                                <Skeleton className="h-4 w-48" />
-                                <Skeleton className="h-3 w-32" />
-                            </div>
-                        </div>
-                        <div className="flex gap-2">
-                            <Skeleton className="w-8 h-8 rounded-lg" />
-                            <Skeleton className="w-8 h-8 rounded-lg" />
+            <div className={`min-h-screen flex items-center justify-center`} style={{ backgroundColor: 'var(--bg-primary)' }}>
+                <div className="text-center max-w-md px-6">
+                    {/* Animated Building Icon */}
+                    <div className="relative w-24 h-24 mx-auto mb-6">
+                        <div className={`absolute inset-0 rounded-2xl ${isDark ? 'bg-gradient-to-br from-teal-500/20 to-indigo-500/20' : 'bg-gradient-to-br from-teal-100 to-indigo-100'} animate-pulse`}></div>
+                        <div className={`absolute inset-2 rounded-xl ${isDark ? 'bg-gradient-to-br from-teal-500/30 to-indigo-500/30' : 'bg-gradient-to-br from-teal-200 to-indigo-200'} animate-pulse`} style={{ animationDelay: '150ms' }}></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <BarChart3 className={`w-10 h-10 ${isDark ? 'text-teal-400' : 'text-teal-600'} animate-bounce`} style={{ animationDuration: '1.5s' }} />
                         </div>
                     </div>
-                </div>
-
-                <div className="max-w-[1920px] mx-auto p-6 space-y-6">
-                    {/* KPIs Skeleton */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                        {[1, 2, 3, 4, 5, 6].map((i) => (
-                            <div key={i} className={`p-4 rounded-xl border border-[var(--border-color)] ${t.card}`}>
-                                <Skeleton className="h-3 w-16 mb-2" />
-                                <Skeleton className="h-8 w-24 mb-2" />
-                                <Skeleton className="h-3 w-12" />
-                            </div>
-                        ))}
+                    
+                    {/* Title */}
+                    <h2 className={`text-xl font-semibold mb-2 ${t.text}`}>
+                        🚀 Building Your Dashboard
+                    </h2>
+                    
+                    {/* Subtitle */}
+                    <p className={`text-sm mb-6 ${t.textMuted}`}>
+                        AI is analyzing your data and generating insights...
+                    </p>
+                    
+                    {/* Progress Indicator */}
+                    <div className="flex items-center justify-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${isDark ? 'bg-teal-400' : 'bg-teal-500'} animate-bounce`} style={{ animationDelay: '0ms' }}></div>
+                        <div className={`w-2 h-2 rounded-full ${isDark ? 'bg-teal-400' : 'bg-teal-500'} animate-bounce`} style={{ animationDelay: '150ms' }}></div>
+                        <div className={`w-2 h-2 rounded-full ${isDark ? 'bg-teal-400' : 'bg-teal-500'} animate-bounce`} style={{ animationDelay: '300ms' }}></div>
                     </div>
-
-                    {/* Pills Skeleton */}
-                    <div className="flex gap-2">
-                        {[1, 2, 3, 4].map((i) => (
-                            <Skeleton key={i} className="h-8 w-24 rounded-full" />
-                        ))}
-                    </div>
-
-                    {/* Charts Grid Skeleton */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                        {[1, 2, 3, 4, 5, 6].map((i) => (
-                            <div key={i} className={`rounded-xl border border-[var(--border-color)] ${t.card} p-4 h-[300px]`}>
-                                <div className="flex justify-between items-center mb-4">
-                                    <div className="flex gap-2 items-center">
-                                        <Skeleton className="w-4 h-4 rounded-full" />
-                                        <Skeleton className="h-4 w-32" />
-                                    </div>
-                                    <Skeleton className="w-4 h-4" />
-                                </div>
-                                <Skeleton className="w-full h-[220px] rounded-lg" />
-                            </div>
-                        ))}
-                    </div>
+                    
+                    {/* Tip */}
+                    <p className={`text-xs mt-6 ${t.textMuted}`}>
+                        💡 This may take a few seconds depending on your data size
+                    </p>
                 </div>
             </div>
         );

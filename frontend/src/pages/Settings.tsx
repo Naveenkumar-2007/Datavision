@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase';
 import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
 import { api } from '@/services/api';
+import LogoImage from '@/components/LogoImage';
 
 
 
@@ -485,7 +486,7 @@ const Settings: React.FC = () => {
       variant: 'warning',
       icon: <RefreshCw className="w-6 h-6" />
     });
-    
+
     if (!confirmed) return;
 
     try {
@@ -701,11 +702,7 @@ const Settings: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-4 mb-2"
       >
-        <img
-          src="/datavision_icon_v3.png"
-          alt="DataVision Logo"
-          className="w-12 h-12 object-contain rounded-xl shadow-lg"
-        />
+        <LogoImage size={48} className="rounded-xl shadow-lg" />
         <div className="mb-2">
           <h1 className="text-4xl font-bold" style={{ color: 'var(--text-primary)' }}>Settings</h1>
           <p className="text-gray-400">Manage your account and preferences</p>
@@ -1084,15 +1081,15 @@ const Settings: React.FC = () => {
               if (confirmed) {
                 try {
                   const userId = localStorage.getItem('userId') || authUser?.id || 'default';
-                  
+
                   // Call backend API to delete models from storage (v2 endpoint)
                   await api.delete(`/api/v2/autonomous/models/${userId}`);
-                  
+
                   // Also clear localStorage cache
                   localStorage.removeItem(`automl_result_${userId}`);
                   localStorage.removeItem(`ml_training_${userId}`);
                   localStorage.removeItem(`model_history_${userId}`);
-                  
+
                   toast.success('ML models cleared! You can train fresh models now.');
                 } catch (error: any) {
                   console.error('Failed to reset ML models:', error);

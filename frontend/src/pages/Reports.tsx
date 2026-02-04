@@ -271,7 +271,6 @@ const Reports: React.FC = () => {
 
   const reportTypes = [
     { value: 'metrics', label: 'Metrics Analysis', description: 'Analyze numeric data with trends', icon: TrendingUp, color: '#22c55e' },
-    { value: 'breakdown', label: 'Data Breakdown', description: 'Category distributions & segments', icon: PieChartIcon, color: '#8B5CF6' },
     { value: 'summary', label: 'Data Summary', description: 'Complete overview of all data', icon: BarChart3, color: '#3B82F6' },
     { value: 'executive', label: 'Executive Summary', description: 'High-level insights for leaders', icon: FileText, color: '#22C55E' },
     {
@@ -688,43 +687,154 @@ const Reports: React.FC = () => {
 
               {/* AI Key Findings Section - Fully Autonomous */}
               {report.sections && report.sections.length > 0 && (() => {
-                // Extract insights dynamically from report sections
-                const firstSection = report.sections[0];
-                let topInsight = 'Data analysis complete';
+                // Helper to check if a line is metadata (not a real insight)
+                const isMetadataLine = (line: string): boolean => {
+                  const lower = line.toLowerCase().trim();
+                  // Comprehensive metadata patterns to filter out
+                  const metadataPatterns = [
+                    /^dataset:/i,
+                    /^numeric/i,
+                    /^categorical/i,
+                    /^missing/i,
+                    /^duplicates/i,
+                    /^total\s*(rows|records|columns)/i,
+                    /^\d+\s*(rows|records|columns|numeric|categorical)/i,
+                    /columns?:\s*\d+/i,
+                    /rows?:\s*\d+/i,
+                    /rows\s*[×x,]\s*\d+/i,
+                    /\d+\s*rows?\s*[×x,]/i,
+                    /^[a-z]+\s+columns?:\s*\d+$/i,  // "Categorical Columns: 0"
+                    /^(no|none|0)\s+(categorical|numeric|missing)/i,
+                    /^data\s*(type|shape|size|info)/i,
+                    /^(shape|size|dtype|info):/i,
+                  ];
+                  
+                  return (
+                    lower.length < 20 ||
+                    metadataPatterns.some(pattern => pattern.test(lower)) ||
+                    // Also filter generic short phrases
+                    (lower.length < 30 && /^\w+\s+(columns?|rows?|data|values?):\s*\d+$/i.test(lower))
+                  );
+                };
 
-                // Smart extraction for Executive Summary
-                if (firstSection?.content) {
-                  const perfMatch = firstSection.content.match(/Performance Assessment:\s*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i);
-                  if (perfMatch) {
-                    topInsight = perfMatch[1].trim().replace(/\*\*/g, '');
-                  } else {
-                    topInsight = firstSection.content.split('\n').filter((l: string) => l.trim())[0] || topInsight;
+                // Helper to clean insight text
+                const cleanInsight = (text: string): string => {
+                  return text
+                    .replace(/^\d+\.\s*/, '')
+                    .replace(/^\*\s*/, '')
+                    .replace(/\*\*/g, '')
+                    .replace(/•/g, '')
+                    .replace(/^[-–—]\s*/, '')
+                    .trim();
+                };
+
+                // Extract UNIQUE meaningful insights from report sections
+                const seenInsights = new Set<string>();
+                let topInsight = '';
+                let actionText = '';
+
+                // Search all sections for meaningful insights
+                for (const section of report.sections) {
+                  if (!section?.content) continue;
+
+                  // Look for specific insight patterns
+                  const patterns = [
+                    /Key\s*Finding[s]?:\s*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i,
+                    /Performance\s*Assessment:\s*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i,
+                    /Insight[s]?:\s*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i,
+                    /Analysis:\s*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i,
+                    /Trend[s]?:\s*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i,
+                  ];
+
+                  for (const pattern of patterns) {
+                    const match = section.content.match(pattern);
+                    if (match && !topInsight) {
+                      const extracted = cleanInsight(match[1]).replace(/\n/g, ' ').slice(0, 150);
+                      if (!isMetadataLine(extracted) && extracted.length > 20) {
+                        topInsight = extracted;
+                        seenInsights.add(extracted.toLowerCase().trim());
+                        break;
+                      }
+                    }
+                  }
+
+                  // Get meaningful lines if no pattern matched
+                  if (!topInsight) {
+                    const lines = section.content.split('\n').filter((l: string) => {
+                      const cleaned = cleanInsight(l);
+                      return cleaned.length > 20 && !isMetadataLine(cleaned);
+                    });
+                    if (lines.length > 0) {
+                      topInsight = cleanInsight(lines[0]).slice(0, 150);
+                      seenInsights.add(topInsight.toLowerCase().trim());
+                    }
+                  }
+
+                  if (topInsight) break;
+                }
+
+                // Find action/recommendation
+                const actionPatterns = [
+                  /Recommendation[s]?:\s*([\s\S]*?)(?=\n\n|\n[A-Z0-9]|$)/i,
+                  /Action[s]?:\s*([\s\S]*?)(?=\n\n|\n[A-Z0-9]|$)/i,
+                  /Strategic\s*Recommendation[s]?:\s*([\s\S]*?)(?=\n\n|\n[A-Z0-9]|$)/i,
+                  /Next\s*Step[s]?:\s*([\s\S]*?)(?=\n\n|\n[A-Z0-9]|$)/i,
+                ];
+
+                // Search for action items
+                for (const section of report.sections) {
+                  if (!section?.content) continue;
+
+                  // Check section title first
+                  if (section.title?.toLowerCase().includes('recommend') || 
+                      section.title?.toLowerCase().includes('action') ||
+                      section.title?.toLowerCase().includes('strategic')) {
+                    const lines = section.content.split('\n').filter((l: string) => {
+                      const cleaned = cleanInsight(l);
+                      const normalized = cleaned.toLowerCase().trim();
+                      return cleaned.length > 15 && 
+                             !isMetadataLine(cleaned) && 
+                             !seenInsights.has(normalized);
+                    });
+                    if (lines.length > 0) {
+                      actionText = cleanInsight(lines[0]).slice(0, 150);
+                      break;
+                    }
+                  }
+
+                  // Try patterns
+                  for (const pattern of actionPatterns) {
+                    const match = section.content.match(pattern);
+                    if (match && !actionText) {
+                      const extracted = cleanInsight(match[1]).replace(/\n/g, ' ').slice(0, 150);
+                      if (!isMetadataLine(extracted) && 
+                          extracted.length > 15 && 
+                          !seenInsights.has(extracted.toLowerCase().trim())) {
+                        actionText = extracted;
+                        break;
+                      }
+                    }
+                  }
+                  if (actionText) break;
+                }
+
+                // Fallback: if still no insights, use section titles as context
+                if (!topInsight && report.sections.length > 0) {
+                  const sectionTitles = report.sections.map((s: any) => s.title).filter(Boolean).slice(0, 3);
+                  topInsight = `Analysis covers: ${sectionTitles.join(', ')}`;
+                }
+                if (!actionText && report.sections.length > 1) {
+                  const lastSection = report.sections[report.sections.length - 1];
+                  if (lastSection?.title) {
+                    actionText = `Review ${lastSection.title} for detailed insights`;
                   }
                 }
 
-                // Find action/recommendation section
-                let actionText = 'Review data for opportunities';
+                // Final fallback with actual data info
+                if (!topInsight) topInsight = `Complete ${report.reportType} analysis generated`;
+                if (!actionText) actionText = `Explore the ${report.sections.length} report sections below`;
 
-                // Try to find explicit Recommendation section or header
-                const actionSection = report.sections.find((s: any) =>
-                  s.title?.toLowerCase().includes('recommend') ||
-                  s.title?.toLowerCase().includes('action')
-                );
-
-                if (actionSection) {
-                  actionText = actionSection.content.split('\n').filter((l: string) => l.trim())[0] || actionText;
-                } else if (firstSection?.content) {
-                  // Look for Recommendation header in executive summary
-                  const recMatch = firstSection.content.match(/Recommendation:\s*([\s\S]*?)(?=\n\n|\n[A-Z]|$)/i);
-                  if (recMatch) {
-                    actionText = recMatch[1].trim().replace(/\*\*/g, '');
-                  }
-                }
-
-                // Clean up formatting
-                actionText = actionText.replace(/^\d+\.\s*/, '').replace(/^\*\s*/, '').replace(/\*\*/g, '');
-
-                // Calculate confidence based on data richness
+                // Calculate confidence based on actual data richness
                 const dataPoints = report.sections.reduce((acc: number, s: any) => {
                   if (s.data && Array.isArray(s.data)) return acc + s.data.length;
                   if (s.data && typeof s.data === 'object') return acc + Object.keys(s.data).length;

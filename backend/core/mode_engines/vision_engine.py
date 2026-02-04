@@ -534,20 +534,102 @@ def vision_response(
     user_id: str,
     query: str,
     image_path: str = None,
-    image_base64: str = None
+    image_base64: str = None,
+    context: str = "",
+    df = None
 ) -> Dict[str, Any]:
-    """Quick function for vision response."""
+    """
+    Quick function for vision response.
+    
+    Args:
+        user_id: User ID
+        query: User's question
+        image_path: Path to image file (optional)
+        image_base64: Base64 image data (optional)
+        context: Additional context including pre-analyzed image content
+        df: DataFrame for chart generation (optional)
+    """
     engine = ProVisionEngine(user_id)
+    
+    # Check if context already contains image analysis (pre-processed in chat.py)
+    if context and "🖼️ Image Analysis" in context:
+        # Context already has image analysis - use it directly with LLM
+        logger.info("👁️ Vision: Using pre-analyzed image context")
+        
+        result = {
+            "answer": "",
+            "mode": "vision",
+            "confidence": 0.90,
+            "sources": ["Vision Engine"],
+            "extracted_data": {}
+        }
+        
+        try:
+            from core.llm import chat as llm_chat
+            
+            vision_prompt = f"""You are a Vision AI Expert. Analyze the image content provided and answer the user's question.
+
+## IMAGE ANALYSIS:
+{context}
+
+## USER QUESTION:
+{query}
+
+INSTRUCTIONS:
+1. Base your answer ONLY on the actual image analysis provided above
+2. If asked "what do you see", describe what's shown in the image analysis
+3. Be specific about visual elements, text, data, charts, or objects mentioned
+4. If the image contains data/charts, extract and explain the key points
+5. Format your response clearly with markdown
+
+Provide a detailed, accurate response about the image."""
+
+            llm_response = llm_chat(vision_prompt, temperature=0.3, max_tokens=800)
+            
+            result["answer"] = f"""## 👁️ Vision Analysis
+
+{llm_response}
+
+---
+*Image analyzed using AI vision capabilities*"""
+            result["confidence"] = 0.92
+            
+        except Exception as e:
+            logger.error(f"Vision LLM error: {e}")
+            result["answer"] = f"""## 👁️ Image Analysis
+
+{context}
+
+---
+*Note: This is the raw vision analysis.*"""
+        
+        return result
+    
+    # No pre-analyzed content - run normal vision processing
     return engine.process(query, image_path, image_base64)
 
 
 def vision_response_sync(
     user_id: str,
     query: str,
-    image_path: str = None
+    context: str = "",
+    df = None
 ) -> Dict[str, Any]:
-    """Synchronous vision response for compatibility."""
-    return vision_response(user_id, query, image_path)
+    """
+    Synchronous vision response for compatibility.
+    
+    Args:
+        user_id: User ID
+        query: User's question
+        context: Context string (may contain pre-analyzed image content)
+        df: DataFrame for optional chart generation
+    """
+    # Check if context contains image analysis (from chat.py preprocessing)
+    if context and "🖼️ Image Analysis" in context:
+        return vision_response(user_id, query, context=context, df=df)
+    
+    # Legacy path - context is treated as image_path
+    return vision_response(user_id, query, image_path=context if context and not context.startswith("##") else None)
 
 
 # Alias for backwards compatibility

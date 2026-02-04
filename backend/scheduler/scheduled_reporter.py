@@ -437,6 +437,7 @@ async def gather_comprehensive_data_context(user_id: str) -> dict:
     - Category breakdowns
     - ML model details (if trained)
     - Feature importance
+    - Sample predictions from ML model
     """
     context = {
         "has_data": False,
@@ -447,6 +448,7 @@ async def gather_comprehensive_data_context(user_id: str) -> dict:
         "category_breakdowns": [],
         "ml_model": None,
         "feature_importance": [],
+        "sample_predictions": [],  # NEW: Real predictions from ML model
         "domain": "generic"
     }
     
@@ -575,6 +577,45 @@ async def gather_comprehensive_data_context(user_id: str) -> dict:
                         for f, i in sorted(zip(features, engine.feature_importance_), 
                                           key=lambda x: x[1], reverse=True)[:5]
                     ]
+                
+                # NEW: Get sample predictions from the model
+                try:
+                    import numpy as np
+                    sample_df = df.head(5)  # Get 5 sample rows
+                    predictions = []
+                    for idx, row in sample_df.iterrows():
+                        try:
+                            row_dict = row.to_dict()
+                            X_sample = engine._preprocess_single(row_dict)
+                            pred = engine.model.predict([X_sample])[0]
+                            
+                            # Decode prediction if classifier
+                            if hasattr(engine, 'target_encoder') and engine.target_encoder:
+                                try:
+                                    pred_label = engine.target_encoder.inverse_transform([int(pred)])[0]
+                                except:
+                                    pred_label = str(pred)
+                            else:
+                                pred_label = str(pred)
+                            
+                            # Get key features for this prediction
+                            key_features = {}
+                            for feat in features[:3]:  # Top 3 features
+                                if feat in row_dict:
+                                    key_features[feat] = row_dict[feat]
+                            
+                            predictions.append({
+                                "prediction": pred_label,
+                                "key_features": key_features
+                            })
+                        except Exception as pred_error:
+                            logger.debug(f"Sample prediction failed: {pred_error}")
+                            continue
+                    
+                    context["sample_predictions"] = predictions
+                    logger.info(f"Generated {len(predictions)} sample predictions for email")
+                except Exception as pred_err:
+                    logger.warning(f"Could not generate sample predictions: {pred_err}")
         except Exception as e:
             logger.warning(f"Error loading ML model for {user_id}: {e}")
         
@@ -699,6 +740,13 @@ TRAINED ML MODEL:
                     context_text += f"\n{i}. {fi.get('feature', 'Unknown')} (importance: {fi.get('importance', 0):.3f})"
                 else:
                     context_text += f"\n{i}. {fi}"
+        
+        # NEW: Include sample predictions in context
+        if data_context.get("sample_predictions"):
+            context_text += "\n\nSAMPLE PREDICTIONS FROM MODEL:"
+            for i, pred in enumerate(data_context["sample_predictions"][:3], 1):
+                features_str = ", ".join([f"{k}={v}" for k, v in pred.get("key_features", {}).items()])
+                context_text += f"\n{i}. Prediction: {pred.get('prediction')} | Based on: {features_str}"
         
         # Use Groq API to generate intelligent report
         groq_api_key = os.environ.get("GROQ_API_KEY")

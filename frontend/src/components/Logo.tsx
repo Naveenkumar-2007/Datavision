@@ -1,9 +1,10 @@
 /**
- * DataVision Logo Component
- * Uses SVG icon for deployment compatibility
+ * DataVision Logo Component - Theme-aware
+ * Uses the official logo images with automatic light/dark mode switching
  */
 
 import React from 'react';
+import { useUserStore } from '../store/userStore';
 
 interface LogoProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
@@ -12,6 +13,8 @@ interface LogoProps {
 }
 
 const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '' }) => {
+  const { isDark } = useUserStore();
+
   const sizes = {
     sm: { icon: 28, text: 'text-sm' },
     md: { icon: 36, text: 'text-xl' },
@@ -21,35 +24,25 @@ const Logo: React.FC<LogoProps> = ({ size = 'md', showText = true, className = '
 
   const { icon, text } = sizes[size];
 
+  // Use dark logo for dark mode, light logo for light mode
+  const logoSrc = isDark ? '/datavision-logo-dark.jpg' : '/datavision-logo-light.jpg';
+
   return (
     <div className={`flex items-center gap-3 ${className}`}>
-      {/* SVG Logo Icon */}
-      <svg
+      {/* Logo Image */}
+      <img
+        src={logoSrc}
+        alt="DataVision Logo"
         width={icon}
         height={icon}
-        viewBox="0 0 64 64"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
         className="flex-shrink-0"
-      >
-        <rect width="64" height="64" rx="12" fill="url(#gradient)" />
-        <path
-          d="M20 44V24L32 18L44 24V44L32 50L20 44Z"
-          stroke="white"
-          strokeWidth="2.5"
-          fill="none"
-        />
-        <path d="M32 18V50" stroke="white" strokeWidth="2" />
-        <path d="M20 24L44 44" stroke="white" strokeWidth="2" />
-        <path d="M44 24L20 44" stroke="white" strokeWidth="2" />
-        <circle cx="32" cy="32" r="4" fill="white" />
-        <defs>
-          <linearGradient id="gradient" x1="0" y1="0" x2="64" y2="64">
-            <stop stopColor="#10B981" />
-            <stop offset="1" stopColor="#059669" />
-          </linearGradient>
-        </defs>
-      </svg>
+        style={{
+          width: icon,
+          height: icon,
+          objectFit: 'contain',
+          borderRadius: '6px',
+        }}
+      />
 
       {/* Dynamic Text - Data(Theme) + Vision(Green) */}
       {showText && (
