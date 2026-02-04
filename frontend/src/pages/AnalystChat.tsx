@@ -34,6 +34,7 @@ import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
 import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
+import { getUserIdSync } from '@/utils/userId';
 
 // Lazy load PlotlyChart for performance
 const PlotlyChart = React.lazy(() => import('@/components/PlotlyChart'));
@@ -1947,7 +1948,7 @@ const AnalystChat: React.FC = () => {
           title: 'Business Analyst Report',
           content: content,
           format: format,
-          workspace_id: localStorage.getItem('userId') || 'default'
+          workspace_id: getUserIdSync()
         })
       });
 

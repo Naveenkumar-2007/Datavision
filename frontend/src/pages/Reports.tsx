@@ -45,6 +45,7 @@ import {
 import { apiService } from '@/services/api';
 import { getCurrencySymbol, getUserPreferredCurrency } from '@/utils/currency';
 import { exportToPDF } from '@/utils/pdfExport';
+import { getUserIdSync } from '@/utils/userId';
 
 interface ReportSection {
   title: string;
@@ -120,7 +121,7 @@ const Reports: React.FC = () => {
 
   const checkMLModel = async () => {
     try {
-      const userId = localStorage.getItem('userId') || 'default';
+      const userId = getUserIdSync();
       let foundModel = false;
 
       // 1. Try Backend API first
