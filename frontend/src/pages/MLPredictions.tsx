@@ -47,7 +47,7 @@ import ExplainModal from '@/components/automl/ExplainModal';
 import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
 import { useToast } from '@/contexts/ToastContext';
-import { getUserIdSync } from '@/utils/userId';
+import { getUserIdSync, getAuthHeadersSync } from '@/utils/userId';
 
 
 interface FeatureMetadata {
@@ -418,7 +418,9 @@ const MLPredictions: React.FC = () => {
     // Fetch charts from API
     const fetchChartsFromAPI = async (userId: string): Promise<Record<string, string>> => {
         try {
-            const response = await fetch(`/api/v2/automl/charts/${userId}`);
+            const response = await fetch(`/api/v2/automl/charts/${userId}`, {
+                headers: getAuthHeadersSync()
+            });
             const data = await response.json();
             if (data.success && data.charts && Object.keys(data.charts).length > 0) {
                 try {
@@ -466,7 +468,9 @@ const MLPredictions: React.FC = () => {
             const syncWithActiveModel = async (result: MLResult): Promise<MLResult> => {
                 try {
                     // First sync basic model info
-                    const response = await fetch(`/api/v2/autonomous/models/${userId}`);
+                    const response = await fetch(`/api/v2/autonomous/models/${userId}`, {
+                        headers: getAuthHeadersSync()
+                    });
                     const data = await response.json();
 
                     if (data.success && data.models && data.models.length > 0) {
@@ -490,7 +494,9 @@ const MLPredictions: React.FC = () => {
 
                     // CRITICAL: Fetch feature_metadata AND charts from saved model
                     // Use mode=auto to let backend auto-detect the best mode for multi-mode training
-                    const savedResultResponse = await fetch(`/api/v1/automl/saved-result?user_id=${userId}&mode=auto`);
+                    const savedResultResponse = await fetch(`/api/v1/automl/saved-result?user_id=${userId}&mode=auto`, {
+                        headers: getAuthHeadersSync()
+                    });
                     const savedResult = await savedResultResponse.json();
 
                     if (savedResult.success) {
@@ -584,7 +590,8 @@ const MLPredictions: React.FC = () => {
             // This ensures data survives logout and browser refresh
             try {
                 const backendResponse = await fetch(`/api/v1/automl/saved-result?user_id=${userId}&mode=auto`, {
-                    signal: abortCtrl.signal
+                    signal: abortCtrl.signal,
+                    headers: getAuthHeadersSync()
                 });
                 const backendResult = await backendResponse.json();
                 
@@ -684,7 +691,9 @@ const MLPredictions: React.FC = () => {
     const handleModelChange = async () => {
         const userId = getUserIdSync();
         try {
-            const response = await fetch(`/api/v2/autonomous/models/${userId}`);
+            const response = await fetch(`/api/v2/autonomous/models/${userId}`, {
+                headers: getAuthHeadersSync()
+            });
             const data = await response.json();
 
             if (data.success && data.models && data.models.length > 0) {
@@ -718,7 +727,9 @@ const MLPredictions: React.FC = () => {
         try {
             const userId = getUserIdSync();
             // Download file and parse columns
-            const fileResponse = await fetch(`/api/v1/files/${userId}/${fileName}/download`);
+            const fileResponse = await fetch(`/api/v1/files/${userId}/${fileName}/download`, {
+                headers: getAuthHeadersSync()
+            });
             if (!fileResponse.ok) return;
 
             const blob = await fileResponse.blob();
@@ -758,7 +769,8 @@ const MLPredictions: React.FC = () => {
             // Get the file from server and send to AutoML - SAME AS DATAHUB
             const userId = getUserIdSync();
             const fileResponse = await fetch(`/api/v1/files/${userId}/${selectedFile.name}/download`, {
-                signal: controller.signal
+                signal: controller.signal,
+                headers: getAuthHeadersSync()
             });
 
             if (!fileResponse.ok) throw new Error('Failed to get file');
@@ -799,7 +811,10 @@ const MLPredictions: React.FC = () => {
             const automlResponse = await fetch(endpoint, {
                 method: 'POST',
                 body: formData,
-                signal: controller.signal
+                signal: controller.signal,
+                headers: {
+                    'X-User-ID': userId
+                }
             });
 
             const automlResult = await automlResponse.json();
@@ -987,7 +1002,10 @@ const MLPredictions: React.FC = () => {
             formData.append('user_id', userId);
             await fetch('/api/v2/automl/stop_training', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                headers: {
+                    'X-User-ID': userId
+                }
             });
         } catch (e) {
             console.error("Failed to signal stop to backend", e);
@@ -2946,7 +2964,7 @@ const MLPredictions: React.FC = () => {
                                     console.log('[MLPredictions] Sending prediction with mode:', predictMode);
                                     const response = await fetch('/api/v2/automl/predict', {
                                         method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
+                                        headers: getAuthHeadersSync(),
                                         body: JSON.stringify(dataToSend)
                                     });
                                     const data = await response.json();

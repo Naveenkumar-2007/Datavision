@@ -30,7 +30,7 @@ import apiService from '@/services/api';
 import MultiFileUpload from '@/components/automl/MultiFileUpload';
 import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
-import { getUserIdSync } from '@/utils/userId';
+import { getUserIdSync, getAuthHeadersSync } from '@/utils/userId';
 
 interface ThemeContext {
   isDark: boolean;
@@ -223,7 +223,10 @@ const DataHub: React.FC = () => {
             const fixResponse = await fetch('/api/v2/autonomous/auto-fix', {
               method: 'POST',
               body: formData,
-              signal: controller.signal, // Add abort signal
+              signal: controller.signal,
+              headers: {
+                'X-User-ID': getUserIdSync()
+              }
             });
             const fixData = await fixResponse.json();
 
@@ -285,6 +288,7 @@ const DataHub: React.FC = () => {
     try {
       await fetch(`/api/v1/files/cancel-upload/${userId}`, {
         method: 'POST',
+        headers: getAuthHeadersSync()
       });
       console.log('🛑 Backend cancellation flag set');
     } catch (e) {
@@ -300,6 +304,7 @@ const DataHub: React.FC = () => {
         try {
           await fetch(`/api/v1/files/${userId}/${encodeURIComponent(fileName)}`, {
             method: 'DELETE',
+            headers: getAuthHeadersSync()
           });
           console.log(`🗑️ Deleted cancelled file: ${fileName}`);
         } catch (e) {
@@ -344,7 +349,8 @@ const DataHub: React.FC = () => {
       // Get the file from server and send to AutoML
       const userId = getUserIdSync();
       const fileResponse = await fetch(`/api/v1/files/${userId}/${dataFiles[0].name}/download`, {
-        signal: controller.signal
+        signal: controller.signal,
+        headers: getAuthHeadersSync()
       });
 
       if (!fileResponse.ok) throw new Error('Failed to get file');
@@ -368,7 +374,10 @@ const DataHub: React.FC = () => {
       const automlResponse = await fetch(endpoint, {
         method: 'POST',
         body: formData,
-        signal: controller.signal
+        signal: controller.signal,
+        headers: {
+          'X-User-ID': userId
+        }
       });
 
       const automlResult = await automlResponse.json();
@@ -548,7 +557,9 @@ const DataHub: React.FC = () => {
   const handleDownload = async (fileId: string) => {
     try {
       const userId = getUserIdSync();
-      const response = await fetch(`/api/v1/files/${userId}/${fileId}/download`);
+      const response = await fetch(`/api/v1/files/${userId}/${fileId}/download`, {
+        headers: getAuthHeadersSync()
+      });
       if (!response.ok) throw new Error('Download failed');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -1133,7 +1144,10 @@ const DataHub: React.FC = () => {
                     formData.append('user_id', userId);
                     await fetch('/api/v2/automl/stop_training', {
                       method: 'POST',
-                      body: formData
+                      body: formData,
+                      headers: {
+                        'X-User-ID': userId
+                      }
                     });
                   } catch (e) {
                     console.error("Failed to signal stop to backend", e);

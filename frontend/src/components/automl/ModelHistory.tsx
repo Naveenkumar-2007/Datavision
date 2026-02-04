@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
+import { getAuthHeadersSync } from '@/utils/userId';
 
 interface ModelMetadata {
     model_id: string;
@@ -75,7 +76,9 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModel
         setLoading(true);
         setError(null);
         try {
-            const response = await fetch(`/api/v2/autonomous/models/${userId}`);
+            const response = await fetch(`/api/v2/autonomous/models/${userId}`, {
+                headers: getAuthHeadersSync()
+            });
             const data = await response.json();
 
             if (data.success) {
@@ -97,7 +100,7 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModel
         try {
             const response = await fetch('/api/v2/autonomous/models/rollback', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeadersSync(),
                 body: JSON.stringify({ user_id: userId, version })
             });
             const data = await response.json();
@@ -135,7 +138,10 @@ const ModelHistory: React.FC<ModelHistoryProps> = ({ userId = 'default', onModel
                 ? `/api/v2/autonomous/models/${userId}/version/${version}`
                 : `/api/v2/autonomous/models/${userId}`;
 
-            const response = await fetch(url, { method: 'DELETE' });
+            const response = await fetch(url, { 
+                method: 'DELETE',
+                headers: getAuthHeadersSync()
+            });
             const data = await response.json();
 
             if (data.success) {

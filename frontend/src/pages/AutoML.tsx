@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import ModelHistory from '@/components/automl/ModelHistory';
 import { useUserStore } from '@/store/userStore';
-import { getUserIdSync } from '@/utils/userId';
+import { getUserIdSync, getAuthHeadersSync } from '@/utils/userId';
 import { useToast } from '@/contexts/ToastContext';
 
 interface ModelResult {
@@ -222,7 +222,7 @@ const AutoML: React.FC = () => {
 
             const response = await fetch('/api/v2/automl/predict', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeadersSync(),
                 body: JSON.stringify({
                     user_id: getUserIdSync(),
                     model_name: result.best_model.name,

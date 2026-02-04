@@ -15,7 +15,7 @@ import { Sliders, RefreshCw, Sparkles, AlertCircle, Activity, ChevronDown, HelpC
 import { useUserStore } from '@/store/userStore';
 import debounce from 'lodash/debounce';
 import ExplainModal from './ExplainModal';
-import { getUserIdSync } from '@/utils/userId';
+import { getUserIdSync, getAuthHeadersSync } from '@/utils/userId';
 
 interface SliderConfig {
     name: string;
@@ -59,7 +59,9 @@ const PlaygroundTab: React.FC<PlaygroundProps> = ({ onPredictionMade, mode = 'au
             try {
                 setLoading(true);
                 const userId = getUserIdSync();
-                const response = await fetch(`/api/v1/automl/playground/config?user_id=${userId}&mode=${mode}`);
+                const response = await fetch(`/api/v1/automl/playground/config?user_id=${userId}&mode=${mode}`, {
+                    headers: getAuthHeadersSync()
+                });
                 const data = await response.json();
 
                 if (response.ok) {

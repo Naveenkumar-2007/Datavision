@@ -34,7 +34,7 @@ import apiService from '@/services/api';
 import { useUserStore } from '@/store/userStore';
 import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
-import { getUserIdSync } from '@/utils/userId';
+import { getUserIdSync, getAuthHeadersSync } from '@/utils/userId';
 
 // Lazy load PlotlyChart for performance
 const PlotlyChart = React.lazy(() => import('@/components/PlotlyChart'));
@@ -1943,7 +1943,7 @@ const AnalystChat: React.FC = () => {
     try {
       const response = await fetch('/api/v1/exports/generate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeadersSync(),
         body: JSON.stringify({
           title: 'Business Analyst Report',
           content: content,
