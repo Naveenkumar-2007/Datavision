@@ -96,7 +96,7 @@ export default function Login() {
                     <Link to="/" className="inline-flex items-center gap-3 group">
                         <div className="relative">
                             <div className="absolute inset-0 rounded-full blur-lg opacity-50 group-hover:opacity-100 transition-opacity bg-green-500/30" />
-                            <img src="/logo.png" alt="DataVision" className="w-14 h-14 object-contain relative z-10 drop-shadow-lg" />
+                            <img src={isDark ? '/datavision-logo-dark.jpg' : '/datavision-logo-light.jpg'} alt="DataVision" className="w-14 h-14 object-contain relative z-10 drop-shadow-lg rounded-full" onError={(e) => { (e.target as HTMLImageElement).src = '/logo.svg'; }} />
                         </div>
                         <span className="text-3xl font-bold tracking-tight">
                             <span style={{ color: 'var(--text-primary)' }}>Data</span>

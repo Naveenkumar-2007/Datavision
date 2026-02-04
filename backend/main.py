@@ -216,6 +216,13 @@ async def serve_frontend():
     return {"error": "Frontend not found", "path": index_path}
 
 # Serve logo files
+@app.get("/logo.svg")
+async def serve_logo_svg():
+    logo_path = os.path.join(frontend_static_dir, "logo.svg")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/svg+xml")
+    return {"error": "logo.svg not found"}
+
 @app.get("/logo.png")
 async def serve_logo_png():
     logo_path = os.path.join(frontend_static_dir, "logo.png")
@@ -229,6 +236,27 @@ async def serve_logo_jpg():
     if os.path.exists(logo_path):
         return FileResponse(logo_path)
     return {"error": "logo.jpg not found"}
+
+@app.get("/datavision-logo.jpg")
+async def serve_datavision_logo():
+    logo_path = os.path.join(frontend_static_dir, "datavision-logo.jpg")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/jpeg")
+    return {"error": "datavision-logo.jpg not found"}
+
+@app.get("/datavision-logo-dark.jpg")
+async def serve_datavision_logo_dark():
+    logo_path = os.path.join(frontend_static_dir, "datavision-logo-dark.jpg")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/jpeg")
+    return {"error": "datavision-logo-dark.jpg not found"}
+
+@app.get("/datavision-logo-light.jpg")
+async def serve_datavision_logo_light():
+    logo_path = os.path.join(frontend_static_dir, "datavision-logo-light.jpg")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/jpeg")
+    return {"error": "datavision-logo-light.jpg not found"}
 
 @app.get("/logo_transparent.png")
 async def serve_logo_transparent():
