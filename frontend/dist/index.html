@@ -13,6 +13,20 @@
     rel="stylesheet">
   <title>Data Vision - Enterprise Analytics Platform</title>
   <script>
+    // Runtime environment - loaded synchronously from backend
+    window._env_ = {};
+    (function() {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', '/api/config', false); // Synchronous request
+      try {
+        xhr.send();
+        if (xhr.status === 200) {
+          window._env_ = JSON.parse(xhr.responseText);
+        }
+      } catch (e) { console.warn('Config load failed:', e); }
+    })();
+  </script>
+  <script>
     // theme-script.js - runs before body exists, so only modify documentElement
     (function () {
       try {
@@ -45,6 +59,7 @@
 
 <body>
   <div id="root"></div>
+
 </body>
 
 </html>
