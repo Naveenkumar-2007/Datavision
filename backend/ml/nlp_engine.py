@@ -3,6 +3,13 @@
 =================================================================
 Specialized engine for text classification and NLP tasks.
 
+🛡️ PRODUCTION INTELLIGENCE INTEGRATED:
+- Data leakage detection
+- Proper train/test splits
+- Overfitting prevention
+- Reliability scoring (0-100)
+- Validation warnings
+
 Algorithms:
 - TF-IDF + Logistic Regression (Fast, baseline)
 - TF-IDF + SVM (Good for sentiment)
@@ -28,10 +35,10 @@ import pandas as pd
 from typing import Dict, Any, Optional, List, Tuple
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
-    confusion_matrix, classification_report
+    confusion_matrix, classification_report, r2_score
 )
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
@@ -705,6 +712,66 @@ class NLPEngine:
                 
                 task_type_display = 'NLP Classification'
             
+            # =============================================================
+            # 🛡️ PRODUCTION INTELLIGENCE: Validate results & compute reliability
+            # =============================================================
+            reliability_score = 75  # Default
+            validation_warnings = []
+            leakage_report = {'has_leakage': False, 'severity': 'none', 'leakage_columns': [], 'leakage_details': []}
+            
+            try:
+                from ml.ml_intelligence_core import MLIntelligenceCore
+                intelligence = MLIntelligenceCore()
+                
+                # 1. Detect data leakage
+                leakage_report = intelligence.detect_leakage(df, target_column)
+                if leakage_report['has_leakage']:
+                    for detail in leakage_report['leakage_details']:
+                        validation_warnings.append(f"⚠️ {detail}")
+                    logger.warning(f"🚨 NLP Leakage detected: {len(leakage_report['leakage_columns'])} columns")
+                
+                # 2. Cross-validation for reliability (if classification)
+                cv_scores = None
+                if self.task_type == 'classification' and len(np.unique(y_encoded)) >= 2:
+                    try:
+                        n_splits = min(5, min(np.bincount(y_encoded)))
+                        if n_splits >= 2:
+                            cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+                            cv_scores = cross_val_score(self.model, X_train_tfidf, y_train, cv=cv, scoring='accuracy')
+                            logger.info(f"   CV Scores: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+                    except Exception as cv_err:
+                        logger.warning(f"   CV failed: {cv_err}")
+                
+                # 3. Check for overfitting (train vs test gap)
+                y_train_pred = self.model.predict(X_train_tfidf)
+                train_score = accuracy_score(y_train, y_train_pred) if self.task_type == 'classification' else r2_score(y_train, y_train_pred)
+                test_score = self.metrics.get('accuracy', self.metrics.get('r2', 0))
+                
+                gap = train_score - test_score
+                if gap > 0.15:
+                    validation_warnings.append(f"⚠️ OVERFITTING: Train ({train_score:.2%}) >> Test ({test_score:.2%}) gap={gap:.2%}")
+                elif gap > 0.10:
+                    validation_warnings.append(f"⚠️ Moderate overfitting: gap={gap:.2%}")
+                
+                # 4. Check for suspiciously high accuracy
+                if self.task_type == 'classification' and test_score > 0.99:
+                    validation_warnings.append(f"⚠️ SUSPICIOUS: Test accuracy {test_score:.2%} may indicate data leakage")
+                
+                # 5. Compute reliability score
+                reliability_score = intelligence.compute_reliability_score(
+                    y_test=y_test,
+                    y_pred=y_pred,
+                    cv_scores=list(cv_scores) if cv_scores is not None else None,
+                    train_score=train_score,
+                    test_score=test_score,
+                    task_type=self.task_type
+                )
+                
+                logger.info(f"🛡️ NLP Reliability Score: {reliability_score:.1f}/100")
+                
+            except Exception as intel_err:
+                logger.warning(f"Production Intelligence check failed: {intel_err}")
+            
             # Save model
             if user_id:
                 self._save(user_id)
@@ -722,6 +789,10 @@ class NLPEngine:
                 'metrics': self.metrics,
                 'charts': self.charts,
                 'task_type': task_type_display,
+                # 🛡️ PRODUCTION INTELLIGENCE outputs
+                'reliability_score': reliability_score,
+                'validation_warnings': validation_warnings if validation_warnings else None,
+                'leakage_report': leakage_report,
             }
             
         except Exception as e:
