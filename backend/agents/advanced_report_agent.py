@@ -104,24 +104,37 @@ class DataProfiler:
     def _detect_metric_columns(self, numeric_cols: List[str]) -> List[Dict]:
         """Identify and rank metric columns by importance."""
         metrics = []
+        
+        logger.info(f"📊 [REPORT DATA] Analyzing {len(numeric_cols)} numeric columns")
+        
         for col in numeric_cols:
             col_lower = col.lower()
             
-            # Calculate column statistics
-            total = self.df[col].sum()
-            mean = self.df[col].mean()
-            std = self.df[col].std()
-            non_null = self.df[col].notna().sum()
+            # Calculate column statistics from ACTUAL data
+            col_data = self.df[col].dropna()  # Clean data
+            if len(col_data) == 0:
+                logger.warning(f"⚠️ [REPORT DATA] Column '{col}' has no valid data, skipping")
+                continue
+                
+            total = col_data.sum()
+            mean = col_data.mean()
+            std = col_data.std() if len(col_data) > 1 else 0
+            min_val = col_data.min()
+            max_val = col_data.max()
+            non_null = len(col_data)
+            
+            # Log actual values for debugging
+            logger.info(f"📈 [REPORT DATA] {col}: total={total:.2f}, mean={mean:.2f}, min={min_val:.2f}, max={max_val:.2f}, rows={non_null}")
             
             # Determine metric type
-            metric_type = "unknown"
-            if any(x in col_lower for x in ['revenue', 'sales', 'amount', 'price', 'cost', 'total', 'value']):
+            metric_type = "numeric"
+            if any(x in col_lower for x in ['revenue', 'sales', 'amount', 'price', 'cost', 'total', 'value', 'income']):
                 metric_type = "monetary"
-            elif any(x in col_lower for x in ['count', 'quantity', 'qty', 'number', 'units']):
+            elif any(x in col_lower for x in ['count', 'quantity', 'qty', 'number', 'units', 'num']):
                 metric_type = "count"
             elif any(x in col_lower for x in ['rate', 'percent', 'ratio', 'pct', '%']):
                 metric_type = "rate"
-            elif any(x in col_lower for x in ['score', 'rating', 'rank']):
+            elif any(x in col_lower for x in ['score', 'rating', 'rank', 'grade']):
                 metric_type = "score"
             
             # Calculate importance score
@@ -130,7 +143,7 @@ class DataProfiler:
                 importance += 50
             elif metric_type == "count":
                 importance += 30
-            importance += min(20, total / 1000000)  # Higher totals = more important
+            importance += min(20, abs(total) / 1000000)  # Higher totals = more important
             importance += (non_null / len(self.df)) * 20  # Completeness bonus
             
             metrics.append({
@@ -139,12 +152,15 @@ class DataProfiler:
                 "total": float(total) if pd.notna(total) else 0,
                 "mean": float(mean) if pd.notna(mean) else 0,
                 "std": float(std) if pd.notna(std) else 0,
-                "min": float(self.df[col].min()) if pd.notna(self.df[col].min()) else 0,
-                "max": float(self.df[col].max()) if pd.notna(self.df[col].max()) else 0,
-                "importance": importance
+                "min": float(min_val) if pd.notna(min_val) else 0,
+                "max": float(max_val) if pd.notna(max_val) else 0,
+                "importance": importance,
+                "count": non_null
             })
         
-        return sorted(metrics, key=lambda x: x["importance"], reverse=True)
+        sorted_metrics = sorted(metrics, key=lambda x: x["importance"], reverse=True)
+        logger.info(f"✅ [REPORT DATA] Detected {len(sorted_metrics)} metrics, top: {[m['name'] for m in sorted_metrics[:3]]}")
+        return sorted_metrics
     
     def _detect_dimension_columns(self, categorical_cols: List[str]) -> List[Dict]:
         """Identify and characterize dimension columns."""
@@ -659,7 +675,7 @@ class AdvancedReportAgent:
     
     def _finalize_report(self, report: Dict, report_type: str) -> Dict[str, Any]:
         """Finalize report with metadata."""
-        return {
+        final_report = {
             "success": True,
             "report": {
                 **report,
@@ -674,6 +690,17 @@ class AdvancedReportAgent:
                 }
             }
         }
+        
+        # Log final report summary
+        try:
+            section_titles = [s.get("title", "Untitled") for s in report.get("sections", [])]
+            logger.info(f"✅ [REPORT GENERATED] Type: {report_type}")
+            logger.info(f"   Shape: {self.profile['shape']['rows']} rows x {self.profile['shape']['columns']} cols")
+            logger.info(f"   Sections ({len(section_titles)}): {section_titles}")
+        except Exception as e:
+            logger.error(f"Error logging report summary: {e}")
+            
+        return final_report
     
     # =========================================================================
     # SYNCHRONOUS REPORT GENERATORS (for reliable sync execution)
@@ -1942,22 +1969,55 @@ Key metrics analyzed include {', '.join([m['name'] for m in metrics[:3]])}. The 
     # =========================================================================
     
     def _create_histogram_data(self, column: str, bins: int = 10) -> List[Dict]:
-        """Create histogram data for a column."""
+        """Create histogram data for a column - VALIDATES data from DataFrame."""
+        if column not in self.df.columns:
+            logger.warning(f"⚠️ [CHART] Column '{column}' not in DataFrame")
+            return []
+            
         data = self.df[column].dropna()
+        if len(data) == 0:
+            logger.warning(f"⚠️ [CHART] No valid data for histogram: {column}")
+            return []
+            
         hist, bin_edges = np.histogram(data, bins=bins)
         
-        return [
+        result = [
             {"name": f"{bin_edges[i]:,.0f}-{bin_edges[i+1]:,.0f}", "value": int(hist[i])}
             for i in range(len(hist))
         ]
+        
+        logger.info(f"📊 [CHART] Created histogram for '{column}': {len(result)} bins, total count={sum(hist)}")
+        return result
     
     def _create_grouped_data(self, metric: str, dimension: str, top_n: int = 10) -> List[Dict]:
-        """Create grouped bar chart data."""
-        try:
-            grouped = self.df.groupby(dimension)[metric].mean().nlargest(top_n)
-            return [{"name": str(k)[:15], "value": round(v, 2)} for k, v in grouped.items()]
-        except:
+        """Create grouped bar chart data - VALIDATES grouping from DataFrame."""
+        if metric not in self.df.columns or dimension not in self.df.columns:
+            logger.warning(f"⚠️ [CHART] Missing columns for grouping: metric={metric}, dimension={dimension}")
             return []
+            
+        try:
+            # Group and aggregate with validation
+            grouped = self.df.groupby(dimension)[metric].agg(['mean', 'sum', 'count']).reset_index()
+            grouped = grouped.dropna(subset=['mean'])
+            
+            if len(grouped) == 0:
+                logger.warning(f"⚠️ [CHART] No valid groups for {metric} by {dimension}")
+                return []
+            
+            # Sort by mean and get top N
+            grouped = grouped.nlargest(top_n, 'mean')
+            
+            result = [
+                {"name": str(row[dimension])[:15], "value": round(row['mean'], 2)} 
+                for _, row in grouped.iterrows()
+            ]
+            
+            logger.info(f"📊 [CHART] Created grouped data: {metric} by {dimension}, {len(result)} groups")
+            return result
+        except Exception as e:
+            logger.error(f"❌ [CHART] Error creating grouped data: {e}")
+            return []
+
     
     def _create_crosstab_data(self, dim1: str, dim2: str, metric: Optional[str] = None) -> List[Dict]:
         """Create cross-tabulation data."""

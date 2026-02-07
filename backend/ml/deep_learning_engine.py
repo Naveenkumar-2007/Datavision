@@ -3,6 +3,13 @@
 ===============================================================
 Specialized engine for deep learning models on tabular and sequential data.
 
+🛡️ PRODUCTION INTELLIGENCE INTEGRATED:
+- Data leakage detection
+- Proper train/test splits with early stopping
+- Overfitting prevention via regularization
+- Reliability scoring (0-100)
+- Validation warnings
+
 Algorithms:
 - MLP (Multi-Layer Perceptron) - Tabular data
 - MLP with Dropout - Better generalization
@@ -649,6 +656,89 @@ class DeepLearningEngine:
             # Generate charts
             self.charts = self._generate_charts(y_test, y_pred, cm)
             
+            # =============================================================
+            # 🛡️ PRODUCTION INTELLIGENCE: Validate results & compute reliability
+            # =============================================================
+            reliability_score = 75  # Default
+            validation_warnings = []
+            leakage_report = {'has_leakage': False, 'severity': 'none', 'leakage_columns': [], 'leakage_details': []}
+            
+            try:
+                from ml.ml_intelligence_core import MLIntelligenceCore
+                intelligence = MLIntelligenceCore()
+                
+                # 1. Detect data leakage
+                leakage_report = intelligence.detect_leakage(df, target_column)
+                if leakage_report['has_leakage']:
+                    for detail in leakage_report['leakage_details']:
+                        validation_warnings.append(f"⚠️ {detail}")
+                    logger.warning(f"🚨 Deep Learning Leakage detected: {len(leakage_report['leakage_columns'])} columns")
+                
+                # 2. Cross-validation for reliability (if classification and enough samples)
+                cv_scores = None
+                from sklearn.model_selection import cross_val_score, StratifiedKFold, KFold
+                
+                if len(X_train) >= 100:  # Only do CV if enough samples
+                    try:
+                        if self.task_type == 'classification' and len(np.unique(y_train)) >= 2:
+                            n_splits = min(5, min(np.bincount(y_train)))
+                            if n_splits >= 2:
+                                # Use a simpler model for CV to save time
+                                from sklearn.neural_network import MLPClassifier
+                                cv_model = MLPClassifier(
+                                    hidden_layer_sizes=(32,), max_iter=50, 
+                                    random_state=42, early_stopping=True, verbose=False
+                                )
+                                cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+                                cv_scores = cross_val_score(cv_model, X_train, y_train, cv=cv, scoring='accuracy')
+                                logger.info(f"   CV Scores: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+                        else:
+                            # Regression CV
+                            from sklearn.neural_network import MLPRegressor
+                            cv_model = MLPRegressor(
+                                hidden_layer_sizes=(32,), max_iter=50,
+                                random_state=42, early_stopping=True, verbose=False
+                            )
+                            cv = KFold(n_splits=5, shuffle=True, random_state=42)
+                            cv_scores = cross_val_score(cv_model, X_train, y_train, cv=cv, scoring='r2')
+                            logger.info(f"   CV R² Scores: {cv_scores.mean():.4f} ± {cv_scores.std():.4f}")
+                    except Exception as cv_err:
+                        logger.warning(f"   CV failed: {cv_err}")
+                
+                # 3. Check for overfitting (train vs test gap)
+                y_train_pred = self.model.predict(X_train)
+                if self.task_type == 'classification':
+                    train_score = accuracy_score(y_train, y_train_pred)
+                    test_score = self.metrics.get('accuracy', 0)
+                else:
+                    train_score = r2_score(y_train, y_train_pred)
+                    test_score = self.metrics.get('r2', 0)
+                
+                gap = train_score - test_score
+                if gap > 0.15:
+                    validation_warnings.append(f"⚠️ OVERFITTING: Train ({train_score:.2%}) >> Test ({test_score:.2%}) gap={gap:.2%}")
+                elif gap > 0.10:
+                    validation_warnings.append(f"⚠️ Moderate overfitting: gap={gap:.2%}")
+                
+                # 4. Check for suspiciously high accuracy
+                if self.task_type == 'classification' and test_score > 0.99:
+                    validation_warnings.append(f"⚠️ SUSPICIOUS: Test accuracy {test_score:.2%} may indicate data leakage")
+                
+                # 5. Compute reliability score
+                reliability_score = intelligence.compute_reliability_score(
+                    y_test=y_test,
+                    y_pred=y_pred,
+                    cv_scores=list(cv_scores) if cv_scores is not None else None,
+                    train_score=train_score,
+                    test_score=test_score,
+                    task_type=self.task_type
+                )
+                
+                logger.info(f"🛡️ Deep Learning Reliability Score: {reliability_score:.1f}/100")
+                
+            except Exception as intel_err:
+                logger.warning(f"Production Intelligence check failed: {intel_err}")
+            
             # Save model
             if user_id:
                 self._save(user_id)
@@ -676,6 +766,10 @@ class DeepLearningEngine:
                 'metrics': self.metrics,
                 'charts': self.charts,
                 'task_type_display': 'Deep Learning Classification' if self.task_type == 'classification' else 'Deep Learning Regression',
+                # 🛡️ PRODUCTION INTELLIGENCE outputs
+                'reliability_score': reliability_score,
+                'validation_warnings': validation_warnings if validation_warnings else None,
+                'leakage_report': leakage_report,
                 # Additional info for frontend
                 'training_summary': {
                     'epochs': epochs_completed,

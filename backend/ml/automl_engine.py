@@ -234,6 +234,8 @@ class TrainResult:
     is_nlp_task: bool = False  # NEW: Flag for NLP tasks
     primary_text_col: Optional[str] = None  # NEW: Primary text column for NLP
     cleaned_file_path: Optional[str] = None # NEW: Path to cleaned dataset
+    reliability_score: Optional[float] = None  # 🛡️ PRODUCTION INTELLIGENCE: Model reliability (0-100)
+    validation_warnings: Optional[List[str]] = None  # 🛡️ Any warnings from production validation
 
 
 class ProductionMLEngine:
@@ -2925,33 +2927,62 @@ class ProductionMLEngine:
         logger.info(f"   Feature metadata: {len(self.feature_metadata)} features for Predict tab")
         # --------------------------------------------------------
 
-        X, y, feature_names = engineer.fit_transform(df_clean, target_col, self.task_type_simple)
-        self.feature_columns = feature_names
+        # 🛡️ CRITICAL FIX: SPLIT DATA BEFORE FEATURE ENGINEERING
+        # This prevents TARGET ENCODING LEAKAGE where test target values
+        # contaminate the categorical encoding
+        logger.info("\n📊 TRAIN-TEST SPLIT (BEFORE FEATURE ENGINEERING)")
+        logger.info("=" * 50)
+        logger.info("   🛡️ Splitting BEFORE feature engineering to prevent target leakage")
         
-        # 4. Encode target for classification
+        # 4. Encode target for classification FIRST (before split)
         if self.task_type_simple == 'classification':
             self.target_encoder = LabelEncoder()
-            y = self.target_encoder.fit_transform(y.astype(str))
+            df_clean[target_col] = self.target_encoder.fit_transform(df_clean[target_col].astype(str))
             self.n_classes = len(self.target_encoder.classes_)
         
         # 5. Split data (with fallback for rare classes)
         try:
-            stratify = y if self.task_type_simple == 'classification' else None
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42, stratify=stratify
+            stratify = df_clean[target_col] if self.task_type_simple == 'classification' else None
+            df_train, df_test = train_test_split(
+                df_clean, test_size=0.2, random_state=42, stratify=stratify
             )
         except ValueError as e:
             # Fallback: use regular split if stratified fails (rare classes)
             logger.warning(f"   ⚠️ Stratified split failed, using regular split: {str(e)[:50]}")
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
+            df_train, df_test = train_test_split(
+                df_clean, test_size=0.2, random_state=42
             )
-        logger.info(f"   Train: {len(X_train)} | Test: {len(X_test)}")
+        logger.info(f"   ✅ Train: {len(df_train)} rows | Test: {len(df_test)} rows")
         
-        # 6. Train all models
+        # 6. Feature engineering - FIT on TRAINING DATA ONLY
+        logger.info("\n🔧 FEATURE ENGINEERING (TRAIN DATA ONLY)")
+        logger.info("=" * 50)
+        logger.info("   🛡️ Target encoding uses ONLY training data - NO LEAKAGE")
+        
+        X_train, y_train, feature_names = engineer.fit_transform(df_train, target_col, self.task_type_simple)
+        self.feature_columns = feature_names
+        
+        # 7. Transform test data using FITTED transformers (no target leakage)
+        logger.info("\n🔮 TRANSFORMING TEST DATA")
+        X_test = engineer.transform(df_test, target_col)
+        y_test = df_test[target_col].values
+        if self.task_type_simple == 'regression':
+            y_test = y_test.astype(float)
+        else:
+            y_test = y_test.astype(int)  # Already encoded
+        
+        logger.info(f"   ✅ X_train: {X_train.shape} | X_test: {X_test.shape}")
+        
+        # 8. Train all models
         # Pass mode to trainer ('fast' = 8 models, 'ultra' = 20+ with ensembles)
-        # 🆕 Pass sample count for large dataset optimization
-        trainer = ProductionModelTrainer(self.task_type_simple, mode=mode, n_samples=len(X_train))
+        # 🆕 Pass sample count AND feature count for Production Intelligence optimization
+        n_features = X_train.shape[1] if len(X_train.shape) > 1 else 1
+        trainer = ProductionModelTrainer(
+            self.task_type_simple, 
+            mode=mode, 
+            n_samples=len(X_train),
+            n_features=n_features  # 🛡️ PRODUCTION INTELLIGENCE
+        )
         logger.info(f"🎮 Training Mode: {mode.upper()}")
         
         # 🆕 Log large dataset detection
@@ -2964,7 +2995,7 @@ class ProductionMLEngine:
         
         results = trainer.train_all(X_train, y_train, X_test, y_test, check_cancellation=check_stop)
         
-        # 7. Build ensemble
+        # 9. Build ensemble
         ensemble = trainer.build_ensemble(X_train, y_train, X_test, y_test, top_n=3)
         
         # 8. Neural Architecture Search (Ultra Mode Only)
@@ -3160,6 +3191,15 @@ class ProductionMLEngine:
         except Exception as save_err:
             logger.warning(f"⚠️ Model save error: {save_err}")
         
+        # 🛡️ PRODUCTION INTELLIGENCE: Get reliability score and warnings
+        reliability_score = 75  # Default
+        validation_warnings = []
+        if best_result and 'reliability_score' in best_result:
+            reliability_score = best_result.get('reliability_score', 75)
+        for r in trainer.results:
+            if r.get('warning'):
+                validation_warnings.append(f"{r.get('name', 'Model')}: {r.get('warning')}")
+        
         return TrainResult(
             success=True,
             task_type=self.task_type,
@@ -3180,7 +3220,9 @@ class ProductionMLEngine:
             charts=charts,
             is_nlp_task=False,
             primary_text_col=None,
-            cleaned_file_path=cleaned_file_path
+            cleaned_file_path=cleaned_file_path,
+            reliability_score=reliability_score,
+            validation_warnings=validation_warnings if validation_warnings else None
         )
     
     def production_train_selected(
@@ -3370,7 +3412,9 @@ class ProductionMLEngine:
                 charts={},
                 is_nlp_task=False,
                 primary_text_col=None,
-                cleaned_file_path=None
+                cleaned_file_path=None,
+                reliability_score=0,  # 🛡️ Failed training = 0 reliability
+                validation_warnings=['Training failed - no model could be trained']
             )
         
         # Store results
@@ -3472,6 +3516,16 @@ class ProductionMLEngine:
         except Exception as e:
             logger.warning(f"Model save error: {e}")
         
+        # 🛡️ PRODUCTION INTELLIGENCE: Compute reliability from results
+        reliability_score = 75  # Default
+        validation_warnings = []
+        for r in results:
+            if r.get('reliability_score'):
+                if r.get('name') == best_name:
+                    reliability_score = r.get('reliability_score')
+            if r.get('warning'):
+                validation_warnings.append(f"{r.get('name', 'Model')}: {r.get('warning')}")
+        
         return TrainResult(
             success=True,
             task_type=self.task_type,
@@ -3491,7 +3545,9 @@ class ProductionMLEngine:
             charts=charts,
             is_nlp_task=False,
             primary_text_col=None,
-            cleaned_file_path=cleaned_file_path
+            cleaned_file_path=cleaned_file_path,
+            reliability_score=reliability_score,
+            validation_warnings=validation_warnings if validation_warnings else None
         )
     
     async def train_with_test_set(
@@ -3665,6 +3721,15 @@ class ProductionMLEngine:
         except Exception as save_err:
             logger.warning(f"⚠️ Model save error: {save_err}")
         
+        # 🛡️ PRODUCTION INTELLIGENCE: Compute reliability
+        reliability_score = 75
+        validation_warnings = []
+        for r in results:
+            if r.get('name') == best_name and r.get('reliability_score'):
+                reliability_score = r.get('reliability_score')
+            if r.get('warning'):
+                validation_warnings.append(f"{r.get('name', 'Model')}: {r.get('warning')}")
+        
         return TrainResult(
             success=True,
             task_type=self.task_type,
@@ -3683,7 +3748,9 @@ class ProductionMLEngine:
             processing_time=elapsed,
             charts=charts,
             is_nlp_task=self.is_nlp_task,
-            primary_text_col=self.primary_text_col
+            primary_text_col=self.primary_text_col,
+            reliability_score=reliability_score,
+            validation_warnings=validation_warnings if validation_warnings else None
         )
     
     async def train(self, df: pd.DataFrame, target_col: Optional[str] = None, user_id: str = "default") -> 'TrainResult':
@@ -4010,6 +4077,15 @@ class ProductionMLEngine:
         except Exception as save_err:
             logger.warning(f"⚠️ Model save error: {save_err}")
         
+        # 🛡️ PRODUCTION INTELLIGENCE: Compute reliability
+        reliability_score = 75
+        validation_warnings = []
+        for r in results:
+            if r.get('name') == best_name and r.get('reliability_score'):
+                reliability_score = r.get('reliability_score')
+            if r.get('warning'):
+                validation_warnings.append(f"{r.get('name', 'Model')}: {r.get('warning')}")
+        
         return TrainResult(
             success=True,
             task_type=self.task_type,
@@ -4028,7 +4104,9 @@ class ProductionMLEngine:
             processing_time=processing_time,
             charts=charts,
             is_nlp_task=getattr(self, 'is_nlp_task', False),
-            primary_text_col=getattr(self, 'primary_text_col', None)
+            primary_text_col=getattr(self, 'primary_text_col', None),
+            reliability_score=reliability_score,
+            validation_warnings=validation_warnings if validation_warnings else None
         )
     
     def _get_importance(self, model) -> List[Dict]:
@@ -4667,6 +4745,71 @@ class ProductionMLEngine:
         except Exception as e:
             logger.error(f"Chart generation error: {e}")
             return {'error': str(e)}
+    
+    def god_level_train(
+        self, 
+        df: pd.DataFrame, 
+        target_col: str = None,
+        user_id: str = "default",
+        mode: str = "ultra",
+        algorithm: str = None
+    ) -> TrainResult:
+        """
+        🔱 GOD-LEVEL AUTOML TRAINING
+        ============================
+        
+        Uses the advanced GOD-Level AutoML engine for:
+        - Complete data intelligence
+        - Advanced leakage detection
+        - Intelligent model selection
+        - Safe training with overfitting protection
+        - Model reliability scoring
+        
+        Returns a TrainResult for compatibility with existing UI.
+        """
+        try:
+            from ml.god_level_automl import god_level_train, GodLevelResult
+            
+            logger.info("🔱 Running GOD-Level AutoML Training...")
+            
+            # Run GOD-Level training
+            result = god_level_train(df, target_col, user_id, mode, algorithm)
+            
+            if not result.success:
+                raise ValueError(result.warnings[0] if result.warnings else "GOD-Level training failed")
+            
+            # Convert to TrainResult for compatibility
+            train_result = TrainResult(
+                success=True,
+                task_type=result.problem_type,
+                target_column=result.target_column,
+                feature_columns=result.feature_columns,
+                best_model_name=result.best_model_name,
+                best_model_metrics=result.best_model_metrics,
+                leaderboard=result.leaderboard,
+                feature_importance=result.feature_importance,
+                y_test=result.y_test,
+                y_pred=result.y_pred,
+                y_proba=result.y_proba,
+                feature_metadata=result.feature_metadata,
+                n_rows=result.n_rows,
+                n_cols=result.n_cols,
+                processing_time=result.processing_time,
+                charts=result.charts,
+                is_nlp_task=False,
+                primary_text_col=None
+            )
+            
+            return train_result
+            
+        except ImportError:
+            logger.warning("GOD-Level AutoML not available, falling back to production_train")
+            return self.production_train(df, target_col, user_id, mode)
+        except Exception as e:
+            logger.error(f"GOD-Level training failed: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 
 # Global instance

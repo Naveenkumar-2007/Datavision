@@ -1,6 +1,14 @@
 """
 🎯 Clustering API - Unsupervised Machine Learning
+=================================================
 Provides K-Means, DBSCAN, GMM, and Spectral Clustering algorithms
+
+🛡️ PRODUCTION INTELLIGENCE INTEGRATED:
+- Data quality assessment
+- Feature validation
+- Missing data handling
+- Reliability scoring for cluster quality
+- Validation warnings
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
@@ -109,6 +117,77 @@ async def perform_clustering(
         # Prepare results
         cluster_counts = pd.Series(labels).value_counts().to_dict()
         
+        # =============================================================
+        # 🛡️ PRODUCTION INTELLIGENCE: Data quality & reliability
+        # =============================================================
+        reliability_score = 75  # Default
+        validation_warnings = []
+        data_quality = {}
+        
+        try:
+            # 1. Check data quality
+            n_samples = len(df)
+            n_features = X.shape[1]
+            missing_ratio = df.isna().sum().sum() / df.size if df.size > 0 else 0
+            duplicate_ratio = df.duplicated().sum() / n_samples if n_samples > 0 else 0
+            
+            data_quality = {
+                'n_samples': n_samples,
+                'n_features': n_features,
+                'missing_ratio': float(missing_ratio),
+                'duplicate_ratio': float(duplicate_ratio),
+                'size_category': 'small' if n_samples < 500 else 'medium' if n_samples < 5000 else 'large'
+            }
+            
+            # Data quality warnings
+            if missing_ratio > 0.2:
+                validation_warnings.append(f"⚠️ High missing data: {missing_ratio:.1%} - may affect cluster quality")
+            if duplicate_ratio > 0.1:
+                validation_warnings.append(f"⚠️ Many duplicates: {duplicate_ratio:.1%} - consider removing")
+            if n_samples < 100:
+                validation_warnings.append(f"⚠️ Small dataset ({n_samples} samples) - clusters may be unreliable")
+            if n_features > 50:
+                validation_warnings.append(f"⚠️ High dimensionality ({n_features} features) - consider dimensionality reduction")
+            
+            # 2. Compute reliability score for clustering
+            # Based on silhouette score, cluster separation, and sample size
+            silhouette = metrics.get('silhouette_score', 0)
+            calinski = metrics.get('calinski_harabasz_score', 0)
+            davies = metrics.get('davies_bouldin_score', float('inf'))
+            
+            # Silhouette contributes 40 points (scaled from -1 to 1)
+            silhouette_points = max(0, (silhouette + 1) / 2 * 40)
+            
+            # Calinski-Harabasz contributes 25 points (log-scaled)
+            import math
+            calinski_points = min(25, math.log(calinski + 1) * 3) if calinski > 0 else 0
+            
+            # Davies-Bouldin contributes 20 points (lower is better)
+            davies_points = max(0, 20 - davies * 5) if davies < float('inf') else 10
+            
+            # Sample size contributes 15 points
+            if n_samples >= 1000:
+                size_points = 15
+            elif n_samples >= 500:
+                size_points = 12
+            elif n_samples >= 100:
+                size_points = 8
+            else:
+                size_points = 5
+            
+            reliability_score = min(100, silhouette_points + calinski_points + davies_points + size_points)
+            
+            # Add cluster quality assessment
+            if silhouette < 0.2:
+                validation_warnings.append(f"⚠️ Low silhouette score ({silhouette:.3f}) - clusters may overlap significantly")
+            if silhouette > 0.7:
+                logger.info(f"✅ Excellent cluster separation (silhouette={silhouette:.3f})")
+            
+            logger.info(f"🛡️ Clustering Reliability Score: {reliability_score:.1f}/100")
+            
+        except Exception as intel_err:
+            logger.warning(f"Production Intelligence check failed: {intel_err}")
+        
         result = {
             "algorithm": algorithm,
             "n_clusters": n_clusters if algorithm != "dbscan" else len(set(labels)) - (1 if -1 in labels else 0),
@@ -122,7 +201,11 @@ async def perform_clustering(
                 "x": X_pca[:, 0].tolist(),
                 "y": X_pca[:, 1].tolist(),
                 "explained_variance": pca.explained_variance_ratio_.tolist()
-            }
+            },
+            # 🛡️ PRODUCTION INTELLIGENCE outputs
+            "reliability_score": reliability_score,
+            "validation_warnings": validation_warnings if validation_warnings else None,
+            "data_quality": data_quality,
         }
         
         # Add cluster centers if available

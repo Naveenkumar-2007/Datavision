@@ -92,20 +92,18 @@ class DynamicReportGenerator:
         self._load_ml_training_data()
     
     def _load_user_data(self):
-        """Load ALL user's uploaded data files (same logic as schema_api)."""
+        """Load user's RAW data files directly (preserving all columns)."""
         try:
-            # Use get_user_paths for consistent path resolution (same as analytics endpoints)
             from utils.paths import get_user_paths
             from pathlib import Path
+            
+            logger.info(f"📂 [REPORT] Loading data for user: {self.user_id}")
             
             paths = get_user_paths(self.user_id)
             uploads_dir = paths.get("files")
             
-            logger.info(f"📂 [REPORT] Looking for files in: {uploads_dir}")
-            
-            all_data = []
-            
             if uploads_dir and Path(uploads_dir).exists():
+                all_data = []
                 for file_path in Path(uploads_dir).glob("*"):
                     if file_path.suffix.lower() in ['.csv', '.xlsx', '.xls']:
                         try:
@@ -114,54 +112,36 @@ class DynamicReportGenerator:
                             else:
                                 df = pd.read_excel(file_path)
                             all_data.append(df)
-                            logger.info(f"📄 [REPORT] Loaded {len(df)} rows from {file_path.name}")
+                            logger.info(f"📄 [REPORT] Loaded {len(df)} rows x {len(df.columns)} cols from {file_path.name}")
                         except Exception as e:
                             logger.error(f"Error loading {file_path}: {e}")
-            
-            if all_data:
-                # Combine all files (same as schema_api)
-                self.df = pd.concat(all_data, ignore_index=True)
                 
-                # Sample if too large
-                if len(self.df) > self.MAX_ROWS:
-                    self.df = self.df.sample(n=self.MAX_ROWS, random_state=42)
-                
-                logger.info(f"✅ [REPORT] Loaded TOTAL: {len(self.df)} rows, {len(self.df.columns)} cols from {len(all_data)} files")
-                return
-            
-            # Fallback: search all storage locations
-            logger.warning(f"⚠️ [REPORT] Primary path not found, searching all locations...")
-            search_paths = [
-                f"storage/users/{self.user_id}/files/*.csv",
-                f"storage/users/{self.user_id}/**/*.csv",
-                "storage/users/*/files/*.csv",
-            ]
-            
-            for pattern in search_paths:
-                found = glob.glob(pattern, recursive=True)
-                if found:
-                    all_data = []
-                    for f in found:
-                        try:
-                            df = pd.read_csv(f, low_memory=False)
-                            all_data.append(df)
-                        except:
-                            pass
+                if all_data:
+                    # Use the LARGEST file (most complete dataset) if multiple files
+                    if len(all_data) > 1:
+                        # Sort by number of rows * columns (data richness)
+                        all_data.sort(key=lambda x: len(x) * len(x.columns), reverse=True)
+                        self.df = all_data[0]  # Use richest file
+                        logger.info(f"⭐ [REPORT] Selected largest file with {len(self.df)} rows, {len(self.df.columns)} cols")
+                    else:
+                        self.df = all_data[0]
                     
-                    if all_data:
-                        self.df = pd.concat(all_data, ignore_index=True)
-                        
-                        if len(self.df) > self.MAX_ROWS:
-                            self.df = self.df.sample(n=self.MAX_ROWS, random_state=42)
-                        
-                        logger.info(f"✅ [REPORT] Fallback loaded {len(self.df)} rows from {len(all_data)} files")
-                        return
+                    # Sample if too large
+                    if len(self.df) > self.MAX_ROWS:
+                        logger.info(f"⚠️ [REPORT] Dataset too large ({len(self.df)} rows), sampling to {self.MAX_ROWS}")
+                        self.df = self.df.sample(n=self.MAX_ROWS, random_state=42)
+                    
+                    logger.info(f"✅ [REPORT] Final data: {len(self.df)} rows, {len(self.df.columns)} cols")
+                    logger.info(f"   Columns: {list(self.df.columns)[:15]}")
+                    return
             
-            logger.warning(f"❌ [REPORT] No CSV files found for user {self.user_id}")
+            logger.error(f"❌ [REPORT] No data files found for user {self.user_id}")
                 
         except Exception as e:
             logger.error(f"Failed to load user data: {e}")
-    
+            import traceback
+            traceback.print_exc()
+
     def _load_ml_model(self):
         """Load user's trained AutoML model info from multiple sources."""
         try:
@@ -322,8 +302,14 @@ class DynamicReportGenerator:
     
     def _generate_with_advanced_agent(self, report_type: str) -> Dict[str, Any]:
         """Generate report using the Advanced Report Agent (SYNC version)."""
-        logger.info(f"🚀 Using Advanced Report Agent (SYNC) for {report_type} report")
+        logger.info(f"🚀 [REPORT] Starting Advanced Report Agent for '{report_type}'")
+        logger.info(f"   Data Shape: {self.df.shape[0]} rows x {self.df.shape[1]} cols")
         
+        # Validate data before passing
+        text_cols = self.df.select_dtypes(include=['object']).columns
+        if len(text_cols) == 0 and len(self.df.columns) > 0:
+            logger.warning("⚠️ [REPORT] No text columns found - might be all numeric/empty")
+
         # Get LLM client if available
         llm_client = None
         if LLM_AVAILABLE:

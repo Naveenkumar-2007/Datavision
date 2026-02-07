@@ -99,6 +99,19 @@ try:
 except ImportError:
     HAS_OPTUNA = False
 
+# Import ML Intelligence Core - Production-grade standards enforcement
+try:
+    from ml.ml_intelligence_core import (
+        MLIntelligenceCore,
+        apply_production_intelligence,
+        DataProfile,
+        DataQualityLevel
+    )
+    HAS_INTELLIGENCE = True
+except ImportError:
+    HAS_INTELLIGENCE = False
+    print("⚠️ ML Intelligence Core not available")
+
 # Import advanced techniques
 try:
     from ml.advanced_techniques import (
@@ -325,12 +338,72 @@ class ProductionDataCleaner:
         return df
     
     def clean(self, df: pd.DataFrame, target_col: str = None) -> pd.DataFrame:
-        """Main cleaning pipeline - WORLD-CLASS implementation"""
-        print("🧹 PHASE 1: DATA CLEANING [WORLD-CLASS]")
+        """Main cleaning pipeline - WORLD-CLASS implementation with Production Intelligence"""
+        print("🧹 PHASE 1: DATA CLEANING [WORLD-CLASS + PRODUCTION INTELLIGENCE]")
         print("=" * 50)
         
         original_shape = df.shape
         df = df.copy()
+        
+        # 🛡️ STEP 0: Remove obviously useless columns (IDs, URLs, indices)
+        useless_patterns = [
+            'unnamed', 'index', '_id', 'id_', 'guid', 'uuid', 'url', 'link', 'href',
+            'path', 'filepath', 'file_path', 'image_url', 'img_url', 'photo_url'
+        ]
+        useless_cols_to_drop = []
+        for col in df.columns:
+            col_lower = col.lower().strip()
+            # Check for useless patterns
+            if any(pat in col_lower for pat in useless_patterns):
+                useless_cols_to_drop.append(col)
+            # Check for high-cardinality string columns that are likely IDs/URLs
+            elif df[col].dtype == 'object':
+                unique_ratio = df[col].nunique() / len(df) if len(df) > 0 else 0
+                if unique_ratio > 0.9:  # 90%+ unique = probably ID or URL
+                    # Check if it looks like URL
+                    sample_vals = df[col].dropna().head(5).astype(str)
+                    if any('http' in str(v).lower() or 'www.' in str(v).lower() for v in sample_vals):
+                        useless_cols_to_drop.append(col)
+                    # Check if it's mostly numbers (like ID)
+                    elif sample_vals.str.match(r'^\d+$').all():
+                        useless_cols_to_drop.append(col)
+        
+        # Don't drop target column
+        if target_col and target_col in useless_cols_to_drop:
+            useless_cols_to_drop.remove(target_col)
+        
+        if useless_cols_to_drop:
+            print(f"   🗑️ Removing {len(useless_cols_to_drop)} useless columns (IDs/URLs/indices):")
+            for col in useless_cols_to_drop:
+                print(f"      ❌ {col}")
+            df = df.drop(columns=useless_cols_to_drop, errors='ignore')
+            self.columns_removed.extend(useless_cols_to_drop)
+        
+        # 🛡️ PRODUCTION INTELLIGENCE: Data Leakage Detection
+        # Automatically detect and remove features that would cause unrealistic accuracy
+        if HAS_INTELLIGENCE and target_col and target_col in df.columns:
+            try:
+                from .ml_intelligence_core import MLIntelligenceCore
+                intelligence = MLIntelligenceCore()
+                
+                # detect_leakage expects (df, target_column) - pass the full DataFrame
+                leakage_report = intelligence.detect_leakage(df, target_col)
+                
+                if leakage_report.get('has_leakage', False):
+                    leaky_columns = leakage_report.get('leakage_columns', [])
+                    if leaky_columns:
+                        print(f"   🚨 LEAKAGE DETECTED: {len(leaky_columns)} columns have data leakage!")
+                        for col in leaky_columns:
+                            reason = next((d for d in leakage_report.get('leakage_details', []) if col in d), 'correlation leakage')
+                            print(f"      ⚠️ Removing: {col} - {reason[:50]}")
+                        df = df.drop(columns=[c for c in leaky_columns if c in df.columns], errors='ignore')
+                        self.columns_removed.extend(leaky_columns)
+                        print(f"   ✅ Removed {len(leaky_columns)} leaky features to prevent fake accuracy")
+                else:
+                    print(f"   ✅ No data leakage detected - data is clean")
+                        
+            except Exception as e:
+                print(f"   ⚠️ Leakage detection error: {str(e)[:80]}")
         
         # 1. Remove exact duplicates
         n_dups = df.duplicated().sum()
@@ -753,11 +826,33 @@ class ProductionFeatureEngineer:
                 series = df[col].astype(str)
                 nunique = series.nunique()
                 avg_len = series.str.len().mean()
+                unique_ratio = nunique / len(df) if len(df) > 0 else 0
                 
-                # Text: long strings or high cardinality
-                if avg_len > 30 or nunique > 100:
+                # Check if it looks like a date column (NOT text!)
+                col_lower = col.lower()
+                is_date_like = any(kw in col_lower for kw in ['date', 'time', 'year', 'month', 'day', 'created', 'updated'])
+                if is_date_like:
+                    # Try to parse as datetime
+                    try:
+                        parsed = pd.to_datetime(df[col], errors='coerce')
+                        if parsed.notna().sum() > len(df) * 0.5:
+                            datetime_cols.append(col)
+                            continue
+                    except:
+                        pass
+                
+                # Text: ONLY long strings (avg > 50 chars) that are likely real text
+                # NOT names, IDs, or categorical with many unique values
+                is_real_text = (
+                    avg_len > 50 and  # Long strings
+                    unique_ratio > 0.3 and  # Many unique values
+                    any(word in col_lower for word in ['description', 'text', 'comment', 'review', 'content', 'body', 'message'])
+                )
+                
+                if is_real_text:
                     text_cols.append(col)
                 else:
+                    # Everything else is categorical (names, genres, etc.)
                     categorical_cols.append(col)
             except Exception:
                 # If any error, treat as categorical
@@ -857,42 +952,25 @@ class ProductionFeatureEngineer:
                             feature_names.extend(dummies.columns.tolist())
                             self.transformers[f'{col}_onehot'] = dummies.columns.tolist()
                             print(f"   ✅ Categorical '{col}': {dummies.shape[1]} one-hot features")
-                elif task_type == 'regression' and nunique <= 100:
-                    # 🌟 TARGET ENCODING for regression (encodes as mean of target)
-                    # This is MUCH more powerful than label encoding!
-                    try:
-                        target_means = {}
-                        global_mean = float(y.mean()) if hasattr(y, 'mean') else float(np.mean(y))
-                        
-                        for cat in series.unique():
-                            mask = series == cat
-                            if mask.sum() >= 5:  # Only if enough samples
-                                target_means[cat] = float(y[mask].mean())
-                            else:
-                                target_means[cat] = global_mean
-                        
-                        # Apply encoding with smoothing
-                        encoded = series.map(target_means).fillna(global_mean).values.reshape(-1, 1)
-                        feature_parts.append(encoded.astype(float))
-                        feature_names.append(f"{col}_target_encoded")
-                        self.transformers[f'{col}_target_enc'] = target_means
-                        print(f"   ✅ Categorical '{col}': TARGET ENCODED ({nunique} categories)")
-                    except Exception as te:
-                        # Fallback to label encoding
-                        le = LabelEncoder()
-                        encoded = le.fit_transform(series)
-                        feature_parts.append(encoded.reshape(-1, 1).astype(float))
-                        feature_names.append(f"{col}_encoded")
-                        self.encoders[col] = le
-                        print(f"   ✅ Categorical '{col}': label encoded (fallback)")
                 else:
-                    # Label encoding for very high cardinality (>100 unique values)
+                    # 🛡️ SIMPLE LABEL ENCODING for all high-cardinality categoricals
+                    # TARGET ENCODING WAS REMOVED - It can cause subtle leakage issues
+                    # and doesn't work well when train/test distributions differ
                     le = LabelEncoder()
                     encoded = le.fit_transform(series)
                     feature_parts.append(encoded.reshape(-1, 1).astype(float))
                     feature_names.append(f"{col}_encoded")
                     self.encoders[col] = le
-                    print(f"   ✅ Categorical '{col}': label encoded ({nunique} categories)")
+                    
+                    # 🌟 NEW: FREQUENCY ENCODING - How common is each category?
+                    # This captures "popularity" of categories which often correlates with outcomes
+                    freq_map = series.value_counts(normalize=True).to_dict()
+                    freq_encoded = series.map(freq_map).values.astype(float)
+                    feature_parts.append(freq_encoded.reshape(-1, 1))
+                    feature_names.append(f"{col}_freq")
+                    self.transformers[f'{col}_freq_map'] = freq_map
+                    
+                    print(f"   ✅ Categorical '{col}': label + frequency encoded ({nunique} categories)")
             
             except Exception as e:
                 # CRITICAL FALLBACK: Always encode the column somehow
@@ -1011,6 +1089,87 @@ class ProductionFeatureEngineer:
             except Exception as e:
                 print(f"   ⚠️ Datetime '{col}' error: {str(e)[:30]}")
         
+        # ===== 🌟 NEW: CATEGORICAL INTERACTION FEATURES =====
+        # Create combinations of categorical columns to capture joint effects
+        # e.g., "Male+Clothing" vs "Female+Electronics" patterns
+        if len(categorical_cols) >= 2 and len(categorical_cols) <= 15:
+            try:
+                interaction_count = 0
+                # Select top important categoricals (low cardinality first)
+                cat_cardinality = [(col, df[col].nunique()) for col in categorical_cols]
+                cat_cardinality.sort(key=lambda x: x[1])  # Sort by cardinality
+                top_cats = [c[0] for c in cat_cardinality[:6]]  # Top 6 low-cardinality
+                
+                interaction_encoders = {}
+                for i in range(len(top_cats)):
+                    for j in range(i+1, len(top_cats)):
+                        col1, col2 = top_cats[i], top_cats[j]
+                        # Create combined column
+                        combined = df[col1].fillna('_NA_').astype(str) + "_X_" + df[col2].fillna('_NA_').astype(str)
+                        
+                        # Only if not too many unique combinations
+                        if combined.nunique() <= 100:
+                            le = LabelEncoder()
+                            encoded = le.fit_transform(combined)
+                            feature_parts.append(encoded.reshape(-1, 1).astype(float))
+                            feature_names.append(f"{col1}_X_{col2}")
+                            interaction_encoders[f"{col1}_X_{col2}"] = (col1, col2, le)
+                            interaction_count += 1
+                            
+                            # Frequency of the combination
+                            freq_map = combined.value_counts(normalize=True).to_dict()
+                            freq_encoded = combined.map(freq_map).values.astype(float)
+                            feature_parts.append(freq_encoded.reshape(-1, 1))
+                            feature_names.append(f"{col1}_X_{col2}_freq")
+                            interaction_encoders[f"{col1}_X_{col2}_freq_map"] = freq_map
+                            interaction_count += 1
+                
+                if interaction_count > 0:
+                    self.transformers['cat_interactions'] = interaction_encoders
+                    print(f"   ✅ Categorical interactions: {interaction_count} features")
+            except Exception as e:
+                print(f"   ⚠️ Categorical interactions error: {str(e)[:50]}")
+        
+        # ===== 🌟 NEW: NUMERIC-CATEGORICAL AGGREGATES =====
+        # Group statistics: mean, std of numeric features per category
+        if len(numeric_cols) >= 1 and len(categorical_cols) >= 1:
+            try:
+                agg_count = 0
+                agg_maps = {}
+                
+                # Use top 3 numeric and top 3 categorical columns
+                top_nums = numeric_cols[:3]
+                cat_cardinality = [(col, df[col].nunique()) for col in categorical_cols]
+                cat_cardinality.sort(key=lambda x: x[1])
+                top_cats = [c[0] for c in cat_cardinality[:3] if c[1] <= 50]  # Low cardinality
+                
+                for num_col in top_nums:
+                    for cat_col in top_cats:
+                        try:
+                            # Group mean
+                            group_means = df.groupby(cat_col)[num_col].mean()
+                            mean_map = group_means.to_dict()
+                            cat_series = df[cat_col].fillna('_NA_').astype(str)
+                            agg_values = cat_series.map(mean_map).fillna(df[num_col].mean()).values.astype(float)
+                            feature_parts.append(agg_values.reshape(-1, 1))
+                            feature_names.append(f"{num_col}_by_{cat_col}_mean")
+                            agg_maps[f"{num_col}_by_{cat_col}_mean"] = mean_map
+                            agg_count += 1
+                            
+                            # Deviation from group mean
+                            deviation = df[num_col].values - agg_values
+                            feature_parts.append(deviation.reshape(-1, 1))
+                            feature_names.append(f"{num_col}_by_{cat_col}_dev")
+                            agg_count += 1
+                        except:
+                            pass
+                
+                if agg_count > 0:
+                    self.transformers['num_cat_aggs'] = agg_maps
+                    print(f"   ✅ Numeric-Categorical aggregates: {agg_count} features")
+            except Exception as e:
+                print(f"   ⚠️ Aggregates error: {str(e)[:50]}")
+        
         # ===== COMBINE ALL FEATURES =====
         if not feature_parts:
             raise ValueError("No valid features after processing!")
@@ -1094,29 +1253,27 @@ class ProductionFeatureEngineer:
             print(f"   ⚠️ VarianceThreshold skipped: {e}")
             self.selected_feature_indices = None
         
-        # PCA for high-dimensional datasets (100+ features)
-        # Reduces dimensions to prevent overfitting and improve training speed
-        PCA_THRESHOLD = 100  # Apply PCA when features exceed this
-        PCA_TARGET_COMPONENTS = 50  # Target number of components
+        # 🚫 DISABLED PCA - It destroys feature relationships and hurts model performance
+        # PCA converts meaningful features (popularity, duration, etc.) into abstract components
+        # that lose their predictive power. Simple scaling + tree models handle high dimensions well.
+        # 
+        # Only use PCA for VERY high dimensional data (1000+ features) like image embeddings
+        PCA_THRESHOLD = 1000  # RAISED: Only for truly massive feature sets
+        PCA_TARGET_COMPONENTS = 100  # Keep more components if used
         
         if X.shape[1] > PCA_THRESHOLD:
             try:
-                # Use min of target components or 95% variance explained
                 n_components = min(PCA_TARGET_COMPONENTS, X.shape[1] - 1, X.shape[0] - 1)
-                
                 pca = PCA(n_components=n_components, random_state=42)
                 X = pca.fit_transform(X)
-                
-                # Update feature names to PCA components
                 feature_names = [f'pca_{i}' for i in range(n_components)]
-                
-                # Save PCA transformer for prediction-time use
                 self.transformers['pca'] = pca
-                
                 variance_explained = sum(pca.explained_variance_ratio_) * 100
                 print(f"   ✅ PCA: {pca.n_features_in_} → {n_components} features ({variance_explained:.1f}% variance)")
             except Exception as e:
                 print(f"   ⚠️ PCA skipped: {e}")
+        else:
+            print(f"   ℹ️ PCA skipped: {X.shape[1]} features (< {PCA_THRESHOLD} threshold)")
         
         print(f"   ✅ Final: {X.shape[1]} features (all numeric)")
         
@@ -1174,9 +1331,17 @@ class ProductionFeatureEngineer:
                 numeric_scaled = np.nan_to_num(numeric_scaled, nan=0.0, posinf=0.0, neginf=0.0)
                 feature_parts.append(numeric_scaled)
                 
-                # Interactions
-                if len(numeric_cols) >= 2 and len(numeric_cols) <= 8:
+                # 🛡️ FIX: Generate SAME polynomial features as fit_transform
+                # Must match exactly: squared terms + interaction terms
+                if len(numeric_cols) >= 2 and len(numeric_cols) <= 10:
                     interactions = []
+                    
+                    # Add squared terms for top 4 features (SAME as fit_transform)
+                    for i in range(min(len(numeric_cols), 4)):
+                        squared = numeric_scaled[:, i] ** 2
+                        interactions.append(squared.reshape(-1, 1))
+                    
+                    # Add interaction terms (SAME as fit_transform)
                     for i in range(min(len(numeric_cols), 4)):
                         for j in range(i+1, min(len(numeric_cols), 4)):
                             interaction = numeric_scaled[:, i] * numeric_scaled[:, j]
@@ -1206,7 +1371,7 @@ class ProductionFeatureEngineer:
                 except:
                     feature_parts.append(np.zeros((len(df), len(cols))))
 
-        # 2. Label encoded features
+        # 2. Label encoded features + Frequency encoding
         for col, le in self.encoders.items():
             try:
                 if col in df.columns:
@@ -1214,10 +1379,78 @@ class ProductionFeatureEngineer:
                     # Handle unseen labels
                     encoded = series.map(lambda s: le.transform([s])[0] if s in le.classes_ else -1)
                     feature_parts.append(encoded.values.reshape(-1, 1).astype(float))
+                    
+                    # 🌟 FREQUENCY ENCODING (if saved during fit)
+                    freq_key = f'{col}_freq_map'
+                    if freq_key in self.transformers:
+                        freq_map = self.transformers[freq_key]
+                        freq_encoded = series.map(lambda s: freq_map.get(s, 0.0)).values.astype(float)
+                        feature_parts.append(freq_encoded.reshape(-1, 1))
                 else:
                     feature_parts.append(np.zeros((len(df), 1)))
+                    # Add zero for frequency if it was used
+                    if f'{col}_freq_map' in self.transformers:
+                        feature_parts.append(np.zeros((len(df), 1)))
             except:
                 feature_parts.append(np.zeros((len(df), 1)))
+        
+        # ===== 🌟 CATEGORICAL INTERACTIONS =====
+        if 'cat_interactions' in self.transformers:
+            interaction_encoders = self.transformers['cat_interactions']
+            for key, value in interaction_encoders.items():
+                if key.endswith('_freq_map'):
+                    # Skip frequency maps, they're handled below
+                    continue
+                try:
+                    col1, col2, le = value
+                    if col1 in df.columns and col2 in df.columns:
+                        combined = df[col1].fillna('_NA_').astype(str) + "_X_" + df[col2].fillna('_NA_').astype(str)
+                        # Handle unseen combinations
+                        encoded = combined.map(lambda s: le.transform([s])[0] if s in le.classes_ else -1)
+                        feature_parts.append(encoded.values.reshape(-1, 1).astype(float))
+                        
+                        # Frequency for combination
+                        freq_key = f"{key}_freq_map"
+                        if freq_key in interaction_encoders:
+                            freq_map = interaction_encoders[freq_key]
+                            freq_encoded = combined.map(lambda s: freq_map.get(s, 0.0)).values.astype(float)
+                            feature_parts.append(freq_encoded.reshape(-1, 1))
+                    else:
+                        feature_parts.append(np.zeros((len(df), 1)))
+                        if f"{key}_freq_map" in interaction_encoders:
+                            feature_parts.append(np.zeros((len(df), 1)))
+                except:
+                    pass
+        
+        # ===== 🌟 NUMERIC-CATEGORICAL AGGREGATES =====
+        if 'num_cat_aggs' in self.transformers:
+            agg_maps = self.transformers['num_cat_aggs']
+            numeric_cols = self.transformers.get('numeric_cols', [])
+            
+            for key, mean_map in agg_maps.items():
+                try:
+                    # Parse key like "Age_by_Category_mean"
+                    parts = key.rsplit('_by_', 1)
+                    if len(parts) == 2:
+                        num_col = parts[0]
+                        cat_part = parts[1]  # e.g., "Category_mean"
+                        cat_col = cat_part.rsplit('_mean', 1)[0]
+                        
+                        if num_col in df.columns and cat_col in df.columns:
+                            cat_series = df[cat_col].fillna('_NA_').astype(str)
+                            default_val = np.mean(list(mean_map.values())) if mean_map else 0
+                            agg_values = cat_series.map(lambda s: mean_map.get(s, default_val)).values.astype(float)
+                            feature_parts.append(agg_values.reshape(-1, 1))
+                            
+                            # Deviation from group mean
+                            if num_col in df.columns:
+                                deviation = df[num_col].fillna(0).values - agg_values
+                                feature_parts.append(deviation.reshape(-1, 1))
+                        else:
+                            feature_parts.append(np.zeros((len(df), 1)))
+                            feature_parts.append(np.zeros((len(df), 1)))  # deviation
+                except:
+                    pass
         
         # ===== TEXT/NLP FEATURES =====
         for key, tfidf in self.transformers.items():
@@ -1347,24 +1580,42 @@ class ProductionModelTrainer:
     6. 🆕 LARGE DATASET OPTIMIZATION (100k+ rows)
     """
     
-    def __init__(self, task_type: str = 'classification', mode: str = 'fast', n_samples: int = None):
+    def __init__(self, task_type: str = 'classification', mode: str = 'fast', n_samples: int = None, n_features: int = None):
         """
-        Initialize trainer with mode support.
+        Initialize trainer with mode support and PRODUCTION INTELLIGENCE.
         
         Args:
             task_type: 'classification' or 'regression'
             mode: 'fast' (8 quick models) or 'ultra' (20+ models with ensembles)
             n_samples: Number of training samples (for large dataset optimization)
+            n_features: Number of features (for intelligent parameter selection)
         """
         self.task_type = task_type
         self.mode = mode  # 'fast' or 'ultra'
         self.n_samples = n_samples or 10000  # Default
+        self.n_features = n_features or 10  # Default
         self.is_large_data = n_samples and n_samples > 50000
         self.models = {}
         self.results = []
         self.best_model = None
         self.best_name = None
         self.best_score = -np.inf
+        
+        # 🛡️ PRODUCTION INTELLIGENCE: Get optimal parameters for dataset size
+        self.optimal_params = {}
+        if HAS_INTELLIGENCE:
+            try:
+                from .ml_intelligence_core import MLIntelligenceCore
+                intelligence = MLIntelligenceCore()
+                self.optimal_params = intelligence.get_optimal_parameters(
+                    n_samples=self.n_samples,
+                    n_features=self.n_features,
+                    task_type=self.task_type,
+                    mode=self.mode
+                )
+                print(f"   🧠 Production Intelligence: Optimal params computed for {n_samples:,} samples, {n_features} features")
+            except Exception as e:
+                print(f"   ⚠️ Intelligence params failed: {str(e)[:40]}")
         
         if self.is_large_data:
             print(f"   📊 Large dataset mode: {n_samples:,} samples - optimizing for speed & memory")
@@ -2289,6 +2540,85 @@ class ProductionModelTrainer:
         if failed_models and len(self.results) == 0:
             raise ValueError(f"All models failed: {'; '.join(failed_models[:3])}")
         
+        # 🛡️ PRODUCTION INTELLIGENCE: Validate Training Results
+        # Detect overfitting, suspicious accuracy, and compute reliability scores
+        if HAS_INTELLIGENCE and len(self.results) > 0:
+            try:
+                from .ml_intelligence_core import MLIntelligenceCore
+                intelligence = MLIntelligenceCore()
+                
+                print(f"\n   🔍 PRODUCTION VALIDATION [QUALITY ASSURANCE]")
+                print("=" * 50)
+                
+                # Validate each model's results
+                for result in self.results:
+                    try:
+                        metrics = result.get('metrics', {})
+                        model_name = result.get('name', 'Unknown')
+                        model = result.get('model')
+                        
+                        # Get predictions for validation
+                        if model is not None:
+                            try:
+                                y_train_pred = model.predict(X_train)
+                                y_test_pred = model.predict(X_test)
+                                
+                                # Call validate_training_results with correct signature:
+                                # (y_train, y_test, train_pred, test_pred, task_type)
+                                validation = intelligence.validate_training_results(
+                                    y_train=y_train,
+                                    y_test=y_test,
+                                    train_pred=y_train_pred,
+                                    test_pred=y_test_pred,
+                                    task_type=self.task_type
+                                )
+                                
+                                # Add validation results to metrics
+                                result['validation'] = validation
+                                
+                                # Compute reliability score using the correct method signature
+                                # compute_reliability_score(y_test, y_pred, cv_scores, train_score, test_score, task_type)
+                                train_score = validation.get('train_score', 0)
+                                test_score = validation.get('test_score', 0)
+                                
+                                reliability = intelligence.compute_reliability_score(
+                                    y_test=y_test,
+                                    y_pred=y_test_pred,
+                                    cv_scores=None,  # We can add CV scores if available
+                                    train_score=train_score,
+                                    test_score=test_score,
+                                    task_type=self.task_type
+                                )
+                                result['reliability_score'] = reliability
+                                
+                                # Flag suspicious models
+                                if validation.get('is_suspicious', False):
+                                    warnings_list = validation.get('warnings', [])
+                                    warning_msg = warnings_list[0] if warnings_list else 'Suspicious results'
+                                    print(f"   ⚠️ {model_name}: SUSPICIOUS - {warning_msg[:50]}")
+                                    result['warning'] = warning_msg
+                                elif validation.get('is_overfit', False):
+                                    gap = validation.get('score_gap', 0)
+                                    print(f"   ⚠️ {model_name}: OVERFITTING - Train/test gap: {gap:.2%}")
+                                    result['warning'] = f'Overfitting detected (gap: {gap:.2%})'
+                                else:
+                                    print(f"   ✅ {model_name}: Reliable (score: {reliability:.1f}/100)")
+                                    
+                            except Exception as pred_err:
+                                result['reliability_score'] = 50
+                                print(f"   ⚠️ {model_name}: Could not validate - {str(pred_err)[:40]}")
+                        else:
+                            result['reliability_score'] = 50
+                        
+                    except Exception as val_err:
+                        result['reliability_score'] = 50  # Default moderate reliability
+                        print(f"   ⚠️ Could not validate {result.get('name', 'model')}: {str(val_err)[:40]}")
+                
+                print("=" * 50)
+                
+            except Exception as e:
+                print(f"   ⚠️ Production validation skipped: {str(e)[:50]}")
+        
         return self.results
 
     def optimize_with_optuna(
@@ -2590,7 +2920,10 @@ def production_train_pipeline(
     task_type: str = None
 ) -> Dict[str, Any]:
     """
-    Complete production ML pipeline
+    Complete production ML pipeline - LEAKAGE-FREE VERSION
+    
+    🛡️ CRITICAL FIX: Train/test split happens BEFORE feature engineering
+    to prevent target encoding leakage.
     
     Args:
         df: Input DataFrame
@@ -2601,7 +2934,7 @@ def production_train_pipeline(
         Dict with model, metrics, feature_names, etc.
     """
     print("\n" + "=" * 60)
-    print("🚀 PRODUCTION ML PIPELINE v2.0")
+    print("🚀 PRODUCTION ML PIPELINE v3.0 (LEAKAGE-FREE)")
     print("=" * 60)
     print(f"📊 Data: {df.shape[0]} rows, {df.shape[1]} columns")
     print(f"🎯 Target: {target_col}")
@@ -2616,27 +2949,47 @@ def production_train_pipeline(
             task_type = 'regression'
     print(f"📋 Task: {task_type}")
     
-    # Phase 1: Clean
+    # Phase 1: Clean BEFORE split
     cleaner = ProductionDataCleaner()
     df_clean = cleaner.clean(df, target_col)
     
-    # Phase 2: Feature Engineering
-    engineer = ProductionFeatureEngineer()
-    X, y, feature_names = engineer.fit_transform(df_clean, target_col, task_type)
-    
-    # Phase 3: Split
-    print("\n📊 TRAIN-TEST SPLIT")
+    # 🛡️ CRITICAL: Phase 2 - SPLIT FIRST to prevent leakage
+    print("\n📊 TRAIN-TEST SPLIT (BEFORE FEATURE ENGINEERING)")
     print("=" * 50)
+    print("   🛡️ Splitting BEFORE feature engineering to prevent target leakage")
+    
     try:
-        stratify = y if task_type == 'classification' else None
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42, stratify=stratify
-        )
+        # Stratified split for classification
+        if task_type == 'classification':
+            df_train, df_test = train_test_split(
+                df_clean, test_size=0.2, random_state=42, 
+                stratify=df_clean[target_col].astype(str)
+            )
+        else:
+            df_train, df_test = train_test_split(
+                df_clean, test_size=0.2, random_state=42
+            )
     except ValueError:
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
+        df_train, df_test = train_test_split(
+            df_clean, test_size=0.2, random_state=42
         )
-    print(f"   ✅ Train: {len(X_train)} | Test: {len(X_test)}")
+    print(f"   ✅ Train: {len(df_train)} rows | Test: {len(df_test)} rows")
+    
+    # Phase 3: Feature Engineering - FIT on TRAINING DATA ONLY
+    print("\n🔧 PHASE 3: FEATURE ENGINEERING (TRAIN ONLY)")
+    print("=" * 50)
+    print("   🛡️ Target encoding uses ONLY training data - NO LEAKAGE")
+    engineer = ProductionFeatureEngineer()
+    X_train, y_train, feature_names = engineer.fit_transform(df_train, target_col, task_type)
+    
+    # Transform test data using FITTED transformers (no target leakage)
+    print("\n🔮 TRANSFORMING TEST DATA")
+    X_test = engineer.transform(df_test, target_col)
+    y_test = df_test[target_col].values
+    if task_type == 'regression':
+        y_test = y_test.astype(float)
+    
+    print(f"   ✅ X_train: {X_train.shape} | X_test: {X_test.shape}")
     
     # Encode y for classification
     if task_type == 'classification':
@@ -2644,8 +2997,13 @@ def production_train_pipeline(
         y_train = le.fit_transform(y_train.astype(str))
         y_test = le.transform(y_test.astype(str))
     
-    # Phase 4: Train
-    trainer = ProductionModelTrainer(task_type)
+    # Phase 4: Train - 🛡️ PRODUCTION INTELLIGENCE: Pass feature count for optimal params
+    n_features = X_train.shape[1] if len(X_train.shape) > 1 else 1
+    trainer = ProductionModelTrainer(
+        task_type, 
+        n_samples=len(X_train),
+        n_features=n_features
+    )
     results = trainer.train_all(X_train, y_train, X_test, y_test)
     
     # Phase 5: Ensemble

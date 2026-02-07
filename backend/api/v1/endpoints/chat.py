@@ -120,12 +120,15 @@ except ImportError:
 
 # Import memory engine for chart context storage - USE SHARED SINGLETON
 try:
-    from core.memory_engine import get_shared_memory
+    from core.memory_engine import get_shared_memory, get_memory_engine, add_to_memory, get_conversation_context
     _chart_memory = get_shared_memory()  # Use singleton, not new instance!
     MEMORY_AVAILABLE = True
+    MEMORY_ENGINE_AVAILABLE = True
+    print("✅ Full Memory Engine loaded - Persistent conversation memory active")
 except ImportError:
     _chart_memory = None
     MEMORY_AVAILABLE = False
+    MEMORY_ENGINE_AVAILABLE = False
 
 # Import auth dependencies
 try:
@@ -2073,6 +2076,16 @@ async def send_message(
                 for msg in recent_messages:
                     conversation_context += f"{msg.role.upper()}: {msg.content[:500]}\n"
         
+        # 🧠 PERSISTENT MEMORY: Load from MemoryEngine for cross-session context
+        if MEMORY_ENGINE_AVAILABLE:
+            try:
+                persistent_context = get_conversation_context(user_id, max_chars=2000)
+                if persistent_context and persistent_context.strip():
+                    conversation_context += f"\n\n## Remembered from Past Sessions:\n{persistent_context}\n"
+                    print(f"🧠 Loaded persistent memory for user {user_id}: {len(persistent_context)} chars")
+            except Exception as mem_err:
+                print(f"⚠️ Memory engine load error: {mem_err}")
+        
         # Get user paths for file and memory access
         paths = get_user_paths(user_id)
         
@@ -3198,6 +3211,15 @@ Rules:
         history.append(assistant_msg)
         
         save_conversation(user_id, conversation_id, history)
+        
+        # 🧠 PERSISTENT MEMORY: Save to MemoryEngine for cross-session memory
+        if MEMORY_ENGINE_AVAILABLE:
+            try:
+                add_to_memory(user_id, "user", query)
+                add_to_memory(user_id, "assistant", response[:1500])  # Truncate for efficiency
+                print(f"🧠 Memory saved for user {user_id}")
+            except Exception as mem_err:
+                print(f"⚠️ Memory engine save error: {mem_err}")
         
         # 🏆 COMPETITION FEATURE: Generate smart follow-up suggestions
         try:
