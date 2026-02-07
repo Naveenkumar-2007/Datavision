@@ -128,6 +128,20 @@ except ImportError:
     HAS_ADVANCED = False
     print("⚠️ Advanced techniques not available")
 
+# =============================================================================
+# 🚀 HUGGINGFACE/DOCKER MEMORY-SAFE CONFIGURATION
+# =============================================================================
+# HuggingFace Spaces has only 2GB RAM - we MUST use conservative settings
+# - n_jobs=1 prevents memory exhaustion from parallel processes
+# - Detected by checking for /app directory (Docker) or SPACE_ID env var
+import os as _os
+IS_HUGGINGFACE = _os.path.exists("/app") or _os.getenv("SPACE_ID") is not None
+n_jobs_safe = 1 if IS_HUGGINGFACE else -1
+
+if IS_HUGGINGFACE:
+    print("🐳 HuggingFace/Docker detected: Using memory-safe n_jobs=1")
+
+
 
 # =============================================================================
 # PHASE 1: DATA CLEANING - WORLD-CLASS IMPLEMENTATION
