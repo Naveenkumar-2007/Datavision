@@ -320,7 +320,7 @@ class ProductionDataCleaner:
             iso = IsolationForest(
                 contamination=self.contamination,
                 random_state=42,
-                n_jobs=-1
+                n_jobs=n_jobs_safe
             )
             outlier_labels = iso.fit_predict(data)
             
@@ -1595,6 +1595,15 @@ class ProductionModelTrainer:
         self.n_samples = n_samples or 10000  # Default
         self.n_features = n_features or 10  # Default
         self.is_large_data = n_samples and n_samples > 50000
+        
+        # 🚀 HUGGINGFACE/DOCKER DETECTION - Use memory-safe settings (2GB limit)
+        import os
+        self.is_huggingface = os.path.exists("/app") or os.getenv("SPACE_ID") is not None
+        if self.is_huggingface:
+            print("   🐳 HuggingFace/Docker detected: Using memory-safe model configuration")
+            # Force conservative settings for HuggingFace's 2GB RAM limit
+            self.is_large_data = True  # Treat all data as large for memory safety
+        
         self.models = {}
         self.results = []
         self.best_model = None
@@ -1633,6 +1642,15 @@ class ProductionModelTrainer:
         is_ultra = self.mode == 'ultra'
         is_large = self.is_large_data
         
+        # 🚀 HUGGINGFACE MEMORY OPTIMIZATION
+        # Use n_jobs=1 on HuggingFace to avoid memory exhaustion (2GB limit)
+        # Use fewer estimators on HuggingFace for memory safety
+        n_jobs_safe = 1 if getattr(self, 'is_huggingface', False) else -1
+        est_multiplier = 0.5 if getattr(self, 'is_huggingface', False) else 1.0
+        
+        if getattr(self, 'is_huggingface', False):
+            print(f"   🐳 HuggingFace mode: n_jobs={n_jobs_safe}, estimators×{est_multiplier}")
+        
         if self.task_type == 'classification':
             # === FAST MODE: 10 Essential Models (WITH CLASS BALANCING) - ENHANCED ===
             models = {
@@ -1646,7 +1664,7 @@ class ProductionModelTrainer:
                 'RandomForest': RandomForestClassifier(
                     n_estimators=100 if is_large else (150 if not is_ultra else 250), 
                     max_depth=8 if is_large else (12 if not is_ultra else 18), 
-                    min_samples_split=4, random_state=42, n_jobs=-1,
+                    min_samples_split=4, random_state=42, n_jobs=n_jobs_safe,
                     class_weight='balanced'  # CRITICAL: Handle imbalanced classes
                 ),
                 'GradientBoosting': GradientBoostingClassifier(
@@ -1672,14 +1690,14 @@ class ProductionModelTrainer:
                 'ExtraTrees': ExtraTreesClassifier(
                     n_estimators=80 if is_large else (100 if not is_ultra else 200),
                     max_depth=8 if is_large else (10 if not is_ultra else 15),
-                    random_state=42, n_jobs=-1,
+                    random_state=42, n_jobs=n_jobs_safe,
                     class_weight='balanced'
                 ),
             }
             
             # 🆕 SKIP KNN for large datasets (O(n) per prediction = very slow)
             if not is_large:
-                models['KNN'] = KNeighborsClassifier(n_neighbors=7, weights='distance', n_jobs=-1)
+                models['KNN'] = KNeighborsClassifier(n_neighbors=7, weights='distance', n_jobs=n_jobs_safe)
             
             # XGBoost/LightGBM for both modes - ENHANCED
             # These are EXCELLENT for large data (histogram-based, parallelized)
@@ -1689,7 +1707,7 @@ class ProductionModelTrainer:
                     max_depth=6 if is_large else (7 if not is_ultra else 10),
                     learning_rate=0.1 if not is_ultra else 0.05,
                     subsample=0.8, colsample_bytree=0.8,  # Regularization
-                    random_state=42, n_jobs=-1, verbosity=0,
+                    random_state=42, n_jobs=n_jobs_safe, verbosity=0,
                     eval_metric='mlogloss',
                     tree_method='hist' if is_large else 'auto',  # 🆕 Histogram for large data
                     scale_pos_weight=10  # CRITICAL: Balance classes
@@ -1702,7 +1720,7 @@ class ProductionModelTrainer:
                     learning_rate=0.1 if not is_ultra else 0.05,
                     num_leaves=31 if not is_ultra else 50,
                     subsample=0.8, colsample_bytree=0.8,  # Regularization
-                    random_state=42, n_jobs=-1, verbose=-1,
+                    random_state=42, n_jobs=n_jobs_safe, verbose=-1,
                     class_weight='balanced'
                 )
             
@@ -1758,7 +1776,7 @@ class ProductionModelTrainer:
                         n_estimators=50 if is_large else 100, 
                         max_samples=0.5 if is_large else 0.8,  # 🆕 Smaller samples for speed
                         max_features=0.8,
-                        random_state=42, n_jobs=-1
+                        random_state=42, n_jobs=n_jobs_safe
                     ),
                     
                     # Linear models - VERY FAST (O(n))
@@ -1787,7 +1805,7 @@ class ProductionModelTrainer:
                         n_estimators=100 if is_large else 150, 
                         max_depth=10 if is_large else 12, 
                         random_state=42,
-                        n_jobs=-1, class_weight='balanced'
+                        n_jobs=n_jobs_safe, class_weight='balanced'
                     ),
                 })
                 
@@ -1808,7 +1826,7 @@ class ProductionModelTrainer:
                 if not is_large:
                     from sklearn.ensemble import StackingClassifier
                     estimators = [
-                        ('rf', RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1, class_weight='balanced')),
+                        ('rf', RandomForestClassifier(n_estimators=100, max_depth=10, random_state=42, n_jobs=n_jobs_safe, class_weight='balanced')),
                         ('hgb', HistGradientBoostingClassifier(max_iter=100, max_depth=6, random_state=42, class_weight='balanced')),
                         ('lr', LogisticRegression(max_iter=1000, random_state=42, class_weight='balanced')),
                     ]
@@ -1820,13 +1838,13 @@ class ProductionModelTrainer:
                     models['StackingEnsemble'] = StackingClassifier(
                         estimators=estimators,
                         final_estimator=LogisticRegression(max_iter=1500, C=0.5, random_state=42),
-                        cv=3, n_jobs=-1, passthrough=False
+                        cv=3, n_jobs=n_jobs_safe, passthrough=False
                     )
                 
                 # 🆕 Voting Ensemble (soft voting for probability averaging)
                 from sklearn.ensemble import VotingClassifier
                 voting_estimators = [
-                    ('rf', RandomForestClassifier(n_estimators=50 if is_large else 100, random_state=42, n_jobs=-1, class_weight='balanced')),
+                    ('rf', RandomForestClassifier(n_estimators=50 if is_large else 100, random_state=42, n_jobs=n_jobs_safe, class_weight='balanced')),
                     ('hgb', HistGradientBoostingClassifier(max_iter=50 if is_large else 100, random_state=42, class_weight='balanced')),
                 ]
                 if HAS_LIGHTGBM:
@@ -1834,7 +1852,7 @@ class ProductionModelTrainer:
                 
                 models['VotingEnsemble'] = VotingClassifier(
                     estimators=voting_estimators,
-                    voting='soft', n_jobs=-1
+                    voting='soft', n_jobs=n_jobs_safe
                 )
                 
                 # 🧠 DEEP LEARNING: TensorFlow DeepANN (Ultra Mode Only)
@@ -1865,7 +1883,7 @@ class ProductionModelTrainer:
                 'RandomForest': RandomForestRegressor(
                     n_estimators=100 if is_large else (150 if not is_ultra else 250), 
                     max_depth=8 if is_large else (12 if not is_ultra else 18), 
-                    min_samples_split=4, random_state=42, n_jobs=-1
+                    min_samples_split=4, random_state=42, n_jobs=n_jobs_safe
                 ),
                 'GradientBoosting': GradientBoostingRegressor(
                     n_estimators=80 if is_large else 120, 
@@ -1885,13 +1903,13 @@ class ProductionModelTrainer:
                 'ExtraTrees': ExtraTreesRegressor(
                     n_estimators=80 if is_large else (100 if not is_ultra else 200),
                     max_depth=8 if is_large else (10 if not is_ultra else 15),
-                    random_state=42, n_jobs=-1
+                    random_state=42, n_jobs=n_jobs_safe
                 ),
             }
             
             # 🆕 Skip KNN for large data (O(n) per prediction)
             if not is_large:
-                models['KNN'] = KNeighborsRegressor(n_neighbors=7, weights='distance', n_jobs=-1)
+                models['KNN'] = KNeighborsRegressor(n_neighbors=7, weights='distance', n_jobs=n_jobs_safe)
             
             # XGBoost/LightGBM for both modes - ENHANCED (histogram-based = fast for large data)
             if HAS_XGBOOST:
@@ -1901,7 +1919,7 @@ class ProductionModelTrainer:
                     learning_rate=0.1 if not is_ultra else 0.05,
                     subsample=0.8, colsample_bytree=0.8,
                     tree_method='hist' if is_large else 'auto',  # 🆕 Histogram for large data
-                    random_state=42, n_jobs=-1, verbosity=0
+                    random_state=42, n_jobs=n_jobs_safe, verbosity=0
                 )
             if HAS_LIGHTGBM:
                 # LightGBM is BEST for large datasets
@@ -1911,7 +1929,7 @@ class ProductionModelTrainer:
                     learning_rate=0.1 if not is_ultra else 0.05,
                     num_leaves=31 if not is_ultra else 50,
                     subsample=0.8, colsample_bytree=0.8,
-                    random_state=42, n_jobs=-1, verbose=-1
+                    random_state=42, n_jobs=n_jobs_safe, verbose=-1
                 )
             
             # 🆕 CatBoost for Fast mode too - FAST for large data
@@ -1949,7 +1967,7 @@ class ProductionModelTrainer:
                         n_estimators=50 if is_large else 100, 
                         max_samples=0.5 if is_large else 0.8,  # 🆕 Smaller samples for speed
                         max_features=0.8,
-                        random_state=42, n_jobs=-1
+                        random_state=42, n_jobs=n_jobs_safe
                     ),
                     
                     # Linear models - VERY FAST
@@ -1972,7 +1990,7 @@ class ProductionModelTrainer:
                     models.update({
                         # Robust regressors - can be slow
                         'HuberRegressor': HuberRegressor(max_iter=500, epsilon=1.35),
-                        'TheilSen': TheilSenRegressor(random_state=42, n_jobs=-1, max_subpopulation=1000),
+                        'TheilSen': TheilSenRegressor(random_state=42, n_jobs=n_jobs_safe, max_subpopulation=1000),
                         
                         # SVR variants - O(n²) complexity, SKIP for large data
                         'SVR_RBF': SVR(kernel='rbf', C=1.0, gamma='scale'),
@@ -1991,7 +2009,7 @@ class ProductionModelTrainer:
                 # 🆕 Enhanced Stacking Ensemble
                 from sklearn.ensemble import StackingRegressor
                 estimators = [
-                    ('rf', RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42, n_jobs=-1)),
+                    ('rf', RandomForestRegressor(n_estimators=150, max_depth=12, random_state=42, n_jobs=n_jobs_safe)),
                     ('hgb', HistGradientBoostingRegressor(max_iter=150, max_depth=8, random_state=42)),
                     ('ridge', Ridge(alpha=1.0, random_state=42)),
                 ]
@@ -2003,18 +2021,18 @@ class ProductionModelTrainer:
                 models['StackingEnsemble'] = StackingRegressor(
                     estimators=estimators,
                     final_estimator=Ridge(alpha=1.0, random_state=42),
-                    cv=3, n_jobs=-1, passthrough=False
+                    cv=3, n_jobs=n_jobs_safe, passthrough=False
                 )
                 
                 # 🆕 Voting Ensemble for regression
                 from sklearn.ensemble import VotingRegressor
                 voting_estimators = [
-                    ('rf', RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)),
+                    ('rf', RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=n_jobs_safe)),
                     ('hgb', HistGradientBoostingRegressor(max_iter=100, random_state=42)),
                 ]
                 models['VotingEnsemble'] = VotingRegressor(
                     estimators=voting_estimators,
-                    n_jobs=-1
+                    n_jobs=n_jobs_safe
                 )
         
         # =====================================================================
@@ -2739,6 +2757,10 @@ class ProductionModelTrainer:
         print("\n🎯 PHASE 4: ENSEMBLE BUILDING [WORLD-CLASS]")
         print("=" * 50)
         
+        # 🚀 HUGGINGFACE MEMORY OPTIMIZATION
+        import os
+        n_jobs_safe = 1 if (os.path.exists("/app") or os.getenv("SPACE_ID") is not None) else -1
+        
         if len(self.results) < 2:
             print("   ⚠️ Not enough models for ensemble")
             return {'success': False}
@@ -3059,16 +3081,16 @@ def build_selected_models(
             # Tree-based
             'random_forest': ('RandomForest', RandomForestClassifier(
                 n_estimators=100 if is_large else 150, max_depth=10, 
-                random_state=42, n_jobs=-1, class_weight='balanced'
+                random_state=42, n_jobs=n_jobs_safe, class_weight='balanced'
             )),
             'xgboost': ('XGBoost', xgb.XGBClassifier(
                 n_estimators=100 if is_large else 150, max_depth=6,
-                learning_rate=0.1, random_state=42, n_jobs=-1, verbosity=0,
+                learning_rate=0.1, random_state=42, n_jobs=n_jobs_safe, verbosity=0,
                 scale_pos_weight=10
             )) if HAS_XGBOOST else None,
             'lightgbm': ('LightGBM', lgb.LGBMClassifier(
                 n_estimators=100 if is_large else 150, max_depth=6,
-                learning_rate=0.1, random_state=42, n_jobs=-1, verbose=-1,
+                learning_rate=0.1, random_state=42, n_jobs=n_jobs_safe, verbose=-1,
                 class_weight='balanced'
             )) if HAS_LIGHTGBM else None,
             'catboost': ('CatBoost', cb.CatBoostClassifier(
@@ -3080,7 +3102,7 @@ def build_selected_models(
                 max_depth=10, random_state=42, class_weight='balanced'
             )),
             'extra_trees': ('ExtraTrees', ExtraTreesClassifier(
-                n_estimators=100, max_depth=10, random_state=42, n_jobs=-1,
+                n_estimators=100, max_depth=10, random_state=42, n_jobs=n_jobs_safe,
                 class_weight='balanced'
             )),
             'gradient_boosting': ('GradientBoosting', GradientBoostingClassifier(
@@ -3115,10 +3137,10 @@ def build_selected_models(
             )),
             
             # KNN
-            'knn_3': ('KNN_k3', KNeighborsClassifier(n_neighbors=3, weights='distance', n_jobs=-1)),
-            'knn_5': ('KNN_k5', KNeighborsClassifier(n_neighbors=5, weights='distance', n_jobs=-1)),
-            'knn_7': ('KNN_k7', KNeighborsClassifier(n_neighbors=7, weights='distance', n_jobs=-1)),
-            'knn_weighted': ('KNN_Weighted', KNeighborsClassifier(n_neighbors=5, weights='distance', n_jobs=-1)),
+            'knn_3': ('KNN_k3', KNeighborsClassifier(n_neighbors=3, weights='distance', n_jobs=n_jobs_safe)),
+            'knn_5': ('KNN_k5', KNeighborsClassifier(n_neighbors=5, weights='distance', n_jobs=n_jobs_safe)),
+            'knn_7': ('KNN_k7', KNeighborsClassifier(n_neighbors=7, weights='distance', n_jobs=n_jobs_safe)),
+            'knn_weighted': ('KNN_Weighted', KNeighborsClassifier(n_neighbors=5, weights='distance', n_jobs=n_jobs_safe)),
             
             # Naive Bayes
             'gaussian_nb': ('GaussianNB', GaussianNB()),
@@ -3131,7 +3153,7 @@ def build_selected_models(
                 n_estimators=50, learning_rate=0.1, random_state=42
             )),
             'bagging': ('Bagging', BaggingClassifier(
-                n_estimators=50, random_state=42, n_jobs=-1
+                n_estimators=50, random_state=42, n_jobs=n_jobs_safe
             )),
             
             # Other
@@ -3143,15 +3165,15 @@ def build_selected_models(
         model_map = {
             'random_forest': ('RandomForest', RandomForestRegressor(
                 n_estimators=100 if is_large else 150, max_depth=10,
-                random_state=42, n_jobs=-1
+                random_state=42, n_jobs=n_jobs_safe
             )),
             'xgboost': ('XGBoost', xgb.XGBRegressor(
                 n_estimators=100 if is_large else 150, max_depth=6,
-                learning_rate=0.1, random_state=42, n_jobs=-1, verbosity=0
+                learning_rate=0.1, random_state=42, n_jobs=n_jobs_safe, verbosity=0
             )) if HAS_XGBOOST else None,
             'lightgbm': ('LightGBM', lgb.LGBMRegressor(
                 n_estimators=100 if is_large else 150, max_depth=6,
-                learning_rate=0.1, random_state=42, n_jobs=-1, verbose=-1
+                learning_rate=0.1, random_state=42, n_jobs=n_jobs_safe, verbose=-1
             )) if HAS_LIGHTGBM else None,
             'catboost': ('CatBoost', cb.CatBoostRegressor(
                 iterations=100 if is_large else 150, depth=6,
@@ -3161,7 +3183,7 @@ def build_selected_models(
                 max_depth=10, random_state=42
             )),
             'extra_trees': ('ExtraTrees', ExtraTreesRegressor(
-                n_estimators=100, max_depth=10, random_state=42, n_jobs=-1
+                n_estimators=100, max_depth=10, random_state=42, n_jobs=n_jobs_safe
             )),
             'gradient_boosting': ('GradientBoosting', GradientBoostingRegressor(
                 n_estimators=80 if is_large else 120, max_depth=5,
@@ -3177,10 +3199,10 @@ def build_selected_models(
             'sgd': ('SGDRegressor', SGDRegressor(max_iter=1000, random_state=42)),
             'svm_linear': ('SVR_Linear', SVR(kernel='linear', C=1.0)),
             'svm_rbf': ('SVR_RBF', SVR(kernel='rbf', C=1.0)),
-            'knn_3': ('KNN_k3', KNeighborsRegressor(n_neighbors=3, weights='distance', n_jobs=-1)),
-            'knn_5': ('KNN_k5', KNeighborsRegressor(n_neighbors=5, weights='distance', n_jobs=-1)),
-            'knn_7': ('KNN_k7', KNeighborsRegressor(n_neighbors=7, weights='distance', n_jobs=-1)),
-            'knn_weighted': ('KNN_Weighted', KNeighborsRegressor(n_neighbors=5, weights='distance', n_jobs=-1)),
+            'knn_3': ('KNN_k3', KNeighborsRegressor(n_neighbors=3, weights='distance', n_jobs=n_jobs_safe)),
+            'knn_5': ('KNN_k5', KNeighborsRegressor(n_neighbors=5, weights='distance', n_jobs=n_jobs_safe)),
+            'knn_7': ('KNN_k7', KNeighborsRegressor(n_neighbors=7, weights='distance', n_jobs=n_jobs_safe)),
+            'knn_weighted': ('KNN_Weighted', KNeighborsRegressor(n_neighbors=5, weights='distance', n_jobs=n_jobs_safe)),
         }
     
     # Build only selected models
@@ -3199,12 +3221,12 @@ def build_selected_models(
         print("   ⚠️ No valid algorithms selected, using defaults")
         if task_type == 'classification':
             models = {
-                'RandomForest': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1),
+                'RandomForest': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=n_jobs_safe),
                 'LogisticRegression': LogisticRegression(max_iter=1000, random_state=42),
             }
         else:
             models = {
-                'RandomForest': RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1),
+                'RandomForest': RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=n_jobs_safe),
                 'Ridge': Ridge(alpha=1.0, random_state=42),
             }
     
