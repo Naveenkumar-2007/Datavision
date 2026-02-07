@@ -165,8 +165,8 @@ class DynamicReportGenerator:
             except Exception as e:
                 logger.debug(f"Model persistence load failed: {e}")
             
-            # 2. Try legacy model_info.json
-            model_info_path = f"storage/automl/{self.user_id}/model_info.json"
+            # 2. Try legacy model_info.json (Docker-aware path)
+            model_info_path = f"/app/backend/storage/automl/{self.user_id}/model_info.json" if os.path.exists("/app") else f"storage/automl/{self.user_id}/model_info.json"
             if os.path.exists(model_info_path):
                 with open(model_info_path, 'r') as f:
                     self.ml_model = json.load(f)

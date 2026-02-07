@@ -420,8 +420,8 @@ def get_stored_charts(user_id: str) -> Dict[str, Any]:
         except Exception as e:
             logger.debug(f"DL charts not available: {e}")
         
-        # FALLBACK: Check legacy storage path
-        base_path = f"storage/automl/{user_id}"
+        # FALLBACK: Check legacy storage path (Docker-aware)
+        base_path = f"/app/backend/storage/automl/{user_id}" if os.path.exists("/app") else f"storage/automl/{user_id}"
         if os.path.exists(base_path):
             state_path = f"{base_path}/automl_state.pkl"
             if os.path.exists(state_path):
