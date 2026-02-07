@@ -176,7 +176,12 @@ except ImportError:
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
-STORAGE_PATH = "./storage/automl"
+import os
+# Use absolute path for Docker/HuggingFace, relative for local development
+if os.path.exists("/app"):
+    STORAGE_PATH = "/app/backend/storage/automl"
+else:
+    STORAGE_PATH = "./storage/automl"
 
 # =============================================================================
 # GPU/CPU AUTO-DETECTION

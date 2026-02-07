@@ -28,9 +28,16 @@ COPY frontend/dist /app/static
 # Copy backend source files
 COPY backend/ backend/
 
-# Create storage directories with proper ownership
+# Create ALL storage directories with proper ownership
 # SECURITY: Use 755 (rwxr-xr-x) instead of 777
-RUN mkdir -p /app/storage /app/backend/storage && \
+RUN mkdir -p /app/storage/users \
+             /app/backend/storage/users \
+             /app/backend/storage/automl \
+             /app/backend/storage/models \
+             /app/backend/storage/clustering_models \
+             /app/backend/storage/graph \
+             /app/backend/storage/faiss \
+             /app/backend/storage/uploads && \
     chown -R appuser:appuser /app/storage /app/backend/storage /app/static && \
     chmod -R 755 /app/storage /app/backend/storage
 
