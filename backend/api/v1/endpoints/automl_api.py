@@ -628,94 +628,6 @@ async def train_with_test_file(
         raise HTTPException(status_code=500, detail=user_message)
 
 
-@router.get("/debug/ml-test")
-async def debug_ml_test():
-    """
-    🔧 DEBUG ENDPOINT: Test ML training on HuggingFace
-    Returns detailed diagnostics about ML imports and basic training.
-    """
-    import os
-    import numpy as np
-    
-    results = {
-        "environment": {},
-        "imports": {},
-        "basic_training": {},
-        "full_training": {}
-    }
-    
-    # 1. Environment check
-    results["environment"] = {
-        "is_huggingface": os.path.exists("/app") or os.getenv("SPACE_ID") is not None,
-        "space_id": os.getenv("SPACE_ID"),
-        "pythonpath": os.getenv("PYTHONPATH"),
-        "cwd": os.getcwd()
-    }
-    
-    # 2. Check imports
-    imports_to_check = [
-        "sklearn", "sklearn.ensemble", "sklearn.linear_model",
-        "numpy", "pandas", "xgboost", "lightgbm", "catboost"
-    ]
-    for mod in imports_to_check:
-        try:
-            __import__(mod)
-            results["imports"][mod] = "✅ OK"
-        except Exception as e:
-            results["imports"][mod] = f"❌ {str(e)[:50]}"
-    
-    # 3. Basic sklearn training test
-    try:
-        from sklearn.ensemble import RandomForestClassifier
-        from sklearn.datasets import make_classification
-        
-        X, y = make_classification(n_samples=100, n_features=5, random_state=42)
-        model = RandomForestClassifier(n_estimators=10, n_jobs=1, random_state=42)
-        model.fit(X, y)
-        accuracy = model.score(X, y)
-        results["basic_training"] = {
-            "status": "✅ SUCCESS",
-            "accuracy": float(accuracy),
-            "model": "RandomForestClassifier"
-        }
-    except Exception as e:
-        results["basic_training"] = {
-            "status": "❌ FAILED",
-            "error": str(e)
-        }
-    
-    # 4. Test production training with minimal data
-    try:
-        import pandas as pd
-        from ml.automl_engine import automl_engine
-        
-        # Create minimal test data
-        np.random.seed(42)
-        test_df = pd.DataFrame({
-            'A': np.random.randint(1, 100, 50),
-            'B': np.random.randint(1, 100, 50),
-            'Target': np.random.choice(['Yes', 'No'], 50)
-        })
-        
-        result = automl_engine.production_train(test_df, 'Target', 'debug_test')
-        
-        results["full_training"] = {
-            "status": "✅ SUCCESS" if result.success else "❌ FAILED",
-            "best_model": result.best_model_name,
-            "models_trained": len(result.leaderboard),
-            "metrics": result.best_model_metrics,
-            "processing_time": result.processing_time
-        }
-    except Exception as e:
-        import traceback
-        results["full_training"] = {
-            "status": "❌ FAILED",
-            "error": str(e),
-            "traceback": traceback.format_exc()[-500:]
-        }
-    
-    return results
-
 @router.post("/train")
 async def train_automl(
     file: UploadFile = File(...),
@@ -765,21 +677,6 @@ async def train_automl(
             None,
             lambda: automl_engine.production_train(df, target_column, user_id)
         )
-        
-        # 🚨 DEBUG: Log detailed result for HuggingFace troubleshooting
-        print(f"🔍 [DEBUG] Training result received:")
-        print(f"   - success: {result.success}")
-        print(f"   - task_type: {result.task_type}")
-        print(f"   - best_model_name: {result.best_model_name}")
-        print(f"   - best_model_metrics: {result.best_model_metrics}")
-        print(f"   - leaderboard length: {len(result.leaderboard)}")
-        print(f"   - feature_columns: {len(result.feature_columns)} features")
-        print(f"   - processing_time: {result.processing_time}")
-        if result.leaderboard:
-            for i, model in enumerate(result.leaderboard[:3]):
-                print(f"   - Model {i+1}: {model.get('name')} = {model.get('metrics')}")
-        else:
-            print(f"   ⚠️ EMPTY LEADERBOARD - This is the problem!")
         
         # =========================================
         # GENERATE PRODUCTION ML CHARTS (Base64 Images)
@@ -994,8 +891,6 @@ async def get_saved_result(
                         "data_summary": data_summary,
                         "all_models": all_models,
                         "leaderboard": leaderboard,
-                        # CRITICAL: Include cleaned_file for Data tab persistence
-                        "cleaned_file": multimode_meta.get('cleaned_file'),
                     }
                     logger.info(f"[saved-result] Loaded multimode metadata for user {user_id}")
                     return result
@@ -2433,8 +2328,6 @@ async def multi_mode_train(
                 # Include all_models count for display
                 'all_models_count': len(leaderboard) if leaderboard else 0,
                 'leaderboard': leaderboard[:10] if leaderboard else [],
-                # CRITICAL: Include cleaned_file for Data tab persistence
-                'cleaned_file': cleaned_file_path,
             }
             
             # Save multimode metadata
