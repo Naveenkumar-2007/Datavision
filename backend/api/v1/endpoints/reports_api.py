@@ -143,21 +143,35 @@ async def generate_new_report(
                 logger.error(f"Sync report error: {e2}")
                 # Fall through to legacy generator
     
-    # Fallback to legacy report generator
+    # Fallback to legacy report generator with REAL user data (no hardcoded samples)
     if not REPORT_GEN_AVAILABLE:
         raise HTTPException(status_code=500, detail="Report generator not available")
     
-    # Legacy generation
+    # Legacy generation - but still use REAL user data
     import pandas as pd
-    import numpy as np
+    import glob
+    from pathlib import Path
     
     df = getattr(request.state, 'current_df', None)
+    
+    # Try to load user's actual data if not in session
     if df is None:
-        df = pd.DataFrame({
-            'category': ['A', 'B', 'C', 'D'] * 25,
-            'value': np.random.randint(100, 1000, 100),
-            'date': pd.date_range('2024-01-01', periods=100)
-        })
+        try:
+            user_files_dir = f"storage/users/{user_id}/files"
+            if Path(user_files_dir).exists():
+                for file_path in sorted(Path(user_files_dir).glob("*"), key=lambda x: x.stat().st_mtime, reverse=True):
+                    if file_path.suffix.lower() in ['.csv', '.xlsx', '.xls']:
+                        if file_path.suffix.lower() == '.csv':
+                            df = pd.read_csv(file_path, low_memory=False)
+                        else:
+                            df = pd.read_excel(file_path)
+                        logger.info(f"Loaded user data: {len(df)} rows x {len(df.columns)} cols from {file_path.name}")
+                        break
+        except Exception as e:
+            logger.warning(f"Could not load user data: {e}")
+    
+    if df is None or df.empty:
+        raise HTTPException(status_code=400, detail="No data files found. Please upload a dataset first.")
     
     try:
         generator = ReportGenerator(user_id)
@@ -225,14 +239,8 @@ async def generate_claude_style_report(
             logger.warning(f"Could not load user data: {e}")
     
     if df is None or df.empty:
-        # Create sample data for demo
-        import numpy as np
-        df = pd.DataFrame({
-            'category': ['A', 'B', 'C', 'D', 'E'] * 100,
-            'value': np.random.randint(100, 1000, 500),
-            'quantity': np.random.randint(1, 50, 500),
-            'date': pd.date_range('2024-01-01', periods=500)
-        })
+        # No hardcoded sample data - require real user data
+        raise HTTPException(status_code=400, detail="No data files found. Please upload a dataset first before generating reports.")
     
     try:
         generator = ClaudeReportGenerator(user_id)
