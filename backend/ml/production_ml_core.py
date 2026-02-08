@@ -842,21 +842,29 @@ class ProductionFeatureEngineer:
                         pass
                 
                 # Text: Long strings with many unique values
-                # More flexible detection - don't require specific column names
+                # VERY flexible detection for text columns
                 col_lower = col.lower()
                 text_keywords = ['description', 'text', 'comment', 'review', 'content', 'body', 'message', 
-                                 'title', 'name', 'summary', 'feedback', 'note', 'detail', 'caption', 'headline']
+                                 'title', 'summary', 'feedback', 'note', 'detail', 'caption', 'headline',
+                                 'tweet', 'sentence', 'post', 'question', 'answer', 'query', 'phrase']
                 has_text_name = any(word in col_lower for word in text_keywords)
                 
-                # Detect text: EITHER has text-like name OR has long average length with high uniqueness
+                # Check for short sentence patterns ("I like", "This is", etc.)
+                sample_text = df[col].dropna().head(10).astype(str)
+                has_sentence_pattern = any(' ' in str(t) and len(str(t)) > 10 for t in sample_text)
+                
+                # VERY LENIENT text detection - especially for sentiment/NLP datasets
                 is_real_text = (
-                    (avg_len > 30 and unique_ratio > 0.5) or  # Long unique strings (likely text)
-                    (avg_len > 50 and unique_ratio > 0.2) or  # Very long strings
-                    (has_text_name and avg_len > 20)  # Has text keyword and reasonable length
+                    (avg_len > 20 and unique_ratio > 0.3) or  # Medium length with uniqueness
+                    (avg_len > 30 and unique_ratio > 0.1) or  # Longer text, any uniqueness
+                    (avg_len > 50) or                          # Very long = definitely text
+                    (has_text_name and avg_len > 10) or        # Has text keyword
+                    (has_sentence_pattern and avg_len > 15)    # Contains sentences (with spaces)
                 )
                 
                 if is_real_text:
                     text_cols.append(col)
+                    print(f"   📝 Detected text column: {col} (avg_len={avg_len:.1f}, unique_ratio={unique_ratio:.2f})")
                 else:
                     # Everything else is categorical (names, genres, etc.)
                     categorical_cols.append(col)
@@ -1178,9 +1186,28 @@ class ProductionFeatureEngineer:
         
         # ===== COMBINE ALL FEATURES =====
         if not feature_parts:
-            # 🆘 EMERGENCY FALLBACK: Try TF-IDF on ANY string column
+            # 🆘 EMERGENCY FALLBACK: Try TF-IDF on ANY string-like column
             print("   ⚠️ No features extracted! Trying TF-IDF fallback on string columns...")
-            string_cols = [c for c in df.columns if df[c].dtype == 'object' or str(df[c].dtype).startswith('str')]
+            
+            # Find ALL string-like columns (exclude target)
+            string_cols = []
+            for c in df.columns:
+                if c == target_col:
+                    continue
+                dtype_str = str(df[c].dtype).lower()
+                is_string_like = (
+                    dtype_str == 'object' or 
+                    'str' in dtype_str or 
+                    'string' in dtype_str or
+                    'category' in dtype_str
+                )
+                if is_string_like:
+                    string_cols.append(c)
+            
+            # ULTIMATE FALLBACK: If no string columns found, try ANY non-target column
+            if not string_cols:
+                string_cols = [c for c in df.columns if c != target_col]
+                print(f"   ⚠️ No string columns found, trying ALL non-target columns: {string_cols[:3]}")
             
             if string_cols:
                 for col in string_cols[:3]:  # Try up to 3 string columns
