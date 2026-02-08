@@ -200,31 +200,78 @@ class NLPEngine:
         return text
     
     def detect_text_column(self, df: pd.DataFrame, target_column: str) -> str:
-        """Auto-detect the primary text column"""
+        """Auto-detect the primary text column - robust detection for any deployment"""
         text_cols = []
         
-        for col in df.columns:
-            if col == target_column:
-                continue
-            
-            if df[col].dtype == 'object':
-                # Check average text length
-                avg_len = df[col].astype(str).str.len().mean()
-                unique_ratio = df[col].nunique() / len(df)
+        # Get all non-target columns
+        feature_cols = [col for col in df.columns if col != target_column]
+        
+        # Special case: 2-column dataset (just target + one feature)
+        # This is common for sentiment analysis datasets
+        if len(feature_cols) == 1:
+            logger.info(f"   Single feature column detected: {feature_cols[0]} - using as text column")
+            return feature_cols[0]
+        
+        for col in feature_cols:
+            try:
+                # Check if column could be text - be VERY liberal with dtype checking
+                # Different systems may have different dtypes (object, string, category, etc.)
+                dtype_str = str(df[col].dtype).lower()
+                is_string_like = (
+                    dtype_str == 'object' or 
+                    'str' in dtype_str or 
+                    'string' in dtype_str or
+                    'category' in dtype_str
+                )
                 
-                # Text columns typically have longer content and high uniqueness
-                if avg_len > 20 and unique_ratio > 0.5:
-                    text_cols.append((col, avg_len))
+                # Convert to string and analyze
+                col_as_str = df[col].astype(str)
+                avg_len = col_as_str.str.len().mean()
+                unique_ratio = df[col].nunique() / len(df) if len(df) > 0 else 0
+                
+                # More lenient text detection:
+                # - Long average length (>20 chars) with ANY uniqueness
+                # - OR medium length with moderate uniqueness
+                # - OR has text-like column name
+                col_lower = col.lower()
+                text_keywords = ['text', 'review', 'comment', 'content', 'body', 'message', 
+                                'description', 'title', 'summary', 'feedback', 'note', 'post']
+                has_text_name = any(kw in col_lower for kw in text_keywords)
+                
+                is_likely_text = (
+                    (avg_len > 30 and unique_ratio > 0.1) or  # Long text
+                    (avg_len > 20 and unique_ratio > 0.3) or  # Medium text with some uniqueness
+                    (has_text_name and avg_len > 10) or       # Has text keyword
+                    (is_string_like and avg_len > 50)         # Any string-like column with long content
+                )
+                
+                if is_likely_text:
+                    text_cols.append((col, avg_len, unique_ratio))
+                    logger.info(f"   Candidate text column: {col} (avg_len={avg_len:.1f}, unique_ratio={unique_ratio:.2f})")
+                    
+            except Exception as e:
+                logger.warning(f"   Error checking column {col}: {e}")
+                continue
         
         if text_cols:
             # Return column with longest average text
             text_cols.sort(key=lambda x: x[1], reverse=True)
             return text_cols[0][0]
         
-        # Fallback: first object column that's not target
-        for col in df.columns:
-            if col != target_column and df[col].dtype == 'object':
-                return col
+        # Fallback 1: First string-like column (any dtype that could be text)
+        for col in feature_cols:
+            try:
+                dtype_str = str(df[col].dtype).lower()
+                if dtype_str == 'object' or 'str' in dtype_str or 'string' in dtype_str:
+                    logger.info(f"   Fallback: using first string column: {col}")
+                    return col
+            except:
+                continue
+        
+        # Fallback 2: Just use first non-target column and try it
+        if feature_cols:
+            logger.info(f"   Ultimate fallback: using first feature column: {feature_cols[0]}")
+            return feature_cols[0]
         
         return None
     
