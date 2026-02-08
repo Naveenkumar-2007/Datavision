@@ -2999,8 +2999,28 @@ class ProductionMLEngine:
         logger.info("\n🔮 TRANSFORMING TEST DATA")
         X_test = engineer.transform(df_test, target_col)
         y_test = df_test[target_col].values
+        
+        # 🔧 SAFETY CHECK: Verify task_type_simple matches actual target data type
+        # This catches cases where SmartDataAnalyzer incorrectly detected regression
         if self.task_type_simple == 'regression':
-            y_test = y_test.astype(float)
+            # Try to convert - if it fails, we're actually doing classification
+            try:
+                test_convert = pd.to_numeric(pd.Series(y_test), errors='raise')
+                y_test = y_test.astype(float)
+            except (ValueError, TypeError) as e:
+                # Target contains strings like 'Yes'/'No' - this is CLASSIFICATION
+                logger.warning(f"🔧 SAFETY FIX: Changing task from regression to classification (target contains non-numeric values)")
+                self.task_type_simple = 'classification'
+                self.task_type = 'classification'
+                # Now handle as classification
+                if hasattr(self, 'target_encoder') and self.target_encoder is not None:
+                    y_test = self.target_encoder.transform(
+                        pd.Series(y_test).fillna('_MISSING_').astype(str).str.strip()
+                    )
+                else:
+                    from sklearn.preprocessing import LabelEncoder
+                    fallback_encoder = LabelEncoder()
+                    y_test = fallback_encoder.fit_transform(y_test.astype(str))
         else:
             # Classification: Use target_encoder to handle string/object labels (e.g., 'Yes'/'No')
             # The target_encoder was fitted on training data, now transform test labels
