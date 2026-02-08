@@ -90,8 +90,38 @@ const VisualIntelligenceDashboard: React.FC = () => {
         accentSecondary: '#4f46e5'
     };
 
-    const loadDashboard = useCallback(async () => {
+    // Cache key for localStorage
+    const getCacheKey = useCallback(() => {
         const userId = user?.id || getUserIdSync();
+        return `dashboard_cache_${userId}`;
+    }, [user?.id]);
+
+    const loadDashboard = useCallback(async (forceRefresh: boolean = false) => {
+        const userId = user?.id || getUserIdSync();
+        const cacheKey = getCacheKey();
+
+        // Try to load from cache first (unless force refresh)
+        if (!forceRefresh) {
+            try {
+                const cachedData = localStorage.getItem(cacheKey);
+                if (cachedData) {
+                    const { data, timestamp } = JSON.parse(cachedData);
+                    // Cache is valid for 30 minutes (or until filesUpdated event)
+                    const cacheAge = Date.now() - timestamp;
+                    const maxAge = 30 * 60 * 1000; // 30 minutes
+
+                    if (cacheAge < maxAge && data) {
+                        console.log('📦 Using cached dashboard data');
+                        setDashboard(data);
+                        setLoading(false);
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('Cache read error:', e);
+            }
+        }
+
         setLoading(true);
         setError(null);
 
@@ -120,6 +150,17 @@ const VisualIntelligenceDashboard: React.FC = () => {
                 }
 
                 setDashboard(dashboardData);
+
+                // Save to cache
+                try {
+                    localStorage.setItem(cacheKey, JSON.stringify({
+                        data: dashboardData,
+                        timestamp: Date.now()
+                    }));
+                    console.log('💾 Dashboard cached');
+                } catch (e) {
+                    console.warn('Cache save error:', e);
+                }
             } else {
                 setError(response.data.error || 'Please upload data in DataHub first');
             }
@@ -128,23 +169,29 @@ const VisualIntelligenceDashboard: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [user?.id]);
+    }, [user?.id, getCacheKey]);
 
-    // Auto-load dashboard
+    // Auto-load dashboard (with caching)
     useEffect(() => {
-        loadDashboard();
+        loadDashboard(false); // Use cache if available
     }, [user?.id, loadDashboard]);
 
     // Listen for file updates from DataHub - refresh dashboard when files change
     useEffect(() => {
         const handleFilesUpdated = () => {
-            console.log('📁 Files updated - refreshing dashboard...');
-            loadDashboard();
+            console.log('📁 Files updated - invalidating cache and refreshing...');
+            // Clear cache on file update
+            try {
+                localStorage.removeItem(getCacheKey());
+            } catch (e) {
+                console.warn('Cache clear error:', e);
+            }
+            loadDashboard(true); // Force refresh
         };
 
         window.addEventListener('filesUpdated', handleFilesUpdated);
         return () => window.removeEventListener('filesUpdated', handleFilesUpdated);
-    }, [loadDashboard]);
+    }, [loadDashboard, getCacheKey]);
 
     const formatValue = (value: number | string, format: string): string => {
         if (typeof value === 'string') return value;
@@ -249,24 +296,24 @@ const VisualIntelligenceDashboard: React.FC = () => {
                             <BarChart3 className={`w-10 h-10 ${isDark ? 'text-teal-400' : 'text-teal-600'} animate-bounce`} style={{ animationDuration: '1.5s' }} />
                         </div>
                     </div>
-                    
+
                     {/* Title */}
                     <h2 className={`text-xl font-semibold mb-2 ${t.text}`}>
                         🚀 Building Your Dashboard
                     </h2>
-                    
+
                     {/* Subtitle */}
                     <p className={`text-sm mb-6 ${t.textMuted}`}>
                         AI is analyzing your data and generating insights...
                     </p>
-                    
+
                     {/* Progress Indicator */}
                     <div className="flex items-center justify-center gap-2">
                         <div className={`w-2 h-2 rounded-full ${isDark ? 'bg-teal-400' : 'bg-teal-500'} animate-bounce`} style={{ animationDelay: '0ms' }}></div>
                         <div className={`w-2 h-2 rounded-full ${isDark ? 'bg-teal-400' : 'bg-teal-500'} animate-bounce`} style={{ animationDelay: '150ms' }}></div>
                         <div className={`w-2 h-2 rounded-full ${isDark ? 'bg-teal-400' : 'bg-teal-500'} animate-bounce`} style={{ animationDelay: '300ms' }}></div>
                     </div>
-                    
+
                     {/* Tip */}
                     <p className={`text-xs mt-6 ${t.textMuted}`}>
                         💡 This may take a few seconds depending on your data size
@@ -295,7 +342,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                             <Upload className="w-4 h-4 inline mr-2" />Upload Data
                         </button>
                         <button
-                            onClick={loadDashboard}
+                            onClick={() => loadDashboard(true)}
                             className={`px-5 py-2.5 rounded-xl font-medium transition-all border ${t.border} ${t.text}`}
                         >
                             <RefreshCw className="w-4 h-4 inline mr-2" />Try Again
@@ -340,18 +387,18 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                     setExporting(true);
                                     try {
                                         const content = `# ${dashboard.dashboard_title}\n\n## Key Metrics\n${dashboard.kpis?.map(k => `- ${k.title}: ${k.value}`).join('\n') || 'No KPIs'}\n\n## Insights\n${dashboard.insights?.map(i => `- ${i}`).join('\n') || 'No insights'}\n\n## Recommendations\n${dashboard.recommendations?.map(r => `- ${r}`).join('\n') || 'No recommendations'}`;
-                                        
+
                                         // Capture chart images from Plotly
-                                        const chartImages: Array<{title: string; type: string; image_base64?: string; data?: any}> = [];
-                                        
+                                        const chartImages: Array<{ title: string; type: string; image_base64?: string; data?: any }> = [];
+
                                         if (dashboard.charts && dashboard.charts.length > 0) {
                                             // Get all Plotly chart divs
                                             const chartDivs = document.querySelectorAll('[class*="js-plotly-plot"]');
-                                            
+
                                             for (let i = 0; i < Math.min(dashboard.charts.length, chartDivs.length); i++) {
                                                 const chart = dashboard.charts[i];
                                                 const chartDiv = chartDivs[i] as HTMLElement;
-                                                
+
                                                 try {
                                                     // Use Plotly's toImage to capture chart as PNG
                                                     const Plotly = (window as any).Plotly;
@@ -362,7 +409,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                                             height: 700,
                                                             scale: 2
                                                         });
-                                                        
+
                                                         chartImages.push({
                                                             title: chart.title || `Chart ${i + 1}`,
                                                             type: chart.type || 'chart',
@@ -384,19 +431,19 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                                 }
                                             }
                                         }
-                                        
+
                                         // Use proper API base URL
                                         const apiBase = import.meta.env.VITE_API_URL || '';
                                         const response = await fetch(`${apiBase}/api/v1/exports/download/pptx`, {
                                             method: 'POST',
                                             headers: getAuthHeadersSync(),
-                                            body: JSON.stringify({ 
-                                                content, 
+                                            body: JSON.stringify({
+                                                content,
                                                 title: dashboard.dashboard_title,
                                                 charts: chartImages
                                             })
                                         });
-                                        
+
                                         if (response.ok) {
                                             const blob = await response.blob();
                                             const url = URL.createObjectURL(blob);
@@ -427,7 +474,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                 <span className="text-xs font-medium hidden sm:inline">PPT</span>
                             </button>
 
-                            <button onClick={loadDashboard} className={`p-2 rounded-lg transition-all ${isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                            <button onClick={() => loadDashboard(true)} className={`p-2 rounded-lg transition-all ${isDark ? 'bg-gray-800 text-gray-400 hover:bg-gray-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`} title="Refresh Dashboard">
                                 <RefreshCw className="w-5 h-5" />
                             </button>
                         </div>
@@ -444,13 +491,13 @@ const VisualIntelligenceDashboard: React.FC = () => {
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 gap-3">
                         {dashboard.kpis?.slice(0, 10).map((kpi: any, i: number) => {
                             const kpiColors = [
-                                '#22c55e', '#8b5cf6', '#f97316', '#10b981', '#ec4899', 
+                                '#22c55e', '#8b5cf6', '#f97316', '#10b981', '#ec4899',
                                 '#3b82f6', '#14b8a6', '#ef4444', '#eab308', '#6366f1'
                             ];
-                            
+
                             // Get KPI type-specific styling
                             const getKPIIcon = () => {
-                                switch(kpi.kpi_type) {
+                                switch (kpi.kpi_type) {
                                     case 'anomaly': return '⚠️';
                                     case 'concentration': return '🏆';
                                     case 'momentum': return kpi.trend === 'up' ? '🚀' : '📉';
@@ -462,26 +509,26 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                     default: return '📋';
                                 }
                             };
-                            
+
                             // Render mini sparkline if available
                             const renderSparkline = () => {
                                 if (!kpi.sparkline || !Array.isArray(kpi.sparkline) || kpi.sparkline.length < 3) return null;
-                                
+
                                 const data = kpi.sparkline.slice(-15);
                                 const max = Math.max(...data);
                                 const min = Math.min(...data);
                                 const range = max - min || 1;
                                 const height = 24;
                                 const width = 60;
-                                
+
                                 const points = data.map((v: number, i: number) => {
                                     const x = (i / (data.length - 1)) * width;
                                     const y = height - ((v - min) / range) * height;
                                     return `${x},${y}`;
                                 }).join(' ');
-                                
+
                                 const sparkColor = kpi.trend === 'up' ? '#22c55e' : (kpi.trend === 'down' ? '#ef4444' : '#6b7280');
-                                
+
                                 return (
                                     <svg width={width} height={height} className="mt-1 opacity-60">
                                         <polyline
@@ -508,13 +555,13 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                             {getKPIIcon()}
                                         </span>
                                     )}
-                                    
+
                                     <p className={`kpi-label`}>{kpi.title}</p>
                                     <p className={`kpi-value`}>{formatValue(kpi.value, kpi.format)}</p>
-                                    
+
                                     {/* Sparkline */}
                                     {renderSparkline()}
-                                    
+
                                     {kpi.trend && (
                                         <div className={`kpi-trend ${kpi.trend}`}>
                                             {kpi.trend === 'up' && <TrendingUp className="w-3.5 h-3.5" />}
@@ -550,7 +597,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                             const Icon = getChartIcon(chart.type);
                             const isExpanded = expandedChart === chart.chart_id;
                             const chartHeight = viewMode === 'list' ? 300 : (isExpanded ? 400 : 260);
-                            
+
                             // Premium chart type badges
                             const getPremiumBadge = () => {
                                 const premiumTypes = ['combo_bar_line', 'lollipop', 'diverging_bar', 'slope', 'dumbbell', 'range_plot', 'band_chart', 'pareto', 'radar', 'sankey', 'sunburst'];
@@ -559,11 +606,11 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                 }
                                 return null;
                             };
-                            
+
                             // Get analysis type if available
                             const getAnalysisLabel = () => {
                                 if (chart.analysis) {
-                                    const labels: {[key: string]: string} = {
+                                    const labels: { [key: string]: string } = {
                                         'dual_axis_comparison': '📊 Dual Axis',
                                         'ranking_visualization': '🏆 Ranking',
                                         'variance_from_mean': '📈 Variance',
