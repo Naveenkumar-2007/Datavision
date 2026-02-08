@@ -84,6 +84,9 @@ aiosmtplib>=3.0.0
 # Scheduling
 apscheduler>=3.10.0
 
+# System Monitoring (for HuggingFace diagnostics)
+psutil>=5.9.0
+
 # NLP & Text Processing
 nltk>=3.8.0
 
