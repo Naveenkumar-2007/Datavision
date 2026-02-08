@@ -396,7 +396,7 @@ const MLPredictions: React.FC = () => {
         ],
     };
 
-    const [clusteringAlgorithm, setClusteringAlgorithm] = useState<string>('kmeans');
+    const [clusteringAlgorithm, setClusteringAlgorithm] = useState<string>('auto');
     const [clusterCount, setClusterCount] = useState<number | null>(null); // null = auto-detect
     const [clusteringResult, setClusteringResult] = useState<any>(null);
 
@@ -1810,10 +1810,12 @@ const MLPredictions: React.FC = () => {
                                     className="w-full p-3 rounded-xl border bg-transparent outline-none focus:border-purple-500 transition-all"
                                     style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                                 >
+                                    <option value="auto" style={{ backgroundColor: isDark ? '#1f2937' : '#fff', color: isDark ? '#fff' : '#000' }}>🚀 Auto (Smart Selection)</option>
                                     <option value="kmeans" style={{ backgroundColor: isDark ? '#1f2937' : '#fff', color: isDark ? '#fff' : '#000' }}>K-Means (Fast, Spherical clusters)</option>
                                     <option value="dbscan" style={{ backgroundColor: isDark ? '#1f2937' : '#fff', color: isDark ? '#fff' : '#000' }}>DBSCAN (Finds outliers)</option>
                                     <option value="hierarchical" style={{ backgroundColor: isDark ? '#1f2937' : '#fff', color: isDark ? '#fff' : '#000' }}>Hierarchical (Cluster hierarchy)</option>
                                     <option value="gmm" style={{ backgroundColor: isDark ? '#1f2937' : '#fff', color: isDark ? '#fff' : '#000' }}>Gaussian Mixture (Soft clustering)</option>
+                                    <option value="spectral" style={{ backgroundColor: isDark ? '#1f2937' : '#fff', color: isDark ? '#fff' : '#000' }}>Spectral (Complex shapes)</option>
                                 </select>
                             </div>
 
