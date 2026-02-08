@@ -1925,12 +1925,8 @@ def generate_stock_charts(
                 ax.set_title('📈 Stock Price Trend with Moving Averages', fontsize=14, fontweight='bold')
                 ax.legend(loc='upper left')
                 ax.grid(True, alpha=0.3)
-                
-                # Improve x-axis formatting - limit number of labels
-                from matplotlib.ticker import MaxNLocator
-                ax.xaxis.set_major_locator(MaxNLocator(nbins=8))
-                plt.xticks(rotation=45, ha='right')
-                fig.subplots_adjust(bottom=0.2)  # Add space for rotated labels
+                plt.xticks(rotation=45)
+                plt.tight_layout()
                 
                 charts['stock_price_trend'] = _fig_to_base64(fig)
             except Exception as e:
@@ -1957,13 +1953,13 @@ def generate_stock_charts(
                                 colorup='#26A69A', colordown='#EF5350')
                 
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-                ax.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=10))
-                plt.xticks(rotation=45, ha='right')
+                ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
+                plt.xticks(rotation=45)
                 ax.set_xlabel('Date', fontsize=12)
                 ax.set_ylabel('Price', fontsize=12)
                 ax.set_title('🕯️ Candlestick Chart (Last 60 Periods)', fontsize=14, fontweight='bold')
                 ax.grid(True, alpha=0.3)
-                fig.subplots_adjust(bottom=0.18)
+                plt.tight_layout()
                 
                 charts['stock_candlestick'] = _fig_to_base64(fig)
             except ImportError:
@@ -1971,23 +1967,20 @@ def generate_stock_charts(
                 try:
                     fig, ax = plt.subplots(figsize=(14, 7))
                     
-                    df_plot = df.tail(60).copy().reset_index(drop=True)
+                    df_plot = df.tail(60).copy()
+                    x = range(len(df_plot))
                     
-                    # Plot high-low range as lines with proper spacing
+                    # Plot high-low range as lines
                     for i, (_, row) in enumerate(df_plot.iterrows()):
                         color = '#26A69A' if row[stock_info['close_col']] >= row[stock_info['open_col']] else '#EF5350'
                         ax.vlines(i, row[stock_info['low_col']], row[stock_info['high_col']], color=color, linewidth=1)
                         ax.vlines(i, row[stock_info['open_col']], row[stock_info['close_col']], color=color, linewidth=4)
                     
-                    # Limit x-axis ticks to prevent crowding
-                    from matplotlib.ticker import MaxNLocator
-                    ax.xaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
-                    
                     ax.set_xlabel('Period', fontsize=12)
                     ax.set_ylabel('Price', fontsize=12)
                     ax.set_title('🕯️ OHLC Chart (Last 60 Periods)', fontsize=14, fontweight='bold')
                     ax.grid(True, alpha=0.3)
-                    fig.subplots_adjust(bottom=0.12)
+                    plt.tight_layout()
                     
                     charts['stock_ohlc'] = _fig_to_base64(fig)
                 except Exception as e:
@@ -2001,7 +1994,7 @@ def generate_stock_charts(
             try:
                 fig, ax = plt.subplots(figsize=(12, 4))
                 
-                df_plot = df.tail(100).reset_index(drop=True)
+                df_plot = df.tail(100)
                 colors = ['#26A69A' if df_plot[stock_info.get('close_col', price_col)].iloc[i] >= 
                          df_plot[stock_info.get('open_col', price_col)].iloc[i] 
                          else '#EF5350' for i in range(len(df_plot))]
@@ -2012,13 +2005,9 @@ def generate_stock_charts(
                 ax.set_title('📊 Trading Volume (Last 100 Periods)', fontsize=14, fontweight='bold')
                 ax.grid(True, alpha=0.3, axis='y')
                 
-                # Limit x-axis ticks to prevent crowding
-                from matplotlib.ticker import MaxNLocator
-                ax.xaxis.set_major_locator(MaxNLocator(nbins=10, integer=True))
-                
                 # Format y-axis for large numbers
                 ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'{x/1e6:.1f}M' if x >= 1e6 else f'{x/1e3:.0f}K' if x >= 1e3 else f'{x:.0f}'))
-                fig.subplots_adjust(bottom=0.15)
+                plt.tight_layout()
                 
                 charts['stock_volume'] = _fig_to_base64(fig)
             except Exception as e:

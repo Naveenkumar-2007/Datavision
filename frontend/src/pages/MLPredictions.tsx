@@ -510,9 +510,9 @@ const MLPredictions: React.FC = () => {
                             result.task_type = activeModel.task_type;
                             result.feature_columns = activeModel.feature_columns || result.feature_columns;
                             // Detect mode from active model
-                            result.mode = activeModel.mode ||
+                            result.mode = activeModel.mode || 
                                 (activeModel.model_name?.includes('NLP') ? 'nlp' :
-                                    activeModel.model_name?.includes('Deep') ? 'deep_learning' : 'traditional');
+                                 activeModel.model_name?.includes('Deep') ? 'deep_learning' : 'traditional');
                             console.log('[MLPredictions] Synced with active model:', activeModel.model_name);
                         }
                     }
@@ -530,7 +530,7 @@ const MLPredictions: React.FC = () => {
                             result.feature_metadata = savedResult.feature_metadata;
                             console.log('[MLPredictions] Loaded feature_metadata from saved model:', savedResult.feature_metadata.length, 'features');
                         }
-
+                        
                         // Update charts if missing or empty
                         if ((!result.charts || Object.keys(result.charts).length === 0) && savedResult.charts && Object.keys(savedResult.charts).length > 0) {
                             result.charts = savedResult.charts;
@@ -540,12 +540,12 @@ const MLPredictions: React.FC = () => {
                                 sessionStorage.setItem(`mlCharts_${userId}`, JSON.stringify(savedResult.charts));
                             } catch (e) { }
                         }
-
+                        
                         // Update mode if detected
                         if (savedResult.mode) {
                             result.mode = savedResult.mode as 'traditional' | 'nlp' | 'deep_learning';
                         }
-
+                        
                         // Update multi-mode specific fields
                         if (savedResult.modes_trained) {
                             (result as any).modes_trained = savedResult.modes_trained;
@@ -559,36 +559,22 @@ const MLPredictions: React.FC = () => {
                         if (savedResult.primary_text_col) {
                             (result as any).primary_text_col = savedResult.primary_text_col;
                         }
-
+                        
                         // CRITICAL: Update data_summary if missing (for rows, columns, features display)
                         if ((!result.data_summary || result.data_summary.rows === 0) && savedResult.data_summary) {
                             result.data_summary = savedResult.data_summary;
                             console.log('[MLPredictions] Loaded data_summary from saved model:', savedResult.data_summary);
                         }
-
+                        
                         // Update all_models if missing (for Models Trained count)
                         if ((!result.all_models || result.all_models.length === 0) && savedResult.all_models?.length > 0) {
                             result.all_models = savedResult.all_models;
                             console.log('[MLPredictions] Loaded all_models from saved model:', savedResult.all_models.length, 'models');
                         }
-
+                        
                         // Update leaderboard if missing
                         if ((!result.leaderboard || result.leaderboard?.length === 0) && savedResult.leaderboard?.length > 0) {
                             (result as any).leaderboard = savedResult.leaderboard;
-                        }
-
-                        // CRITICAL: Update cleaned_file for Data tab persistence
-                        if (!result.cleaned_file && savedResult.cleaned_file) {
-                            result.cleaned_file = savedResult.cleaned_file;
-                            console.log('[MLPredictions] Loaded cleaned_file from saved model:', savedResult.cleaned_file);
-                        }
-
-                        // Also sync pipeline and preprocessing info
-                        if (savedResult.pipeline && !result.pipeline) {
-                            result.pipeline = savedResult.pipeline;
-                        }
-                        if (savedResult.preprocessing_steps && (!result.preprocessing_steps || result.preprocessing_steps.length === 0)) {
-                            result.preprocessing_steps = savedResult.preprocessing_steps;
                         }
                     }
                 } catch (err) {
@@ -633,21 +619,21 @@ const MLPredictions: React.FC = () => {
                     headers: getAuthHeadersSync()
                 });
                 const backendResult = await backendResponse.json();
-
+                
                 if (backendResult.success && backendResult.best_model) {
                     console.log('[MLPredictions] Loaded from backend API (persisted data)');
                     const resultWithCharts = await addChartsFromStorage(backendResult);
                     if (!isMounted) return;
                     setResult(resultWithCharts);
                     setActiveTab('overview'); // Reset to overview when loading results
-
+                    
                     // Cache to localStorage and sessionStorage
                     try {
                         localStorage.setItem(`mlResults_${userId}`, JSON.stringify(backendResult));
                         localStorage.setItem(`hasMLResults_${userId}`, 'true');
                         sessionStorage.setItem(`mlResultsSession_${userId}`, JSON.stringify(backendResult));
-                    } catch (e) { }
-
+                    } catch (e) {}
+                    
                     if (isMounted) setLoading(false);
                     return;
                 }
@@ -1154,7 +1140,7 @@ const MLPredictions: React.FC = () => {
                     const isDlOnly = modes.length === 1 && modes[0] === 'deep_learning';
                     const isTraditionalOnly = modes.length === 1 && modes[0] === 'traditional';
                     const isAutoMode = selectedAlgorithms.traditional.includes('auto');
-
+                    
                     // Get mode-specific colors and labels
                     let gradientClass = 'bg-gradient-to-r from-emerald-400 via-green-400 to-cyan-400';
                     let bgGlow = 'bg-green-500/20';
@@ -1165,7 +1151,7 @@ const MLPredictions: React.FC = () => {
                     let title = '🚀 Fast ML Training';
                     let timeLabel = '⏱️ Fast mode: 1-3 minutes for quick results.';
                     let badges = [{ text: '10 Core Algorithms' }, { text: 'Quick Training' }];
-
+                    
                     // PRIORITY ORDER: Check specific modes FIRST, then Fast/Ultra for traditional auto
                     if (isMultiMode) {
                         // Combined multi-mode training
@@ -1177,8 +1163,8 @@ const MLPredictions: React.FC = () => {
                         borderCard = 'border-indigo-500/30';
                         title = '🔀 Combined ML Training';
                         timeLabel = '⏱️ Multi-mode: 5-15 minutes for comprehensive analysis.';
-                        badges = modes.map(m => ({
-                            text: m === 'traditional' ? 'Traditional ML' : m === 'nlp' ? 'NLP' : 'Deep Learning'
+                        badges = modes.map(m => ({ 
+                            text: m === 'traditional' ? 'Traditional ML' : m === 'nlp' ? 'NLP' : 'Deep Learning' 
                         }));
                     } else if (isNlpOnly) {
                         // NLP only mode
@@ -1226,7 +1212,7 @@ const MLPredictions: React.FC = () => {
                         badges = [{ text: '15+ Algorithms' }, { text: 'Ensembles' }, { text: 'Auto-Tuning' }];
                     }
                     // else: Default is Fast ML Training (already set above)
-
+                    
                     return (
                         <div
                             className="fixed inset-0 z-[100] flex items-center justify-center transition-all duration-500"
@@ -2388,12 +2374,12 @@ const MLPredictions: React.FC = () => {
         }));
 
     // Determine if this is an NLP-trained model (either single NLP or NLP in multi-mode)
-    const isNlpMode = result.mode === 'nlp' ||
+    const isNlpMode = result.mode === 'nlp' || 
         (result as any).modes_trained?.includes('nlp') ||
         (result as any).results_per_mode?.nlp?.success ||
         result.best_model?.name?.toLowerCase().includes('vectorizer') ||
         result.best_model?.name?.toLowerCase().includes('tfidf');
-
+    
     // Get text column for NLP mode
     const nlpTextColumn = (result as any).results_per_mode?.nlp?.text_column ||
         (result as any).primary_text_col ||
@@ -2420,7 +2406,7 @@ const MLPredictions: React.FC = () => {
             placeholder: `Enter ${nlpTextColumn} for NLP prediction...`
         }, ...inputFeatures.filter(f => f.name !== nlpTextColumn)];
     }
-
+    
     // If NLP mode and feature_metadata is empty, create text input
     if (isNlpMode && inputFeatures.length === 0 && nlpTextColumn) {
         inputFeatures = [{
@@ -2432,7 +2418,7 @@ const MLPredictions: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            {/* Header with Export Options */}
+            {/* Header */}
             <motion.div
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -2453,264 +2439,127 @@ const MLPredictions: React.FC = () => {
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
-                    {/* Export JSON Button */}
-                    <motion.button
-                        whileHover={{ scale: 1.03 }}
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => {
-                            const exportData = {
-                                exported_at: new Date().toISOString(),
-                                task_type: result.task_type,
-                                target_column: result.target_column,
-                                best_model: result.best_model,
-                                metrics: result.best_model.metrics,
-                                all_models: result.all_models?.map(m => ({
-                                    name: m.name,
-                                    metrics: m.metrics
-                                })),
-                                feature_importance: result.feature_importance?.slice(0, 10),
-                                insights: result.insights,
-                                recommendations: result.recommendations,
-                                data_summary: result.data_summary,
-                                processing_time_seconds: result.processing_time_seconds
-                            };
-                            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `ml_results_${result.target_column}_${new Date().toISOString().split('T')[0]}.json`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                            toast.success('Results exported as JSON');
-                        }}
-                        className="px-3 py-2 rounded-xl border transition-all flex items-center gap-2 text-sm hover:bg-blue-500/10"
-                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-                        title="Export as JSON"
-                    >
-                        <Code2 className="w-4 h-4 text-blue-400" />
-                        <span className="hidden sm:inline">JSON</span>
-                    </motion.button>
-
-                    {/* Export CSV Button */}
-                    <motion.button
-                        whileHover={{ scale: 1.03 }}
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => {
-                            // Create CSV content from model comparison
-                            let csvContent = "Model,Accuracy,F1,Precision,Recall,R2,RMSE\n";
-                            result.all_models?.forEach(model => {
-                                csvContent += `"${model.name}",${model.metrics?.accuracy?.toFixed(4) || ''},${model.metrics?.f1?.toFixed(4) || ''},${model.metrics?.precision?.toFixed(4) || ''},${model.metrics?.recall?.toFixed(4) || ''},${model.metrics?.r2?.toFixed(4) || ''},${model.metrics?.rmse?.toFixed(4) || ''}\n`;
-                            });
-                            const blob = new Blob([csvContent], { type: 'text/csv' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `model_comparison_${result.target_column}_${new Date().toISOString().split('T')[0]}.csv`;
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                            URL.revokeObjectURL(url);
-                            toast.success('Model comparison exported as CSV');
-                        }}
-                        className="px-3 py-2 rounded-xl border transition-all flex items-center gap-2 text-sm hover:bg-emerald-500/10"
-                        style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
-                        title="Export Model Comparison as CSV"
-                    >
-                        <FileText className="w-4 h-4 text-emerald-400" />
-                        <span className="hidden sm:inline">CSV</span>
-                    </motion.button>
-
-                    {/* New Training Button */}
-                    <motion.button
-                        whileHover={{ scale: 1.03 }}
-                        whileTap={{ scale: 0.97 }}
-                        onClick={() => {
-                            setResult(null);
-                            loadExistingFiles();
-                        }}
-                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white font-medium transition-all flex items-center gap-2 shadow-lg shadow-green-500/20 hover:shadow-green-500/30"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                        <span>New Training</span>
-                    </motion.button>
-                </div>
+                <button
+                    onClick={() => {
+                        setResult(null);
+                        loadExistingFiles();
+                    }}
+                    className="w-full md:w-auto px-4 py-2 rounded-xl border transition-colors flex items-center justify-center gap-2"
+                    style={{ borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}
+                >
+                    <RefreshCw className="w-4 h-4" />
+                    <span>New Training</span>
+                </button>
             </motion.div>
 
-
-            {/* Key Metrics - 4 Enhanced Cards with Gradients & Animations */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Best Model Card - With gradient background */}
+            {/* Key Metrics - 5 Cards including Production Intelligence */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <motion.div
-                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ delay: 0.1, type: 'spring', stiffness: 100 }}
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    className="p-6 rounded-2xl border relative overflow-hidden group cursor-pointer"
-                    style={{
-                        backgroundColor: 'var(--bg-card)',
-                        borderColor: 'var(--border-color)',
-                        boxShadow: isDark ? '0 4px 20px rgba(74, 222, 128, 0.1)' : '0 4px 20px rgba(22, 163, 74, 0.1)'
-                    }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.1 }}
+                    className="p-6 rounded-2xl border"
+                    style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
                 >
-                    {/* Gradient overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 via-transparent to-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <div className="absolute top-0 right-0 w-24 h-24 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <Award className="w-full h-full" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
-                    </div>
-                    <div className="relative z-10">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/10 group-hover:from-green-500/30 group-hover:to-emerald-500/20 transition-colors">
-                                <Award className="w-5 h-5" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
-                            </div>
-                            <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Best Model</span>
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="p-2 rounded-lg bg-primary-500/20">
+                            <Award className="w-5 h-5" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
                         </div>
-                        <p className="text-xl font-bold bg-gradient-to-r from-green-400 to-emerald-500 bg-clip-text text-transparent truncate" title={result.best_model.name}>
-                            {result.best_model.name}
-                        </p>
-                        <div className="mt-3 h-1 rounded-full bg-gray-700/30 overflow-hidden">
-                            <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: '100%' }}
-                                transition={{ delay: 0.5, duration: 1, ease: 'easeOut' }}
-                                className="h-full bg-gradient-to-r from-green-500 to-emerald-400"
-                            />
-                        </div>
+                        <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Best Model</span>
                     </div>
+                    <p className="text-2xl font-bold text-primary-500">{result.best_model.name}</p>
                 </motion.div>
 
-                {/* Accuracy/Score Card - With animated progress */}
                 <motion.div
-                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ delay: 0.15, type: 'spring', stiffness: 100 }}
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    className="p-6 rounded-2xl border relative overflow-hidden group cursor-pointer"
-                    style={{
-                        backgroundColor: 'var(--bg-card)',
-                        borderColor: 'var(--border-color)',
-                        boxShadow: '0 4px 20px rgba(59, 130, 246, 0.1)'
-                    }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="p-6 rounded-2xl border"
+                    style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
                 >
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-transparent to-cyan-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <div className="absolute top-0 right-0 w-24 h-24 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <Target className="w-full h-full text-blue-400" />
-                    </div>
-                    <div className="relative z-10">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/10 group-hover:from-blue-500/30 group-hover:to-cyan-500/20 transition-colors">
-                                <Target className="w-5 h-5 text-blue-400" />
-                            </div>
-                            <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>{bestMetric[0]?.toUpperCase() || 'SCORE'}</span>
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="p-2 rounded-lg bg-blue-500/20">
+                            <Target className="w-5 h-5 text-blue-400" />
                         </div>
-                        <p className="text-3xl font-bold" style={{ color: getMetricColor(bestMetric[1] as number) }}>
-                            {((bestMetric[1] as number) * 100).toFixed(1)}%
-                        </p>
-                        <div className="mt-3 h-1.5 rounded-full bg-gray-700/30 overflow-hidden">
-                            <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: `${(bestMetric[1] as number) * 100}%` }}
-                                transition={{ delay: 0.6, duration: 1.2, ease: 'easeOut' }}
-                                className="h-full rounded-full"
-                                style={{
-                                    background: `linear-gradient(90deg, ${getMetricColor(bestMetric[1] as number)}, ${getMetricColor(bestMetric[1] as number)}cc)`
-                                }}
-                            />
-                        </div>
+                        <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>{bestMetric[0]?.toUpperCase()}</span>
                     </div>
+                    <p className="text-2xl font-bold" style={{ color: getMetricColor(bestMetric[1] as number) }}>
+                        {((bestMetric[1] as number) * 100).toFixed(1)}%
+                    </p>
                 </motion.div>
 
-                {/* Models Trained Card */}
+                {/* 🛡️ PRODUCTION INTELLIGENCE: Reliability Score Card - ALL MODES */}
                 <motion.div
-                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ delay: 0.2, type: 'spring', stiffness: 100 }}
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    className="p-6 rounded-2xl border relative overflow-hidden group cursor-pointer"
-                    style={{
-                        backgroundColor: 'var(--bg-card)',
-                        borderColor: 'var(--border-color)',
-                        boxShadow: '0 4px 20px rgba(16, 185, 129, 0.1)'
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.17 }}
+                    className="p-6 rounded-2xl border relative overflow-hidden"
+                    style={{ 
+                        backgroundColor: 'var(--bg-card)', 
+                        borderColor: (result.reliability_score || result.best_model?.reliability || 75) >= 80 ? '#22c55e' : 
+                                     (result.reliability_score || result.best_model?.reliability || 75) >= 60 ? '#f59e0b' : '#ef4444'
                     }}
                 >
-                    <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-teal-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <div className="absolute top-0 right-0 w-24 h-24 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <Layers className="w-full h-full text-emerald-400" />
+                    <div className="absolute top-0 right-0 w-20 h-20 opacity-10">
+                        <ShieldCheck className="w-full h-full" style={{ 
+                            color: (result.reliability_score || result.best_model?.reliability || 75) >= 80 ? '#22c55e' : 
+                                   (result.reliability_score || result.best_model?.reliability || 75) >= 60 ? '#f59e0b' : '#ef4444'
+                        }} />
                     </div>
-                    <div className="relative z-10">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/10 group-hover:from-emerald-500/30 group-hover:to-teal-500/20 transition-colors">
-                                <Layers className="w-5 h-5 text-emerald-400" />
-                            </div>
-                            <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Models Trained</span>
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className={`p-2 rounded-lg ${
+                            (result.reliability_score || result.best_model?.reliability || 75) >= 80 ? 'bg-green-500/20' : 
+                            (result.reliability_score || result.best_model?.reliability || 75) >= 60 ? 'bg-amber-500/20' : 'bg-red-500/20'
+                        }`}>
+                            <ShieldCheck className="w-5 h-5" style={{ 
+                                color: (result.reliability_score || result.best_model?.reliability || 75) >= 80 ? '#22c55e' : 
+                                       (result.reliability_score || result.best_model?.reliability || 75) >= 60 ? '#f59e0b' : '#ef4444'
+                            }} />
                         </div>
-                        <div className="flex items-baseline gap-2">
-                            <motion.p
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="text-3xl font-bold text-emerald-400"
-                            >
-                                {result.all_models?.length || 0}
-                            </motion.p>
-                            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>algorithms</span>
-                        </div>
-                        {/* Mini bar chart visualization */}
-                        <div className="mt-3 flex items-end gap-0.5 h-4">
-                            {[0.4, 0.7, 0.5, 0.9, 0.6, 0.8, 0.3].map((h, i) => (
-                                <motion.div
-                                    key={i}
-                                    initial={{ height: 0 }}
-                                    animate={{ height: `${h * 100}%` }}
-                                    transition={{ delay: 0.7 + i * 0.05, duration: 0.3 }}
-                                    className="flex-1 rounded-sm bg-gradient-to-t from-emerald-500/60 to-emerald-400/40"
-                                />
-                            ))}
-                        </div>
+                        <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Reliability</span>
                     </div>
+                    <p className="text-2xl font-bold" style={{ 
+                        color: (result.reliability_score || result.best_model?.reliability || 75) >= 80 ? '#22c55e' : 
+                               (result.reliability_score || result.best_model?.reliability || 75) >= 60 ? '#f59e0b' : '#ef4444'
+                    }}>
+                        {(result.reliability_score || result.best_model?.reliability || 75).toFixed(0)}/100
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {(result.reliability_score || result.best_model?.reliability || 75) >= 80 ? '✓ Production Ready' : 
+                         (result.reliability_score || result.best_model?.reliability || 75) >= 60 ? '⚠ Moderate' : '⚠ Needs Review'}
+                    </p>
                 </motion.div>
 
-                {/* Data Summary Card - Rows & Columns */}
                 <motion.div
-                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ delay: 0.25, type: 'spring', stiffness: 100 }}
-                    whileHover={{ scale: 1.02, y: -2 }}
-                    className="p-6 rounded-2xl border relative overflow-hidden group cursor-pointer"
-                    style={{
-                        backgroundColor: 'var(--bg-card)',
-                        borderColor: 'var(--border-color)',
-                        boxShadow: '0 4px 20px rgba(245, 158, 11, 0.1)'
-                    }}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.2 }}
+                    className="p-6 rounded-2xl border"
+                    style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
                 >
-                    <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-orange-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <div className="absolute top-0 right-0 w-24 h-24 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <Database className="w-full h-full text-amber-400" />
-                    </div>
-                    <div className="relative z-10">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 group-hover:from-amber-500/30 group-hover:to-orange-500/20 transition-colors">
-                                <Database className="w-5 h-5 text-amber-400" />
-                            </div>
-                            <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Dataset</span>
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="p-2 rounded-lg bg-emerald-500/20">
+                            <Layers className="w-5 h-5 text-emerald-400" />
                         </div>
-                        <div className="flex items-center gap-4">
-                            <div>
-                                <p className="text-2xl font-bold text-amber-400">
-                                    {result.data_summary?.rows?.toLocaleString() || '—'}
-                                </p>
-                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>rows</p>
-                            </div>
-                            <div className="w-px h-8 bg-gray-600/30" />
-                            <div>
-                                <p className="text-2xl font-bold text-orange-400">
-                                    {result.data_summary?.columns || result.feature_importance?.length || 0}
-                                </p>
-                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>columns</p>
-                            </div>
-                        </div>
+                        <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Models Trained</span>
                     </div>
+                    <p className="text-2xl font-bold text-emerald-400">{result.all_models?.length || 0}</p>
+                </motion.div>
+
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.25 }}
+                    className="p-6 rounded-2xl border"
+                    style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
+                >
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="p-2 rounded-lg bg-amber-500/20">
+                            <Sparkles className="w-5 h-5 text-amber-400" />
+                        </div>
+                        <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>Columns</span>
+                    </div>
+                    <p className="text-2xl font-bold text-amber-400">{result.data_summary?.columns || result.feature_importance?.length || 0}</p>
                 </motion.div>
             </div>
 
@@ -2725,7 +2574,7 @@ const MLPredictions: React.FC = () => {
                         <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
                         <div className="flex-1">
                             <h4 className="font-semibold text-amber-400 mb-2">Production Intelligence Alerts</h4>
-
+                            
                             {result.leakage_report?.has_leakage && (
                                 <div className="mb-2">
                                     <p className="text-sm text-amber-300">
@@ -2740,7 +2589,7 @@ const MLPredictions: React.FC = () => {
                                     </div>
                                 </div>
                             )}
-
+                            
                             {result.validation_warnings && result.validation_warnings.length > 0 && (
                                 <div>
                                     <p className="text-sm text-amber-300 mb-1">⚠️ <strong>Validation Warnings:</strong></p>
@@ -2859,128 +2708,75 @@ const MLPredictions: React.FC = () => {
                             </div>
                         )}
 
-                        {/* All Models - Enhanced Visual Comparison */}
-                        <motion.div
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.2 }}
-                            className="p-6 rounded-2xl border"
-                            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
-                        >
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                    <Activity className="w-5 h-5 text-blue-400" />
-                                    Model Comparison
-                                </h3>
-                                <span className="text-xs px-3 py-1 bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-green-400 rounded-full border border-green-500/30">
-                                    {result.all_models?.length || 0} models evaluated
+                        {/* All Models */}
+                        <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                <Activity className="w-5 h-5 text-blue-400" />
+                                All Models Performance
+                                <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded ml-2">
+                                    🛡️ Production Validated
                                 </span>
-                            </div>
-                            <div className="space-y-4">
+                            </h3>
+                            <div className="space-y-3">
                                 {/* Show leaderboard if available (multi-mode), otherwise all_models */}
                                 {((result.leaderboard && result.leaderboard.length > 0) ? result.leaderboard : result.all_models)?.slice(0, 8).map((model: any, i: number) => {
                                     const mainMetric = model.score || Object.values(model.metrics || {})[0] || 0;
                                     const modelName = model.model || model.name;
                                     const modeLabel = model.mode ? `[${model.mode}]` : '';
                                     const isBest = modelName === (result.best_overall?.name || result.best_model?.name);
-                                    const barColor = isBest
-                                        ? 'from-green-500 via-emerald-500 to-teal-500'
-                                        : mainMetric >= 0.9 ? 'from-blue-500 to-cyan-500'
-                                            : mainMetric >= 0.7 ? 'from-amber-500 to-orange-500'
-                                                : 'from-red-500 to-pink-500';
-
+                                    const reliability = model.reliability_score || model.reliability || 75;
+                                    const hasWarning = model.warning;
                                     return (
-                                        <motion.div
-                                            key={i}
-                                            initial={{ opacity: 0, x: -20 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            transition={{ delay: 0.1 + i * 0.05 }}
-                                            whileHover={{ x: 4, backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}
-                                            className={`p-3 rounded-xl transition-all cursor-pointer ${isBest ? 'ring-1 ring-green-500/50' : ''}`}
-                                            style={{ backgroundColor: isBest ? (isDark ? 'rgba(34, 197, 94, 0.08)' : 'rgba(34, 197, 94, 0.05)') : 'transparent' }}
-                                        >
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-medium truncate max-w-[180px]"
-                                                        style={{ color: isBest ? '#4ade80' : 'var(--text-primary)' }}
-                                                        title={modelName}
-                                                    >
-                                                        {modeLabel && <span className="text-xs opacity-60 mr-1">{modeLabel}</span>}
-                                                        {modelName}
-                                                    </span>
-                                                    {isBest && (
-                                                        <span className="text-[10px] px-1.5 py-0.5 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded font-bold">
-                                                            BEST
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <span className={`text-lg font-bold tabular-nums ${mainMetric >= 0.9 ? 'text-green-400' :
-                                                    mainMetric >= 0.7 ? 'text-amber-400' : 'text-red-400'
-                                                    }`}>
-                                                    {(mainMetric * 100).toFixed(1)}%
-                                                </span>
-                                            </div>
-                                            <div className="h-2 rounded-full overflow-hidden" style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb' }}>
-                                                <motion.div
-                                                    initial={{ width: 0 }}
-                                                    animate={{ width: `${mainMetric * 100}%` }}
-                                                    transition={{ delay: 0.3 + i * 0.08, duration: 0.8, ease: 'easeOut' }}
-                                                    className={`h-full rounded-full bg-gradient-to-r ${barColor}`}
+                                        <div key={i} className="flex items-center gap-3">
+                                            <span className="w-28 text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }} title={modelName}>
+                                                {modeLabel} {modelName}
+                                            </span>
+                                            <div className="flex-1 rounded-full h-3" style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb' }}>
+                                                <div
+                                                    className={`h-3 rounded-full ${isBest ? 'bg-gradient-to-r from-primary-500 to-emerald-500' : 'bg-blue-500'}`}
+                                                    style={{ width: `${mainMetric * 100}%` }}
                                                 />
                                             </div>
-                                        </motion.div>
+                                            <span className="w-16 text-sm font-bold text-right" style={{ color: 'var(--text-primary)' }}>
+                                                {(mainMetric * 100).toFixed(1)}%
+                                            </span>
+                                            {/* 🛡️ Reliability indicator */}
+                                            <span 
+                                                className={`w-12 text-xs font-medium text-center px-1 py-0.5 rounded ${
+                                                    reliability >= 80 ? 'bg-green-500/20 text-green-400' :
+                                                    reliability >= 60 ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'
+                                                }`}
+                                                title={hasWarning ? `Warning: ${hasWarning}` : `Reliability: ${reliability}/100`}
+                                            >
+                                                {hasWarning ? '⚠️' : '✓'} {reliability}
+                                            </span>
+                                            {isBest && (
+                                                <span className="text-xs px-2 py-0.5 bg-primary-500 text-white rounded">BEST</span>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </div>
-                            {result.all_models && result.all_models.length > 8 && (
-                                <p className="text-xs text-center mt-4" style={{ color: 'var(--text-muted)' }}>
-                                    Showing top 8 of {result.all_models.length} models
-                                </p>
-                            )}
-                        </motion.div>
+                        </div>
 
-                        {/* Insights - Enhanced with animations */}
-                        <motion.div
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.3 }}
-                            className="p-6 rounded-2xl border"
-                            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
-                        >
+                        {/* Insights */}
+                        <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                                 <Sparkles className="w-5 h-5 text-amber-400" />
                                 AI Insights
-                                <span className="text-xs px-2 py-0.5 bg-amber-500/20 text-amber-400 rounded-full ml-2">
-                                    {result.insights?.length || 0} found
-                                </span>
                             </h3>
                             <div className="space-y-3">
                                 {result.insights?.slice(0, 5).map((insight, i) => (
-                                    <motion.div
+                                    <div
                                         key={i}
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.4 + i * 0.1 }}
-                                        whileHover={{ x: 4 }}
-                                        className="p-4 rounded-xl border-l-4 transition-all cursor-default group"
-                                        style={{
-                                            backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                                            borderLeftColor: ['#22c55e', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6'][i % 5]
-                                        }}
+                                        className="p-4 rounded-xl border-l-4 border-l-green-500"
+                                        style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}
                                     >
-                                        <div className="flex items-start gap-3">
-                                            <span className="text-lg">{['💡', '📊', '🎯', '⚡', '🔍'][i % 5]}</span>
-                                            <p className="text-sm flex-1" style={{ color: 'var(--text-primary)' }}>{insight}</p>
-                                        </div>
-                                    </motion.div>
+                                        <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{insight}</p>
+                                    </div>
                                 ))}
-                                {(!result.insights || result.insights.length === 0) && (
-                                    <p className="text-sm text-center py-4" style={{ color: 'var(--text-muted)' }}>
-                                        No insights available for this training run.
-                                    </p>
-                                )}
                             </div>
-                        </motion.div>
+                        </div>
                     </div>
                 )}
 
@@ -3046,20 +2842,17 @@ const MLPredictions: React.FC = () => {
                                 const formattedName = displayName.replace(/_/g, ' ');
 
                                 return (
-                                    <motion.div
+                                    <div
                                         key={chartName}
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        whileHover={{ scale: 1.01 }}
-                                        className="rounded-2xl border overflow-hidden transition-all hover:shadow-xl group"
+                                        className="rounded-2xl border overflow-hidden transition-all hover:shadow-lg"
                                         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
                                     >
-                                        <div className="flex items-center gap-3 px-5 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                                        <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
                                             <div className="p-2 rounded-lg bg-gradient-to-r from-primary-500/20 to-emerald-500/20">
                                                 <BarChart3 className="w-4 h-4" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
                                             </div>
                                             <div className="flex-1">
-                                                <h3 className="text-sm font-semibold capitalize" style={{ color: 'var(--text-primary)' }}>
+                                                <h3 className="text-base font-semibold capitalize" style={{ color: 'var(--text-primary)' }}>
                                                     {formattedName}
                                                 </h3>
                                                 {modeLabel && (
@@ -3076,26 +2869,10 @@ const MLPredictions: React.FC = () => {
                                                 )}
                                             </div>
                                         </div>
-                                        {/* Chart container - fixed height with proper image fit */}
-                                        <div
-                                            className="relative overflow-hidden"
-                                            style={{
-                                                backgroundColor: isDark ? '#0a0f1a' : '#ffffff',
-                                                padding: '8px'
-                                            }}
-                                        >
-                                            <img
-                                                src={chartBase64}
-                                                alt={chartName}
-                                                className="w-full h-auto rounded transition-transform duration-300 group-hover:scale-[1.02]"
-                                                style={{
-                                                    display: 'block',
-                                                    margin: '0 auto',
-                                                    backgroundColor: isDark ? '#0a0f1a' : '#ffffff'
-                                                }}
-                                            />
+                                        <div className="p-4" style={{ backgroundColor: isDark ? '#0f172a' : '#f8fafc' }}>
+                                            <img src={chartBase64} alt={chartName} className="w-full rounded-lg" style={{ maxHeight: '350px', objectFit: 'contain' }} />
                                         </div>
-                                    </motion.div>
+                                    </div>
                                 );
                             })}
 
@@ -3281,29 +3058,22 @@ const MLPredictions: React.FC = () => {
                         <button
                             onClick={async () => {
                                 try {
-                                    // VALIDATION: Check if any inputs have values
-                                    const filledInputs = Object.entries(predictionInput).filter(([_, v]) => v !== '' && v !== null && v !== undefined);
-                                    if (filledInputs.length === 0) {
-                                        toast.error('Please enter values for at least one feature before making a prediction.');
-                                        return;
-                                    }
-
                                     // Detect the correct mode for prediction
                                     let predictMode = result.mode || 'traditional';
-
+                                    
                                     // Check if NLP was trained (for multi-mode or single NLP training)
                                     const wasNlpTrained = (result as any).modes_trained?.includes('nlp') ||
                                         (result as any).results_per_mode?.nlp?.success ||
                                         result.best_model?.name?.toLowerCase().includes('vectorizer') ||
                                         result.best_model?.name?.toLowerCase().includes('tfidf') ||
                                         result.best_model?.name?.toLowerCase().includes('nlp');
-
+                                    
                                     // Check if Deep Learning was trained
                                     const wasDLTrained = (result as any).modes_trained?.includes('deep_learning') ||
                                         (result as any).results_per_mode?.deep_learning?.success ||
                                         result.best_model?.name?.toLowerCase().includes('mlp') ||
                                         result.best_model?.name?.toLowerCase().includes('neural');
-
+                                    
                                     // Determine best mode based on what was trained and best model name
                                     if (wasNlpTrained && (result as any).best_overall?.mode === 'nlp') {
                                         predictMode = 'nlp';
@@ -3314,7 +3084,7 @@ const MLPredictions: React.FC = () => {
                                     } else if (wasDLTrained && result.best_model?.name?.toLowerCase().includes('mlp')) {
                                         predictMode = 'deep_learning';
                                     }
-
+                                    
                                     const dataToSend = {
                                         user_id: getUserIdSync(),
                                         model_name: result.best_model.name,
@@ -3495,7 +3265,7 @@ const MLPredictions: React.FC = () => {
                                     Usage Example
                                 </h4>
                                 <pre className="text-xs p-3 rounded-lg overflow-x-auto" style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}>
-                                    {`import pickle
+{`import pickle
 
 # Load the trained model
 with open('model.pkl', 'rb') as f:

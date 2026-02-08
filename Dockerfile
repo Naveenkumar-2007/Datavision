@@ -30,6 +30,7 @@ COPY backend/ backend/
 
 # Create ALL storage directories with proper ownership
 # SECURITY: Use 755 (rwxr-xr-x) instead of 777
+# 2026-02-08 - Added exports, audit, users dirs for ML training persistenc
 RUN mkdir -p /app/storage/users \
              /app/backend/storage/users \
              /app/backend/storage/automl \
@@ -37,9 +38,12 @@ RUN mkdir -p /app/storage/users \
              /app/backend/storage/clustering_models \
              /app/backend/storage/graph \
              /app/backend/storage/faiss \
-             /app/backend/storage/uploads && \
-    chown -R appuser:appuser /app/storage /app/backend/storage /app/static && \
-    chmod -R 755 /app/storage /app/backend/storage
+             /app/backend/storage/uploads \
+             /app/backend/storage/exports \
+             /app/backend/storage/audit \
+             /app/backend/catboost_info && \
+    chown -R appuser:appuser /app/storage /app/backend/storage /app/backend/catboost_info /app/static && \
+    chmod -R 755 /app/storage /app/backend/storage /app/backend/catboost_info
 
 # Set ownership of entire app directory to non-root user
 RUN chown -R appuser:appuser /app

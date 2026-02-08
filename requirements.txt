@@ -100,5 +100,8 @@ aiofiles>=23.2.0
 python-dateutil>=2.8.0
 pytz>=2024.1
 
+# Clustering - Mixed Data Support (K-Modes/K-Prototypes)
+kmodes>=0.12.2
+
 # Document Export
 python-pptx>=0.6.21  # PowerPoint export

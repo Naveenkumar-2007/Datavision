@@ -176,12 +176,7 @@ except ImportError:
 warnings.filterwarnings('ignore')
 logger = logging.getLogger(__name__)
 
-import os
-# Use absolute path for Docker/HuggingFace, relative for local development
-if os.path.exists("/app"):
-    STORAGE_PATH = "/app/backend/storage/automl"
-else:
-    STORAGE_PATH = "./storage/automl"
+STORAGE_PATH = "./storage/automl"
 
 # =============================================================================
 # GPU/CPU AUTO-DETECTION
@@ -2665,34 +2660,6 @@ class ProductionMLEngine:
         logger.info("🚀 PRODUCTION AUTOML PIPELINE")
         logger.info("=" * 60)
         
-        # 🚀 HUGGINGFACE ENVIRONMENT DIAGNOSTICS
-        import os
-        is_huggingface = os.path.exists("/app") or os.getenv("SPACE_ID") is not None
-        
-        if is_huggingface:
-            logger.info("🐳 [HF-DIAG] Running on HuggingFace Spaces")
-            logger.info(f"🐳 [HF-DIAG] Data shape: {df.shape}")
-            logger.info(f"🐳 [HF-DIAG] Target column: {target_col}")
-            logger.info(f"🐳 [HF-DIAG] Mode: {mode}")
-            
-            # Check memory
-            try:
-                import psutil
-                mem = psutil.virtual_memory()
-                logger.info(f"🐳 [HF-DIAG] Memory: {mem.available // (1024*1024)}MB available / {mem.total // (1024*1024)}MB total")
-            except:
-                logger.info("🐳 [HF-DIAG] Memory info unavailable")
-            
-            # Check critical dependencies
-            deps_status = []
-            for dep in ['sklearn', 'numpy', 'pandas', 'xgboost', 'lightgbm', 'catboost']:
-                try:
-                    __import__(dep.replace('sklearn', 'sklearn.ensemble'))
-                    deps_status.append(f"✅ {dep}")
-                except:
-                    deps_status.append(f"❌ {dep}")
-            logger.info(f"🐳 [HF-DIAG] Dependencies: {', '.join(deps_status)}")
-        
         # 🆕 Use Smart Data Analyzer for improved target detection and insights
         try:
             from ml.smart_data_analyzer import SmartDataAnalyzer
@@ -2999,44 +2966,10 @@ class ProductionMLEngine:
         logger.info("\n🔮 TRANSFORMING TEST DATA")
         X_test = engineer.transform(df_test, target_col)
         y_test = df_test[target_col].values
-        
-        # 🔧 SAFETY CHECK: Verify task_type_simple matches actual target data type
-        # This catches cases where SmartDataAnalyzer incorrectly detected regression
         if self.task_type_simple == 'regression':
-            # Try to convert - if it fails, we're actually doing classification
-            try:
-                test_convert = pd.to_numeric(pd.Series(y_test), errors='raise')
-                y_test = y_test.astype(float)
-            except (ValueError, TypeError) as e:
-                # Target contains strings like 'Yes'/'No' - this is CLASSIFICATION
-                logger.warning(f"🔧 SAFETY FIX: Changing task from regression to classification (target contains non-numeric values)")
-                self.task_type_simple = 'classification'
-                self.task_type = 'classification'
-                # Now handle as classification
-                if hasattr(self, 'target_encoder') and self.target_encoder is not None:
-                    y_test = self.target_encoder.transform(
-                        pd.Series(y_test).fillna('_MISSING_').astype(str).str.strip()
-                    )
-                else:
-                    from sklearn.preprocessing import LabelEncoder
-                    fallback_encoder = LabelEncoder()
-                    y_test = fallback_encoder.fit_transform(y_test.astype(str))
+            y_test = y_test.astype(float)
         else:
-            # Classification: Use target_encoder to handle string/object labels (e.g., 'Yes'/'No')
-            # The target_encoder was fitted on training data, now transform test labels
-            if hasattr(self, 'target_encoder') and self.target_encoder is not None:
-                y_test = self.target_encoder.transform(
-                    pd.Series(y_test).fillna('_MISSING_').astype(str).str.strip()
-                )
-            else:
-                # Fallback: try direct int conversion (if already numeric encoded)
-                try:
-                    y_test = y_test.astype(int)
-                except ValueError:
-                    # Create a new encoder as emergency fallback
-                    from sklearn.preprocessing import LabelEncoder
-                    fallback_encoder = LabelEncoder()
-                    y_test = fallback_encoder.fit_transform(y_test.astype(str))
+            y_test = y_test.astype(int)  # Already encoded
         
         logger.info(f"   ✅ X_train: {X_train.shape} | X_test: {X_test.shape}")
         
