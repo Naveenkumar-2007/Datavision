@@ -841,12 +841,18 @@ class ProductionFeatureEngineer:
                     except:
                         pass
                 
-                # Text: ONLY long strings (avg > 50 chars) that are likely real text
-                # NOT names, IDs, or categorical with many unique values
+                # Text: Long strings with many unique values
+                # More flexible detection - don't require specific column names
+                col_lower = col.lower()
+                text_keywords = ['description', 'text', 'comment', 'review', 'content', 'body', 'message', 
+                                 'title', 'name', 'summary', 'feedback', 'note', 'detail', 'caption', 'headline']
+                has_text_name = any(word in col_lower for word in text_keywords)
+                
+                # Detect text: EITHER has text-like name OR has long average length with high uniqueness
                 is_real_text = (
-                    avg_len > 50 and  # Long strings
-                    unique_ratio > 0.3 and  # Many unique values
-                    any(word in col_lower for word in ['description', 'text', 'comment', 'review', 'content', 'body', 'message'])
+                    (avg_len > 30 and unique_ratio > 0.5) or  # Long unique strings (likely text)
+                    (avg_len > 50 and unique_ratio > 0.2) or  # Very long strings
+                    (has_text_name and avg_len > 20)  # Has text keyword and reasonable length
                 )
                 
                 if is_real_text:
@@ -1172,7 +1178,45 @@ class ProductionFeatureEngineer:
         
         # ===== COMBINE ALL FEATURES =====
         if not feature_parts:
-            raise ValueError("No valid features after processing!")
+            # 🆘 EMERGENCY FALLBACK: Try TF-IDF on ANY string column
+            print("   ⚠️ No features extracted! Trying TF-IDF fallback on string columns...")
+            string_cols = [c for c in df.columns if df[c].dtype == 'object' or str(df[c].dtype).startswith('str')]
+            
+            if string_cols:
+                for col in string_cols[:3]:  # Try up to 3 string columns
+                    try:
+                        series = df[col].fillna('').astype(str)
+                        tfidf = TfidfVectorizer(max_features=100, stop_words='english', min_df=1)
+                        tfidf_matrix = tfidf.fit_transform(series)
+                        
+                        # Reduce dimensionality
+                        n_components = min(20, tfidf_matrix.shape[1] - 1, len(df) // 10)
+                        if n_components > 1 and tfidf_matrix.shape[1] > n_components:
+                            svd = TruncatedSVD(n_components=n_components, random_state=42)
+                            text_features = svd.fit_transform(tfidf_matrix)
+                            self.transformers[f'{col}_emergency_svd'] = svd
+                        else:
+                            text_features = tfidf_matrix.toarray()
+                        
+                        self.transformers[f'{col}_emergency_tfidf'] = tfidf
+                        feature_parts.append(text_features)
+                        feature_names.extend([f"{col}_tfidf_{i}" for i in range(text_features.shape[1])])
+                        print(f"   ✅ Emergency TF-IDF on '{col}': {text_features.shape[1]} features")
+                    except Exception as e:
+                        print(f"   ⚠️ Emergency TF-IDF failed for '{col}': {str(e)[:50]}")
+                        # Last resort: label encode
+                        try:
+                            le = LabelEncoder()
+                            encoded = le.fit_transform(df[col].fillna('').astype(str))
+                            feature_parts.append(encoded.reshape(-1, 1).astype(float))
+                            feature_names.append(f"{col}_emergency_encoded")
+                            self.encoders[f'{col}_emergency'] = le
+                            print(f"   ✅ Emergency label encode on '{col}'")
+                        except:
+                            pass
+            
+            if not feature_parts:
+                raise ValueError("No valid features after processing! Your data may need NLP processing - try the NLP mode instead.")
         
         # 🛡️ SAFETY: Ensure each feature part is numeric before combining
         clean_parts = []
