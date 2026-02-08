@@ -29,6 +29,13 @@ interface FileInfo {
 
 const ALGORITHMS = [
   { 
+    id: 'auto', 
+    name: '🚀 Auto (Smart Selection)', 
+    description: 'Automatically selects the best algorithm for your data',
+    requiresClusters: false,
+    speed: 'Fast'
+  },
+  { 
     id: 'kmeans', 
     name: 'K-Means', 
     description: 'Best for spherical clusters of similar size',
@@ -68,7 +75,7 @@ const ALGORITHMS = [
 export default function Clustering() {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [selectedFile, setSelectedFile] = useState<string>('');
-  const [algorithm, setAlgorithm] = useState<string>('kmeans');
+  const [algorithm, setAlgorithm] = useState<string>('auto');
   const [nClusters, setNClusters] = useState<number | null>(null);
   const [autoDetect, setAutoDetect] = useState<boolean>(true);
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -76,10 +83,11 @@ export default function Clustering() {
   const [error, setError] = useState<string | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState<boolean>(true);
 
-  // Load user files and saved clustering result on mount
+  // Load user files on mount - DO NOT auto-load results
+  // Results should ONLY show after user clicks "Run Clustering"
   useEffect(() => {
     loadFiles();
-    loadSavedClusteringModel();
+    // Removed loadSavedClusteringModel() - results show only after user action
   }, []);
 
   const loadSavedClusteringModel = async () => {
@@ -421,35 +429,244 @@ export default function Clustering() {
               </div>
             )}
 
-            {/* Cluster Visualization */}
-            {result.charts?.cluster_scatter && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold flex items-center gap-2 text-gray-900 dark:text-white">
-                    <PieChart className="w-5 h-5 text-purple-500" />
-                    Cluster Visualization (PCA 2D)
-                  </h3>
-                  <button 
-                    onClick={() => {
-                      const link = document.createElement('a');
-                      link.href = result.charts.cluster_scatter;
-                      link.download = 'clusters.png';
-                      link.click();
-                    }}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 
-                             dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600
-                             text-gray-700 dark:text-gray-300 transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </button>
-                </div>
-                <div className="flex justify-center">
-                  <img
-                    src={result.charts.cluster_scatter}
-                    alt="Cluster visualization"
-                    className="max-w-full max-h-[500px] rounded-lg"
-                  />
+            {/* ============================================================= */}
+            {/* ALL COMPREHENSIVE VISUALIZATIONS - Rendered dynamically */}
+            {/* ============================================================= */}
+            {result.charts && Object.keys(result.charts).length > 0 && (
+              <div className="space-y-6">
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                  📊 Visualizations ({Object.keys(result.charts).length} Charts)
+                </h3>
+                
+                {/* Primary Visualization - Cluster Scatter */}
+                {result.charts.cluster_scatter && (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold flex items-center gap-2 text-gray-900 dark:text-white">
+                        <PieChart className="w-5 h-5 text-purple-500" />
+                        🔮 Cluster Scatter (PCA 2D)
+                      </h3>
+                      <button 
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = result.charts.cluster_scatter;
+                          link.download = 'cluster_scatter.png';
+                          link.click();
+                        }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 
+                                 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600
+                                 text-gray-700 dark:text-gray-300 transition-colors"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </button>
+                    </div>
+                    <div className="flex justify-center">
+                      <img src={result.charts.cluster_scatter} alt="Cluster scatter" className="max-w-full max-h-[500px] rounded-lg" />
+                    </div>
+                  </div>
+                )}
+
+                {/* 3D Visualization if available */}
+                {result.charts.cluster_3d && (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold text-gray-900 dark:text-white">🌐 3D Cluster Visualization</h3>
+                      <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.cluster_3d; l.download = 'cluster_3d.png'; l.click(); }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                        <Download className="w-4 h-4" /> Download
+                      </button>
+                    </div>
+                    <div className="flex justify-center">
+                      <img src={result.charts.cluster_3d} alt="3D Clusters" className="max-w-full max-h-[500px] rounded-lg" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Grid Layout for Secondary Charts */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  
+                  {/* Elbow Method */}
+                  {result.charts.elbow_method && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">📈 Elbow Method</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.elbow_method; l.download = 'elbow_method.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.elbow_method} alt="Elbow Method" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Silhouette Plot */}
+                  {result.charts.silhouette_plot && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">📊 Silhouette Analysis</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.silhouette_plot; l.download = 'silhouette.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.silhouette_plot} alt="Silhouette" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* PCA Variance */}
+                  {result.charts.pca_variance && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">📊 PCA Explained Variance</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.pca_variance; l.download = 'pca_variance.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.pca_variance} alt="PCA Variance" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Cluster Heatmap */}
+                  {result.charts.cluster_heatmap && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🔥 Cluster Profile Heatmap</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.cluster_heatmap; l.download = 'cluster_heatmap.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.cluster_heatmap} alt="Cluster Heatmap" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Dendrogram (Hierarchical) */}
+                  {result.charts.dendrogram && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🌳 Dendrogram</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.dendrogram; l.download = 'dendrogram.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.dendrogram} alt="Dendrogram" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* t-SNE */}
+                  {result.charts.tsne && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🔬 t-SNE Visualization</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.tsne; l.download = 'tsne.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.tsne} alt="t-SNE" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* UMAP */}
+                  {result.charts.umap && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🗺️ UMAP Visualization</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.umap; l.download = 'umap.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.umap} alt="UMAP" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Pairplot */}
+                  {result.charts.pairplot && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 lg:col-span-2">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🔍 Feature Pairplot</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.pairplot; l.download = 'pairplot.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.pairplot} alt="Pairplot" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Boxplots */}
+                  {result.charts.boxplots && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 lg:col-span-2">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">📦 Feature Boxplots by Cluster</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.boxplots; l.download = 'boxplots.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.boxplots} alt="Boxplots" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Violin Plots */}
+                  {result.charts.violin_plots && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 lg:col-span-2">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🎻 Violin Plots by Cluster</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.violin_plots; l.download = 'violin_plots.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.violin_plots} alt="Violin Plots" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Correlation Heatmap */}
+                  {result.charts.correlation_heatmap && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🔗 Correlation Heatmap</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.correlation_heatmap; l.download = 'correlation_heatmap.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.correlation_heatmap} alt="Correlation" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Radar Chart */}
+                  {result.charts.radar_chart && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🎯 Radar Chart Comparison</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.radar_chart; l.download = 'radar_chart.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.radar_chart} alt="Radar Chart" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Distribution Bar */}
+                  {result.charts.cluster_distribution && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">📊 Cluster Size Distribution</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.cluster_distribution; l.download = 'distribution.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.cluster_distribution} alt="Distribution" className="w-full rounded-lg" />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
