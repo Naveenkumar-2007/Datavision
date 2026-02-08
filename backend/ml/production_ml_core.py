@@ -864,7 +864,7 @@ class ProductionFeatureEngineer:
                 
                 if is_real_text:
                     text_cols.append(col)
-                    print(f"   📝 Detected text column: {col} (avg_len={avg_len:.1f}, unique_ratio={unique_ratio:.2f})")
+                    print(f"   [TEXT] Detected text column: {col} (avg_len={avg_len:.1f}, unique_ratio={unique_ratio:.2f})")
                 else:
                     # Everything else is categorical (names, genres, etc.)
                     categorical_cols.append(col)
