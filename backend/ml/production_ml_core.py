@@ -2570,7 +2570,44 @@ class ProductionModelTrainer:
         print(f"\n   🏆 Best Model: {self.best_name} (score: {self.best_score:.4f})")
         
         if failed_models and len(self.results) == 0:
-            raise ValueError(f"All models failed: {'; '.join(failed_models[:3])}")
+            # 🚨 EMERGENCY FALLBACK: Try pure sklearn models only
+            print(f"   ⚠️ All advanced models failed. Trying emergency sklearn fallback...")
+            
+            try:
+                if self.task_type == 'classification':
+                    from sklearn.linear_model import LogisticRegression
+                    fallback_model = LogisticRegression(max_iter=1000, n_jobs=1, random_state=42)
+                    fallback_name = 'LogisticRegression_Fallback'
+                else:
+                    from sklearn.linear_model import Ridge
+                    fallback_model = Ridge(random_state=42)
+                    fallback_name = 'Ridge_Fallback'
+                
+                fallback_model.fit(X_train, y_train)
+                y_pred = fallback_model.predict(X_test)
+                
+                if self.task_type == 'classification':
+                    score = accuracy_score(y_test, y_pred)
+                    metrics = {'accuracy': float(score), 'fallback': True}
+                else:
+                    score = r2_score(y_test, y_pred)
+                    metrics = {'r2': float(score), 'fallback': True}
+                
+                self.results.append({
+                    'name': fallback_name,
+                    'model': fallback_model,
+                    'score': float(score),
+                    'metrics': metrics,
+                    'warning': 'Emergency fallback model - advanced models failed'
+                })
+                self.best_model = fallback_model
+                self.best_name = fallback_name
+                self.best_score = score
+                print(f"   ✅ Fallback {fallback_name}: score={score:.4f}")
+                
+            except Exception as fallback_err:
+                print(f"   ❌ Even fallback failed: {fallback_err}")
+                raise ValueError(f"All models failed including fallback: {'; '.join(failed_models[:3])}")
         
         # 🛡️ PRODUCTION INTELLIGENCE: Validate Training Results
         # Detect overfitting, suspicious accuracy, and compute reliability scores

@@ -2665,6 +2665,34 @@ class ProductionMLEngine:
         logger.info("🚀 PRODUCTION AUTOML PIPELINE")
         logger.info("=" * 60)
         
+        # 🚀 HUGGINGFACE ENVIRONMENT DIAGNOSTICS
+        import os
+        is_huggingface = os.path.exists("/app") or os.getenv("SPACE_ID") is not None
+        
+        if is_huggingface:
+            logger.info("🐳 [HF-DIAG] Running on HuggingFace Spaces")
+            logger.info(f"🐳 [HF-DIAG] Data shape: {df.shape}")
+            logger.info(f"🐳 [HF-DIAG] Target column: {target_col}")
+            logger.info(f"🐳 [HF-DIAG] Mode: {mode}")
+            
+            # Check memory
+            try:
+                import psutil
+                mem = psutil.virtual_memory()
+                logger.info(f"🐳 [HF-DIAG] Memory: {mem.available // (1024*1024)}MB available / {mem.total // (1024*1024)}MB total")
+            except:
+                logger.info("🐳 [HF-DIAG] Memory info unavailable")
+            
+            # Check critical dependencies
+            deps_status = []
+            for dep in ['sklearn', 'numpy', 'pandas', 'xgboost', 'lightgbm', 'catboost']:
+                try:
+                    __import__(dep.replace('sklearn', 'sklearn.ensemble'))
+                    deps_status.append(f"✅ {dep}")
+                except:
+                    deps_status.append(f"❌ {dep}")
+            logger.info(f"🐳 [HF-DIAG] Dependencies: {', '.join(deps_status)}")
+        
         # 🆕 Use Smart Data Analyzer for improved target detection and insights
         try:
             from ml.smart_data_analyzer import SmartDataAnalyzer
