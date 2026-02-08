@@ -344,6 +344,56 @@ async def _run_production_clustering(
     _save_clustering_model(user_id, model_id, model_data)
     
     # =======================================================================
+    # SAVE CLEANED DATA WITH CLUSTER LABELS
+    # =======================================================================
+    cleaned_file = None
+    model_pkl_file = None
+    
+    try:
+        # Create cleaned dataframe with cluster assignments
+        cleaned_df = df.copy()
+        cleaned_df['Cluster'] = labels
+        cleaned_df['Cluster_Name'] = [f'Cluster_{l}' if l >= 0 else 'Noise' for l in labels]
+        
+        # Add PCA components for visualization
+        cleaned_df['PCA_1'] = X_2d[:, 0]
+        cleaned_df['PCA_2'] = X_2d[:, 1]
+        
+        # Save cleaned CSV
+        cleaned_filename = f"clustered_data_{model_id}.csv"
+        cleaned_path = paths.get("files", paths["base"] / "files") / cleaned_filename
+        cleaned_df.to_csv(cleaned_path, index=False)
+        cleaned_file = cleaned_filename
+        logger.info(f"✅ Saved cleaned data: {cleaned_path}")
+        
+        # Save PKL model file
+        import pickle
+        pkl_filename = f"clustering_model_{model_id}.pkl"
+        pkl_path = paths.get("models", paths["base"] / "models") / pkl_filename
+        pkl_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        pkl_data = {
+            'algorithm': algorithm,
+            'n_clusters': actual_n_clusters,
+            'scaler': scaler,
+            'feature_columns': feature_columns,
+            'centroids_scaled': _get_cluster_centroids(X_scaled, labels) if actual_n_clusters > 0 else None,
+            'labels': labels,
+            'model_id': model_id,
+            'created_at': datetime.now().isoformat(),
+            'silhouette_score': metrics['silhouette_score'],
+            'cluster_profiles': cluster_profiles,
+        }
+        
+        with open(pkl_path, 'wb') as f:
+            pickle.dump(pkl_data, f)
+        model_pkl_file = pkl_filename
+        logger.info(f"✅ Saved PKL model: {pkl_path}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to save cleaned data/PKL: {e}")
+    
+    # =======================================================================
     # BUILD RESPONSE
     # =======================================================================
     response = {
@@ -370,6 +420,9 @@ async def _run_production_clustering(
         'reliability_score': reliability_score,
         'validation_warnings': validation_warnings if validation_warnings else None,
         'comparison_results': comparison_results,
+        'cleaned_file': cleaned_file,
+        'model_pkl_file': model_pkl_file,
+        'k_scores': k_scores,  # For elbow chart on frontend
     }
     
     logger.info(f"✅ Clustering complete: {actual_n_clusters} clusters, silhouette={metrics['silhouette_score']:.3f}")
@@ -1731,3 +1784,69 @@ async def get_clustering_info():
             "calinski_harabasz_score": "Ratio of between-cluster to within-cluster dispersion (higher is better)"
         }
     }
+
+
+@router.get("/clustering/download-model/{user_id}")
+async def download_clustering_model(user_id: str):
+    """
+    Download the trained clustering model as PKL file
+    """
+    from fastapi.responses import FileResponse
+    
+    try:
+        paths = get_user_paths(user_id)
+        models_dir = paths.get("models", paths["base"] / "models")
+        
+        # Find the latest clustering model
+        pkl_files = list(models_dir.glob("clustering_model_*.pkl"))
+        
+        if not pkl_files:
+            raise HTTPException(status_code=404, detail="No clustering model found. Train a model first.")
+        
+        # Get the most recent file
+        latest_pkl = max(pkl_files, key=lambda p: p.stat().st_mtime)
+        
+        return FileResponse(
+            path=str(latest_pkl),
+            media_type='application/octet-stream',
+            filename=latest_pkl.name
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Download model error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/clustering/download-data/{user_id}")
+async def download_clustered_data(user_id: str):
+    """
+    Download the cleaned data with cluster assignments
+    """
+    from fastapi.responses import FileResponse
+    
+    try:
+        paths = get_user_paths(user_id)
+        files_dir = paths.get("files", paths["base"] / "files")
+        
+        # Find the latest clustered data file
+        csv_files = list(files_dir.glob("clustered_data_*.csv"))
+        
+        if not csv_files:
+            raise HTTPException(status_code=404, detail="No clustered data found. Run clustering first.")
+        
+        # Get the most recent file
+        latest_csv = max(csv_files, key=lambda p: p.stat().st_mtime)
+        
+        return FileResponse(
+            path=str(latest_csv),
+            media_type='text/csv',
+            filename=latest_csv.name
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Download data error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

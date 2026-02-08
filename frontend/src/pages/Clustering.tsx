@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import {
   Boxes, Database, Play, Settings as SettingsIcon,
   PieChart, Info, Download, RefreshCw, ChevronDown,
-  AlertCircle, CheckCircle, HelpCircle
+  AlertCircle, CheckCircle, HelpCircle, Brain, Code2,
+  BarChart3, FileText
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { getUserIdSync } from '@/utils/userId';
@@ -12,11 +13,20 @@ interface ClusterResult {
   success: boolean;
   algorithm: string;
   n_clusters: number;
+  n_samples?: number;
+  n_features?: number;
   silhouette_score: number;
+  calinski_harabasz_score?: number;
+  davies_bouldin_score?: number;
   cluster_distribution: Record<string, number>;
   charts: Record<string, string>;
   insights: string[];
   pca_variance_explained?: number;
+  reliability_score?: number;
+  cleaned_file?: string;
+  model_pkl_file?: string;
+  model_id?: string;
+  k_scores?: Record<number, number>;
 }
 
 interface FileInfo {
@@ -82,6 +92,7 @@ export default function Clustering() {
   const [result, setResult] = useState<ClusterResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoadingFiles, setIsLoadingFiles] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'data'>('overview');
 
   // Load user files on mount - DO NOT auto-load results
   // Results should ONLY show after user clicks "Run Clustering"
@@ -378,61 +389,179 @@ export default function Clustering() {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-6"
           >
-            {/* Metrics Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">Clusters Found</p>
-                <p className="text-3xl font-bold text-purple-600">
-                  {result.n_clusters}
-                </p>
-              </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">Silhouette Score</p>
-                <p className={`text-3xl font-bold ${getSilhouetteColor(result.silhouette_score)}`}>
-                  {result.silhouette_score.toFixed(3)}
-                </p>
-                <span className={`text-xs ${getSilhouetteColor(result.silhouette_score)}`}>
-                  {getSilhouetteLabel(result.silhouette_score)}
-                </span>
-              </div>
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">Algorithm</p>
-                <p className="text-xl font-bold text-blue-600">
-                  {ALGORITHMS.find(a => a.id === result.algorithm)?.name || result.algorithm}
-                </p>
-              </div>
-              {result.pca_variance_explained !== undefined && (
-                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                  <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">PCA Variance</p>
-                  <p className="text-3xl font-bold text-green-600">
-                    {(result.pca_variance_explained * 100).toFixed(1)}%
-                  </p>
-                </div>
-              )}
+            {/* Tab Navigation */}
+            <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700 pb-4">
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === 'overview'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4" />
+                Overview
+              </button>
+              <button
+                onClick={() => setActiveTab('charts')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === 'charts'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                <PieChart className="w-4 h-4" />
+                Charts ({Object.keys(result.charts || {}).length})
+              </button>
+              <button
+                onClick={() => setActiveTab('data')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === 'data'
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                <Database className="w-4 h-4" />
+                Data & Model
+              </button>
             </div>
 
-            {/* Insights */}
-            {result.insights && result.insights.length > 0 && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-                <h3 className="font-semibold mb-4 flex items-center gap-2 text-gray-900 dark:text-white">
-                  <Info className="w-5 h-5 text-blue-500" />
-                  Insights
-                </h3>
-                <ul className="space-y-3">
-                  {result.insights.map((insight, i) => (
-                    <li key={i} className="flex items-start gap-2 text-gray-700 dark:text-gray-300">
-                      <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span>{insight}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            {/* ============================================= */}
+            {/* OVERVIEW TAB */}
+            {/* ============================================= */}
+            {activeTab === 'overview' && (
+              <>
+                {/* Metrics Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                    <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">Clusters Found</p>
+                    <p className="text-3xl font-bold text-purple-600">
+                      {result.n_clusters}
+                    </p>
+                  </div>
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                    <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">Silhouette Score</p>
+                    <p className={`text-3xl font-bold ${getSilhouetteColor(result.silhouette_score)}`}>
+                      {result.silhouette_score.toFixed(3)}
+                    </p>
+                    <span className={`text-xs ${getSilhouetteColor(result.silhouette_score)}`}>
+                      {getSilhouetteLabel(result.silhouette_score)}
+                    </span>
+                  </div>
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                    <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">Algorithm</p>
+                    <p className="text-xl font-bold text-blue-600">
+                      {ALGORITHMS.find(a => a.id === result.algorithm)?.name || result.algorithm}
+                    </p>
+                  </div>
+                  {result.pca_variance_explained !== undefined && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">PCA Variance</p>
+                      <p className="text-3xl font-bold text-green-600">
+                        {(result.pca_variance_explained * 100).toFixed(1)}%
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Additional Metrics */}
+                {(result.calinski_harabasz_score || result.davies_bouldin_score || result.reliability_score) && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {result.calinski_harabasz_score !== undefined && (
+                      <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                        <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">Calinski-Harabasz</p>
+                        <p className="text-2xl font-bold text-cyan-600">{result.calinski_harabasz_score.toFixed(1)}</p>
+                        <p className="text-xs text-gray-500">Higher is better</p>
+                      </div>
+                    )}
+                    {result.davies_bouldin_score !== undefined && (
+                      <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                        <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">Davies-Bouldin</p>
+                        <p className="text-2xl font-bold text-amber-600">{result.davies_bouldin_score.toFixed(3)}</p>
+                        <p className="text-xs text-gray-500">Lower is better</p>
+                      </div>
+                    )}
+                    {result.reliability_score !== undefined && (
+                      <div className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                        <p className="text-gray-500 dark:text-gray-400 text-sm mb-1">Reliability Score</p>
+                        <p className="text-2xl font-bold text-emerald-600">{result.reliability_score}%</p>
+                        <p className="text-xs text-gray-500">Production confidence</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Main Scatter Plot */}
+                {result.charts?.cluster_scatter && (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-semibold flex items-center gap-2 text-gray-900 dark:text-white">
+                        <PieChart className="w-5 h-5 text-purple-500" />
+                        🔮 Cluster Scatter (PCA 2D)
+                      </h3>
+                      <button
+                        onClick={() => {
+                          const link = document.createElement('a');
+                          link.href = result.charts.cluster_scatter;
+                          link.download = 'cluster_scatter.png';
+                          link.click();
+                        }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </button>
+                    </div>
+                    <div className="flex justify-center">
+                      <img src={result.charts.cluster_scatter} alt="Cluster scatter" className="max-w-full max-h-[500px] rounded-lg" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Cluster Distribution */}
+                <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                  <h3 className="font-semibold mb-4 text-gray-900 dark:text-white">
+                    Cluster Distribution
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    {Object.entries(result.cluster_distribution).map(([cluster, count]) => {
+                      const total = Object.values(result.cluster_distribution).reduce((a, b) => a + b, 0);
+                      const percentage = ((count / total) * 100).toFixed(1);
+                      return (
+                        <div key={cluster} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-center">
+                          <p className="text-2xl font-bold text-gray-900 dark:text-white">{count}</p>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">{cluster}</p>
+                          <p className="text-xs text-purple-500 mt-1">{percentage}%</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Insights */}
+                {result.insights && result.insights.length > 0 && (
+                  <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                    <h3 className="font-semibold mb-4 flex items-center gap-2 text-gray-900 dark:text-white">
+                      <Info className="w-5 h-5 text-blue-500" />
+                      Insights
+                    </h3>
+                    <ul className="space-y-3">
+                      {result.insights.map((insight, i) => (
+                        <li key={i} className="flex items-start gap-2 text-gray-700 dark:text-gray-300">
+                          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                          <span>{insight}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
             )}
 
-            {/* ============================================================= */}
-            {/* ALL COMPREHENSIVE VISUALIZATIONS - Rendered dynamically */}
-            {/* ============================================================= */}
-            {result.charts && Object.keys(result.charts).length > 0 && (
+            {/* ============================================= */}
+            {/* CHARTS TAB */}
+            {/* ============================================= */}
+            {activeTab === 'charts' && result.charts && Object.keys(result.charts).length > 0 && (
               <div className="space-y-6">
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white">
                   📊 Visualizations ({Object.keys(result.charts).length} Charts)
@@ -671,28 +800,120 @@ export default function Clustering() {
               </div>
             )}
 
-            {/* Cluster Distribution */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
-              <h3 className="font-semibold mb-4 text-gray-900 dark:text-white">
-                Cluster Distribution
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {Object.entries(result.cluster_distribution).map(([cluster, count]) => {
-                  const total = Object.values(result.cluster_distribution).reduce((a, b) => a + b, 0);
-                  const percentage = ((count / total) * 100).toFixed(1);
-                  return (
-                    <div
-                      key={cluster}
-                      className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-center"
-                    >
-                      <p className="text-2xl font-bold text-gray-900 dark:text-white">{count}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">{cluster}</p>
-                      <p className="text-xs text-purple-500 mt-1">{percentage}%</p>
+            {/* ============================================= */}
+            {/* DATA TAB - Download PKL Model & Cleaned Data */}
+            {/* ============================================= */}
+            {activeTab === 'data' && (
+              <div className="text-center py-8">
+                <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-2xl mx-auto">
+                  <div className="w-20 h-20 mx-auto bg-purple-500/20 rounded-full flex items-center justify-center mb-6">
+                    <Database className="w-10 h-10 text-purple-500" />
+                  </div>
+                  <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">
+                    Production Assets
+                  </h2>
+                  <p className="mb-8 leading-relaxed text-gray-600 dark:text-gray-400">
+                    Download trained clustering model and cleaned dataset with cluster assignments for deployment in production environments.
+                  </p>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Trained Model Download */}
+                    <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                      <div className="w-14 h-14 mx-auto bg-purple-500/20 rounded-full flex items-center justify-center mb-4">
+                        <Brain className="w-7 h-7 text-purple-500" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">
+                        Clustering Model
+                      </h3>
+                      <p className="text-sm mb-4 text-gray-600 dark:text-gray-400">
+                        Download the trained clustering model (.pkl) with scaler and centroids for new predictions.
+                      </p>
+                      <a
+                        href={`/api/v1/ml/clustering/download-model/${getUserIdSync()}`}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
+                      >
+                        <Download className="w-5 h-5" />
+                        Download Model (.pkl)
+                      </a>
+                      <p className="text-xs mt-3 flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
+                        <CheckCircle className="w-3 h-3 text-purple-400" />
+                        {result.algorithm?.toUpperCase() || 'Clustering'} Model
+                      </p>
                     </div>
-                  );
-                })}
+
+                    {/* Cleaned Dataset Download */}
+                    <div className="p-6 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+                      <div className="w-14 h-14 mx-auto bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
+                        <FileText className="w-7 h-7 text-emerald-500" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2 text-gray-900 dark:text-white">
+                        Clustered Dataset
+                      </h3>
+                      <p className="text-sm mb-4 text-gray-600 dark:text-gray-400">
+                        Original data with Cluster assignments, Cluster names, and PCA coordinates.
+                      </p>
+                      <a
+                        href={`/api/v1/ml/clustering/download-data/${getUserIdSync()}`}
+                        className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
+                      >
+                        <Download className="w-5 h-5" />
+                        Download CSV
+                      </a>
+                      <p className="text-xs mt-3 flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400">
+                        <CheckCircle className="w-3 h-3 text-emerald-400" />
+                        {result.n_clusters} Cluster Assignments
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Usage Instructions */}
+                  <div className="mt-8 p-4 rounded-xl text-left bg-gray-50 dark:bg-gray-800/50">
+                    <h4 className="font-semibold mb-2 flex items-center gap-2 text-gray-900 dark:text-white">
+                      <Code2 className="w-4 h-4" />
+                      Usage Example
+                    </h4>
+                    <pre className="text-xs p-3 rounded-lg overflow-x-auto bg-gray-100 dark:bg-gray-900 text-gray-700 dark:text-gray-300">
+{`import pickle
+import pandas as pd
+
+# Load the trained clustering model
+with open('clustering_model.pkl', 'rb') as f:
+    model_data = pickle.load(f)
+
+# Access components
+scaler = model_data['scaler']
+centroids = model_data['centroids_scaled']
+feature_cols = model_data['feature_columns']
+
+# Predict cluster for new data
+new_data = pd.read_csv('new_data.csv')
+X_new = scaler.transform(new_data[feature_cols])
+
+# Find nearest centroid
+import numpy as np
+distances = np.linalg.norm(X_new[:, np.newaxis] - centroids, axis=2)
+predictions = np.argmin(distances, axis=1)`}
+                    </pre>
+                  </div>
+
+                  {/* Data Summary */}
+                  <div className="mt-6 grid grid-cols-3 gap-4 text-sm">
+                    <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-800">
+                      <p className="text-gray-500 dark:text-gray-400">Samples</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-white">{result.n_samples || '—'}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-800">
+                      <p className="text-gray-500 dark:text-gray-400">Features</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-white">{result.n_features || '—'}</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-gray-100 dark:bg-gray-800">
+                      <p className="text-gray-500 dark:text-gray-400">Clusters</p>
+                      <p className="text-xl font-bold text-gray-900 dark:text-white">{result.n_clusters}</p>
+                    </div>
+                  </div>
+                </motion.div>
               </div>
-            </div>
+            )}
           </motion.div>
         )}
 

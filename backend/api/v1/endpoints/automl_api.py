@@ -891,6 +891,8 @@ async def get_saved_result(
                         "data_summary": data_summary,
                         "all_models": all_models,
                         "leaderboard": leaderboard,
+                        # Include cleaned_file for Data tab persistence
+                        "cleaned_file": multimode_meta.get('cleaned_file'),
                     }
                     logger.info(f"[saved-result] Loaded multimode metadata for user {user_id}")
                     return result
@@ -2319,6 +2321,8 @@ async def multi_mode_train(
                 'task_type': primary_task_type,
                 'results_per_mode': all_results,
                 'primary_text_col': all_results.get('nlp', {}).get('text_column'),
+                # Include cleaned_file for Data tab persistence
+                'cleaned_file': cleaned_file_path,
                 # Include data_summary for page reloads
                 'data_summary': {
                     'rows': n_rows,
