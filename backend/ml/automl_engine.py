@@ -3002,7 +3002,21 @@ class ProductionMLEngine:
         if self.task_type_simple == 'regression':
             y_test = y_test.astype(float)
         else:
-            y_test = y_test.astype(int)  # Already encoded
+            # Classification: Use target_encoder to handle string/object labels (e.g., 'Yes'/'No')
+            # The target_encoder was fitted on training data, now transform test labels
+            if hasattr(self, 'target_encoder') and self.target_encoder is not None:
+                y_test = self.target_encoder.transform(
+                    pd.Series(y_test).fillna('_MISSING_').astype(str).str.strip()
+                )
+            else:
+                # Fallback: try direct int conversion (if already numeric encoded)
+                try:
+                    y_test = y_test.astype(int)
+                except ValueError:
+                    # Create a new encoder as emergency fallback
+                    from sklearn.preprocessing import LabelEncoder
+                    fallback_encoder = LabelEncoder()
+                    y_test = fallback_encoder.fit_transform(y_test.astype(str))
         
         logger.info(f"   ✅ X_train: {X_train.shape} | X_test: {X_test.shape}")
         
