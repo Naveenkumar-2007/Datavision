@@ -1711,7 +1711,8 @@ class ProductionModelTrainer:
                 models['CatBoost'] = cb.CatBoostClassifier(
                     iterations=100, depth=6, learning_rate=0.1,
                     random_state=42, verbose=False,
-                    auto_class_weights='Balanced'
+                    auto_class_weights='Balanced',
+                    allow_writing_files=False  # Disable file writing for Docker compatibility
                 )
             
             # === ULTRA MODE: Additional Models (15+ more) WITH CLASS BALANCING ===
@@ -1800,7 +1801,8 @@ class ProductionModelTrainer:
                         l2_leaf_reg=3, random_strength=1,
                         bagging_temperature=0.5,
                         random_state=42, verbose=False,
-                        auto_class_weights='Balanced'
+                        auto_class_weights='Balanced',
+                        allow_writing_files=False  # Disable file writing for Docker compatibility
                     )
                 
                 # 🆕 Enhanced Stacking Ensemble with more diverse base learners
@@ -1920,7 +1922,8 @@ class ProductionModelTrainer:
                     iterations=80 if is_large else 100, 
                     depth=5 if is_large else 6, 
                     learning_rate=0.1,
-                    random_state=42, verbose=False
+                    random_state=42, verbose=False,
+                    allow_writing_files=False  # Disable file writing for Docker compatibility
                 )
             
             # === ULTRA MODE: Additional Models (15+ more) - ENHANCED ===
@@ -1985,7 +1988,8 @@ class ProductionModelTrainer:
                         iterations=300, depth=10, learning_rate=0.03,
                         l2_leaf_reg=3, random_strength=1,
                         bagging_temperature=0.5,
-                        random_state=42, verbose=False
+                        random_state=42, verbose=False,
+                        allow_writing_files=False  # Disable file writing for Docker compatibility
                     )
                 
                 # 🆕 Enhanced Stacking Ensemble
@@ -3074,7 +3078,8 @@ def build_selected_models(
             'catboost': ('CatBoost', cb.CatBoostClassifier(
                 iterations=100 if is_large else 150, depth=6,
                 learning_rate=0.1, random_state=42, verbose=False,
-                auto_class_weights='Balanced'
+                auto_class_weights='Balanced',
+                allow_writing_files=False
             )) if HAS_CATBOOST else None,
             'decision_tree': ('DecisionTree', DecisionTreeClassifier(
                 max_depth=10, random_state=42, class_weight='balanced'
@@ -3155,7 +3160,8 @@ def build_selected_models(
             )) if HAS_LIGHTGBM else None,
             'catboost': ('CatBoost', cb.CatBoostRegressor(
                 iterations=100 if is_large else 150, depth=6,
-                learning_rate=0.1, random_state=42, verbose=False
+                learning_rate=0.1, random_state=42, verbose=False,
+                allow_writing_files=False
             )) if HAS_CATBOOST else None,
             'decision_tree': ('DecisionTree', DecisionTreeRegressor(
                 max_depth=10, random_state=42

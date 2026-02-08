@@ -3053,6 +3053,14 @@ class ProductionMLEngine:
             logger.info("   ⚠️ Skipping Neural Architecture Search for large dataset (>100k rows)")
             logger.info("   📊 Using gradient boosting models (LightGBM, XGBoost) for best performance")
         
+        # CRITICAL: Validate that training produced at least one model
+        if trainer.best_model is None or not trainer.results:
+            error_msg = "No models were successfully trained. Check your data quality."
+            if hasattr(trainer, 'failed_models') and trainer.failed_models:
+                error_msg = f"All models failed: {'; '.join(str(f) for f in trainer.failed_models[:3])}"
+            logger.error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
+        
         # Store results
         self.model = trainer.best_model
         self.model_name = trainer.best_name

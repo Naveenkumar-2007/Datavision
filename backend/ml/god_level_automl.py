@@ -1471,7 +1471,7 @@ class ModelSelector:
         # Add CatBoost if available
         if HAS_CATBOOST:
             models['CatBoost'] = (
-                CatBoostClassifier(random_state=42, verbose=0),
+                CatBoostClassifier(random_state=42, verbose=0, allow_writing_files=False),
                 {'iterations': n_estimators, 'depth': max_depth,
                  'learning_rate': [0.05, 0.1]}
             )
@@ -1565,7 +1565,7 @@ class ModelSelector:
         
         if HAS_CATBOOST:
             models['CatBoost'] = (
-                CatBoostRegressor(random_state=42, verbose=0),
+                CatBoostRegressor(random_state=42, verbose=0, allow_writing_files=False),
                 {'iterations': n_estimators, 'depth': max_depth,
                  'learning_rate': [0.05, 0.1]}
             )
