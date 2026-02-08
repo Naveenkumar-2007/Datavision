@@ -52,6 +52,9 @@ RUN chown -R appuser:appuser /app
 ENV PYTHONPATH=/app/backend
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONIOENCODING=utf-8
+ENV LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8
 
 # Switch to non-root user
 USER appuser
