@@ -3,6 +3,7 @@ FROM python:3.11-slim
 # Pre-built frontend - no build needed (avoids OOM on HuggingFace)
 # Frontend built locally and dist/ folder committed to repo
 # 2026-01-04 - Fixed libgomp dependency for LightGBM
+# 2026-02-09 - Rebuild trigger after factory reboot
 
 WORKDIR /app
 

@@ -1089,30 +1089,45 @@ def _generate_clustering_charts(
                 logger.warning(f"3D plot failed: {e}")
         
         # ==================================================================
-        # 9. DENDROGRAM - Only for hierarchical clustering or when suitable
+        # 9. DENDROGRAM - For hierarchical clustering (works with any dataset size)
         # ==================================================================
-        if algorithm == 'hierarchical' and X_scaled is not None and n_samples <= 500:
+        if algorithm == 'hierarchical' and X_scaled is not None:
             try:
                 from scipy.cluster.hierarchy import dendrogram, linkage
                 
-                # Use ward linkage
-                Z = linkage(X_scaled[:min(200, n_samples)], method='ward')
+                # Sample data if too large (for performance)
+                max_dendrogram_samples = min(500, n_samples)
+                if n_samples > max_dendrogram_samples:
+                    # Random sample for dendrogram visualization
+                    sample_indices = np.random.choice(n_samples, max_dendrogram_samples, replace=False)
+                    X_dendro = X_scaled[sample_indices]
+                else:
+                    X_dendro = X_scaled
+                
+                # Use ward linkage for best visual hierarchy
+                Z = linkage(X_dendro, method='ward')
                 
                 fig, ax = plt.subplots(figsize=(14, 8))
-                dendrogram(Z, ax=ax, truncate_mode='lastp', p=30, 
-                          leaf_rotation=90, leaf_font_size=10,
-                          color_threshold=0.7*max(Z[:,2]))
+                
+                # Truncate for readability
+                dendrogram(Z, ax=ax, truncate_mode='lastp', p=min(50, max_dendrogram_samples), 
+                          leaf_rotation=90, leaf_font_size=9,
+                          color_threshold=0.7*max(Z[:,2]),
+                          above_threshold_color='gray')
                 
                 ax.set_xlabel('Sample Index / Cluster Size', fontweight='bold', fontsize=12)
-                ax.set_ylabel('Distance', fontweight='bold', fontsize=12)
-                ax.set_title('🌳 Hierarchical Clustering Dendrogram', fontweight='bold', pad=15, fontsize=14)
-                ax.axhline(y=0.7*max(Z[:,2]), color='red', linestyle='--', 
-                          label=f'Cut-off ({n_clusters} clusters)')
-                ax.legend()
+                ax.set_ylabel('Distance (Ward)', fontweight='bold', fontsize=12)
+                ax.set_title(f'🌳 Hierarchical Clustering Dendrogram ({n_clusters} Clusters)', 
+                            fontweight='bold', pad=15, fontsize=14)
+                ax.axhline(y=0.7*max(Z[:,2]), color='red', linestyle='--', linewidth=2,
+                          label=f'Suggested cut-off for {n_clusters} clusters')
+                ax.legend(loc='upper right')
+                ax.grid(axis='y', alpha=0.3)
                 fig.tight_layout()
                 
                 charts['dendrogram'] = _fig_to_base64(fig)
                 plt.close(fig)
+                logger.info(f"✅ Dendrogram generated for hierarchical clustering")
             except Exception as e:
                 logger.warning(f"Dendrogram failed: {e}")
         
@@ -1324,6 +1339,128 @@ def _generate_clustering_charts(
                 plt.close(fig)
             except Exception as e:
                 logger.warning(f"Radar chart failed: {e}")
+        
+        # ==================================================================
+        # 15. GMM BIC/AIC SCORES - Only for GMM algorithm
+        # ==================================================================
+        if algorithm == 'gmm' and X_scaled is not None:
+            try:
+                from sklearn.mixture import GaussianMixture
+                
+                k_range = range(2, min(11, n_samples // 10 + 1))
+                bic_scores = []
+                aic_scores = []
+                
+                for k in k_range:
+                    gmm = GaussianMixture(n_components=k, random_state=42, n_init=3)
+                    gmm.fit(X_scaled)
+                    bic_scores.append(gmm.bic(X_scaled))
+                    aic_scores.append(gmm.aic(X_scaled))
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                ax.plot(list(k_range), bic_scores, 'bo-', linewidth=2, markersize=8, label='BIC')
+                ax.plot(list(k_range), aic_scores, 'rs-', linewidth=2, markersize=8, label='AIC')
+                
+                # Highlight optimal k (lowest BIC)
+                optimal_k = list(k_range)[np.argmin(bic_scores)]
+                ax.axvline(x=optimal_k, color='green', linestyle='--', alpha=0.7,
+                          label=f'Optimal k={optimal_k}')
+                ax.scatter([optimal_k], [min(bic_scores)], c='green', s=200, zorder=10, marker='*')
+                
+                ax.set_xlabel('Number of Components (k)', fontweight='bold', fontsize=12)
+                ax.set_ylabel('Score (lower is better)', fontweight='bold', fontsize=12)
+                ax.set_title('📊 GMM Model Selection - BIC/AIC Scores', fontweight='bold', pad=15, fontsize=14)
+                ax.legend(loc='best')
+                ax.grid(alpha=0.3)
+                fig.tight_layout()
+                
+                charts['gmm_bic_aic'] = _fig_to_base64(fig)
+                plt.close(fig)
+                logger.info(f"✅ GMM BIC/AIC chart generated")
+            except Exception as e:
+                logger.warning(f"GMM BIC/AIC chart failed: {e}")
+        
+        # ==================================================================
+        # 16. DBSCAN K-DISTANCE PLOT - Only for DBSCAN algorithm
+        # ==================================================================
+        if algorithm == 'dbscan' and X_scaled is not None and n_samples >= 20:
+            try:
+                from sklearn.neighbors import NearestNeighbors
+                
+                # Calculate k-distance (k=min_samples typically 5 or n/100)
+                k = max(5, min(n_samples // 100, 20))
+                nbrs = NearestNeighbors(n_neighbors=k).fit(X_scaled)
+                distances, _ = nbrs.kneighbors(X_scaled)
+                k_distances = np.sort(distances[:, k-1])[::-1]
+                
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                ax.plot(range(1, len(k_distances) + 1), k_distances, 'b-', linewidth=2)
+                
+                # Find elbow point (approximate)
+                kneedle_idx = len(k_distances) // 4
+                if kneedle_idx > 0:
+                    suggested_eps = k_distances[kneedle_idx]
+                    ax.axhline(y=suggested_eps, color='red', linestyle='--', 
+                              label=f'Suggested eps ≈ {suggested_eps:.3f}')
+                    ax.scatter([kneedle_idx], [suggested_eps], c='red', s=100, zorder=10)
+                
+                ax.set_xlabel('Points (sorted by distance)', fontweight='bold', fontsize=12)
+                ax.set_ylabel(f'{k}-th Nearest Neighbor Distance', fontweight='bold', fontsize=12)
+                ax.set_title('📈 DBSCAN Epsilon Selection (K-Distance Graph)', fontweight='bold', pad=15, fontsize=14)
+                ax.legend(loc='best')
+                ax.grid(alpha=0.3)
+                fig.tight_layout()
+                
+                charts['dbscan_kdist'] = _fig_to_base64(fig)
+                plt.close(fig)
+                logger.info(f"✅ DBSCAN k-distance chart generated")
+            except Exception as e:
+                logger.warning(f"DBSCAN k-distance chart failed: {e}")
+        
+        # ==================================================================
+        # 17. SPECTRAL AFFINITY MATRIX - Only for Spectral algorithm
+        # ==================================================================
+        if algorithm == 'spectral' and X_scaled is not None and n_samples <= 500:
+            try:
+                from sklearn.metrics import pairwise_distances
+                
+                # Sample if too large
+                sample_size = min(200, n_samples)
+                if n_samples > sample_size:
+                    indices = np.random.choice(n_samples, sample_size, replace=False)
+                    X_sample = X_scaled[indices]
+                    labels_sample = labels[indices]
+                else:
+                    X_sample = X_scaled
+                    labels_sample = labels
+                
+                # Compute affinity matrix (RBF kernel)
+                gamma = 1.0 / X_sample.shape[1]
+                distances = pairwise_distances(X_sample)
+                affinity = np.exp(-gamma * distances ** 2)
+                
+                # Sort by cluster labels for better visualization
+                sorted_indices = np.argsort(labels_sample)
+                affinity_sorted = affinity[sorted_indices][:, sorted_indices]
+                
+                fig, ax = plt.subplots(figsize=(10, 8))
+                
+                sns.heatmap(affinity_sorted, cmap='viridis', ax=ax,
+                           xticklabels=False, yticklabels=False,
+                           cbar_kws={'label': 'Affinity (similarity)'})
+                
+                ax.set_title('🔗 Spectral Clustering - Affinity Matrix', fontweight='bold', pad=15, fontsize=14)
+                ax.set_xlabel('Samples (sorted by cluster)', fontweight='bold', fontsize=12)
+                ax.set_ylabel('Samples (sorted by cluster)', fontweight='bold', fontsize=12)
+                fig.tight_layout()
+                
+                charts['spectral_affinity'] = _fig_to_base64(fig)
+                plt.close(fig)
+                logger.info(f"✅ Spectral affinity matrix chart generated")
+            except Exception as e:
+                logger.warning(f"Spectral affinity chart failed: {e}")
         
         logger.info(f"✅ Generated {len(charts)} clustering charts")
         
