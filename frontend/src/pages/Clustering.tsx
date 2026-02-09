@@ -673,15 +673,57 @@ export default function Clustering() {
 
                   {/* Dendrogram (Hierarchical) */}
                   {result.charts.dendrogram && (
-                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700 lg:col-span-2">
                       <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-semibold text-gray-900 dark:text-white">🌳 Dendrogram</h4>
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🌳 Hierarchical Dendrogram</h4>
                         <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.dendrogram; l.download = 'dendrogram.png'; l.click(); }}
                           className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
                           <Download className="w-3 h-3" />
                         </button>
                       </div>
                       <img src={result.charts.dendrogram} alt="Dendrogram" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* GMM BIC/AIC Chart */}
+                  {result.charts.gmm_bic_aic && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">📊 GMM BIC/AIC Scores</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.gmm_bic_aic; l.download = 'gmm_bic_aic.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.gmm_bic_aic} alt="GMM BIC/AIC" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* DBSCAN K-Distance Chart */}
+                  {result.charts.dbscan_kdist && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">📈 DBSCAN K-Distance</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.dbscan_kdist; l.download = 'dbscan_kdist.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.dbscan_kdist} alt="DBSCAN K-Distance" className="w-full rounded-lg" />
+                    </div>
+                  )}
+
+                  {/* Spectral Affinity Matrix */}
+                  {result.charts.spectral_affinity && (
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-semibold text-gray-900 dark:text-white">🔗 Spectral Affinity</h4>
+                        <button onClick={() => { const l = document.createElement('a'); l.href = result.charts.spectral_affinity; l.download = 'spectral_affinity.png'; l.click(); }}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          <Download className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <img src={result.charts.spectral_affinity} alt="Spectral Affinity" className="w-full rounded-lg" />
                     </div>
                   )}
 
