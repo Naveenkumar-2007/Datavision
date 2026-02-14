@@ -34,7 +34,8 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder, OneHotEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
-    confusion_matrix, mean_squared_error, mean_absolute_error, r2_score
+    confusion_matrix, mean_squared_error, mean_absolute_error, r2_score,
+    roc_auc_score
 )
 import io
 import base64
@@ -464,11 +465,7 @@ class DeepLearningEngine:
             else:
                 y = y_raw
             
-            # Scale features
-            self.scaler = StandardScaler()
-            X_scaled = self.scaler.fit_transform(X)
-            
-            # Split data - handle stratification carefully
+            # Split data FIRST - then scale to prevent data leakage
             try:
                 if self.task_type == 'classification':
                     # Check class distribution
@@ -478,22 +475,27 @@ class DeepLearningEngine:
                     
                     if min_class_count >= 2:
                         X_train, X_test, y_train, y_test = train_test_split(
-                            X_scaled, y, test_size=test_size, random_state=42, stratify=y
+                            X, y, test_size=test_size, random_state=42, stratify=y
                         )
                     else:
                         logger.warning(f"   ⚠️ Some classes have <2 samples, using non-stratified split")
                         X_train, X_test, y_train, y_test = train_test_split(
-                            X_scaled, y, test_size=test_size, random_state=42
+                            X, y, test_size=test_size, random_state=42
                         )
                 else:
                     X_train, X_test, y_train, y_test = train_test_split(
-                        X_scaled, y, test_size=test_size, random_state=42
+                        X, y, test_size=test_size, random_state=42
                     )
             except ValueError as e:
                 logger.warning(f"   ⚠️ Stratified split failed: {e}, using non-stratified")
                 X_train, X_test, y_train, y_test = train_test_split(
-                    X_scaled, y, test_size=test_size, random_state=42
+                    X, y, test_size=test_size, random_state=42
                 )
+            
+            # Scale features AFTER split - fit only on training data to prevent leakage
+            self.scaler = StandardScaler()
+            X_train = self.scaler.fit_transform(X_train)
+            X_test = self.scaler.transform(X_test)
             
             logger.info(f"   Train: {len(X_train)}, Test: {len(X_test)}")
             
@@ -623,6 +625,18 @@ class DeepLearningEngine:
             # Calculate metrics
             y_pred = self.model.predict(X_test)
             
+            # Compute y_proba for charts (ROC curve, calibration, etc.)
+            self._y_proba = None
+            if hasattr(self.model, 'predict_proba'):
+                try:
+                    self._y_proba = self.model.predict_proba(X_test)
+                except Exception:
+                    pass
+            
+            # Store for evaluation in ZIP
+            self._y_test = y_test
+            self._y_pred = y_pred
+            
             if self.task_type == 'classification':
                 self.metrics = {
                     'accuracy': float(accuracy_score(y_test, y_pred)),
@@ -630,6 +644,22 @@ class DeepLearningEngine:
                     'recall': float(recall_score(y_test, y_pred, average='weighted', zero_division=0)),
                     'f1': float(f1_score(y_test, y_pred, average='weighted', zero_division=0)),
                 }
+                # Compute ROC-AUC
+                try:
+                    n_classes = len(np.unique(y_test))
+                    if n_classes == 2:
+                        if hasattr(self.model, 'predict_proba'):
+                            y_proba = self.model.predict_proba(X_test)[:, 1]
+                        else:
+                            y_proba = self.model.decision_function(X_test)
+                        self.metrics['roc_auc'] = float(roc_auc_score(y_test, y_proba))
+                    elif n_classes > 2 and hasattr(self.model, 'predict_proba'):
+                        y_proba = self.model.predict_proba(X_test)
+                        self.metrics['roc_auc'] = float(roc_auc_score(
+                            y_test, y_proba, multi_class='ovr', average='weighted'
+                        ))
+                except Exception as e:
+                    logger.warning(f"   ⚠️ Could not compute ROC-AUC: {e}")
                 cm = confusion_matrix(y_test, y_pred)
             else:
                 self.metrics = {
@@ -1399,6 +1429,9 @@ RMSE: {self.metrics.get('rmse', 0):.4f}
             'training_history': self.training_history,
             'charts': self.charts,  # IMPORTANT: Save charts for state persistence
             'model_type': 'deep_learning',
+            'y_test': getattr(self, '_y_test', None),
+            'y_pred': getattr(self, '_y_pred', None),
+            'y_proba': getattr(self, '_y_proba', None),
         }
         
         with open(os.path.join(save_dir, "deep_learning_model.pkl"), 'wb') as f:

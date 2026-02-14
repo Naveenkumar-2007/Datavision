@@ -41,7 +41,13 @@ import {
     Code2,
     Shield,
     ShieldCheck,
+    Copy,
+    Check,
+    Presentation,
+    ImageDown,
+    BarChart2,
 } from 'lucide-react';
+import PptxGenJS from 'pptxgenjs';
 import ModelHistory from '@/components/automl/ModelHistory';
 import DataHealthCard from '@/components/automl/DataHealthCard';
 import PlaygroundTab from '@/components/automl/PlaygroundTab';
@@ -54,12 +60,13 @@ import { getUserIdSync, getAuthHeadersSync } from '@/utils/userId';
 
 interface FeatureMetadata {
     name: string;
-    type: 'numeric' | 'categorical' | 'text' | 'datetime';
+    type: 'numeric' | 'categorical' | 'text' | 'datetime' | 'date';
     min?: number | string;  // number for numeric, ISO string for datetime
     max?: number | string;  // number for numeric, ISO string for datetime
     mean?: number;
     options?: string[];
     placeholder?: string;  // For text/datetime inputs
+    format?: string;  // e.g. 'YYYY-MM-DD' for date columns
 }
 
 interface MLResult {
@@ -173,6 +180,8 @@ const MLPredictions: React.FC = () => {
     const [predictionInput, setPredictionInput] = useState<Record<string, string>>({});
     const [predictionResult, setPredictionResult] = useState<any>(null);
     const [chartsLoading, setChartsLoading] = useState(false);
+    const [copiedChart, setCopiedChart] = useState<string | null>(null);
+    const [exportingPPT, setExportingPPT] = useState(false);
 
     // File & Training state - SAME AS DATAHUB
     const [existingFiles, setExistingFiles] = useState<FileItem[]>([]);
@@ -401,7 +410,7 @@ const MLPredictions: React.FC = () => {
     const [clusteringResult, setClusteringResult] = useState<any>(null);
 
     // Clustering UI state
-    const [clusterActiveTab, setClusterActiveTab] = useState<'overview' | 'charts' | 'profiles' | 'predict'>('overview');
+    const [clusterActiveTab, setClusterActiveTab] = useState<'overview' | 'charts' | 'profiles' | 'predict' | 'download'>('overview');
     const [clusterPredictionInput, setClusterPredictionInput] = useState<Record<string, string>>({});
     const [clusterPredictionResult, setClusterPredictionResult] = useState<any>(null);
     const [clusterPredicting, setClusterPredicting] = useState(false);
@@ -501,19 +510,20 @@ const MLPredictions: React.FC = () => {
                     if (data.success && data.models && data.models.length > 0) {
                         const activeModel = data.models.find((m: any) => m.is_active);
                         if (activeModel) {
-                            // Update result.best_model to match the active model
-                            result.best_model = {
-                                name: activeModel.model_name,
-                                metrics: activeModel.metrics || {}
-                            };
+                            // Only update best_model if NO multimode result with best_overall exists
+                            // (multimode training already has the correct best model across all modes)
+                            const hasMultimodeResult = result.best_overall || (result as any).modes_trained?.length > 0;
+                            if (!hasMultimodeResult) {
+                                result.best_model = {
+                                    name: activeModel.model_name,
+                                    metrics: activeModel.metrics || {}
+                                };
+                                result.mode = activeModel.mode || 'traditional';
+                            }
                             result.target_column = activeModel.target_column;
                             result.task_type = activeModel.task_type;
                             result.feature_columns = activeModel.feature_columns || result.feature_columns;
-                            // Detect mode from active model
-                            result.mode = activeModel.mode || 
-                                (activeModel.model_name?.includes('NLP') ? 'nlp' :
-                                 activeModel.model_name?.includes('Deep') ? 'deep_learning' : 'traditional');
-                            console.log('[MLPredictions] Synced with active model:', activeModel.model_name);
+                            console.log('[MLPredictions] Synced with active model:', activeModel.model_name, 'hasMultimode:', hasMultimodeResult);
                         }
                     }
 
@@ -552,6 +562,12 @@ const MLPredictions: React.FC = () => {
                         }
                         if (savedResult.best_overall) {
                             (result as any).best_overall = savedResult.best_overall;
+                            // CRITICAL: Update best_model from best_overall (correct mode winner)
+                            result.best_model = {
+                                name: savedResult.best_overall.name || savedResult.best_overall.model || result.best_model?.name || 'Unknown',
+                                metrics: savedResult.best_overall.metrics || result.best_model?.metrics || {}
+                            };
+                            console.log('[MLPredictions] Updated best_model from best_overall:', result.best_model.name, 'mode:', savedResult.mode);
                         }
                         if (savedResult.results_per_mode) {
                             (result as any).results_per_mode = savedResult.results_per_mode;
@@ -576,6 +592,12 @@ const MLPredictions: React.FC = () => {
                         if ((!result.leaderboard || result.leaderboard?.length === 0) && savedResult.leaderboard?.length > 0) {
                             (result as any).leaderboard = savedResult.leaderboard;
                         }
+                        
+                        // Update insights if missing (for AI Insights section)
+                        if ((!result.insights || result.insights.length === 0) && savedResult.insights?.length > 0) {
+                            result.insights = savedResult.insights;
+                            console.log('[MLPredictions] Loaded insights from saved model:', savedResult.insights.length, 'insights');
+                        }
                     }
                 } catch (err) {
                     console.warn('[MLPredictions] Could not sync with active model:', err);
@@ -589,6 +611,7 @@ const MLPredictions: React.FC = () => {
                 const resultWithCharts = await addChartsFromStorage(navResult);
                 if (!isMounted) return; // Prevent state updates if unmounted
                 setResult(resultWithCharts);
+                setLearningType('supervised');
                 setActiveTab('overview'); // Reset to overview when loading results
                 try {
                     // Save to BOTH localStorage and sessionStorage
@@ -611,6 +634,44 @@ const MLPredictions: React.FC = () => {
                 return;
             }
 
+            // Priority 1.5: Check if clustering result exists in localStorage
+            // This MUST come before backend API (Priority 2) because the backend
+            // may return OLD supervised results that would override recent clustering
+            const savedClustering = localStorage.getItem(`clusteringResult_${userId}`);
+            if (savedClustering) {
+                try {
+                    const parsedClustering = JSON.parse(savedClustering);
+                    if (parsedClustering && parsedClustering.success) {
+                        console.log('[MLPredictions] Restored clustering result from localStorage');
+                        if (isMounted) {
+                            setClusteringResult(parsedClustering);
+                            setLearningType('unsupervised');
+                            setClusterActiveTab('overview');
+                        }
+                        if (isMounted) setLoading(false);
+                        return;
+                    }
+                } catch (e) { }
+            }
+
+            // Also check sessionStorage for clustering (current session)
+            const sessionClustering = sessionStorage.getItem(`clusteringResult_${userId}`);
+            if (sessionClustering) {
+                try {
+                    const parsedClustering = JSON.parse(sessionClustering);
+                    if (parsedClustering && parsedClustering.success) {
+                        console.log('[MLPredictions] Restored clustering result from sessionStorage');
+                        if (isMounted) {
+                            setClusteringResult(parsedClustering);
+                            setLearningType('unsupervised');
+                            setClusterActiveTab('overview');
+                        }
+                        if (isMounted) setLoading(false);
+                        return;
+                    }
+                } catch (e) { }
+            }
+
             // Priority 2: Try loading from backend FIRST (persisted across logout/refresh)
             // This ensures data survives logout and browser refresh
             try {
@@ -625,6 +686,7 @@ const MLPredictions: React.FC = () => {
                     const resultWithCharts = await addChartsFromStorage(backendResult);
                     if (!isMounted) return;
                     setResult(resultWithCharts);
+                    setLearningType('supervised');
                     setActiveTab('overview'); // Reset to overview when loading results
                     
                     // Cache to localStorage and sessionStorage
@@ -651,6 +713,7 @@ const MLPredictions: React.FC = () => {
                     const resultWithCharts = await addChartsFromStorage(parsedSession);
                     if (!isMounted) return;
                     setResult(resultWithCharts);
+                    setLearningType('supervised');
                     setActiveTab('overview'); // Reset to overview when loading results
                     setLoading(false);
                     return;
@@ -666,6 +729,7 @@ const MLPredictions: React.FC = () => {
                     const resultWithCharts = await addChartsFromStorage(parsedSaved);
                     if (!isMounted) return;
                     setResult(resultWithCharts);
+                    setLearningType('supervised');
                     setActiveTab('overview'); // Reset to overview when loading results
                     setLoading(false);
                     return;
@@ -681,6 +745,7 @@ const MLPredictions: React.FC = () => {
                     const resultWithCharts = await addChartsFromStorage(parsed);
                     if (!isMounted) return;
                     setResult(resultWithCharts);
+                    setLearningType('supervised');
                     setActiveTab('overview'); // Reset to overview when loading results
                     localStorage.setItem(`mlResults_${userId}`, legacySaved);
                     localStorage.setItem(`hasMLResults_${userId}`, 'true');
@@ -851,6 +916,11 @@ const MLPredictions: React.FC = () => {
                 try {
                     localStorage.setItem(`mlResults_${userId}`, JSON.stringify(automlResult));
                     localStorage.setItem(`hasMLResults_${userId}`, 'true');
+                    // Persist supervised learning type (so navigation back restores correctly)
+                    localStorage.setItem(`learningType_${userId}`, 'supervised');
+                    // Clear any stale clustering result when supervised training completes
+                    localStorage.removeItem(`clusteringResult_${userId}`);
+                    sessionStorage.removeItem(`clusteringResult_${userId}`);
 
                     if (automlResult.charts) {
                         try {
@@ -942,6 +1012,12 @@ const MLPredictions: React.FC = () => {
                 try {
                     const { charts, ...resultWithoutCharts } = clusterResult;
                     localStorage.setItem(`clusteringResult_${userId}`, JSON.stringify(resultWithoutCharts));
+                    // Persist the learning type so navigation back restores correctly
+                    localStorage.setItem(`learningType_${userId}`, 'unsupervised');
+                    // Also save to sessionStorage for faster in-session navigation restore
+                    sessionStorage.setItem(`clusteringResult_${userId}`, JSON.stringify(resultWithoutCharts));
+                    // Clear supervised session data so it doesn't override clustering on navigation
+                    sessionStorage.removeItem(`mlResultsSession_${userId}`);
                 } catch (storageErr) {
                     console.warn('Could not cache clustering result:', storageErr);
                 }
@@ -1971,6 +2047,11 @@ const MLPredictions: React.FC = () => {
                     <button
                         onClick={() => {
                             setClusteringResult(null);
+                            setLearningType('supervised');
+                            const userId = getUserIdSync();
+                            localStorage.removeItem(`clusteringResult_${userId}`);
+                            localStorage.removeItem(`learningType_${userId}`);
+                            sessionStorage.removeItem(`clusteringResult_${userId}`);
                             loadExistingFiles();
                         }}
                         className="w-full md:w-auto px-4 py-2 rounded-xl border transition-colors flex items-center justify-center gap-2"
@@ -2049,6 +2130,7 @@ const MLPredictions: React.FC = () => {
                             { id: 'charts', label: 'Visualization', icon: BarChart3 },
                             { id: 'profiles', label: 'Cluster Profiles', icon: Activity },
                             { id: 'predict', label: 'Predict Cluster', icon: Play },
+                            { id: 'download', label: 'Download', icon: Download },
                         ].map((tab) => (
                             <button
                                 key={tab.id}
@@ -2114,99 +2196,130 @@ const MLPredictions: React.FC = () => {
                     )}
 
                     {/* CHARTS TAB - Full Clustering Visualizations */}
-                    {clusterActiveTab === 'charts' && (
-                        <div className="space-y-6">
+                    {clusterActiveTab === 'charts' && (() => {
+                        const clusterChartEntries = clusteringResult.charts ? Object.entries(clusteringResult.charts) : [];
+
+                        const copyClusterChart = async (base64: string, name: string) => {
+                            try {
+                                const res = await fetch(base64);
+                                const blob = await res.blob();
+                                await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+                                setCopiedChart(name);
+                                setTimeout(() => setCopiedChart(null), 2000);
+                            } catch {
+                                const w = window.open();
+                                if (w) { w.document.write(`<img src="${base64}" />`); }
+                            }
+                        };
+
+                        const exportClusterChartsToPPT = async () => {
+                            if (clusterChartEntries.length === 0) return;
+                            setExportingPPT(true);
+                            try {
+                                const pptx = new PptxGenJS();
+                                pptx.title = 'Clustering Charts';
+                                pptx.author = 'DataVision AI';
+                                pptx.layout = 'LAYOUT_WIDE';
+                                for (const [name, b64] of clusterChartEntries) {
+                                    const title = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                                    const slide = pptx.addSlide();
+                                    slide.addText(title, { x: 0.5, y: 0.2, w: '90%', h: 0.6, fontSize: 22, bold: true, color: '333333', fontFace: 'Segoe UI' });
+                                    const imgData = (b64 as string).replace(/^data:image\/\w+;base64,/, '');
+                                    slide.addImage({ data: `image/png;base64,${imgData}`, x: 0.8, y: 1.0, w: 11.5, h: 5.8, sizing: { type: 'contain', w: 11.5, h: 5.8 } });
+                                }
+                                await pptx.writeFile({ fileName: 'Clustering_Charts.pptx' });
+                            } catch (e) { console.error('PPT export failed:', e); }
+                            finally { setExportingPPT(false); }
+                        };
+
+                        const ClusterChartCard = ({ name, label, icon, base64, description, colSpan }: { name: string; label: string; icon: React.ReactNode; base64: string; description?: string; colSpan?: boolean }) => (
+                            <div className={`rounded-2xl border overflow-hidden transition-all hover:shadow-lg ${colSpan ? 'lg:col-span-2' : ''}`} style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                                <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                                    {icon}
+                                    <h3 className="flex-1 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{label}</h3>
+                                    <button onClick={() => copyClusterChart(base64, name)} className="p-1.5 rounded-lg transition-all hover:scale-110" style={{ backgroundColor: copiedChart === name ? (isDark ? 'rgba(34,197,94,0.2)' : 'rgba(34,197,94,0.1)') : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)') }} title="Copy chart">
+                                        {copiedChart === name ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />}
+                                    </button>
+                                </div>
+                                <div className="flex flex-col items-center justify-center p-2" style={{ backgroundColor: isDark ? '#0f172a' : '#f8fafc' }}>
+                                    <img src={base64} alt={name} className="rounded-lg" style={{ width: '100%', height: 'auto', display: 'block' }} />
+                                    {description && <p className="text-center mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>{description}</p>}
+                                </div>
+                            </div>
+                        );
+
+                        return (
+                        <div className="space-y-3">
+                            {clusterChartEntries.length > 0 && (
+                                <div className="flex items-center justify-between px-1">
+                                    <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>{clusterChartEntries.length} chart{clusterChartEntries.length !== 1 ? 's' : ''} generated</p>
+                                    <button onClick={exportClusterChartsToPPT} disabled={exportingPPT} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all hover:scale-105" style={{ backgroundColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)', color: isDark ? '#a5b4fc' : '#4f46e5', border: `1px solid ${isDark ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.2)'}` }}>
+                                        {exportingPPT ? <><RefreshCw className="w-4 h-4 animate-spin" /> Exporting...</> : <><Presentation className="w-4 h-4" /> Export All to PPT</>}
+                                    </button>
+                                </div>
+                            )}
                             {/* Charts Grid */}
                             {clusteringResult.charts && Object.keys(clusteringResult.charts).length > 0 ? (
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                    {/* Cluster Scatter Plot */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                                     {clusteringResult.charts.cluster_scatter && (
-                                        <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                                <Activity className="w-5 h-5 text-blue-400" /> Cluster Scatter Plot (PCA 2D)
-                                            </h3>
-                                            <img src={clusteringResult.charts.cluster_scatter} alt="Cluster scatter plot" className="w-full rounded-lg" />
-                                            {clusteringResult.pca_variance_explained && (
-                                                <p className="text-center mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                                    PCA captures {(clusteringResult.pca_variance_explained * 100).toFixed(1)}% of data variance
-                                                </p>
-                                            )}
-                                        </div>
+                                        <ClusterChartCard name="cluster_scatter" label="Cluster Scatter Plot (PCA 2D)" icon={<Activity className="w-4 h-4 text-blue-400" />} base64={clusteringResult.charts.cluster_scatter} description={clusteringResult.pca_variance_explained ? `PCA captures ${(clusteringResult.pca_variance_explained * 100).toFixed(1)}% of data variance` : undefined} />
                                     )}
-
-                                    {/* Elbow Method */}
                                     {clusteringResult.charts.elbow_method && (
-                                        <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                                <TrendingUp className="w-5 h-5 text-amber-400" /> Elbow Method
-                                            </h3>
-                                            <img src={clusteringResult.charts.elbow_method} alt="Elbow method chart" className="w-full rounded-lg" />
-                                            <p className="text-center mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                                Find optimal k where the curve bends (elbow point)
-                                            </p>
-                                        </div>
+                                        <ClusterChartCard name="elbow_method" label="Elbow Method" icon={<TrendingUp className="w-4 h-4 text-amber-400" />} base64={clusteringResult.charts.elbow_method} description="Find optimal k where the curve bends (elbow point)" />
                                     )}
-
-                                    {/* Silhouette Comparison */}
                                     {clusteringResult.charts.silhouette_comparison && (
-                                        <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                                <BarChart3 className="w-5 h-5 text-emerald-400" /> Silhouette Score Analysis
-                                            </h3>
-                                            <img src={clusteringResult.charts.silhouette_comparison} alt="Silhouette comparison" className="w-full rounded-lg" />
-                                            <p className="text-center mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                                Higher silhouette = better cluster separation
-                                            </p>
-                                        </div>
+                                        <ClusterChartCard name="silhouette_comparison" label="Silhouette Score Comparison" icon={<BarChart3 className="w-4 h-4 text-emerald-400" />} base64={clusteringResult.charts.silhouette_comparison} description="Higher silhouette = better cluster separation" />
                                     )}
-
-                                    {/* Cluster Distribution */}
                                     {clusteringResult.charts.cluster_distribution && (
-                                        <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                                <PieChart className="w-5 h-5 text-purple-400" /> Cluster Distribution
-                                            </h3>
-                                            <img src={clusteringResult.charts.cluster_distribution} alt="Cluster distribution" className="w-full rounded-lg" />
-                                        </div>
+                                        <ClusterChartCard name="cluster_distribution" label="Cluster Distribution" icon={<PieChart className="w-4 h-4 text-purple-400" />} base64={clusteringResult.charts.cluster_distribution} />
                                     )}
-
-                                    {/* Silhouette Plot */}
                                     {clusteringResult.charts.silhouette_plot && (
-                                        <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                                <Activity className="w-5 h-5 text-cyan-400" /> Silhouette Plot
-                                            </h3>
-                                            <img src={clusteringResult.charts.silhouette_plot} alt="Silhouette plot" className="w-full rounded-lg" />
-                                            <p className="text-center mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                                Per-sample silhouette coefficients by cluster
-                                            </p>
-                                        </div>
+                                        <ClusterChartCard name="silhouette_plot" label="Silhouette Plot" icon={<Activity className="w-4 h-4 text-cyan-400" />} base64={clusteringResult.charts.silhouette_plot} description="Per-sample silhouette coefficients by cluster" />
                                     )}
-
-                                    {/* Dendrogram (Hierarchical only) */}
+                                    {clusteringResult.charts.cluster_heatmap && (
+                                        <ClusterChartCard name="cluster_heatmap" label="Cluster Centers Heatmap" icon={<Layers className="w-4 h-4 text-red-400" />} base64={clusteringResult.charts.cluster_heatmap} description="Feature values at each cluster center" />
+                                    )}
+                                    {clusteringResult.charts.pca_variance && (
+                                        <ClusterChartCard name="pca_variance" label="PCA Variance Explained" icon={<BarChart2 className="w-4 h-4 text-indigo-400" />} base64={clusteringResult.charts.pca_variance} description="Cumulative variance captured by principal components" />
+                                    )}
+                                    {clusteringResult.charts.pairplot && (
+                                        <ClusterChartCard name="pairplot" label="Feature Pairplot" icon={<Activity className="w-4 h-4 text-teal-400" />} base64={clusteringResult.charts.pairplot} description="Pairwise scatter plots of top features" colSpan />
+                                    )}
+                                    {clusteringResult.charts.cluster_3d && (
+                                        <ClusterChartCard name="cluster_3d" label="3D Cluster Visualization" icon={<Boxes className="w-4 h-4 text-violet-400" />} base64={clusteringResult.charts.cluster_3d} description="PCA 3D scatter plot of clusters" />
+                                    )}
                                     {clusteringResult.charts.dendrogram && (
-                                        <div className="p-6 rounded-2xl border lg:col-span-2" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                                <GitBranch className="w-5 h-5 text-rose-400" /> Dendrogram (Hierarchical Tree)
-                                            </h3>
-                                            <img src={clusteringResult.charts.dendrogram} alt="Dendrogram" className="w-full rounded-lg" />
-                                            <p className="text-center mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                                Hierarchical relationships between clusters
-                                            </p>
-                                        </div>
+                                        <ClusterChartCard name="dendrogram" label="Dendrogram (Hierarchical Tree)" icon={<GitBranch className="w-4 h-4 text-rose-400" />} base64={clusteringResult.charts.dendrogram} description="Hierarchical relationships between clusters" colSpan />
                                     )}
-
-                                    {/* Feature Importance */}
+                                    {clusteringResult.charts.tsne && (
+                                        <ClusterChartCard name="tsne" label="t-SNE Visualization" icon={<Sparkles className="w-4 h-4 text-pink-400" />} base64={clusteringResult.charts.tsne} description="Non-linear dimensionality reduction for cluster visualization" />
+                                    )}
+                                    {clusteringResult.charts.umap && (
+                                        <ClusterChartCard name="umap" label="UMAP Projection" icon={<Activity className="w-4 h-4 text-sky-400" />} base64={clusteringResult.charts.umap} description="Uniform Manifold Approximation for cluster topology" />
+                                    )}
+                                    {clusteringResult.charts.boxplots && (
+                                        <ClusterChartCard name="boxplots" label="Feature Box Plots" icon={<BarChart3 className="w-4 h-4 text-orange-400" />} base64={clusteringResult.charts.boxplots} description="Distribution of features across clusters" colSpan />
+                                    )}
+                                    {clusteringResult.charts.violin_plots && (
+                                        <ClusterChartCard name="violin_plots" label="Violin Plots" icon={<Activity className="w-4 h-4 text-fuchsia-400" />} base64={clusteringResult.charts.violin_plots} description="Feature density distributions by cluster" colSpan />
+                                    )}
+                                    {clusteringResult.charts.correlation_heatmap && (
+                                        <ClusterChartCard name="correlation_heatmap" label="Correlation Heatmap" icon={<Layers className="w-4 h-4 text-amber-400" />} base64={clusteringResult.charts.correlation_heatmap} description="Feature correlation matrix" />
+                                    )}
+                                    {clusteringResult.charts.radar_chart && (
+                                        <ClusterChartCard name="radar_chart" label="Radar Chart" icon={<Target className="w-4 h-4 text-lime-400" />} base64={clusteringResult.charts.radar_chart} description="Cluster profiles across normalized features" />
+                                    )}
                                     {clusteringResult.charts.feature_importance && (
-                                        <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                                            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                                <Sparkles className="w-5 h-5 text-orange-400" /> Feature Importance
-                                            </h3>
-                                            <img src={clusteringResult.charts.feature_importance} alt="Feature importance" className="w-full rounded-lg" />
-                                            <p className="text-center mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-                                                Features most important for cluster separation
-                                            </p>
-                                        </div>
+                                        <ClusterChartCard name="feature_importance" label="Feature Importance" icon={<Sparkles className="w-4 h-4 text-yellow-400" />} base64={clusteringResult.charts.feature_importance} description="Features most important for cluster separation" />
+                                    )}
+                                    {clusteringResult.charts.gmm_bic_aic && (
+                                        <ClusterChartCard name="gmm_bic_aic" label="GMM BIC/AIC Scores" icon={<TrendingUp className="w-4 h-4 text-emerald-400" />} base64={clusteringResult.charts.gmm_bic_aic} description="Model selection criteria for GMM clustering" />
+                                    )}
+                                    {clusteringResult.charts.dbscan_kdist && (
+                                        <ClusterChartCard name="dbscan_kdist" label="DBSCAN k-Distance" icon={<TrendingUp className="w-4 h-4 text-red-400" />} base64={clusteringResult.charts.dbscan_kdist} description="k-distance graph for DBSCAN eps parameter selection" />
+                                    )}
+                                    {clusteringResult.charts.spectral_affinity && (
+                                        <ClusterChartCard name="spectral_affinity" label="Spectral Affinity Matrix" icon={<Layers className="w-4 h-4 text-blue-400" />} base64={clusteringResult.charts.spectral_affinity} description="Pairwise similarity matrix for spectral clustering" />
                                     )}
                                 </div>
                             ) : (
@@ -2216,7 +2329,8 @@ const MLPredictions: React.FC = () => {
                                 </div>
                             )}
                         </div>
-                    )}
+                        );
+                    })()}
 
                     {/* PROFILES TAB */}
                     {clusterActiveTab === 'profiles' && (
@@ -2252,6 +2366,171 @@ const MLPredictions: React.FC = () => {
                     )}
 
                     {/* PREDICT TAB */}
+                    {/* DOWNLOAD TAB */}
+                    {clusterActiveTab === 'download' && (() => {
+                        const handleClusteringDownload = async (type: 'model' | 'data' | 'code', filename: string) => {
+                            try {
+                                const userId = getUserIdSync();
+                                const urlMap = {
+                                    model: `/api/v1/ml/clustering/download-model/${userId}`,
+                                    data: `/api/v1/ml/clustering/download-data/${userId}`,
+                                    code: `/api/v1/ml/clustering/download-code/${userId}`,
+                                };
+                                const response = await fetch(urlMap[type], {
+                                    method: 'GET',
+                                    headers: { ...getAuthHeadersSync() },
+                                });
+                                if (!response.ok) throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+                                const blob = await response.blob();
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                // Use filename from Content-Disposition if available
+                                const disposition = response.headers.get('Content-Disposition');
+                                const serverFilename = disposition?.match(/filename=(.+)/)?.[1]?.replace(/"/g, '');
+                                a.download = serverFilename || filename;
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                            } catch (err) {
+                                console.error(`Clustering ${type} download error:`, err);
+                                alert(`Download failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+                            }
+                        };
+
+                        return (
+                        <div className="p-8 rounded-2xl border border-dashed" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-4xl mx-auto">
+                                <div className="text-center mb-8">
+                                    <div className="w-20 h-20 mx-auto bg-purple-500/20 rounded-full flex items-center justify-center mb-6">
+                                        <Boxes className="w-10 h-10 text-purple-400" />
+                                    </div>
+                                    <h2 className="text-2xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+                                        Clustering Assets & Code Export
+                                    </h2>
+                                    <p className="leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-muted)' }}>
+                                        Download trained clustering model, clustered dataset, and complete unsupervised ML code.
+                                    </p>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                                    {/* Clustering Model Download */}
+                                    <div className="p-5 rounded-xl border text-center" style={{ borderColor: 'var(--border-color)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+                                        <div className="w-14 h-14 mx-auto bg-purple-500/20 rounded-full flex items-center justify-center mb-4">
+                                            <Brain className="w-7 h-7 text-purple-500" />
+                                        </div>
+                                        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                                            Clustering Model
+                                        </h3>
+                                        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                                            Download the trained clustering model (.pkl) with scaler & centroids.
+                                        </p>
+                                        <button
+                                            onClick={() => handleClusteringDownload('model', 'clustering_model.pkl')}
+                                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Download .pkl
+                                        </button>
+                                        <p className="text-xs mt-3 flex items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                                            <CheckCircle className="w-3 h-3 text-purple-400" />
+                                            {clusteringResult.algorithm?.toUpperCase()} ({clusteringResult.n_clusters} clusters)
+                                        </p>
+                                    </div>
+
+                                    {/* Clustered Dataset Download */}
+                                    <div className="p-5 rounded-xl border text-center" style={{ borderColor: 'var(--border-color)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+                                        <div className="w-14 h-14 mx-auto bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
+                                            <Database className="w-7 h-7 text-emerald-500" />
+                                        </div>
+                                        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                                            Clustered Dataset
+                                        </h3>
+                                        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                                            Data with cluster assignments, PCA components & labels.
+                                        </p>
+                                        {clusteringResult.cleaned_file || clusteringResult.labels ? (
+                                            <button
+                                                onClick={() => handleClusteringDownload('data', 'clustered_data.csv')}
+                                                className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
+                                            >
+                                                <Download className="w-4 h-4" />
+                                                Download CSV
+                                            </button>
+                                        ) : (
+                                            <button disabled className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-500 text-white rounded-xl font-semibold opacity-50 cursor-not-allowed">
+                                                <Download className="w-4 h-4" />
+                                                Not Available
+                                            </button>
+                                        )}
+                                        <p className="text-xs mt-3 flex items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                                            <CheckCircle className="w-3 h-3 text-emerald-400" />
+                                            With Cluster Labels
+                                        </p>
+                                    </div>
+
+                                    {/* Complete Code ZIP Download */}
+                                    <div className="p-5 rounded-xl border text-center relative overflow-hidden" style={{ borderColor: isDark ? '#f59e0b' : '#d97706', backgroundColor: isDark ? 'rgba(245,158,11,0.05)' : 'rgba(245,158,11,0.03)' }}>
+                                        <div className="absolute top-0 right-0 px-2 py-0.5 text-[10px] font-bold rounded-bl-lg" style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                                            NEW
+                                        </div>
+                                        <div className="w-14 h-14 mx-auto bg-amber-500/20 rounded-full flex items-center justify-center mb-4">
+                                            <Code2 className="w-7 h-7 text-amber-500" />
+                                        </div>
+                                        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                                            Complete Code
+                                        </h3>
+                                        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                                            Full clustering project with train, predict, visualize & API.
+                                        </p>
+                                        <button
+                                            onClick={() => handleClusteringDownload('code', 'clustering_project.zip')}
+                                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-semibold transition-all hover:scale-105 shadow-lg shadow-amber-500/20"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Download ZIP
+                                        </button>
+                                        <p className="text-xs mt-3 flex items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                                            <CheckCircle className="w-3 h-3 text-amber-400" />
+                                            Train + Predict + Charts + API
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* What's inside the ZIP */}
+                                <div className="mt-8 p-5 rounded-xl border" style={{ borderColor: 'var(--border-color)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+                                    <h4 className="font-semibold mb-4 flex items-center gap-2 text-base" style={{ color: 'var(--text-primary)' }}>
+                                        <Code2 className="w-5 h-5 text-amber-500" />
+                                        What's Inside the ZIP
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {[
+                                            { file: 'clustering_model.pkl', desc: 'Trained clustering model', color: '#a855f7' },
+                                            { file: 'clustered_data.csv', desc: 'Data with cluster labels', color: '#22c55e' },
+                                            { file: 'predict_cluster.py', desc: 'Predict cluster for new data', color: '#3b82f6' },
+                                            { file: 'train_clustering.py', desc: 'Re-train clustering model', color: '#ef4444' },
+                                            { file: 'visualize_clusters.py', desc: 'Generate all clustering charts', color: '#ec4899' },
+                                            { file: 'api_server.py', desc: 'Flask REST API server', color: '#6366f1' },
+                                            { file: 'charts/', desc: 'Pre-generated training charts', color: '#f59e0b' },
+                                            { file: 'config.json', desc: 'Clustering configuration', color: '#14b8a6' },
+                                            { file: 'Dockerfile', desc: 'Docker deployment ready', color: '#0ea5e9' },
+                                        ].map((item) => (
+                                            <div key={item.file} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.file}</p>
+                                                    <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{item.desc}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </div>
+                        );
+                    })()}
+
                     {clusterActiveTab === 'predict' && (
                         <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
@@ -2352,6 +2631,10 @@ const MLPredictions: React.FC = () => {
         return null; // TypeScript guard - this shouldn't happen
     }
     const metrics = result.best_model?.metrics || {};
+    // Determine if classification or regression based on available metrics
+    const isClassification = metrics.accuracy !== undefined || metrics.f1 !== undefined || metrics.precision !== undefined;
+    const isRegression = metrics.r2 !== undefined || metrics.rmse !== undefined;
+    
     let bestMetric: [string, number] = ['accuracy', 0];
 
     if (metrics.accuracy !== undefined) {
@@ -2419,7 +2702,7 @@ const MLPredictions: React.FC = () => {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-4 w-full">
             {/* Header */}
             <motion.div
                 initial={{ opacity: 0, y: -20 }}
@@ -2454,7 +2737,7 @@ const MLPredictions: React.FC = () => {
                 </button>
             </motion.div>
 
-            {/* Key Metrics - 5 Cards including Production Intelligence */}
+            {/* Key Metrics - Best Model + All Metrics + Production Intelligence + Models + Features */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -2486,7 +2769,9 @@ const MLPredictions: React.FC = () => {
                         <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>{bestMetric[0]?.toUpperCase()}</span>
                     </div>
                     <p className="text-2xl font-bold" style={{ color: getMetricColor(bestMetric[1] as number) }}>
-                        {((bestMetric[1] as number) * 100).toFixed(1)}%
+                        {isRegression && !isClassification
+                            ? (bestMetric[1] as number).toFixed(4)
+                            : `${((bestMetric[1] as number) * 100).toFixed(1)}%`}
                     </p>
                 </motion.div>
 
@@ -2646,7 +2931,7 @@ const MLPredictions: React.FC = () => {
                 transition={{ duration: 0.3 }}
             >
                 {activeTab === 'overview' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 w-full">
                         {/* Multi-Mode Results (if applicable) */}
                         {result.results_per_mode && Object.keys(result.results_per_mode).length > 1 && (
                             <div className="lg:col-span-2 p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
@@ -2671,7 +2956,6 @@ const MLPredictions: React.FC = () => {
                                             'nlp': 'NLP',
                                             'deep_learning': 'Deep Learning'
                                         };
-                                        const acc = modeResult.metrics?.accuracy || modeResult.metrics?.r2 || 0;
                                         const isBest = result.best_overall?.mode === mode;
 
                                         return (
@@ -2697,9 +2981,60 @@ const MLPredictions: React.FC = () => {
                                                 <p className="text-sm mb-1" style={{ color: 'var(--text-muted)' }}>
                                                     Model: <strong style={{ color: 'var(--text-primary)' }}>{modeResult.best_model || modeResult.algorithm || modeResult.architecture || 'N/A'}</strong>
                                                 </p>
-                                                <p className="text-2xl font-bold" style={{ color: modeColors[mode] }}>
-                                                    {modeResult.success ? `${(acc * 100).toFixed(1)}%` : '❌ Failed'}
-                                                </p>
+                                                {modeResult.success ? (
+                                                    <div className="mt-2 space-y-1">
+                                                        {modeResult.metrics?.accuracy !== undefined && (
+                                                            <div className="flex justify-between text-sm">
+                                                                <span style={{ color: 'var(--text-muted)' }}>Accuracy</span>
+                                                                <span className="font-bold" style={{ color: modeColors[mode] }}>{(modeResult.metrics.accuracy * 100).toFixed(1)}%</span>
+                                                            </div>
+                                                        )}
+                                                        {modeResult.metrics?.precision !== undefined && (
+                                                            <div className="flex justify-between text-sm">
+                                                                <span style={{ color: 'var(--text-muted)' }}>Precision</span>
+                                                                <span className="font-bold" style={{ color: modeColors[mode] }}>{(modeResult.metrics.precision * 100).toFixed(1)}%</span>
+                                                            </div>
+                                                        )}
+                                                        {modeResult.metrics?.recall !== undefined && (
+                                                            <div className="flex justify-between text-sm">
+                                                                <span style={{ color: 'var(--text-muted)' }}>Recall</span>
+                                                                <span className="font-bold" style={{ color: modeColors[mode] }}>{(modeResult.metrics.recall * 100).toFixed(1)}%</span>
+                                                            </div>
+                                                        )}
+                                                        {modeResult.metrics?.f1 !== undefined && (
+                                                            <div className="flex justify-between text-sm">
+                                                                <span style={{ color: 'var(--text-muted)' }}>F1 Score</span>
+                                                                <span className="font-bold" style={{ color: modeColors[mode] }}>{(modeResult.metrics.f1 * 100).toFixed(1)}%</span>
+                                                            </div>
+                                                        )}
+                                                        {modeResult.metrics?.roc_auc !== undefined && (
+                                                            <div className="flex justify-between text-sm">
+                                                                <span style={{ color: 'var(--text-muted)' }}>ROC-AUC</span>
+                                                                <span className="font-bold" style={{ color: modeColors[mode] }}>{(modeResult.metrics.roc_auc * 100).toFixed(1)}%</span>
+                                                            </div>
+                                                        )}
+                                                        {modeResult.metrics?.r2 !== undefined && (
+                                                            <div className="flex justify-between text-sm">
+                                                                <span style={{ color: 'var(--text-muted)' }}>R²</span>
+                                                                <span className="font-bold" style={{ color: modeColors[mode] }}>{(modeResult.metrics.r2 as number).toFixed(4)}</span>
+                                                            </div>
+                                                        )}
+                                                        {modeResult.metrics?.rmse !== undefined && (
+                                                            <div className="flex justify-between text-sm">
+                                                                <span style={{ color: 'var(--text-muted)' }}>RMSE</span>
+                                                                <span className="font-bold" style={{ color: modeColors[mode] }}>{(modeResult.metrics.rmse as number).toFixed(4)}</span>
+                                                            </div>
+                                                        )}
+                                                        {modeResult.metrics?.mae !== undefined && (
+                                                            <div className="flex justify-between text-sm">
+                                                                <span style={{ color: 'var(--text-muted)' }}>MAE</span>
+                                                                <span className="font-bold" style={{ color: modeColors[mode] }}>{(modeResult.metrics.mae as number).toFixed(4)}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-2xl font-bold" style={{ color: modeColors[mode] }}>❌ Failed</p>
+                                                )}
                                                 {modeResult.error && (
                                                     <p className="text-xs text-red-400 mt-1">{modeResult.error}</p>
                                                 )}
@@ -2711,7 +3046,7 @@ const MLPredictions: React.FC = () => {
                         )}
 
                         {/* All Models */}
-                        <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                        <div className="lg:col-span-2 p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                             <h3 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                                 <Activity className="w-5 h-5 text-blue-400" />
                                 All Models Performance
@@ -2719,45 +3054,75 @@ const MLPredictions: React.FC = () => {
                                     🛡️ Production Validated
                                 </span>
                             </h3>
-                            <div className="space-y-3">
-                                {/* Show leaderboard if available (multi-mode), otherwise all_models */}
-                                {((result.leaderboard && result.leaderboard.length > 0) ? result.leaderboard : result.all_models)?.slice(0, 8).map((model: any, i: number) => {
-                                    const mainMetric = model.score || Object.values(model.metrics || {})[0] || 0;
-                                    const modelName = model.model || model.name;
-                                    const modeLabel = model.mode ? `[${model.mode}]` : '';
-                                    const isBest = modelName === (result.best_overall?.name || result.best_model?.name);
-                                    const reliability = model.reliability_score || model.reliability || 75;
-                                    const hasWarning = model.warning;
-                                    return (
-                                        <div key={i} className="flex items-center gap-3">
-                                            <span className="w-28 text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }} title={modelName}>
-                                                {modeLabel} {modelName}
-                                            </span>
-                                            <div className="flex-1 rounded-full h-3" style={{ backgroundColor: isDark ? '#374151' : '#e5e7eb' }}>
-                                                <div
-                                                    className={`h-3 rounded-full ${isBest ? 'bg-gradient-to-r from-primary-500 to-emerald-500' : 'bg-blue-500'}`}
-                                                    style={{ width: `${mainMetric * 100}%` }}
-                                                />
-                                            </div>
-                                            <span className="w-16 text-sm font-bold text-right" style={{ color: 'var(--text-primary)' }}>
-                                                {(mainMetric * 100).toFixed(1)}%
-                                            </span>
-                                            {/* 🛡️ Reliability indicator */}
-                                            <span 
-                                                className={`w-12 text-xs font-medium text-center px-1 py-0.5 rounded ${
-                                                    reliability >= 80 ? 'bg-green-500/20 text-green-400' :
-                                                    reliability >= 60 ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'
-                                                }`}
-                                                title={hasWarning ? `Warning: ${hasWarning}` : `Reliability: ${reliability}/100`}
-                                            >
-                                                {hasWarning ? '⚠️' : '✓'} {reliability}
-                                            </span>
-                                            {isBest && (
-                                                <span className="text-xs px-2 py-0.5 bg-primary-500 text-white rounded">BEST</span>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="border-b" style={{ borderColor: 'var(--border-color)' }}>
+                                            <th className="text-left py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>Model</th>
+                                            {isClassification ? (
+                                                <>
+                                                    <th className="text-right py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>Accuracy</th>
+                                                    <th className="text-right py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>Precision</th>
+                                                    <th className="text-right py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>Recall</th>
+                                                    <th className="text-right py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>F1</th>
+                                                    <th className="text-right py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>ROC-AUC</th>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <th className="text-right py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>R²</th>
+                                                    <th className="text-right py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>MSE</th>
+                                                    <th className="text-right py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>RMSE</th>
+                                                    <th className="text-right py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>MAE</th>
+                                                </>
                                             )}
-                                        </div>
-                                    );
-                                })}
+                                            <th className="text-center py-2 px-2 font-medium" style={{ color: 'var(--text-muted)' }}>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {((result.leaderboard && result.leaderboard.length > 0) ? result.leaderboard : result.all_models)?.slice(0, 10).map((model: any, i: number) => {
+                                            const modelName = model.model || model.name;
+                                            const modeLabel = model.mode ? `[${model.mode}] ` : '';
+                                            const isBest = modelName === (result.best_overall?.name || result.best_model?.name);
+                                            const m = model.metrics || {};
+                                            // Theme-aware metric colors (darker for light mode contrast)
+                                            const metricColors = isDark
+                                                ? { acc: '#22c55e', prec: '#3b82f6', rec: '#a855f7', f1: '#f59e0b', roc: '#ef4444', text: 'var(--text-primary)' }
+                                                : { acc: '#15803d', prec: '#1d4ed8', rec: '#7e22ce', f1: '#b45309', roc: '#dc2626', text: '#0f172a' };
+                                            return (
+                                                <tr key={i} className="border-b" style={{ borderColor: 'var(--border-color)', backgroundColor: isBest ? (isDark ? 'rgba(34, 197, 94, 0.1)' : 'rgba(34, 197, 94, 0.08)') : undefined }}>
+                                                    <td className="py-2 px-2 font-medium truncate max-w-[200px]" style={{ color: metricColors.text }} title={modelName}>
+                                                        {modeLabel}{modelName}
+                                                        {isBest && <span className="ml-1 text-xs px-1.5 py-0.5 bg-primary-500 text-white rounded">BEST</span>}
+                                                    </td>
+                                                    {isClassification ? (
+                                                        <>
+                                                            <td className="text-right py-2 px-2 font-mono" style={{ color: metricColors.acc }}>{m.accuracy !== undefined ? `${(m.accuracy * 100).toFixed(1)}%` : '-'}</td>
+                                                            <td className="text-right py-2 px-2 font-mono" style={{ color: metricColors.prec }}>{m.precision !== undefined ? `${(m.precision * 100).toFixed(1)}%` : '-'}</td>
+                                                            <td className="text-right py-2 px-2 font-mono" style={{ color: metricColors.rec }}>{m.recall !== undefined ? `${(m.recall * 100).toFixed(1)}%` : '-'}</td>
+                                                            <td className="text-right py-2 px-2 font-mono" style={{ color: metricColors.f1 }}>{m.f1 !== undefined ? `${(m.f1 * 100).toFixed(1)}%` : '-'}</td>
+                                                            <td className="text-right py-2 px-2 font-mono" style={{ color: metricColors.roc }}>{m.roc_auc !== undefined ? `${(m.roc_auc * 100).toFixed(1)}%` : '-'}</td>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <td className="text-right py-2 px-2 font-mono" style={{ color: metricColors.acc }}>{m.r2 !== undefined ? (m.r2 as number).toFixed(4) : '-'}</td>
+                                                            <td className="text-right py-2 px-2 font-mono" style={{ color: metricColors.prec }}>{m.mse !== undefined ? (m.mse as number).toFixed(4) : '-'}</td>
+                                                            <td className="text-right py-2 px-2 font-mono" style={{ color: metricColors.rec }}>{m.rmse !== undefined ? (m.rmse as number).toFixed(4) : '-'}</td>
+                                                            <td className="text-right py-2 px-2 font-mono" style={{ color: metricColors.f1 }}>{m.mae !== undefined ? (m.mae as number).toFixed(4) : '-'}</td>
+                                                        </>
+                                                    )}
+                                                    <td className="text-center py-2 px-2">
+                                                        <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                                            (model.reliability_score || model.reliability || 75) >= 80 ? 'bg-green-500/20 text-green-400' :
+                                                            (model.reliability_score || model.reliability || 75) >= 60 ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'
+                                                        }`}>
+                                                            {model.warning ? '⚠️' : '✓'} {model.reliability_score || model.reliability || 75}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
 
@@ -2813,8 +3178,91 @@ const MLPredictions: React.FC = () => {
                     </div>
                 )}
 
-                {activeTab === 'charts' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {activeTab === 'charts' && (() => {
+                    const chartEntries = result.charts ? Object.entries(result.charts)
+                        .filter(([chartName]) => !['cluster_scatter', 'elbow_method', 'silhouette_comparison',
+                            'silhouette_plot', 'dendrogram', 'cluster_distribution'].includes(chartName)) : [];
+
+                    const copyChartToClipboard = async (base64: string, chartName: string) => {
+                        try {
+                            const res = await fetch(base64);
+                            const blob = await res.blob();
+                            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+                            setCopiedChart(chartName);
+                            setTimeout(() => setCopiedChart(null), 2000);
+                        } catch {
+                            // fallback: open in new tab
+                            const w = window.open();
+                            if (w) { w.document.write(`<img src="${base64}" />`); }
+                        }
+                    };
+
+                    const exportAllChartsToPPT = async () => {
+                        if (chartEntries.length === 0) return;
+                        setExportingPPT(true);
+                        try {
+                            const pptx = new PptxGenJS();
+                            pptx.title = `ML Charts - ${result.target_column || 'Model'}`;
+                            pptx.author = 'DataVision AI';
+                            pptx.layout = 'LAYOUT_WIDE';
+
+                            for (const [chartName, chartBase64] of chartEntries) {
+                                let displayName = chartName;
+                                if (chartName.startsWith('ml_')) displayName = chartName.slice(3);
+                                else if (chartName.startsWith('nlp_')) displayName = chartName.slice(4);
+                                else if (chartName.startsWith('dl_')) displayName = chartName.slice(3);
+                                const title = displayName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+                                const slide = pptx.addSlide();
+                                slide.addText(title, {
+                                    x: 0.5, y: 0.2, w: '90%', h: 0.6,
+                                    fontSize: 22, bold: true, color: '333333',
+                                    fontFace: 'Segoe UI'
+                                });
+                                const imgData = (chartBase64 as string).replace(/^data:image\/\w+;base64,/, '');
+                                slide.addImage({
+                                    data: `image/png;base64,${imgData}`,
+                                    x: 0.8, y: 1.0, w: 11.5, h: 5.8,
+                                    sizing: { type: 'contain', w: 11.5, h: 5.8 }
+                                });
+                            }
+
+                            await pptx.writeFile({ fileName: `ML_Charts_${result.target_column || 'Model'}.pptx` });
+                        } catch (e) {
+                            console.error('PPT export failed:', e);
+                        } finally {
+                            setExportingPPT(false);
+                        }
+                    };
+
+                    return (
+                    <div className="space-y-3">
+                        {/* Export toolbar */}
+                        {!chartsLoading && chartEntries.length > 0 && (
+                            <div className="flex items-center justify-between px-1">
+                                <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
+                                    {chartEntries.length} chart{chartEntries.length !== 1 ? 's' : ''} generated
+                                </p>
+                                <button
+                                    onClick={exportAllChartsToPPT}
+                                    disabled={exportingPPT}
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all hover:scale-105"
+                                    style={{
+                                        backgroundColor: isDark ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.1)',
+                                        color: isDark ? '#a5b4fc' : '#4f46e5',
+                                        border: `1px solid ${isDark ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.2)'}`
+                                    }}
+                                >
+                                    {exportingPPT ? (
+                                        <><RefreshCw className="w-4 h-4 animate-spin" /> Exporting...</>
+                                    ) : (
+                                        <><Presentation className="w-4 h-4" /> Export All to PPT</>
+                                    )}
+                                </button>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 w-full">
                         {chartsLoading && (
                             <div className="col-span-2 text-center p-12 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                                 <RefreshCw className="w-16 h-16 mx-auto mb-4 animate-spin" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
@@ -2824,9 +3272,7 @@ const MLPredictions: React.FC = () => {
                         )}
 
                         {/* Filter out clustering-specific charts from supervised view */}
-                        {!chartsLoading && result.charts && Object.entries(result.charts)
-                            .filter(([chartName]) => !['cluster_scatter', 'elbow_method', 'silhouette_comparison',
-                                'silhouette_plot', 'dendrogram', 'cluster_distribution'].includes(chartName))
+                        {!chartsLoading && chartEntries
                             .map(([chartName, chartBase64]) => {
                                 // Format chart name: remove prefix and add mode label
                                 let displayName = chartName;
@@ -2849,16 +3295,16 @@ const MLPredictions: React.FC = () => {
                                         className="rounded-2xl border overflow-hidden transition-all hover:shadow-lg"
                                         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}
                                     >
-                                        <div className="flex items-center gap-3 px-5 py-4 border-b" style={{ borderColor: 'var(--border-color)' }}>
-                                            <div className="p-2 rounded-lg bg-gradient-to-r from-primary-500/20 to-emerald-500/20">
-                                                <BarChart3 className="w-4 h-4" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
+                                        <div className="flex items-center gap-2 px-4 py-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                                            <div className="p-1.5 rounded-lg bg-gradient-to-r from-primary-500/20 to-emerald-500/20">
+                                                <BarChart3 className="w-3.5 h-3.5" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
                                             </div>
-                                            <div className="flex-1">
-                                                <h3 className="text-base font-semibold capitalize" style={{ color: 'var(--text-primary)' }}>
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="text-sm font-semibold capitalize truncate" style={{ color: 'var(--text-primary)' }}>
                                                     {formattedName}
                                                 </h3>
                                                 {modeLabel && (
-                                                    <span className="text-xs px-2 py-0.5 rounded-full"
+                                                    <span className="text-xs px-1.5 py-0.5 rounded-full"
                                                         style={{
                                                             backgroundColor: modeLabel === 'NLP' ? 'rgba(59, 130, 246, 0.2)' :
                                                                 modeLabel === 'Deep Learning' ? 'rgba(239, 68, 68, 0.2)' :
@@ -2870,15 +3316,31 @@ const MLPredictions: React.FC = () => {
                                                     </span>
                                                 )}
                                             </div>
+                                            {/* Copy chart button */}
+                                            <button
+                                                onClick={() => copyChartToClipboard(chartBase64 as string, chartName)}
+                                                className="p-1.5 rounded-lg transition-all hover:scale-110"
+                                                style={{
+                                                    backgroundColor: copiedChart === chartName
+                                                        ? (isDark ? 'rgba(34,197,94,0.2)' : 'rgba(34,197,94,0.1)')
+                                                        : (isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)')
+                                                }}
+                                                title="Copy chart to clipboard"
+                                            >
+                                                {copiedChart === chartName
+                                                    ? <Check className="w-3.5 h-3.5 text-green-500" />
+                                                    : <Copy className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                                                }
+                                            </button>
                                         </div>
-                                        <div className="p-4" style={{ backgroundColor: isDark ? '#0f172a' : '#f8fafc' }}>
-                                            <img src={chartBase64} alt={chartName} className="w-full rounded-lg" style={{ maxHeight: '350px', objectFit: 'contain' }} />
+                                        <div className="flex items-center justify-center p-2" style={{ backgroundColor: isDark ? '#0f172a' : '#f8fafc' }}>
+                                            <img src={chartBase64 as string} alt={chartName} className="rounded-lg" style={{ width: '100%', height: 'auto', display: 'block' }} />
                                         </div>
                                     </div>
                                 );
                             })}
 
-                        {!chartsLoading && (!result.charts || Object.keys(result.charts).length === 0) && (
+                        {!chartsLoading && chartEntries.length === 0 && (
                             <div className="col-span-2 text-center p-12 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                                 <BarChart3 className="w-16 h-16 mx-auto mb-4" style={{ color: 'var(--text-muted)' }} />
                                 <p className="text-lg font-medium mb-2" style={{ color: 'var(--text-primary)' }}>No Charts Available</p>
@@ -2901,7 +3363,9 @@ const MLPredictions: React.FC = () => {
                             </div>
                         )}
                     </div>
-                )}
+                    </div>
+                    );
+                })()}
 
                 {activeTab === 'features' && (
                     <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
@@ -2965,8 +3429,8 @@ const MLPredictions: React.FC = () => {
                                     // Text if: explicitly marked OR heuristic match OR NLP task primary column
                                     const isText = isExplicitText || isHeuristicText || isNlpTask;
 
-                                    // Check for datetime type
-                                    const isDatetime = meta.type === 'datetime';
+                                    // Check for datetime type (backend may send 'date' or 'datetime')
+                                    const isDatetime = meta.type === 'datetime' || meta.type === 'date';
 
                                     // Only numeric if NOT a text column and NOT datetime
                                     const isNumeric = !isText && !isDatetime && meta.type === 'numeric';
@@ -3092,7 +3556,21 @@ const MLPredictions: React.FC = () => {
                                         model_name: result.best_model.name,
                                         mode: predictMode,
                                         data: Object.fromEntries(
-                                            Object.entries(predictionInput).map(([k, v]) => [k, parseFloat(v) || v])
+                                            Object.entries(predictionInput).map(([k, v]) => {
+                                                // Find the feature metadata to determine type
+                                                const meta = inputFeatures.find(f => f.name === k);
+                                                if (meta?.type === 'numeric') {
+                                                    // Numeric — convert to number (handles "0" correctly)
+                                                    const num = parseFloat(v);
+                                                    return [k, isNaN(num) ? 0 : num];
+                                                } else if (meta?.type === 'categorical' || meta?.type === 'date' || meta?.type === 'datetime') {
+                                                    // Categorical / Date — keep as string
+                                                    return [k, v];
+                                                } else {
+                                                    // Text or unknown — keep as string
+                                                    return [k, v];
+                                                }
+                                            })
                                         )
                                     };
                                     console.log('[MLPredictions] Sending prediction with mode:', predictMode);
@@ -3196,21 +3674,23 @@ const MLPredictions: React.FC = () => {
                 )}
 
                 {activeTab === 'data' && (
-                    <div className="p-12 text-center rounded-2xl border border-dashed" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-2xl mx-auto">
-                            <div className="w-20 h-20 mx-auto bg-primary-500/20 rounded-full flex items-center justify-center mb-6">
-                                <Database className="w-10 h-10" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
+                    <div className="p-8 rounded-2xl border border-dashed" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-4xl mx-auto">
+                            <div className="text-center mb-8">
+                                <div className="w-20 h-20 mx-auto bg-primary-500/20 rounded-full flex items-center justify-center mb-6">
+                                    <Database className="w-10 h-10" style={{ color: isDark ? '#4ade80' : '#16a34a' }} />
+                                </div>
+                                <h2 className="text-2xl font-bold mb-3" style={{ color: 'var(--text-primary)' }}>
+                                    Production Assets & Code Export
+                                </h2>
+                                <p className="leading-relaxed max-w-2xl mx-auto" style={{ color: 'var(--text-muted)' }}>
+                                    Download trained model, cleaned dataset, and complete end-to-end ML code for local deployment.
+                                </p>
                             </div>
-                            <h2 className="text-2xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
-                                Production Assets
-                            </h2>
-                            <p className="mb-8 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                                Download trained model and cleaned dataset for deployment in production environments.
-                            </p>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                                 {/* Trained Model Download */}
-                                <div className="p-6 rounded-xl border" style={{ borderColor: 'var(--border-color)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+                                <div className="p-5 rounded-xl border text-center" style={{ borderColor: 'var(--border-color)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
                                     <div className="w-14 h-14 mx-auto bg-purple-500/20 rounded-full flex items-center justify-center mb-4">
                                         <Brain className="w-7 h-7 text-purple-500" />
                                     </div>
@@ -3218,14 +3698,14 @@ const MLPredictions: React.FC = () => {
                                         Trained Model
                                     </h3>
                                     <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-                                        Download the trained ML model (.pkl) for deployment in your applications.
+                                        Download the trained ML model (.pkl) for deployment.
                                     </p>
                                     <a
                                         href={`/api/v2/automl/download-model?user_id=${getUserIdSync()}`}
-                                        className="inline-flex items-center gap-2 px-6 py-3 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
+                                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
                                     >
-                                        <Download className="w-5 h-5" />
-                                        Download Model (.pkl)
+                                        <Download className="w-4 h-4" />
+                                        Download .pkl
                                     </a>
                                     <p className="text-xs mt-3 flex items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
                                         <CheckCircle className="w-3 h-3 text-purple-400" />
@@ -3233,53 +3713,123 @@ const MLPredictions: React.FC = () => {
                                     </p>
                                 </div>
 
-                                {/* Cleaned Dataset Download - Only show if available */}
-                                {result.cleaned_file && (
-                                    <div className="p-6 rounded-xl border" style={{ borderColor: 'var(--border-color)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
-                                        <div className="w-14 h-14 mx-auto bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
-                                            <Database className="w-7 h-7 text-emerald-500" />
-                                        </div>
-                                        <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                                            Cleaned Dataset
-                                        </h3>
-                                        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-                                            Production-ready data (Missing values imputed, Categorical encoded, Features scaled).
-                                        </p>
+                                {/* Cleaned Dataset Download */}
+                                <div className="p-5 rounded-xl border text-center" style={{ borderColor: 'var(--border-color)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+                                    <div className="w-14 h-14 mx-auto bg-emerald-500/20 rounded-full flex items-center justify-center mb-4">
+                                        <Database className="w-7 h-7 text-emerald-500" />
+                                    </div>
+                                    <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                                        Cleaned Dataset
+                                    </h3>
+                                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                                        Production-ready data with imputed values and encoded features.
+                                    </p>
+                                    {result.cleaned_file ? (
                                         <a
                                             href={`/api/v1/files/${getUserIdSync()}/${result.cleaned_file}/download`}
-                                            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
+                                            className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-semibold transition-all hover:scale-105"
                                         >
-                                            <Download className="w-5 h-5" />
+                                            <Download className="w-4 h-4" />
                                             Download CSV
                                         </a>
-                                        <p className="text-xs mt-3 flex items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
-                                            <CheckCircle className="w-3 h-3 text-emerald-400" />
-                                            Ready for Production
-                                        </p>
+                                    ) : (
+                                        <button disabled className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-500 text-white rounded-xl font-semibold opacity-50 cursor-not-allowed">
+                                            <Download className="w-4 h-4" />
+                                            Not Available
+                                        </button>
+                                    )}
+                                    <p className="text-xs mt-3 flex items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                                        <CheckCircle className="w-3 h-3 text-emerald-400" />
+                                        Ready for Production
+                                    </p>
+                                </div>
+
+                                {/* Complete Code ZIP Download */}
+                                <div className="p-5 rounded-xl border text-center relative overflow-hidden" style={{ borderColor: isDark ? '#f59e0b' : '#d97706', backgroundColor: isDark ? 'rgba(245,158,11,0.05)' : 'rgba(245,158,11,0.03)' }}>
+                                    <div className="absolute top-0 right-0 px-2 py-0.5 text-[10px] font-bold rounded-bl-lg" style={{ backgroundColor: '#f59e0b', color: '#000' }}>
+                                        NEW
                                     </div>
-                                )}
+                                    <div className="w-14 h-14 mx-auto bg-amber-500/20 rounded-full flex items-center justify-center mb-4">
+                                        <Code2 className="w-7 h-7 text-amber-500" />
+                                    </div>
+                                    <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                                        Complete Code
+                                    </h3>
+                                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                                        End-to-end ML project with all training modes, API & Docker.
+                                    </p>
+                                    <a
+                                        href={`/api/v2/automl/download-code?user_id=${getUserIdSync()}`}
+                                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-semibold transition-all hover:scale-105 shadow-lg shadow-amber-500/20"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        Download ZIP
+                                    </a>
+                                    <p className="text-xs mt-3 flex items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                                        <CheckCircle className="w-3 h-3 text-amber-400" />
+                                        ML + NLP + DL + Fast + Ultra
+                                    </p>
+                                </div>
                             </div>
 
-                            {/* Usage Instructions */}
-                            <div className="mt-8 p-4 rounded-xl text-left" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
-                                <h4 className="font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                    <Code2 className="w-4 h-4" />
-                                    Usage Example
+                            {/* What's inside the ZIP */}
+                            <div className="mt-8 p-5 rounded-xl border" style={{ borderColor: 'var(--border-color)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+                                <h4 className="font-semibold mb-4 flex items-center gap-2 text-base" style={{ color: 'var(--text-primary)' }}>
+                                    <Code2 className="w-5 h-5 text-amber-500" />
+                                    What's Inside the ZIP
                                 </h4>
-                                <pre className="text-xs p-3 rounded-lg overflow-x-auto" style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}>
-{`import pickle
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {[
+                                        { file: 'train.py', desc: 'Traditional ML (15+ sklearn models)', color: '#22c55e' },
+                                        { file: 'train_nlp.py', desc: 'NLP mode (TF-IDF + Transformers)', color: '#3b82f6' },
+                                        { file: 'train_deep_learning.py', desc: 'PyTorch neural network', color: '#ef4444' },
+                                        { file: 'train_fast.py', desc: 'Fast mode (top 3 models)', color: '#8b5cf6' },
+                                        { file: 'train_ultra.py', desc: 'Ultra mode (stacking ensemble)', color: '#f59e0b' },
+                                        { file: 'predict.py', desc: 'CLI + batch predictions', color: '#06b6d4' },
+                                        { file: 'visualize.py', desc: 'Generate all ML charts', color: '#ec4899' },
+                                        { file: 'evaluate.py', desc: 'Comprehensive evaluation', color: '#14b8a6' },
+                                        { file: 'api_server.py', desc: 'Flask REST API server', color: '#6366f1' },
+                                        { file: 'run_all.py', desc: 'Run all modes & compare', color: '#a855f7' },
+                                        { file: 'Dockerfile', desc: 'Docker deployment ready', color: '#0ea5e9' },
+                                        { file: 'README.md', desc: 'Full documentation', color: '#64748b' },
+                                    ].map((item) => (
+                                        <div key={item.file} className="flex items-center gap-3 p-2.5 rounded-lg" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }} />
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-mono font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.file}</p>
+                                                <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{item.desc}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
 
-# Load the trained model
-with open('model.pkl', 'rb') as f:
-    engine_state = pickle.load(f)
+                            {/* Quick Start Guide */}
+                            <div className="mt-5 p-5 rounded-xl text-left" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
+                                <h4 className="font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                    <Play className="w-4 h-4 text-emerald-500" />
+                                    Quick Start — Run Locally
+                                </h4>
+                                <pre className="text-xs p-4 rounded-lg overflow-x-auto" style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.05)', color: 'var(--text-muted)' }}>
+{`# 1. Extract the ZIP and install dependencies
+unzip datavision_ml_project.zip && cd datavision_ml_project
+pip install -r requirements.txt
 
-# Access model and components
-model = engine_state['model']
-scaler = engine_state.get('scaler')
-encoders = engine_state.get('label_encoders', {})
+# 2. Run all training modes and compare results
+python run_all.py
 
-# Make predictions
-prediction = model.predict(X_new)`}
+# 3. Make predictions
+python predict.py                              # Interactive mode
+python predict.py --csv input.csv              # Batch predictions
+
+# 4. Generate visualization charts
+python visualize.py
+
+# 5. Start REST API server
+python api_server.py                           # http://localhost:5000
+
+# 6. Or deploy with Docker
+docker build -t ml-model . && docker run -p 5000:5000 ml-model`}
                                 </pre>
                             </div>
                         </motion.div>

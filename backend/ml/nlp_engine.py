@@ -38,12 +38,15 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
-    confusion_matrix, classification_report, r2_score
+    confusion_matrix, classification_report, r2_score,
+    roc_auc_score, mean_squared_error, mean_absolute_error
 )
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import RobustScaler
+import scipy.sparse as sp
 import re
 import string
 import io
@@ -141,6 +144,11 @@ class NLPEngine:
         self.numeric_cols = []  # Numeric columns in original data
         self.categorical_cols = []  # Categorical columns in original data
         self.original_feature_columns = []  # All feature columns from original data
+        # Combined NLP+ML feature support
+        self.extra_scaler = None  # RobustScaler for numeric columns
+        self.extra_label_encoders = {}  # LabelEncoders for categorical columns
+        self.extra_feature_cols = []  # Ordered list of extra feature column names
+        self.has_extra_features = False  # Whether combined NLP+ML mode is active
     
     def _detect_task_type(self, y) -> str:
         """
@@ -301,6 +309,9 @@ class NLPEngine:
         try:
             logger.info(f"🔤 NLP Training: algorithm={algorithm}, target={target_column}")
             
+            # Reset stateful lists for fresh training run
+            self.algorithms_used = []
+            
             # Auto-detect text column
             if text_column is None:
                 text_column = self.detect_text_column(df, target_column)
@@ -315,16 +326,29 @@ class NLPEngine:
             
             # ============================================
             # BUILD FEATURE METADATA FROM ACTUAL DATASET
-            # Include ONLY columns that exist in the user's data
+            # SAME quality as AutoML engine — proper types,
+            # categorical dropdowns, numeric ranges, date detection,
+            # and ID column filtering
             # ============================================
             self.feature_metadata = []
             self.numeric_cols = []
             self.categorical_cols = []
             self.original_feature_columns = []
             
+            # Columns to skip (ID columns, index columns, internal columns)
+            skip_patterns = ['unnamed', 'index', '_id']
+            
             # Get all feature columns (exclude target and internal columns)
             for col in df.columns:
                 if col == target_column or col.startswith('_'):
+                    continue
+                
+                # Skip ID/index columns — they shouldn't be user inputs
+                col_lower = col.lower().strip()
+                if col_lower in skip_patterns or col_lower.startswith('unnamed'):
+                    continue
+                if col_lower == 'id' and df[col].nunique() == len(df):
+                    # Skip if it's a unique ID column
                     continue
                 
                 self.original_feature_columns.append(col)
@@ -336,32 +360,82 @@ class NLPEngine:
                         'type': 'text',
                         'placeholder': f'Enter {col} for prediction...'
                     })
-                elif df[col].dtype in ['int64', 'float64', 'int32', 'float32']:
-                    # Numeric column
-                    self.numeric_cols.append(col)
-                    try:
-                        self.feature_metadata.append({
-                            'name': col,
-                            'type': 'numeric',
-                            'min': float(df[col].min()),
-                            'max': float(df[col].max()),
-                            'mean': float(df[col].mean())
-                        })
-                    except:
-                        self.feature_metadata.append({
-                            'name': col,
-                            'type': 'numeric',
-                            'min': 0,
-                            'max': 100,
-                            'mean': 50
-                        })
+                elif pd.api.types.is_datetime64_any_dtype(df[col]):
+                    # Datetime column — date picker
+                    self.feature_metadata.append({
+                        'name': col,
+                        'type': 'date',
+                        'format': 'YYYY-MM-DD'
+                    })
+                elif pd.api.types.is_numeric_dtype(df[col]):
+                    # Numeric column — check if it's really a low-cardinality categorical
+                    n_unique = df[col].nunique()
+                    # If very few unique integers (like 0/1 or rating 1-5), treat as categorical
+                    if n_unique <= 10 and df[col].dtype in ['int64', 'int32']:
+                        self.categorical_cols.append(col)
+                        try:
+                            options = sorted(df[col].dropna().unique().tolist())
+                            self.feature_metadata.append({
+                                'name': col,
+                                'type': 'categorical',
+                                'options': [str(x) for x in options]
+                            })
+                        except:
+                            self.feature_metadata.append({
+                                'name': col,
+                                'type': 'categorical',
+                                'options': []
+                            })
+                    else:
+                        # True numeric column
+                        self.numeric_cols.append(col)
+                        try:
+                            self.feature_metadata.append({
+                                'name': col,
+                                'type': 'numeric',
+                                'min': float(df[col].min()),
+                                'max': float(df[col].max()),
+                                'mean': float(df[col].mean())
+                            })
+                        except:
+                            self.feature_metadata.append({
+                                'name': col,
+                                'type': 'numeric',
+                                'min': 0,
+                                'max': 100,
+                                'mean': 50
+                            })
                 elif df[col].dtype == 'object' or df[col].dtype.name == 'category':
-                    # Categorical column (non-text)
-                    avg_len = df[col].astype(str).str.len().mean()
-                    unique_ratio = df[col].nunique() / len(df)
+                    sample = df[col].dropna().astype(str)
+                    avg_len = sample.str.len().mean() if len(sample) > 0 else 0
+                    unique_ratio = df[col].nunique() / len(df) if len(df) > 0 else 0
                     
-                    # Short text with low uniqueness = categorical
-                    if avg_len < 30 and unique_ratio < 0.5:
+                    # 1. Check if it looks like a date column
+                    is_date_like = False
+                    if any(kw in col_lower for kw in ['date', 'time', 'created', 'updated', 'timestamp']):
+                        try:
+                            pd.to_datetime(sample.head(10), errors='raise')
+                            is_date_like = True
+                        except:
+                            pass
+                    elif unique_ratio > 0.5 and avg_len <= 25 and len(sample) > 0:
+                        # High unique ratio + short strings — might be dates
+                        date_patterns = ['/', '-', ':']
+                        if any(any(pat in str(v) for pat in date_patterns) for v in sample.head(5)):
+                            try:
+                                pd.to_datetime(sample.head(10), errors='raise')
+                                is_date_like = True
+                            except:
+                                pass
+                    
+                    if is_date_like:
+                        self.feature_metadata.append({
+                            'name': col,
+                            'type': 'date',
+                            'format': 'YYYY-MM-DD'
+                        })
+                    elif avg_len < 30 and unique_ratio < 0.5:
+                        # Short text with low uniqueness = categorical (dropdown)
                         self.categorical_cols.append(col)
                         try:
                             options = df[col].dropna().unique().tolist()[:50]
@@ -371,9 +445,29 @@ class NLPEngine:
                                 'options': [str(x) for x in options]
                             })
                         except:
-                            pass
+                            self.feature_metadata.append({
+                                'name': col,
+                                'type': 'categorical',
+                                'options': []
+                            })
                     else:
-                        # Long text = additional text column
+                        # Long text or high uniqueness = text input
+                        self.feature_metadata.append({
+                            'name': col,
+                            'type': 'text',
+                            'placeholder': f'Enter {col}...'
+                        })
+                else:
+                    # Other types — try date detection, otherwise treat as text
+                    try:
+                        sample = df[col].dropna().head(10).astype(str)
+                        pd.to_datetime(sample, errors='raise')
+                        self.feature_metadata.append({
+                            'name': col,
+                            'type': 'date',
+                            'format': 'YYYY-MM-DD'
+                        })
+                    except:
                         self.feature_metadata.append({
                             'name': col,
                             'type': 'text',
@@ -433,6 +527,8 @@ class NLPEngine:
                 logger.info(f"   Target range: {y_encoded.min():.2f} - {y_encoded.max():.2f}")
             
             # Split data - use stratify only for classification with enough samples
+            # Split by INDEX so we can later extract both text and extra features in sync
+            indices = np.arange(len(df))
             if self.task_type == 'classification':
                 from collections import Counter
                 class_counts = Counter(y_encoded)
@@ -440,34 +536,41 @@ class NLPEngine:
                 
                 try:
                     if min_class_count >= 2:
-                        X_train, X_test, y_train, y_test = train_test_split(
-                            X_text, y_encoded, test_size=test_size, random_state=42, stratify=y_encoded
+                        idx_train, idx_test, y_train, y_test = train_test_split(
+                            indices, y_encoded, test_size=test_size, random_state=42, stratify=y_encoded
                         )
                     else:
                         logger.warning(f"   ⚠️ Some classes have <2 samples, using non-stratified split")
-                        X_train, X_test, y_train, y_test = train_test_split(
-                            X_text, y_encoded, test_size=test_size, random_state=42
+                        idx_train, idx_test, y_train, y_test = train_test_split(
+                            indices, y_encoded, test_size=test_size, random_state=42
                         )
                 except ValueError as e:
                     logger.warning(f"   ⚠️ Stratified split failed: {e}, using non-stratified")
-                    X_train, X_test, y_train, y_test = train_test_split(
-                        X_text, y_encoded, test_size=test_size, random_state=42
+                    idx_train, idx_test, y_train, y_test = train_test_split(
+                        indices, y_encoded, test_size=test_size, random_state=42
                     )
             else:
                 # Regression - no stratification
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X_text, y_encoded, test_size=test_size, random_state=42
+                idx_train, idx_test, y_train, y_test = train_test_split(
+                    indices, y_encoded, test_size=test_size, random_state=42
                 )
+            
+            X_train = X_text[idx_train]
+            X_test = X_text[idx_test]
             
             # Create TF-IDF vectorizer - ANTI-OVERFITTING: Balanced features
             # Reduced max_features to prevent overfitting on small datasets
             n_samples = len(X_text)
             
             # Scale TF-IDF features based on dataset size
-            if n_samples < 500:
+            if n_samples < 100:
+                max_features = 1000  # Very small dataset
+                ngram_range = (1, 2)
+                min_df = 1  # Can't require high doc frequency with few docs
+            elif n_samples < 500:
                 max_features = 2000  # Small dataset: fewer features
                 ngram_range = (1, 2)  # Only bigrams
-                min_df = 3
+                min_df = 2
             elif n_samples < 2000:
                 max_features = 5000  # Medium dataset
                 ngram_range = (1, 2)
@@ -493,6 +596,81 @@ class NLPEngine:
             self.feature_names = self.vectorizer.get_feature_names_out().tolist()
             
             logger.info(f"   TF-IDF features: {X_train_tfidf.shape[1]}")
+            
+            # =============================================================
+            # COMBINED NLP+ML: Add numeric & categorical features alongside TF-IDF
+            # This gives the model BOTH text signal AND structured data signal
+            # =============================================================
+            self.has_extra_features = False
+            self.extra_feature_cols = []
+            self.extra_label_encoders = {}
+            self.extra_scaler = None
+            
+            extra_cols = self.numeric_cols + self.categorical_cols
+            if extra_cols:
+                try:
+                    extra_parts_train = []
+                    extra_parts_test = []
+                    ordered_extra_cols = []
+                    
+                    # Numeric features — scale with RobustScaler
+                    if self.numeric_cols:
+                        num_train = df.iloc[idx_train][self.numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0).values
+                        num_test = df.iloc[idx_test][self.numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0).values
+                        
+                        self.extra_scaler = RobustScaler()
+                        num_train_scaled = self.extra_scaler.fit_transform(num_train)
+                        num_test_scaled = self.extra_scaler.transform(num_test)
+                        
+                        num_train_scaled = np.nan_to_num(num_train_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+                        num_test_scaled = np.nan_to_num(num_test_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+                        
+                        extra_parts_train.append(num_train_scaled)
+                        extra_parts_test.append(num_test_scaled)
+                        ordered_extra_cols.extend(self.numeric_cols)
+                    
+                    # Categorical features — label-encode
+                    if self.categorical_cols:
+                        for col in self.categorical_cols:
+                            le = LabelEncoder()
+                            train_vals = df.iloc[idx_train][col].fillna('_MISSING_').astype(str).values
+                            test_vals = df.iloc[idx_test][col].fillna('_MISSING_').astype(str).values
+                            
+                            # Fit ONLY on training data to prevent data leakage
+                            le.fit(train_vals)
+                            train_enc = le.transform(train_vals).reshape(-1, 1).astype(float)
+                            # Handle unseen labels in test set
+                            test_enc = np.array([
+                                le.transform([v])[0] if v in le.classes_ else -1
+                                for v in test_vals
+                            ]).reshape(-1, 1).astype(float)
+                            
+                            extra_parts_train.append(train_enc)
+                            extra_parts_test.append(test_enc)
+                            ordered_extra_cols.append(col)
+                            self.extra_label_encoders[col] = le
+                    
+                    if extra_parts_train:
+                        extra_train = np.hstack(extra_parts_train)
+                        extra_test = np.hstack(extra_parts_test)
+                        
+                        # Combine TF-IDF (sparse) + extra features (dense) using scipy.sparse.hstack
+                        extra_train_sparse = sp.csr_matrix(extra_train)
+                        extra_test_sparse = sp.csr_matrix(extra_test)
+                        
+                        X_train_tfidf = sp.hstack([X_train_tfidf, extra_train_sparse]).tocsr()
+                        X_test_tfidf = sp.hstack([X_test_tfidf, extra_test_sparse]).tocsr()
+                        
+                        self.extra_feature_cols = ordered_extra_cols
+                        self.has_extra_features = True
+                        # Extend feature_names to include extra columns (for chart coef indexing)
+                        self.feature_names.extend(ordered_extra_cols)
+                        logger.info(f"   ✅ Combined NLP+ML: +{len(ordered_extra_cols)} extra features ({len(self.numeric_cols)} numeric, {len(self.categorical_cols)} categorical)")
+                        logger.info(f"   Total features: {X_train_tfidf.shape[1]} (TF-IDF + structured)")
+                        
+                except Exception as e:
+                    logger.warning(f"   ⚠️ Failed to add extra features, using text-only: {e}")
+                    self.has_extra_features = False
             
             # Train model(s) - use regression or classification based on task type
             if algorithm == 'auto':
@@ -567,10 +745,14 @@ class NLPEngine:
                     algorithms_to_try = [
                         ('tfidf_lr', LogisticRegression(max_iter=2000, random_state=42, C=C_param, penalty='l2')),
                         ('tfidf_svm', LinearSVC(max_iter=2000, random_state=42, C=C_param)),
-                        ('tfidf_nb', MultinomialNB(alpha=1.0)),  # Higher alpha = more smoothing
                         ('tfidf_rf', RandomForestClassifier(n_estimators=n_estimators, random_state=42, n_jobs=-1, 
                                                            max_depth=max_depth_tree, min_samples_leaf=5)),
                     ]
+                    
+                    # MultinomialNB requires non-negative features — skip when extra numeric features are present
+                    # (RobustScaler produces negative values)
+                    if not self.has_extra_features:
+                        algorithms_to_try.insert(2, ('tfidf_nb', MultinomialNB(alpha=1.0)))
                     
                     # Try XGBoost if available
                     try:
@@ -665,15 +847,23 @@ class NLPEngine:
                         'tfidf': LogisticRegression(max_iter=1000, random_state=42),
                         'tfidf_lr': LogisticRegression(max_iter=1000, random_state=42),
                         'tfidf_svm': LinearSVC(max_iter=1000, random_state=42),
-                        'tfidf_nb': MultinomialNB(),
                         'tfidf_rf': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1),
                         'tfidf_knn': KNeighborsClassifier(n_neighbors=5, n_jobs=-1),
                         # BOW variants
                         'bow_lr': LogisticRegression(max_iter=1000, random_state=42),
-                        'bow_nb': MultinomialNB(),
                         'bow_svm': LinearSVC(max_iter=1000, random_state=42),
                         'bow_rf': RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1),
                     }
+                    
+                    # MultinomialNB requires non-negative features — skip when extra numeric features present
+                    if not self.has_extra_features:
+                        base_models['tfidf_nb'] = MultinomialNB()
+                        base_models['bow_nb'] = MultinomialNB()
+                    else:
+                        # SGDClassifier with log_loss works with sparse matrices and negative values
+                        from sklearn.linear_model import SGDClassifier
+                        base_models['tfidf_nb'] = SGDClassifier(loss='log_loss', penalty='l2', alpha=0.001, random_state=42, max_iter=1000)
+                        base_models['bow_nb'] = SGDClassifier(loss='log_loss', penalty='l2', alpha=0.001, random_state=42, max_iter=1000)
                     
                     # Add XGBoost if available
                     try:
@@ -691,17 +881,32 @@ class NLPEngine:
                     
                     # Ensemble models
                     if algorithm in ['voting_ensemble', 'tfidf_ensemble']:
-                        estimators = [
-                            ('lr', LogisticRegression(max_iter=1000, random_state=42)),
-                            ('nb', MultinomialNB()),
-                            ('rf', RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)),
-                        ]
+                        if not self.has_extra_features:
+                            estimators = [
+                                ('lr', LogisticRegression(max_iter=1000, random_state=42)),
+                                ('nb', MultinomialNB()),
+                                ('rf', RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)),
+                            ]
+                        else:
+                            from sklearn.linear_model import SGDClassifier
+                            estimators = [
+                                ('lr', LogisticRegression(max_iter=1000, random_state=42)),
+                                ('sgd', SGDClassifier(loss='log_loss', penalty='l2', alpha=0.001, random_state=42, max_iter=1000)),
+                                ('rf', RandomForestClassifier(n_estimators=50, random_state=42, n_jobs=-1)),
+                            ]
                         self.model = VotingClassifier(estimators=estimators, voting='hard')
                     elif algorithm in ['stacking_ensemble', 'stacked_nlp']:
-                        estimators = [
-                            ('lr', LogisticRegression(max_iter=500, random_state=42)),
-                            ('nb', MultinomialNB()),
-                        ]
+                        if not self.has_extra_features:
+                            estimators = [
+                                ('lr', LogisticRegression(max_iter=500, random_state=42)),
+                                ('nb', MultinomialNB()),
+                            ]
+                        else:
+                            from sklearn.linear_model import SGDClassifier
+                            estimators = [
+                                ('lr', LogisticRegression(max_iter=500, random_state=42)),
+                                ('sgd', SGDClassifier(loss='log_loss', penalty='l2', alpha=0.001, random_state=42, max_iter=1000)),
+                            ]
                         self.model = StackingClassifier(
                             estimators=estimators,
                             final_estimator=LogisticRegression(max_iter=500, random_state=42),
@@ -723,11 +928,13 @@ class NLPEngine:
                 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
                 
                 r2 = r2_score(y_test, y_pred)
-                rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+                mse = mean_squared_error(y_test, y_pred)
+                rmse = np.sqrt(mse)
                 mae = mean_absolute_error(y_test, y_pred)
                 
                 self.metrics = {
                     'r2': float(r2),
+                    'mse': float(mse),
                     'rmse': float(rmse),
                     'mae': float(mae),
                 }
@@ -748,6 +955,24 @@ class NLPEngine:
                     'f1': float(f1_score(y_test, y_pred, average='weighted', zero_division=0)),
                 }
                 
+                # Compute ROC-AUC
+                try:
+                    n_classes = len(np.unique(y_test))
+                    if n_classes == 2:
+                        if hasattr(self.model, 'predict_proba'):
+                            y_proba = self.model.predict_proba(X_test_tfidf)[:, 1]
+                            self.metrics['roc_auc'] = float(roc_auc_score(y_test, y_proba))
+                        elif hasattr(self.model, 'decision_function'):
+                            y_scores = self.model.decision_function(X_test_tfidf)
+                            self.metrics['roc_auc'] = float(roc_auc_score(y_test, y_scores))
+                    elif n_classes > 2 and hasattr(self.model, 'predict_proba'):
+                        y_proba = self.model.predict_proba(X_test_tfidf)
+                        self.metrics['roc_auc'] = float(roc_auc_score(
+                            y_test, y_proba, multi_class='ovr', average='weighted'
+                        ))
+                except Exception as e:
+                    logger.warning(f"   \u26a0\ufe0f Could not compute ROC-AUC: {e}")
+                
                 # Confusion matrix
                 cm = confusion_matrix(y_test, y_pred)
                 
@@ -755,7 +980,7 @@ class NLPEngine:
                 logger.info(f"   F1 Score: {self.metrics['f1']:.4f}")
                 
                 # Generate classification charts
-                self.charts = self._generate_charts(df, X_test, y_test, y_pred, cm)
+                self.charts = self._generate_charts(df, X_test_tfidf, y_test, y_pred, cm)
                 
                 task_type_display = 'NLP Classification'
             
@@ -1368,11 +1593,12 @@ class NLPEngine:
         
         return charts
     
-    def predict(self, text: str, user_id: Optional[str] = None) -> Dict[str, Any]:
-        """Make prediction on new text
+    def predict(self, text_or_data, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Make prediction on new text or combined text+structured data.
         
         Args:
-            text: The text to classify/predict
+            text_or_data: Either a text string OR a dict with all feature columns
+                          (text column + numeric + categorical).
             user_id: Optional user ID to load user-specific model
         """
         # Load user's model if user_id is provided and model not loaded
@@ -1384,11 +1610,58 @@ class NLPEngine:
             return {'success': False, 'error': 'Model not trained. Train first or load a model.'}
         
         try:
-            # Preprocess
+            # Extract text from dict or use string directly
+            extra_data = None
+            if isinstance(text_or_data, dict):
+                # Dict input — extract text column and keep extra features
+                extra_data = text_or_data
+                text = str(text_or_data.get(self.text_column, ''))
+                if not text.strip():
+                    # Try to find any long text value
+                    for k, v in text_or_data.items():
+                        if isinstance(v, str) and len(v) > 5:
+                            text = v
+                            break
+            else:
+                text = str(text_or_data)
+            
+            # Preprocess text
             processed = self.preprocess_text(text)
             
-            # Vectorize
+            # Vectorize text
             X = self.vectorizer.transform([processed])
+            
+            # Append extra numeric/categorical features if available
+            if self.has_extra_features and extra_data is not None and self.extra_feature_cols:
+                try:
+                    extra_vals = []
+                    for col in self.extra_feature_cols:
+                        val = extra_data.get(col, 0)
+                        if col in self.extra_label_encoders:
+                            le = self.extra_label_encoders[col]
+                            val_str = str(val) if val is not None else '_MISSING_'
+                            if val_str in le.classes_:
+                                val = float(le.transform([val_str])[0])
+                            else:
+                                val = 0.0
+                        else:
+                            try:
+                                val = float(val)
+                            except (ValueError, TypeError):
+                                val = 0.0
+                        extra_vals.append(val)
+                    
+                    extra_arr = np.array(extra_vals, dtype=float).reshape(1, -1)
+                    
+                    # Scale numeric features
+                    if self.extra_scaler is not None and self.numeric_cols:
+                        n_num = len(self.numeric_cols)
+                        extra_arr[0, :n_num] = self.extra_scaler.transform(extra_arr[0, :n_num].reshape(1, -1))[0]
+                    
+                    extra_arr = np.nan_to_num(extra_arr, nan=0.0, posinf=0.0, neginf=0.0)
+                    X = sp.hstack([X, sp.csr_matrix(extra_arr)]).tocsr()
+                except Exception as e:
+                    logger.warning(f"Failed to add extra features for prediction: {e}")
             
             # Predict
             pred = self.model.predict(X)[0]
@@ -1457,6 +1730,11 @@ class NLPEngine:
             'numeric_cols': self.numeric_cols,
             'categorical_cols': self.categorical_cols,
             'original_feature_columns': self.original_feature_columns,
+            # Combined NLP+ML feature state
+            'extra_scaler': self.extra_scaler,
+            'extra_label_encoders': self.extra_label_encoders,
+            'extra_feature_cols': self.extra_feature_cols,
+            'has_extra_features': self.has_extra_features,
         }
         
         with open(os.path.join(save_dir, "nlp_model.pkl"), 'wb') as f:
@@ -1491,6 +1769,11 @@ class NLPEngine:
             self.numeric_cols = data.get('numeric_cols', [])
             self.categorical_cols = data.get('categorical_cols', [])
             self.original_feature_columns = data.get('original_feature_columns', [])
+            # Combined NLP+ML feature state
+            self.extra_scaler = data.get('extra_scaler', None)
+            self.extra_label_encoders = data.get('extra_label_encoders', {})
+            self.extra_feature_cols = data.get('extra_feature_cols', [])
+            self.has_extra_features = data.get('has_extra_features', False)
             
             logger.info(f"✅ NLP model loaded for user {user_id}")
             return True
