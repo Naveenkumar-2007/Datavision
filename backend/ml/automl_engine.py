@@ -31,7 +31,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, Ha
 from sklearn.feature_selection import VarianceThreshold, SelectKBest, chi2, mutual_info_classif
 from sklearn.metrics import (
     accuracy_score, precision_score, recall_score, f1_score,
-    r2_score, mean_absolute_error, mean_squared_error, confusion_matrix
+    r2_score, mean_absolute_error, mean_squared_error, confusion_matrix,
+    roc_auc_score
 )
 
 # Global Cancellation Tracking
@@ -3078,6 +3079,7 @@ class ProductionMLEngine:
                 y_proba = self.model.predict_proba(X_test)
             except:
                 pass
+        self._y_proba = y_proba
         
         # Save model
         self._save(user_id)
@@ -3097,15 +3099,39 @@ class ProductionMLEngine:
             best_metrics = best_result.get('metrics', {})
         else:
             # Ensemble or model not in results - calculate metrics directly
-            from sklearn.metrics import accuracy_score, f1_score, r2_score, mean_absolute_error
+            from sklearn.metrics import accuracy_score, f1_score, r2_score, mean_absolute_error, precision_score, recall_score, mean_squared_error
             if self.task_type_simple == 'classification':
                 acc = accuracy_score(y_test, self._y_pred)
                 f1 = f1_score(y_test, self._y_pred, average='weighted', zero_division=0)
-                best_metrics = {'accuracy': round(acc, 4), 'f1': round(f1, 4)}
+                prec = precision_score(y_test, self._y_pred, average='weighted', zero_division=0)
+                rec = recall_score(y_test, self._y_pred, average='weighted', zero_division=0)
+                best_metrics = {
+                    'accuracy': round(acc, 4),
+                    'f1': round(f1, 4),
+                    'precision': round(prec, 4),
+                    'recall': round(rec, 4)
+                }
+                # Add ROC-AUC
+                try:
+                    n_classes = len(np.unique(y_test))
+                    if n_classes == 2 and self._y_proba is not None:
+                        best_metrics['roc_auc'] = round(float(roc_auc_score(y_test, self._y_proba[:, 1])), 4)
+                    elif n_classes > 2 and self._y_proba is not None:
+                        best_metrics['roc_auc'] = round(float(roc_auc_score(
+                            y_test, self._y_proba, multi_class='ovr', average='weighted'
+                        )), 4)
+                except Exception:
+                    pass
             else:
                 r2 = r2_score(y_test, self._y_pred)
                 mae = mean_absolute_error(y_test, self._y_pred)
-                best_metrics = {'r2': round(r2, 4), 'mae': round(mae, 4)}
+                mse = mean_squared_error(y_test, self._y_pred)
+                best_metrics = {
+                    'r2': round(r2, 4),
+                    'mse': round(mse, 4),
+                    'rmse': round(float(np.sqrt(mse)), 4),
+                    'mae': round(mae, 4)
+                }
         
         # IMPORTANT: Store metrics on self so they're saved to persistence
         self.metrics = best_metrics
@@ -3313,14 +3339,29 @@ class ProductionMLEngine:
         
         logger.info(f"🔍 Task Type: {self.task_type}")
         
-        # 3. Feature engineering
+        # 3. CRITICAL: Encode target for classification BEFORE feature engineering
+        # This converts string labels like ['No', 'Yes'] to numeric [0, 1]
+        # which is required by all ML algorithms (XGBoost, LightGBM, etc.)
+        if self.task_type_simple == 'classification':
+            self.target_encoder = LabelEncoder()
+            df_clean[target_col] = self.target_encoder.fit_transform(df_clean[target_col].astype(str))
+            self.n_classes = len(self.target_encoder.classes_)
+            logger.info(f"   ✅ Target encoded: {list(self.target_encoder.classes_)} → {list(range(self.n_classes))}")
+        
+        # 4. Feature engineering
         engineer = ProductionFeatureEngineer()
-        X, y, feature_names = engineer.fit_transform(df_clean, target_col)
+        X, y, feature_names = engineer.fit_transform(df_clean, target_col, self.task_type_simple)
+        
+        # CRITICAL: Ensure y is numeric for classification (int) or regression (float)
+        if self.task_type_simple == 'classification':
+            y = y.astype(int)
+        else:
+            y = y.astype(float)
         
         # Calculate feature metadata for Playground tab
         self._calculate_feature_metadata(df_clean.drop(columns=[target_col]))
         
-        # 4. Train/test split
+        # 5. Train/test split
         if self.task_type_simple == 'classification':
             try:
                 X_train, X_test, y_train, y_test = train_test_split(
@@ -3371,12 +3412,26 @@ class ProductionMLEngine:
                         'precision': precision_score(y_test, y_pred_temp, average='weighted', zero_division=0),
                         'recall': recall_score(y_test, y_pred_temp, average='weighted', zero_division=0)
                     }
+                    # Add ROC-AUC
+                    try:
+                        n_classes = len(np.unique(y_test))
+                        if n_classes == 2 and hasattr(model, 'predict_proba'):
+                            y_proba_temp = model.predict_proba(X_test)[:, 1]
+                            metrics['roc_auc'] = float(roc_auc_score(y_test, y_proba_temp))
+                        elif n_classes > 2 and hasattr(model, 'predict_proba'):
+                            y_proba_temp = model.predict_proba(X_test)
+                            metrics['roc_auc'] = float(roc_auc_score(
+                                y_test, y_proba_temp, multi_class='ovr', average='weighted'
+                            ))
+                    except Exception:
+                        pass
                 else:
                     from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
                     y_pred_temp = model.predict(X_test)
                     score = r2_score(y_test, y_pred_temp)
                     metrics = {
                         'r2': score,
+                        'mse': float(mean_squared_error(y_test, y_pred_temp)),
                         'rmse': np.sqrt(mean_squared_error(y_test, y_pred_temp)),
                         'mae': mean_absolute_error(y_test, y_pred_temp)
                     }
@@ -3441,6 +3496,7 @@ class ProductionMLEngine:
                 y_proba = best_model.predict_proba(X_test)
             except:
                 pass
+        self._y_proba = y_proba
         
         # Build best metrics FROM RESULTS (not empty)
         best_metrics = {}
@@ -3475,7 +3531,10 @@ class ProductionMLEngine:
             # Get class names for classification
             class_names = None
             if self.task_type_simple == 'classification':
-                class_names = list(np.unique(y_test))
+                if hasattr(self, 'target_encoder') and self.target_encoder is not None:
+                    class_names = list(self.target_encoder.classes_)
+                else:
+                    class_names = list(np.unique(y_test))
             
             charts.update(generate_ml_charts(
                 task_type=self.task_type,
@@ -3694,6 +3753,7 @@ class ProductionMLEngine:
         # Save model
         self._y_test = y_test
         self._y_pred = best_pred
+        self._y_proba = best_proba
         self._save(user_id)
         
         elapsed = (datetime.now() - start).total_seconds()
@@ -3867,11 +3927,35 @@ class ProductionMLEngine:
                 if self.task_type_simple == 'classification':
                     score = f1_score(y_test, y_pred, average='weighted', zero_division=0)
                     acc = accuracy_score(y_test, y_pred)
-                    metrics = {'f1': round(score, 4), 'accuracy': round(acc, 4)}
+                    prec = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+                    rec = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+                    metrics = {
+                        'f1': round(score, 4),
+                        'accuracy': round(acc, 4),
+                        'precision': round(prec, 4),
+                        'recall': round(rec, 4)
+                    }
+                    # Add ROC-AUC
+                    try:
+                        n_classes = len(np.unique(y_test))
+                        if n_classes == 2 and y_proba is not None:
+                            metrics['roc_auc'] = round(float(roc_auc_score(y_test, y_proba[:, 1])), 4)
+                        elif n_classes > 2 and y_proba is not None:
+                            metrics['roc_auc'] = round(float(roc_auc_score(
+                                y_test, y_proba, multi_class='ovr', average='weighted'
+                            )), 4)
+                    except Exception:
+                        pass
                 else:
                     score = r2_score(y_test, y_pred)
                     mae = mean_absolute_error(y_test, y_pred)
-                    metrics = {'r2': round(score, 4), 'mae': round(mae, 4)}
+                    mse = mean_squared_error(y_test, y_pred)
+                    metrics = {
+                        'r2': round(score, 4),
+                        'mse': round(mse, 4),
+                        'rmse': round(float(np.sqrt(mse)), 4),
+                        'mae': round(mae, 4)
+                    }
                 
                 elapsed = (datetime.now() - t0).total_seconds()
                 
@@ -4339,6 +4423,7 @@ class ProductionMLEngine:
             'confusion_matrix': getattr(self, 'confusion_matrix', None),
             'y_test': getattr(self, '_y_test', None),
             'y_pred': getattr(self, '_y_pred', None),
+            'y_proba': getattr(self, '_y_proba', None),
             # NEW: Save NLP and Advanced Feature Engineering state
             'is_nlp_task': getattr(self, 'is_nlp_task', False),
             'primary_text_col': getattr(self, 'primary_text_col', None),
@@ -4416,6 +4501,12 @@ class ProductionMLEngine:
                 self.categorical_cols = result.get('categorical_cols', [])
                 self.text_cols = result.get('text_cols', [])
                 self.numeric_fill_values = result.get('numeric_fill_values', {})
+                
+                # CRITICAL: Load y_test/y_pred for chart generation & evaluate
+                self._y_test = result.get('y_test')
+                self._y_pred = result.get('y_pred')
+                self._y_proba = result.get('y_proba')
+                self.confusion_matrix = result.get('confusion_matrix')
                 
                 # CRITICAL FIX: Use saved production_mode OR infer from production_engineer
                 # Priority: saved value > inferred from production_engineer
@@ -4520,6 +4611,19 @@ class ProductionMLEngine:
                     result['metrics']['f1'] = float(f1_score(y_test, y_pred, average='weighted'))
                     result['metrics']['precision'] = float(precision_score(y_test, y_pred, average='weighted', zero_division=0))
                     result['metrics']['recall'] = float(recall_score(y_test, y_pred, average='weighted', zero_division=0))
+                    
+                    # Add ROC-AUC
+                    try:
+                        y_proba = getattr(self, '_y_proba', None)
+                        n_classes = len(np.unique(y_test))
+                        if n_classes == 2 and y_proba is not None:
+                            result['metrics']['roc_auc'] = float(roc_auc_score(y_test, y_proba[:, 1]))
+                        elif n_classes > 2 and y_proba is not None:
+                            result['metrics']['roc_auc'] = float(roc_auc_score(
+                                y_test, y_proba, multi_class='ovr', average='weighted'
+                            ))
+                    except Exception:
+                        pass
                 except Exception as e:
                     print(f"Metrics calc error: {e}")
         

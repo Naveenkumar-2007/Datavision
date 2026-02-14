@@ -35,6 +35,7 @@ def get_user_paths(user_id: str) -> dict:
     paths = {
         "base": user_base,
         "files": user_base / "files",
+        "models": user_base / "models",
         "faiss": user_base / "faiss",
         "graph": user_base / "graph",
         "memory": user_base / "memory"

@@ -873,26 +873,42 @@ async def get_saved_result(
                         for item in leaderboard
                     ]
                     
+                    # Generate insights from metadata
+                    best_overall = multimode_meta.get('best_overall', {})
+                    best_name = best_overall.get('name', best_overall.get('model', 'Unknown'))
+                    best_metrics = best_overall.get('metrics', {})
+                    modes_trained = multimode_meta.get('modes_trained', [])
+                    best_acc = best_metrics.get('accuracy', best_metrics.get('r2', 0))
+                    insights = [
+                        f"🚀 Multi-Mode ML Pipeline ({', '.join(modes_trained)})",
+                        f"🏆 Best Model: {best_name}",
+                        f"📊 Score: {best_acc:.1%}" if best_acc else "📊 Training completed",
+                        f"🛡️ {len(leaderboard)} model(s) evaluated across {len(modes_trained)} mode(s)",
+                        f"🎯 Task: {multimode_meta.get('task_type', 'classification').replace('_', ' ').title()}",
+                    ]
+                    
                     result = {
                         "success": True,
                         "mode": multimode_meta.get('best_mode', 'traditional'),
-                        "modes_trained": multimode_meta.get('modes_trained', []),
+                        "modes_trained": modes_trained,
                         "feature_metadata": multimode_meta.get('feature_metadata', []),
                         "feature_columns": multimode_meta.get('feature_columns', []),
-                        "best_model": multimode_meta.get('best_overall', {}),
-                        "best_overall": multimode_meta.get('best_overall', {}),
+                        "best_model": best_overall,
+                        "best_overall": best_overall,
                         "task_type": multimode_meta.get('task_type', 'classification'),
                         "target_column": multimode_meta.get('target_column', ''),
                         "results_per_mode": multimode_meta.get('results_per_mode', {}),
                         "primary_text_col": multimode_meta.get('primary_text_col'),
                         "charts": all_charts,
-                        "metrics": multimode_meta.get('best_overall', {}).get('metrics', {}),
+                        "metrics": best_metrics,
                         # Include data_summary and all_models for proper display after reload
                         "data_summary": data_summary,
                         "all_models": all_models,
                         "leaderboard": leaderboard,
                         # Include cleaned_file for Data tab persistence
                         "cleaned_file": multimode_meta.get('cleaned_file'),
+                        # Include insights for AI Insights section
+                        "insights": insights,
                     }
                     logger.info(f"[saved-result] Loaded multimode metadata for user {user_id}")
                     return result
@@ -950,6 +966,12 @@ async def get_saved_result(
                         "features_engineered": len(feature_columns) if feature_columns else 0
                     },
                     "all_models": [{"name": getattr(engine, 'algorithm', 'NLP Model'), "metrics": getattr(engine, 'metrics', {})}],
+                    "insights": [
+                        f"🚀 NLP Pipeline",
+                        f"🏆 Best: {getattr(engine, 'algorithm', 'NLP Model')}",
+                        f"📊 Text-based ML with TF-IDF features",
+                        f"🛡️ Task: {getattr(engine, 'task_type', 'classification')}",
+                    ],
                 }
                 
         elif mode == "deep_learning" or mode == "ultra":
@@ -977,6 +999,12 @@ async def get_saved_result(
                         "features_engineered": len(feature_columns) if feature_columns else 0
                     },
                     "all_models": [{"name": getattr(engine, 'algorithm', 'Deep Learning'), "metrics": getattr(engine, 'metrics', {})}],
+                    "insights": [
+                        f"🚀 Deep Learning Pipeline",
+                        f"🏆 Best: {getattr(engine, 'algorithm', 'Deep Learning')}",
+                        f"📊 Neural Network architecture",
+                        f"🛡️ Task: {getattr(engine, 'task_type', 'classification')}",
+                    ],
                 }
         else:
             # Traditional ML
@@ -989,7 +1017,7 @@ async def get_saved_result(
                 try:
                     stored_charts = model_persistence.get_charts(user_id)
                     if stored_charts:
-                        charts = {f"ml_{k}": v for k, v in stored_charts.items()}
+                        charts = stored_charts
                 except:
                     pass
                 
@@ -1019,6 +1047,13 @@ async def get_saved_result(
                         {"name": item.get('name', 'Unknown'), "metrics": item.get('metrics', {}), "score": item.get('score', 0)}
                         for item in leaderboard[:10]
                     ] if leaderboard else [],
+                    # Include insights for AI Insights section
+                    "insights": [
+                        f"🚀 Production ML Pipeline",
+                        f"🏆 Best: {getattr(engine, 'model_name', 'Model')}",
+                        f"📊 Trained with 15+ algorithms",
+                        f"🛡️ {len(leaderboard)} model(s) evaluated",
+                    ],
                 }
         
         return result
@@ -1301,22 +1336,18 @@ async def make_prediction(
         # =====================================================================
         if mode == "nlp":
             from ml.nlp_engine import nlp_engine
-            # Try to handle both dict input and single text input
-            text_input = ""
-            if isinstance(request.data, dict):
-                if len(request.data) == 1:
+            # Pass full dict to NLP engine so it can use BOTH text AND numeric/categorical features
+            # The NLP engine's predict() accepts str or dict and handles both cases
+            if isinstance(request.data, dict) and len(request.data) > 1:
+                # Multiple fields — pass as dict for combined NLP+ML prediction
+                result = nlp_engine.predict(request.data, user_id)
+            else:
+                # Single field or string — extract text for text-only prediction
+                if isinstance(request.data, dict):
                     text_input = list(request.data.values())[0]
                 else:
-                    for k, v in request.data.items():
-                        if isinstance(v, str) and len(v) > 5:
-                            text_input = v
-                            break
-                    if not text_input:
-                        text_input = str(list(request.data.values())[0])
-            else:
-                text_input = str(request.data)
-                
-            result = nlp_engine.predict(text_input, user_id)
+                    text_input = str(request.data)
+                result = nlp_engine.predict(text_input, user_id)
             if result.get('success'):
                 return {
                     "success": True,
@@ -1488,17 +1519,26 @@ async def get_ml_charts(
                     if hasattr(automl_engine, 'get_charts'):
                         charts = automl_engine.get_charts() or {}
                     
-                    # If still no charts, generate new ones
+                    # If still no charts, generate new ones using get_all_ml_charts
                     if not charts and hasattr(automl_engine, '_y_test') and automl_engine._y_test is not None:
-                        from ml.chart_generator import generate_ml_charts
-                        charts = generate_ml_charts(
-                            automl_engine.model,
-                            automl_engine._y_test,
-                            automl_engine._y_pred,
-                            automl_engine.task_type,
-                            automl_engine.feature_columns,
-                            getattr(automl_engine, '_get_importance', lambda m: [])(automl_engine.model)
-                        ) or {}
+                        # Use get_all_ml_charts which has the correct API
+                        if hasattr(automl_engine, 'get_all_ml_charts'):
+                            charts = automl_engine.get_all_ml_charts() or {}
+                            # Remove error keys
+                            charts.pop('error', None)
+                        else:
+                            from ml.chart_generator import generate_ml_charts
+                            importance = automl_engine._get_importance(automl_engine.model) if hasattr(automl_engine, '_get_importance') else []
+                            class_names = automl_engine.target_encoder.classes_.tolist() if automl_engine.target_encoder else None
+                            charts = generate_ml_charts(
+                                task_type=automl_engine.task_type,
+                                y_test=automl_engine._y_test,
+                                y_pred=automl_engine._y_pred,
+                                y_proba=getattr(automl_engine, '_y_proba', None),
+                                feature_importance=importance,
+                                class_names=class_names,
+                                model_name=getattr(automl_engine, 'model_name', 'Model')
+                            ) or {}
                         
                         # Save the regenerated charts for future use
                         if charts:
@@ -2244,6 +2284,27 @@ async def multi_mode_train(
                 import traceback
                 traceback.print_exc()
         
+        # =====================================================================
+        # UNSUPERVISED LEARNING (AUTO CLUSTERING) — same as single-mode
+        # =====================================================================
+        clustering_result = None
+        try:
+            print("🔮 [MULTI-MODE] Running automatic clustering...")
+            from ml.automl_engine import automl_engine
+            clustering_result = automl_engine.run_clustering(df, n_clusters=None, algorithm='kmeans')
+            
+            if clustering_result.get('success'):
+                print(f"   ✅ Clustering: {clustering_result.get('n_clusters')} clusters found")
+                print(f"   📊 Silhouette Score: {clustering_result.get('metrics', {}).get('silhouette_score', 0):.3f}")
+                
+                # Add clustering charts to all_charts
+                if clustering_result.get('charts'):
+                    all_charts.update(clustering_result['charts'])
+            else:
+                print(f"   ⚠️ Clustering skipped: {clustering_result.get('error', 'Unknown error')}")
+        except Exception as e:
+            print(f"⚠️ Clustering error: {e}")
+        
         # Determine if training was stopped
         was_stopped = should_stop()
         
@@ -2334,12 +2395,29 @@ async def multi_mode_train(
                 'leaderboard': leaderboard[:10] if leaderboard else [],
             }
             
-            # Save multimode metadata
+            # Save multimode metadata to model_persistence dir
             user_dir = model_persistence._get_user_dir(user_id)
             import json
             with open(user_dir / "multimode_metadata.json", 'w') as f:
                 json.dump(multimode_metadata, f, indent=2, default=str)
-            logger.info(f"[MultiMode] Saved multimode metadata for user {user_id}")
+            logger.info(f"[MultiMode] Saved multimode metadata to {user_dir}")
+            
+            # ALSO save multimode_metadata.json to ALL model directories
+            # so the download endpoint always finds it regardless of which model.pkl it locates
+            from config.settings import Settings
+            extra_dirs = [
+                Settings.STORAGE / "automl" / user_id,
+                Settings.STORAGE / "users" / user_id,
+                Settings.STORAGE / "files" / user_id,
+            ]
+            for extra_dir in extra_dirs:
+                if extra_dir != user_dir and extra_dir.exists():
+                    try:
+                        with open(extra_dir / "multimode_metadata.json", 'w') as f:
+                            json.dump(multimode_metadata, f, indent=2, default=str)
+                        logger.info(f"[MultiMode] Also saved metadata to {extra_dir}")
+                    except Exception:
+                        pass
             
         except Exception as e:
             logger.warning(f"[MultiMode] Failed to save charts/metadata: {e}")
@@ -2396,6 +2474,18 @@ async def multi_mode_train(
             ]
         }
         
+        # Add clustering results if available
+        if clustering_result and clustering_result.get('success'):
+            response = {**response}  # copy
+            response['clustering'] = {
+                'algorithm': clustering_result.get('algorithm'),
+                'n_clusters': clustering_result.get('n_clusters'),
+                'silhouette_score': clustering_result.get('metrics', {}).get('silhouette_score'),
+                'cluster_distribution': clustering_result.get('cluster_distribution')
+            }
+            response['insights'].append(f"🔮 Found {clustering_result.get('n_clusters')} natural clusters in your data")
+        
+        return response
     except Exception as e:
         error_str = str(e)
         error_type = type(e).__name__
@@ -2403,6 +2493,279 @@ async def multi_mode_train(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Multi-mode training failed: {error_str[:300]}")
+
+
+# ============================================================================
+# DOWNLOAD CODE ZIP ENDPOINT
+# ============================================================================
+
+@router.get("/download-code")
+async def download_code_zip(
+    user_id: str = Query(default="default"),
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    📦 Download complete ML project as a ZIP file
+    
+    Generates a runnable Python project containing:
+    - Trained model (.pkl)
+    - Cleaned dataset (.csv)
+    - Training scripts (Traditional, NLP, Deep Learning, Fast, Ultra modes)
+    - Prediction script (CLI + batch)
+    - Visualization script (charts generation)
+    - Evaluation script (comprehensive metrics)
+    - API server (Flask REST API)
+    - Dockerfile for deployment
+    - requirements.txt
+    - README.md with full documentation
+    """
+    from fastapi.responses import StreamingResponse
+    from pathlib import Path
+    import json
+    
+    # Resolve user_id from JWT if available
+    actual_user_id = user_id
+    if x_user_id:
+        actual_user_id = x_user_id
+    elif authorization and authorization.startswith("Bearer "):
+        try:
+            from core.auth import decode_supabase_jwt
+            payload = decode_supabase_jwt(authorization[7:])
+            if payload and payload.get('sub'):
+                actual_user_id = payload['sub']
+        except:
+            pass
+    
+    try:
+        from config.settings import Settings
+        from ml.ml_code_generator import generate_code_zip
+        
+        base_storage = Settings.STORAGE
+        
+        # Find model path (same logic as download-model)
+        model_path = None
+        search_paths = [
+            base_storage / "automl" / actual_user_id / "model.pkl",
+            base_storage / "models" / actual_user_id / "active_model.pkl",
+            base_storage / "users" / actual_user_id / "model.pkl",
+            base_storage / "files" / actual_user_id / "model.pkl",
+        ]
+        
+        for candidate in search_paths:
+            if candidate.exists():
+                model_path = candidate
+                break
+        
+        if not model_path:
+            try:
+                from ml.model_persistence import model_persistence
+                user_dir = model_persistence._get_user_dir(actual_user_id)
+                candidate = user_dir / "active_model.pkl"
+                if candidate.exists():
+                    model_path = candidate
+            except:
+                pass
+        
+        if not model_path:
+            raise HTTPException(status_code=404, detail="No trained model found. Please train a model first.")
+        
+        # Find metadata — search multiple locations (model dir + model_persistence dir)
+        metadata = {}
+        metadata_paths = [
+            model_path.parent / "multimode_metadata.json",
+            model_path.parent / "active_metadata.json",
+            model_path.parent / "metadata.json",
+        ]
+        
+        # Also search the model_persistence user dir (may differ from model_path.parent)
+        try:
+            from ml.model_persistence import model_persistence
+            persistence_user_dir = model_persistence._get_user_dir(actual_user_id)
+            if persistence_user_dir != model_path.parent:
+                metadata_paths.insert(0, persistence_user_dir / "multimode_metadata.json")
+                metadata_paths.append(persistence_user_dir / "active_metadata.json")
+                metadata_paths.append(persistence_user_dir / "metadata.json")
+        except:
+            pass
+        
+        # Also check other common storage directories
+        for subdir in ["automl", "models", "users", "files"]:
+            extra = base_storage / subdir / actual_user_id / "multimode_metadata.json"
+            if extra not in metadata_paths:
+                metadata_paths.append(extra)
+        
+        for mp in metadata_paths:
+            if mp.exists():
+                try:
+                    with open(mp, 'r') as f:
+                        metadata = json.load(f)
+                    logger.info(f"Loaded metadata from: {mp}")
+                    break
+                except:
+                    pass
+        
+        # If no metadata file, try to extract from model itself
+        if not metadata:
+            try:
+                import pickle
+                with open(model_path, 'rb') as f:
+                    state = pickle.load(f)
+                
+                # Detect actual best_mode by checking which model files exist
+                detected_modes = []
+                detected_best_mode = 'traditional'
+                
+                # Check for deep learning model
+                dl_exists = False
+                for dp in [model_path.parent / "deep_learning_model.pkl",
+                           base_storage / "models" / actual_user_id / "deep_learning_model.pkl",
+                           base_storage / "automl" / actual_user_id / "deep_learning_model.pkl",
+                           base_storage / "users" / actual_user_id / "deep_learning_model.pkl"]:
+                    if dp.exists():
+                        dl_exists = True
+                        detected_modes.append('deep_learning')
+                        break
+                
+                # Check for NLP model
+                nlp_exists = False
+                for np_path in [model_path.parent / "nlp_model.pkl",
+                                base_storage / "models" / actual_user_id / "nlp_model.pkl",
+                                base_storage / "automl" / actual_user_id / "nlp_model.pkl",
+                                base_storage / "users" / actual_user_id / "nlp_model.pkl"]:
+                    if np_path.exists():
+                        nlp_exists = True
+                        detected_modes.append('nlp')
+                        break
+                
+                # Traditional model is the one we loaded
+                detected_modes.append('traditional')
+                
+                # Determine best_mode: if DL model exists, it likely was the best
+                # (the training only saves DL model when DL mode was trained)
+                if dl_exists:
+                    # Try to load DL model to compare metrics
+                    try:
+                        dl_check_path = None
+                        for dp in [model_path.parent / "deep_learning_model.pkl",
+                                   base_storage / "models" / actual_user_id / "deep_learning_model.pkl",
+                                   base_storage / "automl" / actual_user_id / "deep_learning_model.pkl",
+                                   base_storage / "users" / actual_user_id / "deep_learning_model.pkl"]:
+                            if dp.exists():
+                                dl_check_path = dp
+                                break
+                        if dl_check_path:
+                            with open(dl_check_path, 'rb') as f:
+                                dl_state = pickle.load(f)
+                            dl_metrics = dl_state.get('metrics', {})
+                            ml_metrics = state.get('metrics', {})
+                            # Compare accuracy/r2 to decide best
+                            dl_score = dl_metrics.get('accuracy', dl_metrics.get('r2', 0))
+                            ml_score = ml_metrics.get('accuracy', ml_metrics.get('r2', 0))
+                            if isinstance(dl_score, (int, float)) and isinstance(ml_score, (int, float)):
+                                if dl_score >= ml_score:
+                                    detected_best_mode = 'deep_learning'
+                            else:
+                                detected_best_mode = 'deep_learning'
+                    except:
+                        detected_best_mode = 'deep_learning'
+                
+                metadata = {
+                    'target_column': state.get('target_column', 'target'),
+                    'feature_columns': state.get('feature_columns', []),
+                    'task_type': state.get('task_type', 'classification'),
+                    'model_name': state.get('model_name', 'Unknown'),
+                    'metrics': state.get('metrics', {}),
+                    'best_overall': {'name': state.get('model_name', 'Unknown'), 'metrics': state.get('metrics', {})},
+                    'best_mode': detected_best_mode,
+                    'modes_trained': detected_modes,
+                    'feature_metadata': state.get('feature_metadata', []),
+                    'data_summary': state.get('data_summary', {}),
+                    'nlp_text_column': state.get('text_column', ''),
+                }
+                logger.info(f"Extracted metadata from model pkl. detected_best_mode={detected_best_mode}, modes={detected_modes}")
+            except Exception as e:
+                logger.warning(f"Failed to extract metadata from model: {e}")
+                metadata = {'target_column': 'target', 'task_type': 'classification'}
+        
+        # Find cleaned data
+        cleaned_data_path = None
+        cleaned_paths = [
+            base_storage / "automl" / actual_user_id / "cleaned_data.csv",
+            base_storage / "files" / actual_user_id / "cleaned_data.csv",
+            model_path.parent / "cleaned_data.csv",
+            base_storage / "users" / actual_user_id / "cleaned_data.csv",
+        ]
+        
+        for cp in cleaned_paths:
+            if cp.exists():
+                cleaned_data_path = cp
+                break
+        
+        # Find deep learning model (saved separately from model.pkl)
+        dl_model_path = None
+        dl_search_paths = [
+            model_path.parent / "deep_learning_model.pkl",
+            base_storage / "users" / actual_user_id / "deep_learning_model.pkl",
+            base_storage / "automl" / actual_user_id / "deep_learning_model.pkl",
+        ]
+        
+        for dp in dl_search_paths:
+            if dp.exists():
+                dl_model_path = dp
+                break
+        
+        # Also search model_persistence dir for DL model
+        try:
+            from ml.model_persistence import model_persistence as mp2
+            mp2_dir = mp2._get_user_dir(actual_user_id)
+            dl_extra = mp2_dir / "deep_learning_model.pkl"
+            if dl_extra.exists() and dl_extra not in dl_search_paths:
+                dl_model_path = dl_extra
+        except:
+            pass
+        
+        logger.info(f"Generating code ZIP for user {actual_user_id}")
+        logger.info(f"  Model: {model_path}")
+        logger.info(f"  DL Model: {dl_model_path}")
+        logger.info(f"  Cleaned data: {cleaned_data_path}")
+        logger.info(f"  Metadata best_mode: {metadata.get('best_mode', 'NOT SET')}")
+        logger.info(f"  Metadata modes_trained: {metadata.get('modes_trained', [])}")
+        logger.info(f"  Metadata keys: {list(metadata.keys())}")
+        
+        # Load training charts (base64 images from active_charts.json)
+        charts_data = {}
+        try:
+            from ml.model_persistence import model_persistence
+            charts_data = model_persistence.get_charts(actual_user_id)
+            if charts_data:
+                logger.info(f"  Charts loaded: {len(charts_data)} charts from active_charts.json")
+            else:
+                logger.info(f"  No charts found for user {actual_user_id}")
+        except Exception as e:
+            logger.warning(f"  Could not load charts: {e}")
+        
+        # Generate ZIP with charts included
+        zip_buffer = generate_code_zip(model_path, metadata, cleaned_data_path, dl_model_path, charts_data)
+        
+        filename = f"datavision_ml_project_{actual_user_id[:8]}.zip"
+        
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Type": "application/zip",
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Code ZIP generation error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to generate code ZIP: {str(e)}")
 
 
 # ============================================================================

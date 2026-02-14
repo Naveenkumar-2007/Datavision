@@ -289,9 +289,13 @@ async def _run_production_clustering(
             continue
         mask = labels == cluster_id
         cluster_data = numeric_df.values[mask]
-        profile = {}
+        profile = {
+            'size': int(mask.sum()),
+            'percentage': float(mask.sum() / len(labels) * 100),
+            'characteristics': {},
+        }
         for i, col in enumerate(feature_columns):
-            profile[col] = {
+            profile['characteristics'][col] = {
                 'mean': float(np.mean(cluster_data[:, i])),
                 'std': float(np.std(cluster_data[:, i])),
             }
@@ -338,16 +342,20 @@ async def _run_production_clustering(
         'labels': labels.tolist(),
         'centroids_scaled': _get_cluster_centroids(X_scaled, labels).tolist() if actual_n_clusters > 0 else [],
         'created_at': datetime.now().isoformat(),
+        'silhouette_score': metrics['silhouette_score'],
     }
     
     # Save to user's model directory
     _save_clustering_model(user_id, model_id, model_data)
     
     # =======================================================================
-    # SAVE CLEANED DATA WITH CLUSTER LABELS
+    # SAVE CLEANED DATA WITH CLUSTER LABELS + PKL MODEL
     # =======================================================================
     cleaned_file = None
     model_pkl_file = None
+    
+    # Get user paths (must call here since this is a separate function)
+    paths = get_user_paths(user_id)
     
     try:
         # Create cleaned dataframe with cluster assignments
@@ -360,8 +368,10 @@ async def _run_production_clustering(
         cleaned_df['PCA_2'] = X_2d[:, 1]
         
         # Save cleaned CSV
+        files_dir = paths.get("files", paths["base"] / "files")
+        files_dir.mkdir(parents=True, exist_ok=True)
         cleaned_filename = f"clustered_data_{model_id}.csv"
-        cleaned_path = paths.get("files", paths["base"] / "files") / cleaned_filename
+        cleaned_path = files_dir / cleaned_filename
         cleaned_df.to_csv(cleaned_path, index=False)
         cleaned_file = cleaned_filename
         logger.info(f"✅ Saved cleaned data: {cleaned_path}")
@@ -369,8 +379,9 @@ async def _run_production_clustering(
         # Save PKL model file
         import pickle
         pkl_filename = f"clustering_model_{model_id}.pkl"
-        pkl_path = paths.get("models", paths["base"] / "models") / pkl_filename
-        pkl_path.parent.mkdir(parents=True, exist_ok=True)
+        models_dir = paths.get("models", paths["base"] / "models")
+        models_dir.mkdir(parents=True, exist_ok=True)
+        pkl_path = models_dir / pkl_filename
         
         pkl_data = {
             'algorithm': algorithm,
@@ -391,7 +402,22 @@ async def _run_production_clustering(
         logger.info(f"✅ Saved PKL model: {pkl_path}")
         
     except Exception as e:
-        logger.warning(f"Failed to save cleaned data/PKL: {e}")
+        logger.error(f"❌ Failed to save cleaned data/PKL: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # =======================================================================
+    # SAVE CLUSTERING CHARTS TO DISK (for ZIP download)
+    # =======================================================================
+    if charts:
+        try:
+            charts_json_path = paths.get("models", paths["base"] / "models") / "active_clustering_charts.json"
+            charts_json_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(charts_json_path, 'w') as f:
+                json.dump(charts, f)
+            logger.info(f"✅ Saved {len(charts)} clustering charts to {charts_json_path}")
+        except Exception as e:
+            logger.warning(f"Could not save clustering charts: {e}")
     
     # =======================================================================
     # BUILD RESPONSE
@@ -1462,6 +1488,84 @@ def _generate_clustering_charts(
             except Exception as e:
                 logger.warning(f"Spectral affinity chart failed: {e}")
         
+        # ==================================================================
+        # 19. FEATURE IMPORTANCE - Variance-based importance for clustering
+        # ==================================================================
+        if X_scaled is not None and feature_names and n_clusters >= 2:
+            try:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # Compute feature importance using between-cluster variance ratio
+                importances = []
+                for j in range(X_scaled.shape[1]):
+                    overall_mean = X_scaled[:, j].mean()
+                    between_var = sum(
+                        np.sum(labels == label) * (X_scaled[labels == label, j].mean() - overall_mean) ** 2
+                        for label in unique_labels
+                    )
+                    total_var = np.var(X_scaled[:, j]) * len(X_scaled)
+                    importances.append(between_var / max(total_var, 1e-10))
+                
+                importances = np.array(importances)
+                sorted_idx = np.argsort(importances)[::-1]
+                top_n = min(15, len(feature_names))
+                top_idx = sorted_idx[:top_n]
+                
+                feat_labels = [feature_names[i] if i < len(feature_names) else f"F{i}" for i in top_idx]
+                feat_values = importances[top_idx]
+                
+                bars = ax.barh(range(top_n), feat_values[::-1], color=plt.cm.viridis(np.linspace(0.3, 0.9, top_n)))
+                ax.set_yticks(range(top_n))
+                ax.set_yticklabels(feat_labels[::-1], fontsize=10)
+                ax.set_xlabel('Cluster Separation Importance', fontweight='bold', fontsize=12)
+                ax.set_title('⭐ Feature Importance for Cluster Separation', fontweight='bold', pad=15, fontsize=14)
+                ax.grid(alpha=0.3, axis='x')
+                fig.tight_layout()
+                
+                charts['feature_importance'] = _fig_to_base64(fig)
+                plt.close(fig)
+                logger.info("✅ Feature importance chart generated")
+            except Exception as e:
+                logger.warning(f"Feature importance chart failed: {e}")
+        
+        # ==================================================================
+        # 20. SILHOUETTE COMPARISON - Compare silhouette across k values
+        # ==================================================================
+        if k_scores and len(k_scores) >= 3:
+            try:
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                k_vals = sorted(k_scores.keys())
+                s_scores = [k_scores[k] for k in k_vals]
+                
+                colors_bar = ['#ef4444' if s < 0.25 else '#f59e0b' if s < 0.5 else '#22c55e' if s < 0.7 else '#3b82f6' for s in s_scores]
+                bars = ax.bar(k_vals, s_scores, color=colors_bar, edgecolor='white', linewidth=1.5, width=0.6)
+                
+                # Add value labels
+                for bar, score in zip(bars, s_scores):
+                    ax.text(bar.get_x() + bar.get_width() / 2., bar.get_height() + 0.01,
+                            f'{score:.3f}', ha='center', va='bottom', fontweight='bold', fontsize=10)
+                
+                # Add quality zones
+                ax.axhline(y=0.25, color='#ef4444', linestyle='--', alpha=0.4, label='Poor (<0.25)')
+                ax.axhline(y=0.5, color='#f59e0b', linestyle='--', alpha=0.4, label='Fair (0.25-0.5)')
+                ax.axhline(y=0.7, color='#22c55e', linestyle='--', alpha=0.4, label='Good (0.5-0.7)')
+                
+                ax.set_xlabel('Number of Clusters (k)', fontweight='bold', fontsize=12)
+                ax.set_ylabel('Silhouette Score', fontweight='bold', fontsize=12)
+                ax.set_title('📊 Silhouette Score Comparison Across k', fontweight='bold', pad=15, fontsize=14)
+                ax.set_xticks(k_vals)
+                ax.legend(loc='best', fontsize=9)
+                ax.set_ylim(0, max(s_scores) * 1.2 if s_scores else 1)
+                ax.grid(alpha=0.3, axis='y')
+                fig.tight_layout()
+                
+                charts['silhouette_comparison'] = _fig_to_base64(fig)
+                plt.close(fig)
+                logger.info("✅ Silhouette comparison chart generated")
+            except Exception as e:
+                logger.warning(f"Silhouette comparison chart failed: {e}")
+        
         logger.info(f"✅ Generated {len(charts)} clustering charts")
         
     except Exception as e:
@@ -1926,27 +2030,75 @@ async def get_clustering_info():
 @router.get("/clustering/download-model/{user_id}")
 async def download_clustering_model(user_id: str):
     """
-    Download the trained clustering model as PKL file
+    Download the trained clustering model as PKL file.
+    If no PKL exists, creates one from the JSON model data.
     """
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
     
     try:
         paths = get_user_paths(user_id)
         models_dir = paths.get("models", paths["base"] / "models")
+        models_dir.mkdir(parents=True, exist_ok=True)
         
-        # Find the latest clustering model
+        # Try to find existing PKL
         pkl_files = list(models_dir.glob("clustering_model_*.pkl"))
         
-        if not pkl_files:
-            raise HTTPException(status_code=404, detail="No clustering model found. Train a model first.")
+        if pkl_files:
+            latest_pkl = max(pkl_files, key=lambda p: p.stat().st_mtime)
+            return FileResponse(
+                path=str(latest_pkl),
+                media_type='application/octet-stream',
+                filename=latest_pkl.name
+            )
         
-        # Get the most recent file
-        latest_pkl = max(pkl_files, key=lambda p: p.stat().st_mtime)
+        # No PKL found — create one from the active JSON model
+        active_json = models_dir / "active_clustering.json"
+        if not active_json.exists():
+            # Try any clustering JSON
+            json_files = list(models_dir.glob("clustering_*.json"))
+            if json_files:
+                active_json = max(json_files, key=lambda p: p.stat().st_mtime)
+            else:
+                raise HTTPException(status_code=404, detail="No clustering model found. Train a model first.")
+        
+        with open(active_json, 'r') as f:
+            model_json = json.load(f)
+        
+        # Reconstruct a PKL with scaler from JSON data
+        scaler_mean = model_json.get('scaler_mean')
+        scaler_scale = model_json.get('scaler_scale')
+        reconstructed_scaler = None
+        if scaler_mean and scaler_scale:
+            reconstructed_scaler = StandardScaler()
+            reconstructed_scaler.mean_ = np.array(scaler_mean)
+            reconstructed_scaler.scale_ = np.array(scaler_scale)
+            reconstructed_scaler.var_ = np.array(scaler_scale) ** 2
+            reconstructed_scaler.n_features_in_ = len(scaler_mean)
+        
+        pkl_data = {
+            'algorithm': model_json.get('algorithm', 'kmeans'),
+            'n_clusters': model_json.get('n_clusters', 3),
+            'scaler': reconstructed_scaler,
+            'feature_columns': model_json.get('feature_columns', []),
+            'centroids_scaled': np.array(model_json.get('centroids_scaled', [])) if model_json.get('centroids_scaled') else None,
+            'labels': np.array(model_json.get('labels', [])),
+            'model_id': model_json.get('model_id', 'unknown'),
+            'created_at': model_json.get('created_at', ''),
+            'silhouette_score': model_json.get('silhouette_score', 0),
+        }
+        
+        # Save as PKL for future use
+        model_id = model_json.get('model_id', f"clustering_{uuid.uuid4().hex[:8]}")
+        pkl_filename = f"clustering_model_{model_id}.pkl"
+        pkl_path = models_dir / pkl_filename
+        with open(pkl_path, 'wb') as f:
+            pickle.dump(pkl_data, f)
+        logger.info(f"✅ Created PKL from JSON: {pkl_path}")
         
         return FileResponse(
-            path=str(latest_pkl),
+            path=str(pkl_path),
             media_type='application/octet-stream',
-            filename=latest_pkl.name
+            filename=pkl_filename
         )
         
     except HTTPException:
@@ -1959,31 +2111,237 @@ async def download_clustering_model(user_id: str):
 @router.get("/clustering/download-data/{user_id}")
 async def download_clustered_data(user_id: str):
     """
-    Download the cleaned data with cluster assignments
+    Download the cleaned data with cluster assignments.
+    If no clustered CSV exists, creates one from the original data + model labels.
     """
-    from fastapi.responses import FileResponse
+    from fastapi.responses import FileResponse, Response
     
     try:
         paths = get_user_paths(user_id)
         files_dir = paths.get("files", paths["base"] / "files")
+        models_dir = paths.get("models", paths["base"] / "models")
+        files_dir.mkdir(parents=True, exist_ok=True)
+        models_dir.mkdir(parents=True, exist_ok=True)
         
-        # Find the latest clustered data file
+        # Try to find existing clustered data
         csv_files = list(files_dir.glob("clustered_data_*.csv"))
         
-        if not csv_files:
-            raise HTTPException(status_code=404, detail="No clustered data found. Run clustering first.")
+        if csv_files:
+            latest_csv = max(csv_files, key=lambda p: p.stat().st_mtime)
+            return FileResponse(
+                path=str(latest_csv),
+                media_type='text/csv',
+                filename=latest_csv.name
+            )
         
-        # Get the most recent file
-        latest_csv = max(csv_files, key=lambda p: p.stat().st_mtime)
+        # No clustered data found — try to reconstruct from model labels + original data
+        active_json = models_dir / "active_clustering.json"
+        if not active_json.exists():
+            json_files = list(models_dir.glob("clustering_*.json"))
+            if json_files:
+                active_json = max(json_files, key=lambda p: p.stat().st_mtime)
+            else:
+                raise HTTPException(status_code=404, detail="No clustered data found. Run clustering first.")
         
-        return FileResponse(
-            path=str(latest_csv),
+        with open(active_json, 'r') as f:
+            model_json = json.load(f)
+        
+        labels = model_json.get('labels', [])
+        feature_columns = model_json.get('feature_columns', [])
+        
+        if not labels:
+            raise HTTPException(status_code=404, detail="No cluster labels found. Run clustering first.")
+        
+        # Try to find the most recent uploaded CSV to attach labels to
+        all_csv = list(files_dir.glob("*.csv"))
+        # Exclude already-clustered files
+        original_csvs = [f for f in all_csv if not f.name.startswith("clustered_data_") and not f.name.startswith("cleaned_")]
+        
+        if original_csvs:
+            # Use the most recent original CSV
+            data_file = max(original_csvs, key=lambda p: p.stat().st_mtime)
+            df = pd.read_csv(data_file)
+            
+            if len(df) == len(labels):
+                df['Cluster'] = labels
+                df['Cluster_Name'] = [f'Cluster_{l}' if l >= 0 else 'Noise' for l in labels]
+                
+                # Create and save clustered CSV
+                model_id = model_json.get('model_id', f"clustering_{uuid.uuid4().hex[:8]}")
+                clustered_filename = f"clustered_data_{model_id}.csv"
+                clustered_path = files_dir / clustered_filename
+                df.to_csv(clustered_path, index=False)
+                logger.info(f"✅ Reconstructed clustered data: {clustered_path}")
+                
+                return FileResponse(
+                    path=str(clustered_path),
+                    media_type='text/csv',
+                    filename=clustered_filename
+                )
+        
+        # Last resort: just return labels as CSV
+        labels_df = pd.DataFrame({'sample_index': range(len(labels)), 'cluster': labels})
+        csv_content = labels_df.to_csv(index=False)
+        return Response(
+            content=csv_content,
             media_type='text/csv',
-            filename=latest_csv.name
+            headers={"Content-Disposition": "attachment; filename=cluster_labels.csv"}
         )
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"❌ Download data error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/clustering/download-code/{user_id}")
+async def download_clustering_code(user_id: str):
+    """
+    Download a complete clustering project as a ZIP file.
+    Includes: model.pkl, clustered_data.csv, predict_cluster.py, train_clustering.py,
+    visualize_clusters.py, api_server.py, charts/, README.md, Dockerfile, requirements.txt
+    """
+    from fastapi.responses import StreamingResponse
+
+    try:
+        paths = get_user_paths(user_id)
+        models_dir = paths.get("models", paths["base"] / "models")
+        files_dir = paths.get("files", paths["base"] / "files")
+        models_dir.mkdir(parents=True, exist_ok=True)
+        files_dir.mkdir(parents=True, exist_ok=True)
+
+        # Find latest clustering model PKL
+        pkl_files = list(models_dir.glob("clustering_model_*.pkl"))
+        latest_pkl = max(pkl_files, key=lambda p: p.stat().st_mtime) if pkl_files else None
+
+        # If no PKL, try to create from JSON
+        if not latest_pkl:
+            active_json = models_dir / "active_clustering.json"
+            if not active_json.exists():
+                json_files = list(models_dir.glob("clustering_*.json"))
+                if json_files:
+                    active_json = max(json_files, key=lambda p: p.stat().st_mtime)
+                else:
+                    raise HTTPException(status_code=404, detail="No clustering model found. Train a model first.")
+            
+            with open(active_json, 'r') as f:
+                model_json = json.load(f)
+            
+            # Reconstruct PKL from JSON
+            scaler_mean = model_json.get('scaler_mean')
+            scaler_scale = model_json.get('scaler_scale')
+            reconstructed_scaler = None
+            if scaler_mean and scaler_scale:
+                reconstructed_scaler = StandardScaler()
+                reconstructed_scaler.mean_ = np.array(scaler_mean)
+                reconstructed_scaler.scale_ = np.array(scaler_scale)
+                reconstructed_scaler.var_ = np.array(scaler_scale) ** 2
+                reconstructed_scaler.n_features_in_ = len(scaler_mean)
+            
+            pkl_data_dict = {
+                'algorithm': model_json.get('algorithm', 'kmeans'),
+                'n_clusters': model_json.get('n_clusters', 3),
+                'scaler': reconstructed_scaler,
+                'feature_columns': model_json.get('feature_columns', []),
+                'centroids_scaled': np.array(model_json.get('centroids_scaled', [])) if model_json.get('centroids_scaled') else None,
+                'labels': np.array(model_json.get('labels', [])),
+                'model_id': model_json.get('model_id', 'unknown'),
+                'created_at': model_json.get('created_at', ''),
+                'silhouette_score': model_json.get('silhouette_score', 0),
+            }
+            
+            model_id = model_json.get('model_id', f"clustering_{uuid.uuid4().hex[:8]}")
+            pkl_filename = f"clustering_model_{model_id}.pkl"
+            latest_pkl = models_dir / pkl_filename
+            with open(latest_pkl, 'wb') as f:
+                pickle.dump(pkl_data_dict, f)
+            logger.info(f"✅ Created PKL from JSON for ZIP: {latest_pkl}")
+
+        # Load model metadata from PKL
+        clustering_meta = {}
+        pkl_data = {}
+        try:
+            with open(latest_pkl, 'rb') as f:
+                pkl_data = pickle.load(f)
+            clustering_meta = {
+                'algorithm': pkl_data.get('algorithm', 'kmeans'),
+                'n_clusters': pkl_data.get('n_clusters', 3),
+                'silhouette_score': pkl_data.get('silhouette_score', 0),
+                'feature_columns': pkl_data.get('feature_columns', []),
+                'cluster_profiles': pkl_data.get('cluster_profiles', {}),
+            }
+        except Exception as e:
+            logger.warning(f"Could not load PKL metadata: {e}")
+
+        # Find latest clustered data CSV
+        csv_files = list(files_dir.glob("clustered_data_*.csv"))
+        cleaned_data_path = max(csv_files, key=lambda p: p.stat().st_mtime) if csv_files else None
+        
+        # If no clustered CSV, try to reconstruct
+        if not cleaned_data_path:
+            try:
+                labels = pkl_data.get('labels', []) if pkl_data else []
+                if hasattr(labels, 'tolist'):
+                    labels = labels.tolist()
+                all_csv = list(files_dir.glob("*.csv"))
+                original_csvs = [f for f in all_csv if not f.name.startswith("clustered_data_") and not f.name.startswith("cleaned_")]
+                if original_csvs and labels:
+                    data_file = max(original_csvs, key=lambda p: p.stat().st_mtime)
+                    df = pd.read_csv(data_file)
+                    if len(df) == len(labels):
+                        df['Cluster'] = labels
+                        df['Cluster_Name'] = [f'Cluster_{l}' if l >= 0 else 'Noise' for l in labels]
+                        clustered_filename = f"clustered_data_reconstructed.csv"
+                        cleaned_data_path = files_dir / clustered_filename
+                        df.to_csv(cleaned_data_path, index=False)
+                        logger.info(f"✅ Reconstructed clustered data for ZIP: {cleaned_data_path}")
+            except Exception as e:
+                logger.warning(f"Could not reconstruct clustered data: {e}")
+
+        if cleaned_data_path:
+            try:
+                import pandas as _pd
+                _df = _pd.read_csv(cleaned_data_path)
+                clustering_meta['n_samples'] = len(_df)
+            except Exception:
+                pass
+
+        # Load charts if available
+        charts_data = None
+        try:
+            # Check for active clustering charts stored as JSON
+            charts_json = models_dir / "active_clustering_charts.json"
+            if charts_json.exists():
+                with open(charts_json, 'r') as f:
+                    charts_data = json.load(f)
+            else:
+                # Try model_persistence charts
+                try:
+                    from ml.model_persistence import model_persistence
+                    charts_data = model_persistence.get_charts(user_id)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"Could not load charts: {e}")
+
+        # Generate ZIP
+        from ml.ml_code_generator import generate_clustering_code_zip
+        zip_buffer = generate_clustering_code_zip(
+            pkl_path=latest_pkl,
+            cleaned_data_path=cleaned_data_path,
+            charts_data=charts_data,
+            clustering_meta=clustering_meta,
+        )
+
+        return StreamingResponse(
+            zip_buffer,
+            media_type="application/zip",
+            headers={"Content-Disposition": "attachment; filename=clustering_project.zip"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Download clustering code error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

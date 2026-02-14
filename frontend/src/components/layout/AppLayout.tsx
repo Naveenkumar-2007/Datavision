@@ -274,7 +274,7 @@ const AppLayout: React.FC = () => {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-            className="w-full h-full p-4 lg:p-6"
+            className="w-full h-full p-2 lg:p-4"
           >
             <Outlet context={{ isDark, cardBg: isDark ? '#141414' : '#ffffff', textPrimary: isDark ? '#f8fafc' : '#0f172a', textMuted: isDark ? '#9ca3af' : '#64748b', borderColor: isDark ? '#262626' : '#e2e8f0' }} />
           </motion.div>
