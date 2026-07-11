@@ -968,8 +968,8 @@ def build_messages_with_context(
     if user_id:
         try:
             # Try ShortTermMemory first
-            if MEMORY_ENGINE_AVAILABLE and st_memory:
-                history_entries = st_memory.get_messages(user_id, limit=history_limit)
+            if MEMORY_ENGINE_AVAILABLE and _short_term_memory:
+                history_entries = _short_term_memory.get_messages(user_id, limit=history_limit)
             else:
                 # Fallback to file-based history
                 from pathlib import Path
@@ -1031,17 +1031,17 @@ def resolve_references_in_query(
     Returns:
         (resolved_question, extracted_entities)
     """
-    if not MEMORY_ENGINE_AVAILABLE or not reference_resolver:
+    if not MEMORY_ENGINE_AVAILABLE or not _reference_resolver:
         return question, {}
     
     try:
         # Get session context
         session_context = None
-        if st_memory:
-            session_context = st_memory.get_context(user_id) if user_id else None
+        if _short_term_memory:
+            session_context = _short_term_memory.get_context(user_id) if user_id else None
         
         # Resolve references
-        resolved, entities = reference_resolver.resolve(
+        resolved, entities = _reference_resolver.resolve(
             question,
             session_context=session_context,
             session_id=user_id
@@ -2284,6 +2284,8 @@ Provide a helpful, accurate response. Format nicely with bullet points if approp
             
         except Exception as e:
             # Fallback if LLM fails
+            import logging
+            logger = logging.getLogger(__name__)
             logger.error(f"AI Knowledge response failed: {e}")
             state.answer = f"I can help with that! {question} is an interesting topic. For detailed answers, please try asking about your uploaded data."
             state.route = "rag"
@@ -2507,6 +2509,7 @@ FOLLOW-UP MODE: SUMMARIZATION
             import json
             
             paths = get_user_paths(user_id)
+            from pathlib import Path
             memory_path = paths.get("memory", Path(f"storage/users/{user_id}/memory"))
             history_file = memory_path / "chat_history.json"
             
@@ -3178,6 +3181,7 @@ Ignore the Total Dataset Stats if they contradict what was shown in the chart.
         # Final Summary - PRODUCTION: No debug footers
         # Remove any Analysis mode text that might have been added
         if "Analysis mode:" in answer:
+            import re
             answer = re.sub(r'\n*---\n*\*?Analysis mode:?[^\n]*\*?\n?', '', answer, flags=re.IGNORECASE)
         
         # Anti-Artifact cleaning
@@ -3552,6 +3556,7 @@ Based on the user's question and the data provided, give a direct answer. If use
                                     })
                                     
                                     # Embed JSON payload for frontend
+                                    import json
                                     answer += f"\n```forecast_chart\n{json.dumps(chart_payload, separators=(',', ':'))}\n```\n"
 
                                 answer += f"\n\n📈 **Forecast Analysis (AI-Powered)**\n"

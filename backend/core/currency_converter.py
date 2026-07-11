@@ -235,6 +235,7 @@ def detect_currency_from_text(text: str) -> Optional[str]:
     return None
 
 
+import pandas as pd
 def convert_dataframe_currency(
     df, 
     amount_column: str, 

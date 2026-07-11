@@ -384,26 +384,7 @@ Provide a clear, accurate response."""
         result["extracted_data"] = extracted_data
         result["confidence"] = 0.85 if response else 0.5
         
-        # Check if user wants a chart and data is available
-        q_lower = query.lower()
-        wants_chart = any(term in q_lower for term in [
-            'chart', 'graph', 'visualize', 'plot', 'diagram', 'show me', 'draw'
-        ])
-        
-        if wants_chart and df is not None and not df.empty:
-            try:
-                from core.llm_visualizer import llm_visualize
-                import json
-                viz_result = llm_visualize(df, query, self.user_id)
-                if viz_result.get("success") and viz_result.get("chart"):
-                    chart = viz_result.get("chart")
-                    if isinstance(chart, dict) and 'data' in chart and 'layout' in chart:
-                        chart_json = json.dumps(chart, default=str)
-                        result["answer"] += f"\n\n```plotly_chart\n{chart_json}\n```"
-                        result["chart"] = chart
-                        result["visualization"] = chart
-            except Exception as e:
-                logger.warning(f"Vision chart generation failed: {e}")
+        # Chart generation logic removed (incompatible with vision engine)
         
         # Execution time
         exec_time = (datetime.now() - start_time).total_seconds()

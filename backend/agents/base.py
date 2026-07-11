@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Callable
 from datetime import datetime
+from agents.memory import AgentMemory
 import uuid
 import logging
 

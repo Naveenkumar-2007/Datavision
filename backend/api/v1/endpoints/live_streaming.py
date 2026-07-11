@@ -1,6 +1,9 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException, Depends, Header
 from pydantic import BaseModel
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 import json
 from datetime import datetime
 from uuid import uuid4
