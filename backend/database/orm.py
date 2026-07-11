@@ -157,15 +157,6 @@ class NotificationSettings(Base):
     dnd_end = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-class PushToken(Base):
-    __tablename__ = 'push_tokens'
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workspace_id = Column(String, nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False)
-    token = Column(String, nullable=False)
-    platform = Column(String)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
 class AIInsight(Base):
     __tablename__ = 'ai_insights'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
