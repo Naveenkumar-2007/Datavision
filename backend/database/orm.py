@@ -166,16 +166,6 @@ class PushToken(Base):
     platform = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-class WorkspaceMember(Base):
-    __tablename__ = 'workspace_members'
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workspace_id = Column(String, nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
-    role = Column(String, nullable=False, default='viewer')
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    user = relationship("UserProfile")
-
 class AIInsight(Base):
     __tablename__ = 'ai_insights'
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -469,6 +459,8 @@ class WorkspaceMember(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
     role = Column(String, default='member')  # owner, admin, member, viewer
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("UserProfile")
 
 
 class Notification(Base):
