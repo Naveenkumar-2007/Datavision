@@ -475,7 +475,7 @@ class Notification(Base):
     message = Column(Text, nullable=True)
     channel = Column(String, nullable=True)  # anomaly, report, system
     status = Column(String, default='sent')  # sent, failed, read
-    metadata = Column(JSONB, default={})
+    metadata_ = Column('metadata', JSONB, default={})
     sent_at = Column(DateTime, default=datetime.utcnow)
 
 
