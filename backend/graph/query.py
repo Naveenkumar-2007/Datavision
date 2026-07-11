@@ -129,8 +129,6 @@ def graph_snapshot(company_id: str, max_nodes: int = None) -> str:
     return snapshot
 
 
-    return pd.DataFrame(rows)
-
 def _load_from_files(company_id: str) -> pd.DataFrame:
     """Fallback: Load revenue data directly from uploaded files if graph is empty"""
     try:

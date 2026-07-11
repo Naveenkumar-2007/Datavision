@@ -1416,6 +1416,7 @@ def generate_query_aware_chart(df: pd.DataFrame, query: str) -> Dict[str, Any]:
     # ==========================================================================
     try:
         if 'smart_chart' in globals() or 'smart_chart' in locals():
+            from core.currency_converter import get_user_currency
             currency_symbol, _ = get_user_currency("default")
             print(f"[CHART] 🧠 Attempting Smart Chart for: '{query}'")
             chart_result, _ = smart_chart(query, df, currency_symbol=currency_symbol)

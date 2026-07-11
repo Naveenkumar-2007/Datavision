@@ -2489,7 +2489,7 @@ async def multi_mode_train(
         except Exception as e:
             logger.warning(f"[MultiMode] Failed to save charts/metadata: {e}")
         
-        return {
+        response = {
             "success": True,
             "pipeline": "MULTI_MODE_ML",
             "task_type": primary_task_type,
