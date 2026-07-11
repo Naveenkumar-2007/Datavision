@@ -320,7 +320,7 @@ def detect_data_domain(user_id: str) -> str:
 
 
 def get_user_email(user_id: str):
-    """Get user's email address from preferences or Supabase"""
+    """Get user's email address from preferences or profile"""
     prefs = get_user_email_prefs(user_id)
     
     if prefs and prefs.get('email_address'):

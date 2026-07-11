@@ -38,7 +38,7 @@ const PrivacyPolicy: React.FC = () => {
             icon: Shield,
             title: "Data Storage & Security",
             content: [
-                "Your data is stored securely using **Supabase** (for authentication and metadata) and **Hugging Face** infrastructure (for application hosting).",
+                "Your data is stored securely using **PostgreSQL** (for authentication and metadata) and **Hugging Face** infrastructure (for application hosting).",
                 "All data transfers are encrypted using industry-standard TLS/SSL protocols.",
                 "Your uploaded files are isolated per user account and not shared with other users.",
                 "ML models trained on your data are stored privately and accessible only to you."
@@ -123,7 +123,7 @@ const PrivacyPolicy: React.FC = () => {
                         <h2 className="text-xl font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Third-Party Services</h2>
                         <p className="mb-4" style={{ color: 'var(--text-secondary)' }}>We use the following third-party services:</p>
                         <ul className="space-y-2" style={{ color: 'var(--text-secondary)' }}>
-                            <li className="flex items-start gap-2"><span className="text-green-500">•</span><strong>Supabase</strong> - Authentication and database services</li>
+                            <li className="flex items-start gap-2"><span className="text-green-500">•</span><strong>PostgreSQL</strong> - Authentication and database services</li>
                             <li className="flex items-start gap-2"><span className="text-green-500">•</span><strong>Hugging Face</strong> - Application hosting infrastructure</li>
                             <li className="flex items-start gap-2"><span className="text-green-500">•</span><strong>Groq</strong> - AI/LLM services for intelligent analysis</li>
                             <li className="flex items-start gap-2"><span className="text-green-500">•</span><strong>Resend</strong> - Email delivery for scheduled reports</li>

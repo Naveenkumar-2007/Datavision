@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/auth-client';
 
 export default function AuthCallback() {
     const navigate = useNavigate();
@@ -33,7 +33,30 @@ export default function AuthCallback() {
             return;
         }
 
-        // Poll for session - Supabase's detectSessionInUrl will set it
+        // Native OAuth token from FastAPI
+        const customToken = params.get('token');
+        if (customToken) {
+            localStorage.setItem('auth_token', customToken);
+            fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/auth/me`, {
+                headers: { 'Authorization': `Bearer ${customToken}` }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && isMounted) {
+                    localStorage.setItem('auth_user', JSON.stringify(data.user));
+                    localStorage.setItem('userId', data.user.id);
+                    navigate('/data-hub', { replace: true });
+                } else if (isMounted) {
+                    setError('Failed to fetch user profile');
+                }
+            })
+            .catch(() => {
+                if (isMounted) setError('Authentication error');
+            });
+            return;
+        }
+
+        // Poll for session (Legacy fallback)
         const checkSession = async () => {
             attempts++;
 
@@ -42,7 +65,7 @@ export default function AuthCallback() {
             if (!isMounted) return;
 
             if (session) {
-                // Store userId for API calls (NOT the token - Supabase handles that)
+                // Store userId for API calls
                 localStorage.setItem('userId', session.user.id);
 
                 // If email confirmation, show success briefly then redirect to data-hub
@@ -65,7 +88,7 @@ export default function AuthCallback() {
             }
         };
 
-        // Wait a bit for Supabase to process URL tokens, then start checking
+        // Wait a bit for URL tokens to be processed, then start checking
         setTimeout(checkSession, 300);
 
         return () => { isMounted = false; };

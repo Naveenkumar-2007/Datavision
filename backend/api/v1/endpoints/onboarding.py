@@ -138,7 +138,7 @@ async def create_profile(workspace_id: str, request: CompanyProfileRequest):
     if request.branding:
         profile.branding.update(request.branding)
     
-    # Save to Supabase
+    # Save to database
     success = save_company_profile(profile)
     
     if not success:

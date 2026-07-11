@@ -28,6 +28,8 @@ from dataclasses import dataclass
 import re
 import json
 
+from services.vector_store import vector_store
+
 logger = logging.getLogger(__name__)
 
 # LLM for intelligent responses
@@ -560,6 +562,26 @@ class ProAnalystEngine:
         start_time = datetime.now()
         
         # =================================================================
+        # 🧠 QDRANT RAG MEMORY CONTEXT
+        # =================================================================
+        historical_context = ""
+        try:
+            if vector_store.is_ready:
+                past_chats = vector_store.search_chat_history(self.user_id, query, limit=3)
+                if past_chats:
+                    historical_context = "Historical AI Memory Context (from previous chats):\n"
+                    for chat in past_chats:
+                        role = chat.get('role', 'unknown').upper()
+                        content = chat.get('content', '')[:300] # Truncate long messages
+                        historical_context += f"[{role}]: {content}...\n"
+                    
+                    # Append it to the incoming context
+                    context = f"{context}\n\n{historical_context}" if context else historical_context
+                    logger.info("🧠 Injected Qdrant Semantic Memory into context")
+        except Exception as e:
+            logger.warning(f"Failed to inject Qdrant context: {e}")
+        
+        # =================================================================
         # �️ CHECK FOR IMAGE CONTEXT FIRST - Takes priority over data
         # =================================================================
         has_image_context = context and "🖼️ Image Analysis" in context
@@ -770,6 +792,23 @@ Provide a clear, accurate, and informative response. Use bullet points if helpfu
         exec_time = (datetime.now() - start_time).total_seconds()
         result["execution_time"] = f"{exec_time:.2f}s"
         
+        # =================================================================
+        # 🧠 SAVE TO QDRANT SEMANTIC MEMORY
+        # =================================================================
+        try:
+            if vector_store.is_ready and query.strip():
+                conv_id = f"rag_{int(start_time.timestamp())}"
+                # Save user query
+                vector_store.add_chat_message(self.user_id, "user", query, conv_id)
+                
+                # Save assistant response (truncate if too long to avoid massive embeddings)
+                if result.get("answer"):
+                    clean_answer = result["answer"][:1500]
+                    vector_store.add_chat_message(self.user_id, "assistant", clean_answer, conv_id)
+                logger.info("🧠 Saved interaction to Qdrant Semantic Memory")
+        except Exception as e:
+            logger.warning(f"Failed to save to Qdrant: {e}")
+        
         return result
     
     def _generate_response(
@@ -879,9 +918,44 @@ def analyst_response(
     context: str = "",
     df: pd.DataFrame = None
 ) -> Dict[str, Any]:
-    """Quick function for analyst response."""
+    """Cyclic Multi-Agent loop function for analyst response."""
     engine = ProAnalystEngine(user_id)
-    return engine.process(query, context, df)
+    
+    # 🧠 Cyclic Reasoning Loop
+    max_tries = 3
+    current_context = context
+    
+    for attempt in range(max_tries):
+        # 1. Analyst Generation
+        result = engine.process(query, current_context, df)
+        draft_answer = result.get('answer', '') if isinstance(result, dict) else str(result)
+        
+        # 2. Critic Evaluation
+        try:
+            from agents.critic import evaluate_with_critic
+            critic_review = evaluate_with_critic(query, current_context, draft_answer)
+            
+            if critic_review.get('pass', True):
+                print(f"[PASS] Critic Agent approved answer on attempt {attempt+1}")
+                return result
+            else:
+                print(f"[FAIL] Critic Agent rejected answer on attempt {attempt+1}. Feedback: {critic_review.get('feedback')}")
+                # Feed critic feedback back into the context for the next iteration
+                critic_feedback = f"\n\n[CRITIC FEEDBACK: Your previous attempt failed. Fix this: {critic_review.get('feedback')}]"
+                current_context += critic_feedback
+                
+                # If we're on the last attempt, just return it anyway but flag it
+                if attempt == max_tries - 1:
+                    print("[WARNING] Max attempts reached. Returning imperfect answer.")
+                    if isinstance(result, dict):
+                        result['answer'] += f"\n\n*(Note: This answer was flagged by the internal AI Critic for potential inaccuracies: {critic_review.get('feedback')})*"
+                    return result
+                    
+        except Exception as e:
+            print(f"⚠️ Critic loop error: {e}")
+            return result
+            
+    return result
 
 
 def analyst_response_sync(

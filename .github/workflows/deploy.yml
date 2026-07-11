@@ -1,0 +1,52 @@
+name: Deploy to HuggingFace Spaces
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    name: Deploy to HF Spaces
+    runs-on: ubuntu-latest
+    # Wait for CI to pass before deploying
+    # (If we uncomment this, it requires the CI job to exist and pass)
+    # needs: [backend-lint, frontend-build] 
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          
+      - name: Build Frontend
+        working-directory: ./frontend
+        run: |
+          npm install
+          npm run build
+          
+      - name: Push to HuggingFace Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          # Configure git
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          
+          # We need to install huggingface_hub to push directly
+          pip install huggingface_hub
+          
+          # Ensure frontend/dist is tracked before pushing
+          git add -f frontend/dist/
+          git commit -m "Auto-build frontend for deployment" || echo "No changes to commit"
+          
+          # Add HuggingFace remote and push
+          git remote add huggingface https://oauth2:${HF_TOKEN}@huggingface.co/spaces/datavision-ai/Datavision
+          
+          # Force push to HuggingFace main branch
+          # Using --force to ensure HF always matches GitHub's main branch exactly
+          git push --force huggingface main

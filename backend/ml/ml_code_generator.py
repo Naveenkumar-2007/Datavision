@@ -1,4 +1,4 @@
-﻿"""
+"""
 📦 ML CODE GENERATOR - Dynamic Project ZIP Export
 ===================================================
 
@@ -20,6 +20,88 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
+
+
+API_SERVER_HTML_TEMPLATE = """<!DOCTYPE html>
+<html>
+<head>
+<title>DataVision ML API</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; background: #f9fafb; color: #111827; }
+h1 { color: #4F46E5; } h2 { color: #1f2937; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; }
+.card { background: white; border-radius: 12px; padding: 24px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+button { background: #4F46E5; color: white; border: none; padding: 12px 32px; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 12px; }
+button:hover { background: #4338CA; }
+#result { margin-top: 20px; padding: 16px; background: #f0fdf4; border-radius: 8px; display: none; }
+</style>
+</head>
+<body>
+<h1>🚀 DataVision ML API</h1>
+<div class="card">
+<h2>Model Info</h2>
+<p>🏆 <b>Model:</b> {{ model_name }} | 🎯 <b>Target:</b> {{ target }} | 📊 <b>Task:</b> {{ task_type_val }} | 📁 <b>Features:</b> {{ raw_feature_info|length }}</p>
+<ul>
+{% for k, v in metrics.items() %}
+  <li><b>{{ k }}</b>: {{ "%.4f"|format(v) if v is float else v }}</li>
+{% endfor %}
+</ul>
+</div>
+<div class="card">
+<h2>🔮 Make a Prediction</h2>
+<form id="predForm">
+{% for col, info in raw_feature_info.items() %}
+  <div style="margin:6px 0">
+    <label style="display:inline-block;width:260px;font-weight:500">{{ col }}</label>
+    {% if info.type == 'categorical' %}
+      <select name="{{ col }}" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;width:214px">
+        {% for o in info.options[:20] %}
+          <option value="{{ o }}">{{ o }}</option>
+        {% endfor %}
+      </select>
+    {% else %}
+      {% set placeholder = (info.min|string + ' - ' + info.max|string) if info.min else '' %}
+      <input name="{{ col }}" type="text" value="{{ info.default }}" placeholder="{{ placeholder }}" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;width:200px">
+    {% endif %}
+  </div>
+{% endfor %}
+<button type="submit">Predict</button>
+</form>
+<div id="result"></div>
+</div>
+<div class="card"><h2>📡 API Usage</h2>
+<pre style="background:#1f2937;color:#e5e7eb;padding:16px;border-radius:8px;overflow-x:auto">
+POST /predict
+Content-Type: application/json
+
+{"feature1": val, "feature2": val}
+
+GET /health — Health check
+GET /model-info — Model metadata</pre></div>
+<script>
+document.getElementById("predForm").onsubmit=function(e){
+    e.preventDefault();
+    var fd=new FormData(this);
+    var data={};
+    fd.forEach(function(v,k){ data[k]=isNaN(v)||v===""?v:parseFloat(v) });
+    fetch("/predict",{ method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data) })
+    .then(function(r){ return r.json() })
+    .then(function(j){
+        var h="<h3>🎯 Prediction: "+j.prediction+"</h3>";
+        if(j.confidence)h+="<p>📊 Confidence: "+(j.confidence*100).toFixed(1)+"%</p>";
+        if(j.probabilities){
+            h+="<p>Probabilities:</p><ul>";
+            var ent=Object.entries(j.probabilities).sort(function(a,b){ return b[1]-a[1] });
+            for(var i=0;i<ent.length;i++)h+="<li><b>"+ent[i][0]+"</b>: "+(ent[i][1]*100).toFixed(1)+"%</li>";
+            h+="</ul>"
+        }
+        document.getElementById("result").innerHTML=h;
+        document.getElementById("result").style.display="block"
+    });
+};
+</script>
+</body>
+</html>"""
+
 
 
 def generate_code_zip(
@@ -65,17 +147,18 @@ def generate_code_zip(
                 model_state = pickle.load(f)
             
             # Extract the actual trained model
-            actual_model = model_state.get('model')
-            if actual_model is not None and hasattr(actual_model, 'get_params'):
-                actual_model_params = actual_model.get_params()
-                actual_model_class = type(actual_model).__name__
-                logger.info(f"Extracted hyperparameters from {actual_model_class}: {list(actual_model_params.keys())}")
-            
-            # Extract preprocessing objects
-            production_engineer = model_state.get('production_engineer')
-            scaler = model_state.get('scaler')
-            label_encoders = model_state.get('label_encoders', {})
-            target_encoder = model_state.get('target_encoder')
+            if model_state is not None:
+                actual_model = model_state.get('model')
+                if actual_model is not None and hasattr(actual_model, 'get_params'):
+                    actual_model_params = actual_model.get_params()
+                    actual_model_class = type(actual_model).__name__
+                    logger.info(f"Extracted hyperparameters from {actual_model_class}: {list(actual_model_params.keys())}")
+                
+                # Extract preprocessing objects
+                production_engineer = model_state.get('production_engineer')
+                scaler = model_state.get('scaler')
+                label_encoders = model_state.get('label_encoders', {})
+                target_encoder = model_state.get('target_encoder')
             
         except Exception as e:
             logger.warning(f"Could not load model for hyperparameter extraction: {e}")
@@ -86,13 +169,13 @@ def generate_code_zip(
     task_type = metadata.get('task_type', 'classification')
     best_mode = metadata.get('best_mode', 'traditional')
     modes_trained = metadata.get('modes_trained', ['traditional'])
-    best_overall = metadata.get('best_overall', {})
+    best_overall = metadata.get('best_overall') or {}
     best_model_name = best_overall.get('name', metadata.get('model_name', 'Unknown'))
     best_metrics = best_overall.get('metrics', metadata.get('metrics', {}))
-    feature_metadata = metadata.get('feature_metadata', [])
-    data_summary = metadata.get('data_summary', {})
-    results_per_mode = metadata.get('results_per_mode', {})
-    leaderboard = metadata.get('leaderboard', [])
+    feature_metadata = metadata.get('feature_metadata') or []
+    data_summary = metadata.get('data_summary') or {}
+    results_per_mode = metadata.get('results_per_mode') or {}
+    leaderboard = metadata.get('leaderboard') or []
     nlp_text_column = metadata.get('primary_text_col', metadata.get('nlp_text_column', metadata.get('text_column', '')))
     
     # Classify features by type from feature_metadata
@@ -313,22 +396,23 @@ def generate_code_zip(
         
         # 7. ONLY include training scripts for modes the user actually trained
         if 'traditional' in modes_trained:
-            trad_result = results_per_mode.get('traditional', {})
+            trad_result = results_per_mode.get('traditional') or {}
             zf.writestr('train_traditional.py', _generate_traditional_train_script(config, trad_result))
             logger.info("Added train_traditional.py")
         
         if 'nlp' in modes_trained and nlp_text_column:
-            nlp_result = results_per_mode.get('nlp', {})
+            nlp_result = results_per_mode.get('nlp') or {}
             zf.writestr('train_nlp.py', _generate_nlp_train_script(config, nlp_result))
             logger.info("Added train_nlp.py")
         
         if 'deep_learning' in modes_trained:
-            dl_result = results_per_mode.get('deep_learning', {})
+            dl_result = results_per_mode.get('deep_learning') or {}
             zf.writestr('train_deep_learning.py', _generate_deep_learning_script(config, dl_result))
             logger.info("Added train_deep_learning.py")
         
         # 8. api_server.py for deployment
         zf.writestr('api_server.py', _generate_api_server_script(config))
+        zf.writestr('templates/index.html', API_SERVER_HTML_TEMPLATE)
         
         # 9. Utilities
         zf.writestr('utils/__init__.py', '')
@@ -4861,7 +4945,7 @@ import pickle
 import argparse
 import numpy as np
 import pandas as pd
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from sklearn.preprocessing import LabelEncoder, RobustScaler
 
 app = Flask(__name__)
@@ -5302,64 +5386,13 @@ def predict():
             task_type_val = '{task_type}'
             metrics = {{}}
         
-        # Build form from RAW features (original column names user knows)
-        form_fields = ""
-        for col, info in RAW_FEATURE_INFO.items():
-            ftype = info.get("type", "numeric")
-            if ftype == "categorical":
-                options = info.get("options", [])
-                opts_html = "".join('<option value="' + str(o) + '">' + str(o) + '</option>' for o in options[:20])
-                form_fields += '<div style="margin:6px 0"><label style="display:inline-block;width:260px;font-weight:500">' + col + '</label><select name="' + col + '" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;width:214px">' + opts_html + '</select></div>' + chr(10)
-            else:
-                default_val = str(info.get("default", 0))
-                mn = str(info.get("min", ""))
-                mx = str(info.get("max", ""))
-                placeholder = (mn + " - " + mx) if mn != "" else ""
-                form_fields += '<div style="margin:6px 0"><label style="display:inline-block;width:260px;font-weight:500">' + col + '</label><input name="' + col + '" type="text" value="' + default_val + '" placeholder="' + placeholder + '" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;width:200px"></div>' + chr(10)
-        
-        metrics_html = ""
-        for k, v in metrics.items():
-            if isinstance(v, float):
-                metrics_html += f"<li><b>{{k}}</b>: {{v:.4f}}</li>"
-        
-        html_tpl = '<!DOCTYPE html>'
-        html_tpl += '<html><head><title>DataVision ML API</title>'
-        html_tpl += '<style>'
-        html_tpl += "body {{{{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; background: #f9fafb; color: #111827; }}}}"
-        html_tpl += 'h1 {{{{ color: #4F46E5; }}}} h2 {{{{ color: #1f2937; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px; }}}}'
-        html_tpl += '.card {{{{ background: white; border-radius: 12px; padding: 24px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}}}'
-        html_tpl += 'button {{{{ background: #4F46E5; color: white; border: none; padding: 12px 32px; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 12px; }}}}'
-        html_tpl += 'button:hover {{{{ background: #4338CA; }}}}'
-        html_tpl += '#result {{{{ margin-top: 20px; padding: 16px; background: #f0fdf4; border-radius: 8px; display: none; }}}}'
-        html_tpl += '</style></head><body>'
-        html_tpl += '<h1>🚀 DataVision ML API</h1>'
-        html_tpl += '<div class="card"><h2>Model Info</h2>'
-        html_tpl += '<p>🏆 <b>Model:</b> ' + str(model_name) + ' | 🎯 <b>Target:</b> {target} | 📊 <b>Task:</b> ' + str(task_type_val) + ' | 📁 <b>Features:</b> ' + str(len(RAW_FEATURE_INFO)) + '</p>'
-        html_tpl += '<ul>' + metrics_html + '</ul></div>'
-        html_tpl += '<div class="card"><h2>🔮 Make a Prediction</h2>'
-        html_tpl += '<form id="predForm">' + form_fields + '<button type="submit">Predict</button></form>'
-        html_tpl += '<div id="result"></div></div>'
-        html_tpl += '<div class="card"><h2>📡 API Usage</h2>'
-        html_tpl += '<pre style="background:#1f2937;color:#e5e7eb;padding:16px;border-radius:8px;overflow-x:auto">'
-        html_tpl += 'POST /predict\\nContent-Type: application/json\\n\\n' + chr(123) + '"feature1": val, "feature2": val' + chr(125)
-        html_tpl += '\\n\\nGET /health — Health check\\nGET /model-info — Model metadata</pre></div>'
-        html_tpl += '<script>'
-        html_tpl += 'document.getElementById("predForm").onsubmit=function(e)' + chr(123)
-        html_tpl += 'e.preventDefault();var fd=new FormData(this);var data=' + chr(123) + chr(125) + ';'
-        html_tpl += 'fd.forEach(function(v,k)' + chr(123) + 'data[k]=isNaN(v)||v===""?v:parseFloat(v)' + chr(125) + ');'
-        html_tpl += 'fetch("/predict",' + chr(123) + 'method:"POST",headers:' + chr(123) + '"Content-Type":"application/json"' + chr(125) + ',body:JSON.stringify(data)' + chr(125) + ')'
-        html_tpl += '.then(function(r)' + chr(123) + 'return r.json()' + chr(125) + ')'
-        html_tpl += '.then(function(j)' + chr(123)
-        html_tpl += 'var h="<h3>🎯 Prediction: "+j.prediction+"</h3>";'
-        html_tpl += 'if(j.confidence)h+="<p>📊 Confidence: "+(j.confidence*100).toFixed(1)+"%</p>";'
-        html_tpl += 'if(j.probabilities)' + chr(123) + 'h+="<p>Probabilities:</p><ul>";'
-        html_tpl += 'var ent=Object.entries(j.probabilities).sort(function(a,b)' + chr(123) + 'return b[1]-a[1]' + chr(125) + ');'
-        html_tpl += 'for(var i=0;i<ent.length;i++)h+="<li><b>"+ent[i][0]+"</b>: "+(ent[i][1]*100).toFixed(1)+"%</li>";'
-        html_tpl += 'h+="</ul>"' + chr(125)
-        html_tpl += 'document.getElementById("result").innerHTML=h;document.getElementById("result").style.display="block"'
-        html_tpl += chr(125) + ')' + chr(125) + ';'
-        html_tpl += '</script></body></html>'
-        return html_tpl
+        # Serve the UI using the extracted index.html template
+        return render_template("index.html", 
+                               model_name=model_name, 
+                               target=TARGET_COLUMN, 
+                               task_type_val=task_type_val, 
+                               metrics=metrics, 
+                               raw_feature_info=RAW_FEATURE_INFO)
     
     # POST request: JSON API prediction
     try:
@@ -6349,7 +6382,7 @@ Usage:
     python api_server.py --port 8000
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import pickle
 import numpy as np
 import argparse

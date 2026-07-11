@@ -148,6 +148,46 @@ def detect_data_domain(df: pd.DataFrame) -> str:
     best_domain = max(scores, key=scores.get)
     return best_domain if scores[best_domain] > 0 else 'general'
 
+def analyze_domain_and_sections(df: pd.DataFrame) -> Dict:
+    """
+    AUTONOMOUS AGENT: Dynamically determines the domain and dashboard sections.
+    """
+    try:
+        columns = list(df.columns)
+        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+        
+        prompt = f"""
+        Analyze this dataset profile to determine its domain and 4-6 logical dashboard sections.
+        Columns: {columns}
+        Types: {dtypes}
+        
+        Respond ONLY with a valid JSON object matching this exact format:
+        {{
+            "domain": "finance|sales|marketing|hr|operations|general",
+            "dashboard_title": "A 3-5 word professional title",
+            "sections": ["Section 1 Name", "Section 2 Name", "Section 3 Name", "Section 4 Name"]
+        }}
+        """
+        
+        response = chat(prompt, temperature=0.2, max_tokens=200)
+        
+        # Clean potential markdown wrapping
+        if response.startswith('```json'):
+            response = response[7:-3]
+        elif response.startswith('```'):
+            response = response[3:-3]
+            
+        data = json.loads(response.strip())
+        return data
+    except Exception as e:
+        logger.warning(f"Domain Agent failed: {e}. Falling back to heuristics.")
+        domain = detect_data_domain(df)
+        return {
+            "domain": domain,
+            "dashboard_title": f"{domain.title()} Analytics Dashboard",
+            "sections": ["Overview", "Distribution Analysis", "Correlation Studio", "Performance Metrics", "Advanced Insights"]
+        }
+
 
 def analyze_column_relationships(df: pd.DataFrame) -> List[Dict]:
     """Analyze relationships between columns to determine best visualizations"""
@@ -167,7 +207,7 @@ def analyze_column_relationships(df: pd.DataFrame) -> List[Dict]:
                     'numeric': num,
                     'categorical': cat,
                     'cardinality': cardinality,
-                    'best_charts': ['bar', 'horizontal_bar', 'pie', 'donut', 'treemap', 'funnel', 'pareto', 'radar', 'gauge'] if cardinality <= 8 else ['bar', 'horizontal_bar', 'treemap', 'funnel', 'pareto']
+                    'best_charts': ['bar', 'horizontal_bar', 'pie', 'donut', 'treemap', 'funnel', 'pareto', 'radar', 'gauge', 'polar_bar'] if cardinality <= 8 else ['bar', 'horizontal_bar', 'treemap', 'funnel', 'pareto']
                 })
     
     # Numeric vs Numeric (best for scatter, bubble)
@@ -179,7 +219,7 @@ def analyze_column_relationships(df: pd.DataFrame) -> List[Dict]:
                 'x': num1,
                 'y': num2,
                 'correlation': abs(corr) if not pd.isna(corr) else 0,
-                'best_charts': ['scatter', 'bubble', 'heatmap', 'line', 'area', 'parcoords']
+                'best_charts': ['scatter', 'bubble', 'heatmap', 'line', 'area', 'parcoords', 'density_contour', 'hexbin']
             })
     
     # Time series (best for line, area)
@@ -211,7 +251,7 @@ def analyze_column_relationships(df: pd.DataFrame) -> List[Dict]:
             'cat2': categorical_cols[1],
             'value': numeric_cols[0],
             'categorical_cols': categorical_cols[:3],
-            'best_charts': ['stacked_bar', 'grouped_bar', 'heatmap', 'sunburst', 'treemap', 'sankey', 'parcoords', 'radar']
+            'best_charts': ['stacked_bar', 'grouped_bar', 'heatmap', 'sunburst', 'multi_sunburst', 'treemap', 'sankey', 'parcoords', 'radar']
         })
 
     # Advanced Pattern Detection ------------------------------------------
@@ -291,7 +331,7 @@ def analyze_column_relationships(df: pd.DataFrame) -> List[Dict]:
             'y': numeric_cols[1],
             'z': numeric_cols[2],
             'color': categorical_cols[0] if categorical_cols else list(numeric_cols)[2],
-            'best_charts': ['scatter_3d']
+            'best_charts': ['scatter_3d', '3d_surface', '3d_bubble']
         })
 
     # 7. Temporal Activity (Calendar Heatmap) 📅
@@ -500,8 +540,8 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
     
     # Chart complexity tiers - prioritize complex charts for variety
     COMPLEX_CHARTS = [
-        'sankey', 'radar', 'sunburst', 'parcoords', 'bubble', 'violin', 'waterfall', 'candlestick',
-        'combo_bar_line', 'scatter_matrix', 'marimekko', 'ridgeline', 'density_contour', 'band_chart'
+        '3d_surface', 'polar_bar', 'density_contour', 'sankey', 'radar', 'sunburst', 'multi_sunburst', 'parcoords', 'bubble', 'violin', 'waterfall', 'candlestick',
+        'combo_bar_line', 'scatter_matrix', 'marimekko', 'ridgeline', 'band_chart', '3d_bubble', 'hexbin'
     ]
     MEDIUM_CHARTS = [
         'heatmap', 'stacked_bar', 'funnel', 'gauge', 'treemap', 'box', 'area', 'pareto',
@@ -515,7 +555,8 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
     # =============================================================
     must_have_advanced = [
         'radar', 'gauge', 'funnel', 'heatmap', 'box', 'violin',
-        'combo_bar_line', 'pareto', 'lollipop', 'diverging_bar'
+        'combo_bar_line', 'pareto', 'lollipop', 'diverging_bar',
+        'sankey', 'choropleth', 'sunburst'
     ]
     
     for adv_chart in must_have_advanced:
@@ -548,6 +589,12 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
                 elif adv_chart == 'box' and rel_type in ['distribution', 'violin']:
                     compatible = True
                 elif adv_chart == 'violin' and rel_type in ['violin', 'distribution', 'num_vs_cat']:
+                    compatible = True
+                elif adv_chart == 'sankey' and rel_type in ['sankey', 'flow', 'multi_category']:
+                    compatible = True
+                elif adv_chart == 'choropleth' and rel_type in ['geo', 'location', 'num_vs_cat']:
+                    compatible = True
+                elif adv_chart == 'sunburst' and rel_type in ['hierarchy', 'multi_category']:
                     compatible = True
                 
                 if compatible:
@@ -623,9 +670,9 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
     # Sort by score descending (highest priority first)
     chart_options.sort(key=lambda x: x['score'], reverse=True)
     
-    # Select top charts ensuring variety - MAXIMUM 15 UNIQUE CHARTS
+    # Select top charts ensuring variety - MAXIMUM 25 UNIQUE CHARTS for dense layout
     for option in chart_options:
-        if len(selected_charts) >= 15:  # Increased for maximum variety
+        if len(selected_charts) >= 25:  # Dense Power BI-style layout
             break
         
         chart_type = option['chart_type']
@@ -638,11 +685,11 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
             selected_charts.append(chart)
             used_chart_types.add(chart_type)
     
-    # If we have less than 10 charts, try adding more from all tiers
-    if len(selected_charts) < 10:
+    # If we have less than 15 charts, try adding more from all tiers
+    if len(selected_charts) < 15:
         all_chart_types = COMPLEX_CHARTS + MEDIUM_CHARTS + SIMPLE_CHARTS
         for rel in relationships:
-            if len(selected_charts) >= 12:
+            if len(selected_charts) >= 20:
                 break
             for chart_type in all_chart_types:
                 if chart_type not in used_chart_types:
@@ -687,6 +734,8 @@ def generate_autonomous_chart(df: pd.DataFrame, relationship: Dict, chart_type: 
             elif chart_type == 'radar':
                 # Radar needs multi-metrics, fallback to bar for single metric
                 return create_bar_chart(labels, values, num_col, cat_col, colors)
+            elif chart_type == 'polar_bar':
+                return create_polar_bar_chart(df, relationship, colors)
             else:
                 return create_bar_chart(labels, values, num_col, cat_col, colors)
         
@@ -715,7 +764,10 @@ def generate_autonomous_chart(df: pd.DataFrame, relationship: Dict, chart_type: 
                 
                 return create_bubble_chart(sample[x_col].tolist(), sample[y_col].tolist(), sizes, x_col, y_col, colors)
             elif chart_type == 'heatmap':
+                # Density heatmap
                 return create_correlation_heatmap(df, colors)
+            elif chart_type == 'density_contour':
+                return create_density_contour_chart(df, relationship, colors)
             else:
                 return create_scatter_chart(sample[x_col].tolist(), sample[y_col].tolist(), x_col, y_col, colors)
         
@@ -778,7 +830,12 @@ def generate_autonomous_chart(df: pd.DataFrame, relationship: Dict, chart_type: 
             return create_choropleth_chart(df, relationship, colors)
             
         elif rel_type == '3d_correlation':
-            return create_scatter3d_chart(df, relationship, colors)
+            if chart_type == '3d_surface':
+                return create_3d_surface_chart(df, relationship, colors)
+            elif chart_type == '3d_bubble':
+                return create_3d_bubble_chart(df, relationship, colors)
+            else:
+                return create_scatter3d_chart(df, relationship, colors)
             
         elif rel_type == 'temporal_heatmap':
             return create_calendar_heatmap(df, relationship, colors)
@@ -1788,8 +1845,8 @@ def create_choropleth_chart(df, rel, colors):
                 **get_layout(),
                 'geo': {
                     'showframe': False,
-                    'showcoastlines': False,
-                    'projection': {'type': 'mercator'},
+                    'showcoastlines': True,
+                    'projection': {'type': 'orthographic'},
                     'bgcolor': 'rgba(0,0,0,0)',
                 }
             }
@@ -2393,13 +2450,12 @@ def create_step_line_chart(df, rel, colors):
 
 def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
     """
-    Generate a TRULY AUTONOMOUS dashboard.
+    Generate a TRULY AUTONOMOUS dashboard using Multi-Agent Architecture.
     
-    The system analyzes data and decides:
-    - Domain and color palette
-    - Which charts to use (from 15+ types)
-    - What data relationships to visualize
-    - KPIs, insights, recommendations
+    Agents (all run silently in the background):
+    1. Data Profiling Agent - scans columns, types, stats
+    2. Domain & Categorization Agent (LLM) - decides domain, title, sections
+    3. Visualization Agent - maps data relationships to chart types
     
     ALL calculations are REAL - done with pandas!
     """
@@ -2423,64 +2479,131 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
         logger.info(f"🤖 AUTONOMOUS Dashboard generation for {user_id}")
         logger.info(f"📊 Data: {len(df)} rows, {len(df.columns)} cols")
         
-        # Step 1: Detect domain
-        domain = detect_data_domain(df)
+        # ============================================================
+        # AGENT 1: Data Profiling Agent (pandas-powered)
+        # ============================================================
+        numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        datetime_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
+        
+        logger.info(f"📋 Profile: {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, {len(datetime_cols)} datetime")
+        
+        # ============================================================
+        # AGENT 2: Domain & Categorization Agent (LLM-powered)
+        # ============================================================
+        domain_info = analyze_domain_and_sections(df)
+        domain = domain_info.get("domain", "general")
+        ai_title = domain_info.get("dashboard_title", f"{domain.title()} Analytics Dashboard")
+        ai_sections = domain_info.get("sections", ["Overview", "Distribution Analysis", "Correlation Studio", "Performance Metrics"])
+        
         palette = COLOR_PALETTES.get(domain, COLOR_PALETTES['general'])
-        logger.info(f"🎨 Detected domain: {domain}")
+        logger.info(f"🎨 Agent detected domain: {domain}, sections: {ai_sections}")
         
-        # Step 2: Analyze column relationships
-        relationships = analyze_column_relationships(df)
-        logger.info(f"🔗 Found {len(relationships)} data relationships")
+        # ============================================================
+        # AGENT 3: AI Schema Agent & Premium Builder (LLM-Driven)
+        # ============================================================
+        try:
+            from core.ai_dashboard_agent import build_dashboard_schema_agent
+            from core.universal_builder import execute_llm_chart_spec
+            
+            logger.info("🤖 Asking LLM to architect dashboard schema and theme...")
+            schema_output = build_dashboard_schema_agent(df, domain, chat)
+            
+            ai_theme = schema_output.get("theme", {
+                "background_color": "#0b1120",
+                "card_background": "#151e32",
+                "border_color": "#2a3441",
+                "text_color": "#f8fafc",
+                "text_secondary": "#e2e8f0",
+                "chart_palette": palette['chart']
+            })
+            chart_specs = schema_output.get("charts", [])
+            
+            logger.info(f"📋 LLM Architect generated {len(chart_specs)} chart specifications with custom theme")
+            
+            charts = []
+            for spec in chart_specs:
+                # Use AI generated palette if available
+                chart_palette = ai_theme.get("chart_palette", palette['chart'])
+                chart = execute_llm_chart_spec(df, spec, chart_palette)
+                if chart:
+                    charts.append(chart)
+                    
+            # Supplement with heuristics if LLM misses the target density
+            if len(charts) < 20:
+                logger.info(f"Supplementing {len(charts)} LLM charts with heuristic engine to hit density target.")
+                relationships = analyze_column_relationships(df)
+                heuristic_charts = autonomous_chart_selection(df, domain, relationships)
+                
+                existing_titles = {c.get('title') for c in charts}
+                for hc in heuristic_charts:
+                    if hc.get('title') not in existing_titles and len(charts) < 25:
+                        charts.append(hc)
+                        existing_titles.add(hc.get('title'))
+        except Exception as e:
+            logger.error(f"Error in LLM Agent Builder: {e}. Falling back to pure heuristics.")
+            relationships = analyze_column_relationships(df)
+            charts = autonomous_chart_selection(df, domain, relationships)
+            ai_theme = {
+                "background_color": "#0b1120",
+                "card_background": "#151e32",
+                "border_color": "#2a3441",
+                "text_color": "#f8fafc",
+                "text_secondary": "#e2e8f0",
+                "chart_palette": palette['chart']
+            }
+            
+        logger.info(f"📊 Finalized {len(charts)} premium charts")
         
-        # Step 3: AUTONOMOUS chart selection
-        charts = autonomous_chart_selection(df, domain, relationships)
-        logger.info(f"📊 Generated {len(charts)} autonomous charts")
+        # ============================================================
+        # AGENT 4: Section Assignment Agent
+        # Distributes charts into the AI-generated sections
+        # ============================================================
+        sections = assign_charts_to_sections(charts, ai_sections, numeric_cols, categorical_cols)
+        logger.info(f"📂 Assigned charts to {len(sections)} sections")
         
-        # Step 4: Calculate POWER BI-STYLE ADVANCED KPIs
+        # Calculate POWER BI-STYLE ADVANCED KPIs
         kpis = calculate_advanced_kpis(df, palette)
         
-        # Step 5: Generate insights from real data
+        # Generate insights from real data
         insights = generate_real_insights(df)
         
-        # Step 6: Generate recommendations
+        # Generate recommendations
         recommendations = generate_recommendations(df)
         
-        # Step 7: Generate title (FAST - use LLM only if quick, otherwise fallback)
-        title = f"{domain.title()} Analytics Dashboard"  # Default fallback
-        
-        try:
-            import asyncio
-            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-            
-            def get_llm_title():
-                cols = list(df.columns)[:6]
-                return chat(f"3-word dashboard title for: {cols}. Just title.", temperature=0.2, max_tokens=15).strip().strip('"\'')
-            
-            # 🚀 FAST: Use ThreadPoolExecutor with 2s timeout
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(get_llm_title)
-                try:
-                    generated_title = future.result(timeout=2.0)  # 2 second max
+        # Generate Interactive Slicers / Filters
+        active_slicers = []
+        for col in categorical_cols:
+            if df[col].nunique() < 25 and df[col].nunique() > 1: # Slicers with 2 to 24 options
+                active_slicers.append({
+                    "column": col,
+                    "options": sorted([str(x) for x in df[col].dropna().unique().tolist()])
+                })
+                if len(active_slicers) >= 4: # Limit to top 4 categorical columns
+                    break
                     
-                    # Validate title
-                    if generated_title and len(generated_title) < 50:
-                        if not any(err in generated_title.lower() for err in ['error', 'rate limit', 'busy', 'unable', 'connection']):
-                            title = generated_title
-                except FuturesTimeoutError:
-                    logger.info("⏱️ Title generation timeout - using fallback")
-                except:
-                    pass
-        except:
-            pass  # Use default title
+        # Generate Executive Summary Ticker
+        exec_summary = f"Live Data Intelligence: {len(df):,} {domain.title()} records analyzed."
+        if kpis and len(kpis) > 0:
+            exec_summary += f" Top Driver: {kpis[0].get('title', 'Metric')} stands at {kpis[0].get('value', 0)}."
+        if insights and len(insights) > 0:
+            exec_summary += f" AI Observation: {insights[0]}"
         
         result = sanitize_for_json({
-            "dashboard_title": title,
+            "dashboard_title": ai_title,
             "domain": domain,
-            "theme": {"primary": palette['primary'][0], "accent": palette['accent'][0]},
+            "theme": ai_theme,
             "kpis": kpis,
-            "charts": charts,
+            "sections": sections,
+            "charts": charts,  # Keep flat list for backward compatibility
             "insights": insights,
             "recommendations": recommendations,
+            "filters": active_slicers,
+            "executive_summary": exec_summary,
+            "data_grid": {
+                "columns": df.columns.tolist(),
+                "rows": df.head(100).fillna("").to_dict(orient="records")
+            },
             "generated_at": datetime.now().isoformat(),
             "data_source": f"{len(df):,} rows × {len(df.columns)} columns"
         })
@@ -2501,6 +2624,64 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
         import traceback
         traceback.print_exc()
         return {"error": str(e)}
+
+
+def assign_charts_to_sections(charts: List[Dict], section_names: List[str], 
+                               numeric_cols: List[str], categorical_cols: List[str]) -> List[Dict]:
+    """
+    SECTION ASSIGNMENT AGENT: Distributes charts evenly across AI-generated sections.
+    Uses chart type and analysis metadata to intelligently group them.
+    """
+    if not charts or not section_names:
+        return [{"name": "Overview", "charts": charts}]
+    
+    # Define chart-to-section affinity rules
+    section_affinity = {
+        0: ['bar', 'horizontal_bar', 'pie', 'donut', 'gauge', 'funnel', 'treemap', 'combo_bar_line'],  # Overview
+        1: ['histogram', 'box', 'violin', 'area', 'band_chart', 'step_line'],  # Distribution
+        2: ['scatter', 'bubble', 'heatmap', 'parcoords', 'scatter_3d', 'density_contour'],  # Correlation
+        3: ['line', 'stacked_bar', 'grouped_bar', 'waterfall', 'pareto', 'lollipop', 'slope'],  # Performance
+        4: ['radar', 'sunburst', 'sankey', 'candlestick', 'diverging_bar', 'dumbbell', 'range_plot', 'choropleth', 'calendar_heatmap'],  # Advanced
+    }
+    
+    # Create section buckets
+    num_sections = len(section_names)
+    section_buckets = [[] for _ in range(num_sections)]
+    assigned = set()
+    
+    # Phase 1: Assign by affinity
+    for chart in charts:
+        chart_type = chart.get('type', 'bar')
+        chart_id = chart.get('chart_id', '')
+        
+        for section_idx, affinity_types in section_affinity.items():
+            if section_idx >= num_sections:
+                break
+            if chart_type in affinity_types and chart_id not in assigned:
+                section_buckets[section_idx].append(chart)
+                assigned.add(chart_id)
+                break
+    
+    # Phase 2: Distribute unassigned charts round-robin
+    unassigned = [c for c in charts if c.get('chart_id', '') not in assigned]
+    for i, chart in enumerate(unassigned):
+        section_buckets[i % num_sections].append(chart)
+    
+    # Build final sections array
+    sections = []
+    for i, name in enumerate(section_names):
+        if i < len(section_buckets) and section_buckets[i]:
+            sections.append({
+                "name": name,
+                "charts": section_buckets[i]
+            })
+    
+    # If any sections are empty, redistribute
+    non_empty = [s for s in sections if s["charts"]]
+    if not non_empty:
+        return [{"name": section_names[0], "charts": charts}]
+    
+    return non_empty
 
 
 # ================= POWER BI ADVANCED CALCULATIONS =================
@@ -3530,3 +3711,123 @@ Format: Start each with an action verb and use '→' to show expected impact."""
     
     return sanitize_for_json(recs[:4])
 
+def create_3d_surface_chart(df, rel, colors):
+    x, y, z = rel['x'], rel['y'], rel['z']
+    df_sample = df.dropna(subset=[x, y, z]).head(300)
+    return {
+        'chart_id': f'surface_{x}_{y}_{z}',
+        'title': f'3D Surface Mesh of {z} by {x} & {y}',
+        'type': 'mesh3d',
+        'plotly_config': {
+            'data': [{
+                'type': 'mesh3d',
+                'x': df_sample[x].tolist(),
+                'y': df_sample[y].tolist(),
+                'z': df_sample[z].tolist(),
+                'opacity': 0.8,
+                'color': colors[0]
+            }],
+            'layout': {
+                'paper_bgcolor': 'rgba(0,0,0,0)',
+                'scene': {
+                    'xaxis': {'title': x},
+                    'yaxis': {'title': y},
+                    'zaxis': {'title': z}
+                }
+            }
+        }
+    }
+
+def create_3d_bubble_chart(df, rel, colors):
+    x, y, z, c_col = rel['x'], rel['y'], rel['z'], rel['color']
+    df_sample = df.dropna(subset=[x, y, z]).head(200)
+    size_col = df_sample[c_col] if df_sample[c_col].dtype in ['int64', 'float64'] else df_sample[z]
+    s_min = size_col.min()
+    s_range = size_col.max() - s_min if size_col.max() > s_min else 1
+    sizes = ((size_col - s_min) / s_range * 20 + 5).tolist()
+    return {
+        'chart_id': f'3dbubble_{x}_{y}_{z}',
+        'title': f'3D Bubble: {x}, {y}, {z}',
+        'type': 'scatter3d',
+        'plotly_config': {
+            'data': [{
+                'type': 'scatter3d',
+                'mode': 'markers',
+                'x': df_sample[x].tolist(),
+                'y': df_sample[y].tolist(),
+                'z': df_sample[z].tolist(),
+                'marker': {
+                    'size': sizes,
+                    'color': (df_sample[c_col].astype('category').cat.codes if df[c_col].dtype == 'object' else df_sample[c_col]).tolist(),
+                    'colorscale': 'Plasma',
+                    'opacity': 0.7,
+                    'line': {'width': 1, 'color': '#ffffff'}
+                }
+            }],
+            'layout': {
+                'paper_bgcolor': 'rgba(0,0,0,0)',
+                'scene': {
+                    'xaxis': {'title': x},
+                    'yaxis': {'title': y},
+                    'zaxis': {'title': z}
+                }
+            }
+        }
+    }
+
+def create_polar_bar_chart(df, rel, colors):
+    cat, num = rel['categorical'], rel['numeric']
+    grouped = df.groupby(cat)[num].sum().nlargest(12)
+    return {
+        'chart_id': f'polar_{cat}_{num}',
+        'title': f'Polar Dist: {num} by {cat}',
+        'type': 'barpolar',
+        'plotly_config': {
+            'data': [{
+                'type': 'barpolar',
+                'r': [float(v) for v in grouped.values],
+                'theta': [str(l)[:15] for l in grouped.index],
+                'marker': {
+                    'color': colors[:len(grouped)] + [colors[0]]*(12-len(grouped)),
+                    'line': {'color': 'white', 'width': 1}
+                },
+                'opacity': 0.8
+            }],
+            'layout': {
+                'paper_bgcolor': 'rgba(0,0,0,0)',
+                'polar': {
+                    'radialaxis': {'visible': True, 'gridcolor': 'rgba(255,255,255,0.1)'},
+                    'angularaxis': {'gridcolor': 'rgba(255,255,255,0.1)'}
+                },
+                'showlegend': False
+            }
+        }
+    }
+
+def create_density_contour_chart(df, rel, colors):
+    x, y = rel['x'], rel['y']
+    df_sample = df.dropna(subset=[x, y]).head(500)
+    return {
+        'chart_id': f'contour_{x}_{y}',
+        'title': f'Density Contour: {x} vs {y}',
+        'type': 'histogram2dcontour',
+        'plotly_config': {
+            'data': [{
+                'type': 'histogram2dcontour',
+                'x': df_sample[x].tolist(),
+                'y': df_sample[y].tolist(),
+                'colorscale': 'Viridis',
+                'reversescale': True,
+                'contours': {
+                    'showlines': True,
+                    'size': 0.5
+                }
+            }],
+            'layout': {
+                'paper_bgcolor': 'rgba(0,0,0,0)',
+                'plot_bgcolor': 'rgba(0,0,0,0)',
+                'xaxis': {'title': x, 'gridcolor': 'rgba(255,255,255,0.05)'},
+                'yaxis': {'title': y, 'gridcolor': 'rgba(255,255,255,0.05)'}
+            }
+        }
+    }

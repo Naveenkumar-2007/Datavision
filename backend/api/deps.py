@@ -25,7 +25,7 @@ try:
         require_authenticated_user,
         get_user_id_from_token,
         get_user_id_from_body_deprecated,
-        decode_supabase_jwt
+        decode_jwt_token
     )
     AUTH_AVAILABLE = True
 except ImportError as e:
@@ -53,14 +53,36 @@ async def get_current_user_id(
     # Try JWT authentication first
     if authorization and authorization.startswith("Bearer "):
         token = authorization[7:]
-        try:
-            if AUTH_AVAILABLE:
-                payload = decode_supabase_jwt(token)
-                user_id = payload.get("sub")
-                if user_id:
-                    return user_id
-        except Exception as e:
-            logger.debug(f"JWT decode failed: {e}")
+        
+        # Check if it's a Developer API Token
+        if token.startswith("dv_live_") or token.startswith("dv_test_"):
+            try:
+                from database.db import AsyncSessionLocal
+                from database.orm import DeveloperAPIKey
+                from sqlalchemy import select
+                
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(select(DeveloperAPIKey).filter(DeveloperAPIKey.api_key == token))
+                    key = result.scalars().first()
+                    if key:
+                        if key.status == 'revoked':
+                            raise HTTPException(status_code=401, detail="API Key has been revoked")
+                        key.total_calls += 1
+                        await db.commit()
+                        return str(key.user_id)
+            except Exception as e:
+                logger.debug(f"Developer token decode failed: {e}")
+                
+        # Standard JWT decode
+        else:
+            try:
+                if AUTH_AVAILABLE:
+                    payload = decode_jwt_token(token)
+                    user_id = payload.get("sub")
+                    if user_id:
+                        return user_id
+            except Exception as e:
+                logger.debug(f"JWT decode failed: {e}")
     
     # Fallback to X-User-ID header
     if x_user_id and x_user_id not in ["null", "undefined", "", "default"]:

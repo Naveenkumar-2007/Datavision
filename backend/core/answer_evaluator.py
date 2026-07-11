@@ -108,9 +108,13 @@ def evaluate_answer(answer: str, context: str, query: str = "") -> Dict:
     context_lower = context.lower()
     answer_lower = answer.lower()
     
+    # ⚡ FIX: Truncate context to prevent catastrophic regex CPU hanging on massive datasets
+    max_context_len = 5000
+    safe_context = context if len(context) < max_context_len else context[:max_context_len]
+    
     # Extract numbers from answer
     answer_numbers = extract_numbers(answer)
-    context_numbers = extract_numbers(context)
+    context_numbers = extract_numbers(safe_context)
     
     # Extract entities from answer
     answer_entities = extract_entities(answer)

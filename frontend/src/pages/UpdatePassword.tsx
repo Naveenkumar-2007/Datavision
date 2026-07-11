@@ -1,12 +1,12 @@
 /**
  * Update Password Page - For users who clicked the reset link from email
  * This page is shown after clicking the password reset link
- * Supports both Supabase native flow and custom token-based flow
+ * Supports both native auth flow and custom token-based flow
  */
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/auth-client';
 import { motion } from 'framer-motion';
 import { useUserStore } from '../store/userStore';
 import { Sun, Moon, Lock, CheckCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
@@ -65,7 +65,7 @@ export default function UpdatePassword() {
                 if (session?.user) {
                     setValidSession(true);
                 } else {
-                    // Try to get session from URL hash (Supabase recovery flow)
+                    // Try to get session from URL hash (recovery flow)
                     const hashParams = new URLSearchParams(window.location.hash.substring(1));
                     const accessToken = hashParams.get('access_token');
                     const type = hashParams.get('type');
@@ -95,7 +95,7 @@ export default function UpdatePassword() {
 
         checkSession();
 
-        // Listen for auth state changes (Supabase handles recovery flow)
+        // Listen for auth state changes (handles recovery flow)
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'PASSWORD_RECOVERY') {
                 setValidSession(true);
@@ -141,7 +141,7 @@ export default function UpdatePassword() {
                     setError(response.data.message || 'Failed to update password');
                 }
             } else {
-                // Use Supabase native flow
+                // Use native auth flow
                 const { error } = await supabase.auth.updateUser({
                     password: password
                 });

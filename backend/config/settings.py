@@ -58,14 +58,16 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ENV_PATH = PROJECT_ROOT / ".env"
 BACKEND_ENV = Path(__file__).resolve().parent.parent / ".env"
 
-if ENV_PATH.exists():
-    load_dotenv(ENV_PATH)
-    logger.info(f"Loaded .env from: {ENV_PATH}")
-elif BACKEND_ENV.exists():
-    load_dotenv(BACKEND_ENV)
-    logger.info(f"Loaded .env from: {BACKEND_ENV}")
-else:
-    load_dotenv()
+FRONTEND_ENV = PROJECT_ROOT / "frontend" / ".env"
+
+env_loaded = False
+for env_file in [ENV_PATH, BACKEND_ENV, FRONTEND_ENV]:
+    if env_file.exists():
+        load_dotenv(env_file, override=True)
+        logger.info(f"Loaded .env from: {env_file}")
+        env_loaded = True
+        
+if not env_loaded:
     logger.warning("No specific .env file found, using system environment")
 
 class Settings:
@@ -87,6 +89,9 @@ class Settings:
     FALLBACK_MODEL = "groq/llama-3.1-8b-instant"
     
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
+    # LLM Provider Support (groq | huggingface | ollama)
+    LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "groq").lower()
 
     # API Keys Management
     GROQ_API_KEYS = []
@@ -147,6 +152,10 @@ class Settings:
         # Gemini / Google
         if os.environ.get("GEMINI_API_KEY"):
             os.environ["GOOGLE_API_KEY"] = os.environ.get("GEMINI_API_KEY")
+            
+        # Nvidia
+        if os.environ.get("NVIDIA_API_KEY"):
+            logger.info("Loaded Nvidia API key")
 
     @classmethod
     def ensure_directories(cls):

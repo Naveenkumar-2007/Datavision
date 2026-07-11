@@ -3,18 +3,18 @@ Authentication Endpoints
 Handles signup, login, logout, OAuth, and magic link authentication
 """
 
+import re
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from database.db import get_db
 from database import (
     get_auth_service,
     get_current_user,
     get_current_user_optional,
-    AuthUser,
-    AuthSignUp,
-    AuthLogin,
-    AuthMagicLink
+    AuthUser
 )
 
 router = APIRouter()
@@ -33,7 +33,6 @@ class SignupRequest(BaseModel):
     @classmethod
     def validate_password_strength(cls, password: str) -> None:
         """Validate password meets security requirements"""
-        import re
         if len(password) < 8:
             raise ValueError("Password must be at least 8 characters long")
         if len(password) > 128:
@@ -72,24 +71,20 @@ class OAuthRequest(BaseModel):
 # ============================================================================
 
 @router.post("/signup")
-async def signup(request: SignupRequest):
+async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
     """
     Create a new user account with email and password.
-    Supabase sends confirmation email via configured SMTP (Resend).
     """
-    # SECURITY: Validate password strength
     try:
         SignupRequest.validate_password_strength(request.password)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
-    # SECURITY: Validate email format
-    import re
     email_pattern = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
     if not email_pattern.match(request.email):
         raise HTTPException(status_code=400, detail="Invalid email format")
     
-    auth_service = get_auth_service()
+    auth_service = get_auth_service(db)
     
     metadata = {}
     if request.full_name:
@@ -110,39 +105,17 @@ async def signup(request: SignupRequest):
         "success": True,
         "user": result.get("user"),
         "session": result.get("session"),
-        "message": "Account created! Please check your inbox to confirm your email."
-    }
-
-
-@router.get("/confirm-email")
-async def confirm_email(token: str):
-    """
-    Verify email confirmation token and mark user as verified.
-    Called when user clicks the confirmation link in email.
-    """
-    from services.confirmation_email import verify_confirmation_token
-    
-    result = await verify_confirmation_token(token)
-    
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Invalid token"))
-    
-    # Token is valid - user email is confirmed
-    return {
-        "success": True,
-        "message": "Email confirmed successfully! You can now log in.",
-        "email": result.get("email"),
-        "redirect": "/login"
+        "message": "Account created successfully!"
     }
 
 
 @router.post("/login")
-async def login(request: LoginRequest):
+async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
     """
     Login with email and password.
     Returns access token and user info.
     """
-    auth_service = get_auth_service()
+    auth_service = get_auth_service(db)
     
     result = await auth_service.login(
         email=request.email,
@@ -160,11 +133,11 @@ async def login(request: LoginRequest):
 
 
 @router.post("/logout")
-async def logout(current_user: AuthUser = Depends(get_current_user)):
+async def logout(current_user: AuthUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """
     Logout current user and invalidate session.
     """
-    auth_service = get_auth_service()
+    auth_service = get_auth_service(db)
     result = await auth_service.logout("")
     
     return {
@@ -174,12 +147,8 @@ async def logout(current_user: AuthUser = Depends(get_current_user)):
 
 
 @router.post("/magic-link")
-async def send_magic_link(request: MagicLinkRequest):
-    """
-    Send a magic link to the user's email for passwordless login.
-    """
-    auth_service = get_auth_service()
-    
+async def send_magic_link(request: MagicLinkRequest, db: AsyncSession = Depends(get_db)):
+    auth_service = get_auth_service(db)
     result = await auth_service.send_magic_link(request.email)
     
     if not result.get("success"):
@@ -192,12 +161,8 @@ async def send_magic_link(request: MagicLinkRequest):
 
 
 @router.post("/refresh")
-async def refresh_token(request: RefreshRequest):
-    """
-    Refresh access token using refresh token.
-    """
-    auth_service = get_auth_service()
-    
+async def refresh_token(request: RefreshRequest, db: AsyncSession = Depends(get_db)):
+    auth_service = get_auth_service(db)
     result = await auth_service.refresh_token(request.refresh_token)
     
     if not result.get("success"):
@@ -210,36 +175,76 @@ async def refresh_token(request: RefreshRequest):
 
 
 @router.get("/oauth/{provider}")
-async def get_oauth_url(provider: str, redirect_to: Optional[str] = None):
-    """
-    Get OAuth URL for social login.
-    Supported providers: google, github
-    """
+async def login_via_oauth(provider: str, request: Request):
     if provider not in ["google", "github"]:
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
     
-    auth_service = get_auth_service()
+    from core.auth import oauth
+    redirect_uri = request.url_for('auth_via_oauth_callback', provider=provider)
+    # Ensure redirect_uri uses https if running in production/HF Spaces
+    redirect_uri_str = str(redirect_uri).replace("http://", "https://") if "hf.space" in str(redirect_uri) else str(redirect_uri)
     
-    result = await auth_service.get_oauth_url(provider, redirect_to)
+    client = oauth.create_client(provider)
+    return await client.authorize_redirect(request, redirect_uri_str)
+
+
+@router.get("/oauth/{provider}/callback")
+async def auth_via_oauth_callback(provider: str, request: Request, db: AsyncSession = Depends(get_db)):
+    if provider not in ["google", "github"]:
+        raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
     
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("message", "Failed to get OAuth URL"))
+    from core.auth import oauth
+    import os
+    from fastapi.responses import RedirectResponse
     
-    return {
-        "success": True,
-        "provider": provider,
-        "url": result.get("url")
-    }
+    client = oauth.create_client(provider)
+    try:
+        token = await client.authorize_access_token(request)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"OAuth login failed: {str(e)}")
+    
+    email = None
+    full_name = None
+    
+    if provider == 'google':
+        user_info = token.get('userinfo')
+        if not user_info:
+            resp = await client.get('https://openidconnect.googleapis.com/v1/userinfo', token=token)
+            user_info = resp.json()
+        email = user_info.get('email')
+        full_name = user_info.get('name')
+    elif provider == 'github':
+        resp = await client.get('user', token=token)
+        profile = resp.json()
+        
+        email_resp = await client.get('user/emails', token=token)
+        emails = email_resp.json()
+        email = next((e['email'] for e in emails if e.get('primary')), None)
+        if not email and len(emails) > 0:
+            email = emails[0]['email']
+        
+        full_name = profile.get('name') or profile.get('login')
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Failed to retrieve email from OAuth provider")
+        
+    auth_service = get_auth_service(db)
+    result = await auth_service.update_or_create_oauth_user(provider, email, full_name)
+    
+    if result.get("success"):
+        access_token = result["session"]["access_token"]
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5174"))
+        return RedirectResponse(f"{frontend_url}/auth/callback?token={access_token}")
+        
+    raise HTTPException(status_code=400, detail="Failed to process OAuth login")
 
 
 @router.get("/me")
-async def get_current_user_info(current_user: AuthUser = Depends(get_current_user)):
+async def get_current_user_info(current_user: AuthUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """
     Get current authenticated user's information.
     """
-    auth_service = get_auth_service()
-    
-    # Get full profile from database
+    auth_service = get_auth_service(db)
     result = await auth_service.get_user_profile(current_user.id)
     
     return {
@@ -247,8 +252,7 @@ async def get_current_user_info(current_user: AuthUser = Depends(get_current_use
         "user": {
             "id": current_user.id,
             "email": current_user.email,
-            "role": current_user.role.value,
-            "is_admin": current_user.is_admin,
+            "role": getattr(current_user.role, 'value', current_user.role),
             "profile": result.get("profile") if result.get("success") else None
         }
     }
@@ -257,19 +261,16 @@ async def get_current_user_info(current_user: AuthUser = Depends(get_current_use
 @router.put("/profile")
 async def update_profile(
     updates: dict,
-    current_user: AuthUser = Depends(get_current_user)
+    current_user: AuthUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Update current user's profile.
-    """
-    # Only allow certain fields to be updated
     allowed_fields = {"full_name", "avatar_url", "company_name"}
     filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields}
     
     if not filtered_updates:
         raise HTTPException(status_code=400, detail="No valid fields to update")
     
-    auth_service = get_auth_service()
+    auth_service = get_auth_service(db)
     result = await auth_service.update_user_profile(current_user.id, filtered_updates)
     
     if not result.get("success"):
@@ -286,7 +287,6 @@ async def update_profile(
 async def check_auth(current_user: Optional[AuthUser] = Depends(get_current_user_optional)):
     """
     Check if user is authenticated.
-    Returns user info if authenticated, null if not.
     """
     if current_user:
         return {
@@ -294,8 +294,7 @@ async def check_auth(current_user: Optional[AuthUser] = Depends(get_current_user
             "user": {
                 "id": current_user.id,
                 "email": current_user.email,
-                "role": current_user.role.value,
-                "is_admin": current_user.is_admin
+                "role": getattr(current_user.role, 'value', current_user.role)
             }
         }
     else:

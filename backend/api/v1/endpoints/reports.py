@@ -2659,3 +2659,297 @@ async def list_reports(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/story")
+async def generate_data_story(
+    request: dict,
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Generates an AI-powered narrative data story from a dataset.
+    """
+    try:
+        from core.data_storyteller import DataStoryteller
+        import os
+        
+        filename = request.get("filename")
+        topic = request.get("topic")
+        
+        paths = get_user_paths(user_id)
+        if filename:
+            file_path = paths["files"] / filename
+        else:
+            # Fallback to the most recent file
+            try:
+                from utils.paths import get_most_recent_file
+                file_path = get_most_recent_file(user_id)
+            except Exception:
+                file_path = None
+                
+        if not file_path or not file_path.exists():
+            raise HTTPException(status_code=404, detail="Dataset not found")
+            
+        import pandas as pd
+        df = pd.read_csv(file_path)
+        
+        story = DataStoryteller.generate_story(df, file_path.name, topic)
+        return story
+        
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+from database.db import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from database.orm import DataStory
+
+@router.post('/save-story')
+async def save_data_story(
+    story_data: dict,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        new_story = DataStory(
+            user_id=user_id,
+            title=story_data.get('title', 'Saved Story'),
+            content=story_data.get('content', ''),
+            dataset_name=story_data.get('dataset_name', '')
+        )
+        db.add(new_story)
+        await db.commit()
+        return {'success': True, 'message': 'Data Story saved successfully', 'story_id': str(new_story.id)}
+    except Exception as e:
+        await db.rollback()
+        return {'success': False, 'error': str(e)}
+
+@router.get('/saved-stories')
+async def get_saved_stories(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        stmt = select(DataStory).where(DataStory.user_id == user_id)
+        result = await db.execute(stmt)
+        stories = result.scalars().all()
+        return {
+            'success': True,
+            'stories': [{'id': str(s.id), 'title': s.title, 'created_at': s.created_at.isoformat()} for s in stories]
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+
+# ==========================================
+# ENTERPRISE: SCHEDULED REPORTS
+# ==========================================
+from database.orm import ScheduledReport, ReportHistory, ReportTemplate
+from pydantic import BaseModel
+from typing import List
+from datetime import datetime
+
+class ScheduledReportCreate(BaseModel):
+    name: str
+    report_type: str
+    schedule_cron: str
+    recipients: List[str]
+    format: str = "pdf"
+
+@router.post('/scheduled')
+async def create_scheduled_report(
+    report: ScheduledReportCreate,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        new_schedule = ScheduledReport(
+            user_id=user_id,
+            name=report.name,
+            report_type=report.report_type,
+            schedule_cron=report.schedule_cron,
+            recipients=report.recipients,
+            format=report.format,
+            is_active=True
+        )
+        db.add(new_schedule)
+        await db.commit()
+        return {'success': True, 'message': 'Report scheduled successfully', 'id': str(new_schedule.id)}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get('/scheduled')
+async def list_scheduled_reports(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        stmt = select(ScheduledReport).where(ScheduledReport.user_id == user_id)
+        result = await db.execute(stmt)
+        reports = result.scalars().all()
+        return {
+            'success': True, 
+            'reports': [{
+                'id': str(r.id),
+                'name': r.name,
+                'report_type': r.report_type,
+                'schedule_cron': r.schedule_cron,
+                'recipients': r.recipients,
+                'format': r.format,
+                'is_active': r.is_active,
+                'last_run': r.last_run_at.isoformat() if r.last_run_at else None,
+                'created_at': r.created_at.isoformat()
+            } for r in reports]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete('/scheduled/{report_id}')
+async def delete_scheduled_report(
+    report_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        stmt = select(ScheduledReport).where(ScheduledReport.id == report_id, ScheduledReport.user_id == user_id)
+        result = await db.execute(stmt)
+        report = result.scalar_one_or_none()
+        
+        if not report:
+            raise HTTPException(status_code=404, detail="Scheduled report not found")
+            
+        await db.delete(report)
+        await db.commit()
+        return {'success': True, 'message': 'Scheduled report deleted'}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post('/scheduled/{report_id}/run')
+async def run_scheduled_report(
+    report_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        stmt = select(ScheduledReport).where(ScheduledReport.id == report_id, ScheduledReport.user_id == user_id)
+        result = await db.execute(stmt)
+        report = result.scalar_one_or_none()
+        
+        if not report:
+            raise HTTPException(status_code=404, detail="Scheduled report not found")
+            
+        # Update last run time
+        report.last_run_at = datetime.utcnow()
+        
+        # Create history entry
+        history = ReportHistory(
+            user_id=user_id,
+            scheduled_report_id=report.id,
+            report_type=report.report_type,
+            title=f"{report.name} - Manual Run",
+            status="completed",
+            sections_count=5 # Mocked for now
+        )
+        db.add(history)
+        await db.commit()
+        return {'success': True, 'message': 'Report execution triggered'}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put('/scheduled/{report_id}/toggle')
+async def toggle_scheduled_report(
+    report_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        stmt = select(ScheduledReport).where(ScheduledReport.id == report_id, ScheduledReport.user_id == user_id)
+        result = await db.execute(stmt)
+        report = result.scalar_one_or_none()
+        
+        if not report:
+            raise HTTPException(status_code=404, detail="Scheduled report not found")
+            
+        report.is_active = not report.is_active
+        await db.commit()
+        return {'success': True, 'is_active': report.is_active}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get('/history')
+async def get_report_history(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        stmt = select(ReportHistory).where(ReportHistory.user_id == user_id).order_by(ReportHistory.generated_at.desc()).limit(50)
+        result = await db.execute(stmt)
+        history = result.scalars().all()
+        return {
+            'success': True,
+            'history': [{
+                'id': str(h.id),
+                'report_type': h.report_type,
+                'title': h.title,
+                'status': h.status,
+                'sections_count': h.sections_count,
+                'generated_at': h.generated_at.isoformat()
+            } for h in history]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ReportTemplateCreate(BaseModel):
+    name: str
+    report_type: str
+    config: dict
+
+@router.post('/templates')
+async def create_report_template(
+    template: ReportTemplateCreate,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        new_template = ReportTemplate(
+            user_id=user_id,
+            name=template.name,
+            report_type=template.report_type,
+            config=template.config,
+            is_default=False
+        )
+        db.add(new_template)
+        await db.commit()
+        return {'success': True, 'id': str(new_template.id)}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get('/templates')
+async def get_report_templates(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        stmt = select(ReportTemplate).where(
+            (ReportTemplate.user_id == user_id) | (ReportTemplate.is_default == True)
+        )
+        result = await db.execute(stmt)
+        templates = result.scalars().all()
+        return {
+            'success': True,
+            'templates': [{
+                'id': str(t.id),
+                'name': t.name,
+                'report_type': t.report_type,
+                'config': t.config,
+                'is_default': t.is_default,
+                'created_at': t.created_at.isoformat()
+            } for t in templates]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

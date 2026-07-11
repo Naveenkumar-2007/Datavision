@@ -7,9 +7,15 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timedelta
+import uuid
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import func, or_
+from database.db import get_db
+from database.orm import UserProfile, UserFile, Conversation, UserQuery, AdminUser
 
 from database import (
-    get_supabase_admin_client,
     get_admin_user,
     get_super_admin_user,
     AuthUser,
@@ -51,34 +57,27 @@ async def list_users(
     per_page: int = 20,
     search: Optional[str] = None,
     role: Optional[str] = None,
-    current_user: AuthUser = Depends(get_admin_user)
+    current_user: AuthUser = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    List all users (admin only).
-    Supports pagination and filtering.
-    """
-    client = get_supabase_admin_client()
+    stmt = select(UserProfile)
     
-    # Build query
-    query = client.table("profiles").select("*", count="exact")
-    
-    # Apply filters
     if search:
-        query = query.or_(f"email.ilike.%{search}%,full_name.ilike.%{search}%")
-    
+        stmt = stmt.where(or_(UserProfile.email.ilike(f"%{search}%"), UserProfile.full_name.ilike(f"%{search}%")))
     if role:
-        query = query.eq("role", role)
+        stmt = stmt.where(UserProfile.role == role)
+        
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total = await db.scalar(count_stmt) or 0
     
-    # Apply pagination
-    offset = (page - 1) * per_page
-    query = query.range(offset, offset + per_page - 1).order("created_at", desc=True)
-    
-    result = query.execute()
+    stmt = stmt.order_by(UserProfile.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
+    result = await db.execute(stmt)
+    users = result.scalars().all()
     
     return {
         "success": True,
-        "users": result.data or [],
-        "total": result.count or 0,
+        "users": [{"id": str(u.id), "email": u.email, "full_name": u.full_name, "role": u.role, "created_at": u.created_at} for u in users],
+        "total": total,
         "page": page,
         "per_page": per_page
     }
@@ -87,30 +86,25 @@ async def list_users(
 @router.get("/users/{user_id}")
 async def get_user(
     user_id: str,
-    current_user: AuthUser = Depends(get_admin_user)
+    current_user: AuthUser = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Get a specific user's details (admin only).
-    """
-    client = get_supabase_admin_client()
-    
-    result = client.table("profiles").select("*").eq("id", user_id).single().execute()
-    
-    if not result.data:
+    stmt = select(UserProfile).where(UserProfile.id == uuid.UUID(user_id))
+    user = (await db.execute(stmt)).scalar_one_or_none()
+    if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    # Get user's stats
-    files_result = client.table("user_files").select("id", count="exact").eq("user_id", user_id).execute()
-    conversations_result = client.table("conversations").select("id", count="exact").eq("user_id", user_id).execute()
-    queries_result = client.table("user_queries").select("id", count="exact").eq("user_id", user_id).execute()
+        
+    files_count = await db.scalar(select(func.count()).select_from(UserFile).where(UserFile.user_id == user.id))
+    conv_count = await db.scalar(select(func.count()).select_from(Conversation).where(Conversation.user_id == user.id))
+    queries_count = await db.scalar(select(func.count()).select_from(UserQuery).where(UserQuery.user_id == user.id))
     
     return {
         "success": True,
-        "user": result.data,
+        "user": {"id": str(user.id), "email": user.email, "full_name": user.full_name, "role": user.role},
         "stats": {
-            "files_count": files_result.count or 0,
-            "conversations_count": conversations_result.count or 0,
-            "queries_count": queries_result.count or 0
+            "files_count": files_count or 0,
+            "conversations_count": conv_count or 0,
+            "queries_count": queries_count or 0
         }
     }
 
@@ -119,155 +113,105 @@ async def get_user(
 async def update_user_role(
     user_id: str,
     request: UpdateRoleRequest,
-    current_user: AuthUser = Depends(get_super_admin_user)
+    current_user: AuthUser = Depends(get_super_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Update a user's role (super admin only).
-    """
     if request.role not in ["user", "admin", "super_admin"]:
         raise HTTPException(status_code=400, detail="Invalid role")
-    
-    # Prevent self-demotion
     if user_id == current_user.id and request.role != "super_admin":
         raise HTTPException(status_code=400, detail="Cannot demote yourself")
-    
-    client = get_supabase_admin_client()
-    
-    result = client.table("profiles").update({"role": request.role}).eq("id", user_id).execute()
-    
-    if not result.data:
+        
+    user = (await db.execute(select(UserProfile).where(UserProfile.id == uuid.UUID(user_id)))).scalar_one_or_none()
+    if not user:
         raise HTTPException(status_code=404, detail="User not found")
+        
+    user.role = request.role
+    await db.commit()
     
     return {
         "success": True,
         "message": f"User role updated to {request.role}",
-        "user": result.data[0]
+        "user": {"id": str(user.id), "email": user.email, "role": user.role}
     }
 
 
 @router.delete("/users/{user_id}")
 async def delete_user(
     user_id: str,
-    current_user: AuthUser = Depends(get_super_admin_user)
+    current_user: AuthUser = Depends(get_super_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Delete a user account (super admin only).
-    This will cascade delete all user data.
-    """
-    # Prevent self-deletion
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
-    
-    client = get_supabase_admin_client()
-    
-    # Check if user exists
-    user_result = client.table("profiles").select("id, role").eq("id", user_id).single().execute()
-    
-    if not user_result.data:
+        
+    user = (await db.execute(select(UserProfile).where(UserProfile.id == uuid.UUID(user_id)))).scalar_one_or_none()
+    if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    # Prevent deleting other super admins
-    if user_result.data.get("role") == "super_admin":
+    if user.role == "super_admin":
         raise HTTPException(status_code=400, detail="Cannot delete super admin users")
+        
+    await db.delete(user)
+    await db.commit()
     
-    # Delete from auth.users (this will cascade to profiles due to FK)
-    try:
-        client.auth.admin.delete_user(user_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
-    
-    return {
-        "success": True,
-        "message": "User deleted successfully"
-    }
+    return {"success": True, "message": "User deleted successfully"}
 
 
 @router.post("/users/{user_id}/deactivate")
 async def deactivate_user(
     user_id: str,
-    current_user: AuthUser = Depends(get_admin_user)
+    current_user: AuthUser = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Deactivate a user account (admin only).
-    User will not be able to login.
-    """
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
-    
-    client = get_supabase_admin_client()
-    
-    result = client.table("profiles").update({"is_active": False}).eq("id", user_id).execute()
-    
-    if not result.data:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    return {
-        "success": True,
-        "message": "User deactivated"
-    }
+    user = (await db.execute(select(UserProfile).where(UserProfile.id == uuid.UUID(user_id)))).scalar_one_or_none()
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = False
+    await db.commit()
+    return {"success": True, "message": "User deactivated"}
 
 
 @router.post("/users/{user_id}/activate")
 async def activate_user(
     user_id: str,
-    current_user: AuthUser = Depends(get_admin_user)
+    current_user: AuthUser = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Activate a deactivated user account (admin only).
-    """
-    client = get_supabase_admin_client()
-    
-    result = client.table("profiles").update({"is_active": True}).eq("id", user_id).execute()
-    
-    if not result.data:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    return {
-        "success": True,
-        "message": "User activated"
-    }
+    user = (await db.execute(select(UserProfile).where(UserProfile.id == uuid.UUID(user_id)))).scalar_one_or_none()
+    if not user: raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = True
+    await db.commit()
+    return {"success": True, "message": "User activated"}
 
 
 @router.get("/stats")
 async def get_platform_stats(
-    current_user: AuthUser = Depends(get_admin_user)
+    current_user: AuthUser = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Get platform-wide statistics (admin only).
-    """
-    client = get_supabase_admin_client()
+    total_users = await db.scalar(select(func.count()).select_from(UserProfile))
+    total_files = await db.scalar(select(func.count()).select_from(UserFile))
+    total_convs = await db.scalar(select(func.count()).select_from(Conversation))
+    total_queries = await db.scalar(select(func.count()).select_from(UserQuery))
     
-    # Get counts
-    users_result = client.table("profiles").select("id", count="exact").execute()
-    files_result = client.table("user_files").select("id", count="exact").execute()
-    conversations_result = client.table("conversations").select("id", count="exact").execute()
-    queries_result = client.table("user_queries").select("id", count="exact").execute()
+    week_ago = datetime.now() - timedelta(days=7)
+    new_users = await db.scalar(select(func.count()).select_from(UserProfile).where(UserProfile.created_at >= week_ago))
+    new_queries = await db.scalar(select(func.count()).select_from(UserQuery).where(UserQuery.created_at >= week_ago))
     
-    # Get recent activity (last 7 days)
-    week_ago = (datetime.now() - timedelta(days=7)).isoformat()
-    
-    new_users_result = client.table("profiles").select("id", count="exact").gte("created_at", week_ago).execute()
-    new_queries_result = client.table("user_queries").select("id", count="exact").gte("created_at", week_ago).execute()
-    
-    # Get storage usage
-    storage_result = client.rpc("get_user_storage_used", {"p_user_id": None}).execute()
-    
-    # Get user role distribution
-    role_dist = client.table("profiles").select("role").execute()
+    roles = (await db.execute(select(UserProfile.role))).scalars().all()
     role_counts = {}
-    for row in (role_dist.data or []):
-        role = row.get("role", "user")
-        role_counts[role] = role_counts.get(role, 0) + 1
-    
+    for r in roles:
+        role_counts[r] = role_counts.get(r, 0) + 1
+        
     return {
         "success": True,
         "stats": {
-            "total_users": users_result.count or 0,
-            "total_files": files_result.count or 0,
-            "total_conversations": conversations_result.count or 0,
-            "total_queries": queries_result.count or 0,
-            "new_users_last_7_days": new_users_result.count or 0,
-            "queries_last_7_days": new_queries_result.count or 0,
+            "total_users": total_users,
+            "total_files": total_files,
+            "total_conversations": total_convs,
+            "total_queries": total_queries,
+            "new_users_last_7_days": new_users,
+            "queries_last_7_days": new_queries,
             "role_distribution": role_counts
         }
     }
@@ -275,89 +219,76 @@ async def get_platform_stats(
 
 @router.get("/admin-users")
 async def list_admin_users(
-    current_user: AuthUser = Depends(get_super_admin_user)
+    current_user: AuthUser = Depends(get_super_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    List all admin users (super admin only).
-    """
-    client = get_supabase_admin_client()
-    
-    result = client.table("admin_users")\
-        .select("*, profiles(email, full_name)")\
-        .eq("is_active", True)\
-        .execute()
+    from sqlalchemy.orm import selectinload
+    stmt = select(AdminUser).options(selectinload(AdminUser.user)).where(AdminUser.is_active == True)
+    admins = (await db.execute(stmt)).scalars().all()
     
     return {
         "success": True,
-        "admin_users": result.data or []
+        "admin_users": [{
+            "id": str(a.id), 
+            "user_id": str(a.user_id),
+            "admin_role": a.admin_role,
+            "profiles": {"email": a.user.email if a.user else None, "full_name": a.user.full_name if a.user else None}
+        } for a in admins]
     }
 
 
 @router.post("/grant-admin")
 async def grant_admin_access(
     request: AdminGrantRequest,
-    current_user: AuthUser = Depends(get_super_admin_user)
+    current_user: AuthUser = Depends(get_super_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Grant admin access to a user (super admin only).
-    """
     if request.admin_role not in ["moderator", "admin", "super_admin"]:
         raise HTTPException(status_code=400, detail="Invalid admin role")
-    
-    client = get_supabase_admin_client()
-    
-    # Check if user exists
-    user_result = client.table("profiles").select("id").eq("id", request.user_id).single().execute()
-    if not user_result.data:
+        
+    user = (await db.execute(select(UserProfile).where(UserProfile.id == uuid.UUID(request.user_id)))).scalar_one_or_none()
+    if not user:
         raise HTTPException(status_code=404, detail="User not found")
+        
+    user.role = request.admin_role
     
-    # Update user role in profiles
-    client.table("profiles").update({"role": request.admin_role}).eq("id", request.user_id).execute()
-    
-    # Create or update admin_users entry
-    admin_data = {
-        "user_id": request.user_id,
-        "admin_role": request.admin_role,
-        "permissions": request.permissions or {
-            "can_view_users": True,
-            "can_edit_users": request.admin_role in ["admin", "super_admin"],
-            "can_delete_users": request.admin_role == "super_admin",
-            "can_view_analytics": True
-        },
-        "granted_by": current_user.id,
-        "notes": request.notes,
-        "is_active": True
+    admin_user = (await db.execute(select(AdminUser).where(AdminUser.user_id == user.id))).scalar_one_or_none()
+    if not admin_user:
+        admin_user = AdminUser(user_id=user.id)
+        db.add(admin_user)
+        
+    admin_user.admin_role = request.admin_role
+    admin_user.permissions = request.permissions or {
+        "can_view_users": True,
+        "can_edit_users": request.admin_role in ["admin", "super_admin"],
+        "can_delete_users": request.admin_role == "super_admin",
+        "can_view_analytics": True
     }
+    admin_user.granted_by = uuid.UUID(current_user.id)
+    admin_user.notes = request.notes
+    admin_user.is_active = True
     
-    result = client.table("admin_users").upsert(admin_data, on_conflict="user_id").execute()
+    await db.commit()
     
-    return {
-        "success": True,
-        "message": f"Admin access granted with role: {request.admin_role}",
-        "admin_user": result.data[0] if result.data else None
-    }
+    return {"success": True, "message": f"Admin access granted with role: {request.admin_role}"}
 
 
 @router.delete("/revoke-admin/{user_id}")
 async def revoke_admin_access(
     user_id: str,
-    current_user: AuthUser = Depends(get_super_admin_user)
+    current_user: AuthUser = Depends(get_super_admin_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """
-    Revoke admin access from a user (super admin only).
-    """
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot revoke your own admin access")
-    
-    client = get_supabase_admin_client()
-    
-    # Update user role back to 'user'
-    client.table("profiles").update({"role": "user"}).eq("id", user_id).execute()
-    
-    # Deactivate admin_users entry
-    client.table("admin_users").update({"is_active": False}).eq("user_id", user_id).execute()
-    
-    return {
-        "success": True,
-        "message": "Admin access revoked"
-    }
+        
+    user = (await db.execute(select(UserProfile).where(UserProfile.id == uuid.UUID(user_id)))).scalar_one_or_none()
+    if user:
+        user.role = "user"
+        
+    admin_user = (await db.execute(select(AdminUser).where(AdminUser.user_id == uuid.UUID(user_id)))).scalar_one_or_none()
+    if admin_user:
+        admin_user.is_active = False
+        
+    await db.commit()
+    return {"success": True, "message": "Admin access revoked"}

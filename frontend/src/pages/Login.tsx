@@ -34,7 +34,7 @@ export default function Login() {
             if (error) throw error;
             navigate(from, { replace: true });
         } catch (err: any) {
-            setError(err.message || 'Failed to sign in');
+            setError(typeof err === 'string' ? err : (err.message || 'Failed to sign in'));
         } finally {
             setLoading(false);
         }
@@ -48,7 +48,7 @@ export default function Login() {
             if (error) throw error;
             // Navigation handled by OAuth callback or listener
         } catch (err: any) {
-            setError(err.message || 'Failed to sign in with Google');
+            setError(typeof err === 'string' ? err : (err.message || 'Failed to sign in with Google'));
             setLoading(false);
         }
     };
@@ -60,7 +60,7 @@ export default function Login() {
             const { error } = await signInWithGithub();
             if (error) throw error;
         } catch (err: any) {
-            setError(err.message || 'Failed to sign in with GitHub');
+            setError(typeof err === 'string' ? err : (err.message || 'Failed to sign in with GitHub'));
             setLoading(false);
         }
     };

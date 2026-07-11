@@ -29,9 +29,9 @@ def get_secure_user_id(
     """Get secure user_id prioritizing JWT over form/query data."""
     if authorization and authorization.startswith("Bearer "):
         try:
-            from core.auth import decode_supabase_jwt
+            from core.auth import decode_jwt_token
             token = authorization[7:]
-            payload = decode_supabase_jwt(token)
+            payload = decode_jwt_token(token)
             user_id = payload.get("sub")
             if user_id:
                 return user_id

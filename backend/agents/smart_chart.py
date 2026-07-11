@@ -91,6 +91,7 @@ IMPORTANT RULES:
 - Include proper titles, labels, and styling
 - Use dark theme colors (paper_bgcolor: "rgba(0,0,0,0)", font color: "#9ca3af")
 - Accent colors: teal (#14b8a6), indigo (#6366f1), amber (#f59e0b)
+- For pie/donut charts, use "labels" and "values" (NEVER "x" and "y") in the data array.
 
 Return your response in this EXACT format:
 {{
@@ -174,7 +175,8 @@ def should_visualize(query: str) -> bool:
         'pie', 'bar', 'line', 'scatter', 'distribution',
         'top', 'bottom', 'compare', 'trend', 'breakdown',
         'heatmap', 'histogram', 'funnel', 'gauge', 'mindmap',
-        'how many', 'what is the total', 'percentage'
+        'how many', 'what is the total', 'percentage',
+        'img', 'image', 'picture', 'dashboard', 'report'
     ]
     
     query_lower = query.lower()

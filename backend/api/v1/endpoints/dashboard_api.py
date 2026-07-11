@@ -114,3 +114,53 @@ async def get_dashboard_summary(
         
     except Exception as e:
         return {"error": str(e)}
+
+from database.db import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from database.orm import Dashboard, Chart
+
+@router.post('/save')
+async def save_dashboard(
+    dashboard_data: dict,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        title = dashboard_data.get('title', 'Saved Dashboard')
+        new_dashboard = Dashboard(user_id=user_id, title=title, layout=dashboard_data.get('layout', []))
+        db.add(new_dashboard)
+        await db.flush()
+
+        for chart in dashboard_data.get('charts', []):
+            new_chart = Chart(
+                dashboard_id=new_dashboard.id,
+                title=chart.get('title', 'Untitled Chart'),
+                chart_type=chart.get('type', 'bar'),
+                data=chart.get('data', []),
+                config=chart.get('config', {})
+            )
+            db.add(new_chart)
+            
+        await db.commit()
+        return {'success': True, 'message': 'Dashboard saved successfully', 'dashboard_id': str(new_dashboard.id)}
+    except Exception as e:
+        await db.rollback()
+        return {'success': False, 'error': str(e)}
+
+@router.get('/saved')
+async def get_saved_dashboards(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    try:
+        stmt = select(Dashboard).where(Dashboard.user_id == user_id)
+        result = await db.execute(stmt)
+        dashboards = result.scalars().all()
+        
+        return {
+            'success': True, 
+            'dashboards': [{'id': str(d.id), 'title': d.title, 'created_at': d.created_at.isoformat()} for d in dashboards]
+        }
+    except Exception as e:
+        return {'success': False, 'error': str(e)}

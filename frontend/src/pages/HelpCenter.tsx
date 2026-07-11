@@ -130,7 +130,7 @@ const HelpCenter: React.FC = () => {
                 },
                 {
                     question: "Is my data secure?",
-                    answer: "Yes! Your data is encrypted in transit and at rest. Files are stored securely on Supabase and Hugging Face infrastructure. Each user's data is isolated and private.",
+                    answer: "Yes! Your data is encrypted in transit and at rest. Files are stored securely on our PostgreSQL database and Hugging Face infrastructure. Each user's data is isolated and private.",
                     icon: Shield
                 },
                 {

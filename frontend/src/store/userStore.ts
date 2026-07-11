@@ -76,6 +76,8 @@ interface UserState {
   isDark: boolean;
   toggleTheme: () => void;
   setTheme: (isDark: boolean) => void;
+  accentTheme: string;
+  setAccentTheme: (theme: string) => void;
 }
 
 // NOTE: Removed createWelcomeMessage - WelcomeScreen in AnalystChat handles empty state
@@ -291,6 +293,37 @@ export const useUserStore = create<UserState>()(
         }
         return { isDark };
       }),
+      
+      accentTheme: (() => {
+        try {
+          const savedPrefs = localStorage.getItem('userPreferences');
+          if (savedPrefs) {
+            const parsed = JSON.parse(savedPrefs);
+            if (parsed.preferences?.accentTheme) return parsed.preferences.accentTheme;
+          }
+          return 'default';
+        } catch (e) {
+          return 'default';
+        }
+      })(),
+
+      setAccentTheme: (theme) => set((state) => {
+        try {
+          const userId = get().user?.id || localStorage.getItem('userId') || 'default';
+          const saved = localStorage.getItem('userPreferences');
+          let prefs = saved ? JSON.parse(saved) : { preferences: {} };
+          if (!prefs.preferences) prefs.preferences = {};
+          prefs.preferences.accentTheme = theme;
+          localStorage.setItem('userPreferences', JSON.stringify(prefs));
+          
+          if (userId && userId !== 'default') {
+            localStorage.setItem(`userPreferences_${userId}`, JSON.stringify(prefs));
+          }
+        } catch (e) {
+          console.error("Failed to sync accent theme", e);
+        }
+        return { accentTheme: theme };
+      }),
     }),
     {
       name: 'ai-analyst-storage-v2',
@@ -301,6 +334,7 @@ export const useUserStore = create<UserState>()(
         graphStats: state.graphStats,
         queryStats: state.queryStats,
         isDark: state.isDark, // Persist theme
+        accentTheme: state.accentTheme, // Persist accent theme
       }),
     }
   )

@@ -34,8 +34,8 @@ def get_secure_user_id(body_user_id: str, x_user_id: Optional[str], authorizatio
     if authorization:
         try:
             token = authorization.replace("Bearer ", "")
-            from core.auth import decode_supabase_jwt
-            payload = decode_supabase_jwt(token)
+            from core.auth import decode_jwt_token
+            payload = decode_jwt_token(token)
             if payload and payload.get("sub"):
                 return payload["sub"]
         except Exception as e:
@@ -214,54 +214,110 @@ def get_user_data(user_id: str) -> pd.DataFrame:
     try:
         from utils.paths import STORAGE_BASE
         
-        # Load directly from user's uploaded files
-        user_files_dir = STORAGE_BASE / user_id / "files"
-        
-        if not user_files_dir.exists():
-            print(f"[DATA] No files directory for user {user_id}")
-            return pd.DataFrame()
-        
         all_dfs = []
-        for file_path in user_files_dir.glob("*.*"):
-            if file_path.suffix.lower() not in ['.csv', '.xlsx', '.xls']:
-                continue
-            
-            try:
-                print(f"[DATA] Loading file: {file_path.name}")
-                
-                if file_path.suffix.lower() == '.csv':
-                    df = pd.read_csv(file_path)
-                else:
-                    df = pd.read_excel(file_path)
-                
-                if not df.empty:
-                    # Keep original column names - no transformation!
-                    df['_source_file'] = file_path.name
-                    all_dfs.append(df)
-                    print(f"[DATA] Loaded {len(df)} rows with columns: {list(df.columns)}")
-                    
-            except Exception as e:
-                print(f"[DATA] Error loading {file_path}: {e}")
-                continue
         
-        if all_dfs:
-            # If multiple files, try to combine
-            if len(all_dfs) == 1:
-                result_df = all_dfs[0]
-            else:
-                # Check if they have same columns
-                first_cols = set(all_dfs[0].columns)
-                can_concat = all(set(df.columns) == first_cols for df in all_dfs)
+        # 1. Load directly from user's uploaded files
+        user_files_dir = STORAGE_BASE / user_id / "files"
+        if user_files_dir.exists():
+            for file_path in user_files_dir.glob("*.*"):
+                if file_path.suffix.lower() not in ['.csv', '.xlsx', '.xls']:
+                    continue
                 
-                if can_concat:
-                    result_df = pd.concat(all_dfs, ignore_index=True)
-                else:
-                    # Return largest file
-                    result_df = max(all_dfs, key=len)
+                try:
+                    print(f"[DATA] Loading file: {file_path.name}")
+                    
+                    if file_path.suffix.lower() == '.csv':
+                        df = pd.read_csv(file_path)
+                    else:
+                        df = pd.read_excel(file_path)
+                    
+                    if not df.empty:
+                        # Keep original column names - no transformation!
+                        df['_source_file'] = file_path.name
+                        all_dfs.append(df)
+                        print(f"[DATA] Loaded {len(df)} rows with columns: {list(df.columns)}")
+                        
+                except Exception as e:
+                    print(f"[DATA] Error loading {file_path}: {e}")
+                    continue
+
+        # 2. ⚡ Fetch LIVE Pipelines (Postgres, Snowflake)
+        try:
+            import psycopg2
+            import os
+            # Connect to datavision DB
+            db_url = os.environ.get("DATABASE_URL", "postgresql://postgres:Naveen%402007@127.0.0.1:5432/datavision")
+            sync_url = db_url.replace("+asyncpg", "") # Convert async url to sync for psycopg2
             
-            # ⚡ Cache the result
-            _set_cached_df(user_id, result_df)
-            return result_df
+            with psycopg2.connect(sync_url) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, source_type, host, database_name, credentials, target_table FROM data_connections WHERE user_id = %s", (user_id,))
+                    connections = cur.fetchall()
+            
+            for conn_row in connections:
+                c_id, source_type, host, database_name, credentials, target_table = conn_row
+                
+                try:
+                    if source_type.lower() in ('postgres', 'postgresql') and target_table:
+                        from urllib.parse import quote_plus
+                        safe_credentials = quote_plus(credentials) if credentials else ""
+                        conn_str = f"postgresql://postgres:{safe_credentials}@{host}/{database_name}"
+                        query = f"SELECT * FROM {target_table} LIMIT 500000"
+                        live_df = pd.read_sql(query, conn_str)
+                        
+                        if not live_df.empty:
+                            live_df['_source_file'] = f"Live: {target_table} (PostgreSQL)"
+                            all_dfs.append(live_df)
+                            print(f"[DATA] Loaded {len(live_df)} rows from Live Postgres {target_table}")
+                            
+                    elif source_type.lower() == 'snowflake' and target_table:
+                        try:
+                            import snowflake.connector
+                            ctx = snowflake.connector.connect(
+                                user='admin',
+                                password=credentials,
+                                account=host,
+                                database=database_name,
+                                schema='PUBLIC'
+                            )
+                            query = f"SELECT * FROM {target_table} LIMIT 500000"
+                            live_df = pd.read_sql(query, ctx)
+                            ctx.close()
+                            if not live_df.empty:
+                                live_df['_source_file'] = f"Live: {target_table} (Snowflake)"
+                                all_dfs.append(live_df)
+                        except ImportError:
+                            print("[DATA] Snowflake connector not installed, skipping.")
+                        except Exception as e:
+                            print(f"[DATA] Snowflake connection failed: {e}")
+                            
+                except Exception as e:
+                    print(f"[DATA] Error loading live connection {c_id}: {e}")
+                    
+        except Exception as e:
+            print(f"[DATA] Failed to fetch live connections from DB: {e}")
+        
+        if not all_dfs:
+            print(f"[DATA] No files or live connections for user {user_id}")
+            return pd.DataFrame()
+            
+        # If multiple files/streams, try to combine
+        if len(all_dfs) == 1:
+            result_df = all_dfs[0]
+        else:
+            # Check if they have same columns
+            first_cols = set(all_dfs[0].columns)
+            can_concat = all(set(df.columns) == first_cols for df in all_dfs)
+            
+            if can_concat:
+                result_df = pd.concat(all_dfs, ignore_index=True)
+            else:
+                # Return largest file/stream if they can't be concatenated safely
+                result_df = max(all_dfs, key=len)
+        
+        # ⚡ Cache the result
+        _set_cached_df(user_id, result_df)
+        return result_df
         
         # Fallback to revenue_dataframe for backward compatibility
         print(f"[DATA] No files found, falling back to revenue_dataframe")

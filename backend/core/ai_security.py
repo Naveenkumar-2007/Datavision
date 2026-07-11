@@ -76,8 +76,8 @@ def sanitize_user_input(user_input: str) -> str:
     # Remove control characters
     sanitized = "".join(char for char in user_input if ord(char) >= 32 or char in "\n\t")
     
-    # Limit length to prevent context stuffing
-    max_length = 10000
+    # Limit length to prevent context stuffing (Increased to 500k for Agentic IDE workloads)
+    max_length = 500000
     if len(sanitized) > max_length:
         sanitized = sanitized[:max_length]
         logger.warning(f"User input truncated from {len(user_input)} to {max_length} chars")
@@ -207,7 +207,7 @@ class AISecurityFilter:
         
         # Patterns that should never appear in output
         sensitive_patterns = [
-            r"SUPABASE_[A-Z_]+\s*[=:]\s*\S+",
+            r"(?:SUPABASE|DATABASE|JWT)_[A-Z_]+\s*[=:]\s*\S+",
             r"GROQ_API_KEY\s*[=:]\s*\S+",
             r"sk-[a-zA-Z0-9]+",  # OpenAI-style API keys
             r"gsk_[a-zA-Z0-9]+",  # Groq API keys

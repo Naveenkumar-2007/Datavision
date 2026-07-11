@@ -31,8 +31,8 @@ def get_secure_user_id(form_user_id: str, x_user_id: Optional[str], authorizatio
     if authorization:
         try:
             token = authorization.replace("Bearer ", "")
-            from core.auth import decode_supabase_jwt
-            payload = decode_supabase_jwt(token)
+            from core.auth import decode_jwt_token
+            payload = decode_jwt_token(token)
             if payload and payload.get("sub"):
                 return payload["sub"]
         except Exception as e:

@@ -1,9 +1,9 @@
-# Company Profile Module - Supabase-backed Company Intelligence
+# Company Profile Module - PostgreSQL-backed Company Intelligence
 """
 Stores and retrieves company context for ChatGPT-level business awareness.
 Enables company-aware, role-aware, and context-aware responses.
 
-Storage: Supabase (cloud-persistent for multi-tenant SaaS)
+Storage: Local JSON files (per-workspace)
 """
 
 import json
@@ -12,12 +12,10 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 
-# Supabase client
-try:
-    from database.supabase_client import get_supabase_admin_client
-    SUPABASE_AVAILABLE = True
-except ImportError:
-    SUPABASE_AVAILABLE = False
+import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Industry(Enum):
@@ -156,102 +154,88 @@ class CompanyProfile:
 
 
 # ============================================================================
-# SUPABASE STORAGE
+# LOCAL FILE STORAGE (replaces Supabase)
 # ============================================================================
 
-def _get_supabase():
-    """Get Supabase client with error handling"""
-    if not SUPABASE_AVAILABLE:
-        return None
-    return get_supabase_admin_client()
+_PROFILES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "company_profiles")
+
+def _ensure_profiles_dir():
+    """Ensure the profiles storage directory exists."""
+    os.makedirs(_PROFILES_DIR, exist_ok=True)
+
+def _profile_path(workspace_id: str) -> str:
+    """Get the file path for a workspace's company profile."""
+    return os.path.join(_PROFILES_DIR, f"{workspace_id}.json")
 
 
 def save_company_profile(profile: CompanyProfile) -> bool:
     """
-    Save company profile to Supabase.
+    Save company profile to local JSON file.
     Creates or updates the profile for the workspace.
     """
-    supabase = _get_supabase()
-    
-    if not supabase:
-        print("⚠️ Supabase not available, cannot save company profile")
-        return False
+    _ensure_profiles_dir()
     
     try:
-        # Convert to dict for storage
         profile.updated_at = datetime.now().isoformat()
         profile_data = asdict(profile)
         
-        # Upsert into company_profiles table
-        result = supabase.table("company_profiles").upsert(
-            profile_data,
-            on_conflict="workspace_id"
-        ).execute()
+        path = _profile_path(profile.workspace_id)
+        with open(path, 'w') as f:
+            json.dump(profile_data, f, indent=2, default=str)
         
-        print(f"✅ Saved company profile for {profile.company_name}")
+        logger.info(f"Saved company profile for {profile.company_name}")
         return True
         
     except Exception as e:
-        print(f"❌ Error saving company profile: {e}")
+        logger.error(f"Error saving company profile: {e}")
         return False
 
 
 def get_company_profile(workspace_id: str) -> Optional[CompanyProfile]:
     """
-    Retrieve company profile from Supabase.
-    Returns None if not found.
+    Retrieve company profile from local storage.
+    Returns default profile if not found.
     """
-    supabase = _get_supabase()
-    
-    if not supabase:
-        print("⚠️ Supabase not available, returning default profile")
-        return CompanyProfile(workspace_id=workspace_id)
+    _ensure_profiles_dir()
     
     try:
-        result = supabase.table("company_profiles").select("*").eq(
-            "workspace_id", workspace_id
-        ).execute()
+        path = _profile_path(workspace_id)
+        if not os.path.exists(path):
+            return CompanyProfile(workspace_id=workspace_id)
         
-        if result.data and len(result.data) > 0:
-            data = result.data[0]
-            return CompanyProfile(
-                workspace_id=data.get("workspace_id", workspace_id),
-                company_name=data.get("company_name", "Your Company"),
-                industry=data.get("industry", "other"),
-                fiscal_year_end_month=data.get("fiscal_year_end_month", 12),
-                currency=data.get("currency", "USD"),
-                currency_symbol=data.get("currency_symbol", "$"),
-                timezone=data.get("timezone", "UTC"),
-                kpi_definitions=data.get("kpi_definitions", {}),
-                terminology=data.get("terminology", {}),
-                benchmarks=data.get("benchmarks", {}),
-                branding=data.get("branding", {}),
-                created_at=data.get("created_at", datetime.now().isoformat()),
-                updated_at=data.get("updated_at", datetime.now().isoformat()),
-            )
+        with open(path, 'r') as f:
+            data = json.load(f)
         
-        # No profile found, return default
-        return CompanyProfile(workspace_id=workspace_id)
+        return CompanyProfile(
+            workspace_id=data.get("workspace_id", workspace_id),
+            company_name=data.get("company_name", "Your Company"),
+            industry=data.get("industry", "other"),
+            fiscal_year_end_month=data.get("fiscal_year_end_month", 12),
+            currency=data.get("currency", "USD"),
+            currency_symbol=data.get("currency_symbol", "$"),
+            timezone=data.get("timezone", "UTC"),
+            kpi_definitions=data.get("kpi_definitions", {}),
+            terminology=data.get("terminology", {}),
+            benchmarks=data.get("benchmarks", {}),
+            branding=data.get("branding", {}),
+            created_at=data.get("created_at", datetime.now().isoformat()),
+            updated_at=data.get("updated_at", datetime.now().isoformat()),
+        )
         
     except Exception as e:
-        print(f"⚠️ Error loading company profile: {e}")
+        logger.warning(f"Error loading company profile: {e}")
         return CompanyProfile(workspace_id=workspace_id)
 
 
 def delete_company_profile(workspace_id: str) -> bool:
-    """Delete company profile from Supabase."""
-    supabase = _get_supabase()
-    
-    if not supabase:
-        return False
-    
+    """Delete company profile from local storage."""
     try:
-        supabase.table("company_profiles").delete().eq(
-            "workspace_id", workspace_id
-        ).execute()
+        path = _profile_path(workspace_id)
+        if os.path.exists(path):
+            os.remove(path)
         return True
     except Exception as e:
-        print(f"❌ Error deleting company profile: {e}")
+        logger.error(f"Error deleting company profile: {e}")
         return False
 
 

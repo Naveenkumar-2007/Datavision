@@ -18,15 +18,17 @@ import {
   FileText,
   Loader,
   KeyRound,
+  MessageSquare
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/auth-client';
 import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
 import { api } from '@/services/api';
 import LogoImage from '@/components/LogoImage';
 import { getAuthHeadersSync } from '@/utils/userId';
+import AnalystChat from '@/pages/AnalystChat';
 
 
 
@@ -36,6 +38,7 @@ const Settings: React.FC = () => {
 
   const { user: authUser } = useAuth();
   const { isDark, toggleTheme, setTheme, setUser: setStoreUser } = useUserStore();
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Profile state - synced from auth on mount, saved per user
   const [profile, setProfile] = useState({
@@ -596,7 +599,7 @@ const Settings: React.FC = () => {
     }
 
     try {
-      // Update password using Supabase
+      // Update password
       const { error } = await supabase.auth.updateUser({
         password: newPassword
       });
@@ -707,7 +710,6 @@ const Settings: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-4 mb-2"
       >
-        <LogoImage size={48} className="rounded-xl shadow-lg" />
         <div className="mb-2">
           <h1 className="text-4xl font-bold" style={{ color: 'var(--text-primary)' }}>Settings</h1>
           <p className="text-gray-400">Manage your account and preferences</p>
@@ -797,9 +799,55 @@ const Settings: React.FC = () => {
         </div>
       </motion.div>
 
+      {/* AI Guardrails & Security */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
+        className="glass-card p-8 border border-red-500/20"
+      >
+        <div className="flex items-center space-x-4 mb-2">
+          <Shield className="w-6 h-6 text-red-500" />
+          <h2 className="text-2xl font-semibold text-white">Enterprise Security & AI Guardrails</h2>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 uppercase tracking-wider font-bold">Admin Only</span>
+        </div>
+        <p className="text-sm text-gray-400 mb-6">Manage data privacy and configure output guardrails for the autonomous Agentic AI.</p>
 
+        <div className="space-y-6">
+          <div className="flex items-center justify-between p-4 bg-dark-card rounded-xl border border-gray-800">
+            <div>
+              <div className="text-white font-medium mb-1">PII Data Masking Vault</div>
+              <div className="text-sm text-gray-400">Automatically scrub SSNs, credit cards, and sensitive identifiers before data hits the LLM.</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" defaultChecked />
+              <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+            </label>
+          </div>
 
-      {/* Preferences */}
+          <div className="flex items-center justify-between p-4 bg-dark-card rounded-xl border border-gray-800">
+            <div>
+              <div className="text-white font-medium mb-1">NeMo Output Guardrails</div>
+              <div className="text-sm text-gray-400">Strictly prevent the AI Analyst from hallucinating metrics or executing unsafe python code.</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" defaultChecked />
+              <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+            </label>
+          </div>
+
+          <div className="flex items-center justify-between p-4 bg-dark-card rounded-xl border border-gray-800">
+            <div>
+              <div className="text-white font-medium mb-1">Automated AI Evals</div>
+              <div className="text-sm text-gray-400">Run background validation models to score the AI's predictions before presenting to users.</div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox" className="sr-only peer" defaultChecked />
+              <div className="w-11 h-6 bg-dark-border rounded-full peer peer-checked:after:translate-x-full peer-checked:bg-red-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+            </label>
+          </div>
+        </div>
+      </motion.div>
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -814,9 +862,9 @@ const Settings: React.FC = () => {
         <div className="space-y-6">
           {/* Theme and Language Row */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-            {/* Theme */}
+            {/* Base Theme */}
             <div>
-              <label className="block text-sm text-gray-400 mb-2">Theme</label>
+              <label className="block text-sm text-gray-400 mb-2">Base Appearance</label>
               <select
                 value={isDark ? 'dark' : 'light'}
                 onChange={(e) => {
@@ -837,6 +885,29 @@ const Settings: React.FC = () => {
               </select>
             </div>
 
+            {/* Custom Theme Builder (Accent) */}
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">Accent Theme</label>
+              <select
+                value={useUserStore.getState().accentTheme}
+                onChange={(e) => {
+                  const newAccent = e.target.value;
+                  useUserStore.getState().setAccentTheme(newAccent);
+                }}
+                className="w-full px-4 py-3 rounded-xl focus:outline-none focus:border-primary-500 appearance-none cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--bg-card)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)'
+                }}
+              >
+                <option value="default">🟢 Default (Emerald/Green)</option>
+                <option value="obsidian">🌌 Obsidian (Blue/Teal)</option>
+                <option value="aurora">✨ Aurora (Purple/Indigo)</option>
+                <option value="cyber">🔥 Cyber (Pink/Magenta)</option>
+              </select>
+            </div>
           </div>
         </div>
       </motion.div>
@@ -941,7 +1012,7 @@ const Settings: React.FC = () => {
             </div>
 
             {emailPrefs.weekly_report_enabled && (
-              <div className="ml-8 grid grid-cols-3 gap-4">
+              <div className="ml-4 sm:ml-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">Day</label>
                   <select

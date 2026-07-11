@@ -86,3 +86,6 @@ backend/uploads/
 # FAISS indexes
 *.faiss
 faiss/
+
+# Qdrant data
+qdrant_data/

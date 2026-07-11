@@ -20,7 +20,7 @@ try:
     RATE_LIMITER_AVAILABLE = True
 except ImportError:
     RATE_LIMITER_AVAILABLE = False
-    print("⚠️ Rate limiter not available")
+    print("Rate limiter not available")
 
 # 🔒 SECURITY: Import AI security filter
 try:
@@ -28,15 +28,17 @@ try:
     AI_SECURITY_AVAILABLE = True
 except ImportError:
     AI_SECURITY_AVAILABLE = False
-    print("⚠️ AI security filter not available")
+    print("AI security filter not available")
 
 from agents.router import route_question
 from vector.store_faiss import FaissStore
 from graph.query import load_graph, graph_snapshot, revenue_dataframe, get_user_currency
-from core.llm import chat
+from core.llm import chat, set_requested_model
 from core.cache import QueryCache
 from config.settings import Settings
 from utils.paths import get_user_paths, STORAGE_BASE
+from core.security_vault import SecurityVault
+from agents.market_context import MarketContextAgent
 
 # Import Tier 1 RAG enhancements
 try:
@@ -45,10 +47,10 @@ try:
     from core.answer_evaluator import evaluate_answer, get_confidence_badge
     from core.reranker import rerank, is_reranker_available
     RAG_ENHANCEMENTS = True
-    print("✅ RAG Enhancements loaded: Query Decomposition, MMR, Evaluator, Reranker")
+    print("RAG Enhancements loaded: Query Decomposition, MMR, Evaluator, Reranker")
 except ImportError as e:
     RAG_ENHANCEMENTS = False
-    print(f"⚠️ RAG Enhancements not available: {e}")
+    print(f" RAG Enhancements not available: {e}")
 
 # Import Tier 2 Advanced RAG (HyDE, Corrective, Self-Reflection)
 try:
@@ -58,20 +60,20 @@ try:
     from core.model_config import get_model, get_model_api_id, get_available_models_api
     from core.query_router import get_routing_decision, analyze_query
     ADVANCED_RAG = True
-    print("✅ Advanced RAG loaded: HyDE, Corrective, Self-Reflection, Query Router")
+    print("Advanced RAG loaded: HyDE, Corrective, Self-Reflection, Query Router")
 except ImportError as e:
     ADVANCED_RAG = False
-    print(f"⚠️ Advanced RAG not available: {e}")
+    print(f" Advanced RAG not available: {e}")
 
 # Import Tier 3 Agentic RAG and Multi-RAG
 try:
     from core.agentic_rag import AgenticRAG, create_agentic_rag_prompt
     from core.multi_rag import MultiRAG, RetrievalSource, detect_best_sources, format_multi_rag_context
     AGENTIC_RAG = True
-    print("✅ Agentic RAG loaded: Tool-using agents, Multi-source retrieval, RRF fusion")
+    print("Agentic RAG loaded: Tool-using agents, Multi-source retrieval, RRF fusion")
 except ImportError as e:
     AGENTIC_RAG = False
-    print(f"⚠️ Agentic RAG not available: {e}")
+    print(f" Agentic RAG not available: {e}")
 
 # Import 5 Unique Mode Engines (Silicon Valley Powerhouses)
 try:
@@ -81,10 +83,10 @@ try:
     from core.mode_engines.predict_engine import predict_response_sync
     from core.mode_engines.agent_engine import agent_response_sync
     MODE_ENGINES_AVAILABLE = True
-    print("✅ 5 Unique Mode Engines loaded: Analyst, DeepThink, Vision, Predict, Agent")
+    print("5 Unique Mode Engines loaded: Analyst, DeepThink, Vision, Predict, Agent")
 except ImportError as e:
     MODE_ENGINES_AVAILABLE = False
-    print(f"⚠️ Mode Engines not fully loaded: {e}")
+    print(f" Mode Engines not fully loaded: {e}")
 
 # Import chart generation for Plotly visualizations
 try:
@@ -103,19 +105,19 @@ except ImportError:
 try:
     from agents.smart_chart import smart_chart
     SMART_CHART_AVAILABLE = True
-    print("✅ Smart Chart loaded in chat.py - LLM-driven charts active")
+    print("Smart Chart loaded in chat.py - LLM-driven charts active")
 except ImportError:
     SMART_CHART_AVAILABLE = False
-    print("⚠️ Smart Chart not available in chat.py")
+    print("Smart Chart not available in chat.py")
 
 # Smart MCP - Claude-style auto-selected tools
 try:
     from core.smart_mcp import smart_mcp_execute, format_mcp_response
     SMART_MCP_AVAILABLE = True
-    print("✅ Smart MCP loaded - Claude-style tool execution active")
+    print("Smart MCP loaded - Claude-style tool execution active")
 except ImportError:
     SMART_MCP_AVAILABLE = False
-    print("⚠️ Smart MCP not available")
+    print("Smart MCP not available")
 
 
 # Import memory engine for chart context storage - USE SHARED SINGLETON
@@ -135,14 +137,25 @@ except ImportError:
     async def get_current_user_optional(authorization: Optional[str] = Header(None, alias="Authorization")):
         return None
 
+# Import Vector Store (Qdrant) for long-term memory
+try:
+    from services.vector_store import VectorStoreService
+    vector_store = VectorStoreService()
+    VECTOR_MEMORY_AVAILABLE = vector_store.is_ready
+    print(f" Vector Memory (Qdrant) loaded: {VECTOR_MEMORY_AVAILABLE}")
+except ImportError as e:
+    vector_store = None
+    VECTOR_MEMORY_AVAILABLE = False
+    print(f" Vector Memory not available: {e}")
+
 # 🏆 Import Smart Suggestions for Competition-Winning Features
 try:
     from core.smart_suggestions import generate_smart_suggestions, calculate_confidence
     SMART_SUGGESTIONS_AVAILABLE = True
-    print("✅ Smart Suggestions loaded: Dynamic follow-ups and confidence scoring")
+    print("Smart Suggestions loaded: Dynamic follow-ups and confidence scoring")
 except ImportError as e:
     SMART_SUGGESTIONS_AVAILABLE = False
-    print(f"⚠️ Smart Suggestions not available: {e}")
+    print(f" Smart Suggestions not available: {e}")
     # Fallback functions
     def generate_smart_suggestions(query, response, columns=None, max_suggestions=3):
         return []
@@ -176,12 +189,12 @@ def append_chart_if_needed(response: str, query: str, user_id: str) -> str:
                     chart_result = generate_smart_chart(query, df)
                     if chart_result and '```plotly_chart' in chart_result:
                         response += chart_result
-                        print(f"✅ [VIZ] Generated SMART chart for: {query[:50]}...")
+                        print(f" [VIZ] Generated SMART chart for: {query[:50]}...")
                         return response
                 except ImportError as ie:
-                    print(f"⚠️ [VIZ] smart_chart import failed: {ie}")
+                    print(f" [VIZ] smart_chart import failed: {ie}")
                 except Exception as se:
-                    print(f"⚠️ [VIZ] smart_chart failed: {se}")
+                    print(f" [VIZ] smart_chart failed: {se}")
                 
                 # Fallback to generate_query_aware_chart if smart_chart fails
                 try:
@@ -205,12 +218,12 @@ def append_chart_if_needed(response: str, query: str, user_id: str) -> str:
                         cleaned_chart = clean_for_json(chart_json)
                         chart_block = f"\n\n```plotly_chart\n{json_lib.dumps(cleaned_chart, ensure_ascii=False)}\n```"
                         response += chart_block
-                        print(f"✅ [VIZ] Generated fallback chart for: {query[:50]}...")
+                        print(f" [VIZ] Generated fallback chart for: {query[:50]}...")
                 except Exception as fallback_err:
-                    print(f"⚠️ [VIZ] Fallback chart failed: {fallback_err}")
+                    print(f" [VIZ] Fallback chart failed: {fallback_err}")
         except Exception as chart_err:
             import traceback
-            print(f"⚠️ [VIZ] Chart generation failed: {chart_err}")
+            print(f" [VIZ] Chart generation failed: {chart_err}")
             traceback.print_exc()
             
     return response
@@ -225,7 +238,7 @@ query_cache = QueryCache(
 
 # Clear old cache on module load (to clear cached EUR responses)
 query_cache.clear_all()
-print("🔄 Cache cleared on startup - fresh currency settings")
+print("Cache cleared on startup - fresh currency settings")
 
 # ============================================================================
 # MODE PROFILES - Speed vs Complexity Configuration
@@ -583,7 +596,7 @@ def run_enabled_mcps(query: str, user_id: str, enabled_mcps: dict, df=None) -> d
     
     # Log MCP execution
     if mcp_logs:
-        print(f"🔧 MCP Tools Executed:")
+        print(f" MCP Tools Executed:")
         for log in mcp_logs:
             print(f"   {log}")
     
@@ -713,6 +726,7 @@ class ChatRequest(BaseModel):
     user_id: Optional[str] = None
     userId: Optional[str] = None
     message: str
+    model: Optional[str] = "llama"
     mode: str = "auto"
     role: str = "analyst"  # User role: executive, manager, analyst, operator
     conversationId: Optional[str] = None
@@ -765,12 +779,12 @@ def load_conversation(user_id: str, conversation_id: str) -> List[Message]:
                             sources=msg.get("sources")
                         ))
                     except Exception as msg_err:
-                        print(f"⚠️ Skip invalid message: {msg_err}")
+                        print(f" Skip invalid message: {msg_err}")
                         continue
                 return messages
         return []
     except Exception as e:
-        print(f"⚠️ Error loading conversation {conversation_id}: {e}")
+        print(f" Error loading conversation {conversation_id}: {e}")
         return []
 
 def save_conversation(user_id: str, conversation_id: str, messages: List[Message]):
@@ -793,7 +807,7 @@ def save_conversation(user_id: str, conversation_id: str, messages: List[Message
                     "sources": msg.sources
                 })
             except Exception as msg_err:
-                print(f"⚠️ Skip saving invalid message: {msg_err}")
+                print(f" Skip saving invalid message: {msg_err}")
                 continue
         
         data = {
@@ -806,7 +820,7 @@ def save_conversation(user_id: str, conversation_id: str, messages: List[Message
         with open(history_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        print(f"⚠️ Error saving conversation {conversation_id}: {e}")
+        print(f" Error saving conversation {conversation_id}: {e}")
 
 
 def clean_ai_response(response: str) -> str:
@@ -1021,7 +1035,7 @@ def rag_search(user_id: str, query: str, k: int = 5, target_files: List[str] = N
         if RAG_ENHANCEMENTS and len(balanced_results) > k:
             try:
                 balanced_results = mmr_rerank(balanced_results, lambda_param=0.7, k=k)
-                print(f"📊 MMR applied: {len(balanced_results)} diverse results")
+                print(f" MMR applied: {len(balanced_results)} diverse results")
             except Exception as mmr_err:
                 print(f"MMR error (non-critical): {mmr_err}")
         
@@ -1029,7 +1043,7 @@ def rag_search(user_id: str, query: str, k: int = 5, target_files: List[str] = N
         if RAG_ENHANCEMENTS and is_reranker_available() and len(balanced_results) > 2:
             try:
                 balanced_results = rerank(query, balanced_results, top_k=k, text_key='text')
-                print(f"🎯 Reranker applied: top {len(balanced_results)} by relevance")
+                print(f" Reranker applied: top {len(balanced_results)} by relevance")
             except Exception as rerank_err:
                 print(f"Reranker error (non-critical): {rerank_err}")
         
@@ -1277,6 +1291,7 @@ CHART_KEYWORDS = [
     'chart', 'graph', 'visualize', 'visualization', 'plot', 'trend',
     'show me', 'display', 'bar chart', 'pie chart', 'line chart',
     'revenue trend', 'customer distribution', 'product comparison',
+    'img', 'image', 'picture', 'dashboard',
     'violin', 'radar', 'spider', 'funnel', 'gauge', 'heatmap',
     'treemap', 'sunburst', 'bubble', 'scatter', 'box plot',
     'waterfall', 'area chart', 'donut', 'histogram'
@@ -1473,7 +1488,7 @@ async def ai_model_response(user_id: str, query: str, model_key: str, conversati
 - Metrics (numbers you can analyze): {', '.join(available_metrics) if available_metrics else 'Auto-detected from your data'}
 - Dimensions (categories for grouping): {', '.join(available_dimensions) if available_dimensions else 'Auto-detected from your data'}
 """
-                print(f"🧠 Chat domain detected: {detected_domain}, metrics: {available_metrics}, dims: {available_dimensions}")
+                print(f" Chat domain detected: {detected_domain}, metrics: {available_metrics}, dims: {available_dimensions}")
         except Exception as schema_err:
             print(f"Schema detection error (non-critical): {schema_err}")
         
@@ -1569,7 +1584,7 @@ CONVERSATION HISTORY:
 
         # Step 4: Call OpenRouter API
         api_key = os.getenv("OPENROUTER_API_KEY")
-        print(f"🔑 OpenRouter API key present: {bool(api_key)}, length: {len(api_key) if api_key else 0}")
+        print(f" OpenRouter API key present: {bool(api_key)}, length: {len(api_key) if api_key else 0}")
         
         if not api_key:
             return (
@@ -1581,7 +1596,7 @@ CONVERSATION HISTORY:
             )
         
         model_id = AI_MODELS.get(model_key, AI_MODELS.get('deepseek', 'deepseek/deepseek-chat'))
-        print(f"🤖 Using model: {model_key} -> {model_id}")
+        print(f" Using model: {model_key} -> {model_id}")
         
         payload = {
             "model": model_id,
@@ -1643,59 +1658,77 @@ CONVERSATION HISTORY:
                                 currency_symbol, _ = get_user_currency(user_id)
                                 chart_json = None
                                 
-                                if SMART_CHART_AVAILABLE:
-                                    try:
-                                        chart_json, chart_explanation = smart_chart(
-                                            query=query,
-                                            df=df,
-                                            currency_symbol=currency_symbol
-                                        )
-                                        print(f"[CHAT] smart_chart generated: {type(chart_json)}")
-                                    except Exception as smart_err:
-                                        print(f"[CHAT] smart_chart error: {smart_err}")
-                                        chart_json = None
+                                # Check if they specifically want an image
+                                from agents.image_agent import generate_image_dashboard
+                                img_keywords = ['img', 'image', 'picture']
+                                wants_image = any(kw in query.lower() for kw in img_keywords)
                                 
-                                # Fallback to legacy if smart_chart failed
-                                if not chart_json or (isinstance(chart_json, dict) and 'error' in chart_json):
-                                    print(f"[CHAT] Falling back to generate_query_aware_chart")
-                                    chart_json = generate_query_aware_chart(df, query)
-                                
-                                # Append Plotly chart to response
-                                if chart_json and 'error' not in chart_json:
-                                    import json as json_lib
-                                    chart_block = f"\n\n```plotly_chart\n{json_lib.dumps(chart_json)}\n```"
-                                    ai_response += chart_block
-                                    sources.append("Interactive Chart")
-                                    
-                                    # =========================================================
-                                    # STORE CHART CONTEXT for follow-up explanation
-                                    # =========================================================
-                                    if MEMORY_AVAILABLE and _chart_memory:
+                                if wants_image:
+                                    # Generate PNG markdown
+                                    img_markdown = generate_image_dashboard(query, df)
+                                    if img_markdown:
+                                        ai_response += img_markdown
+                                        sources.append("Image Dashboard")
+                                else:
+                                    if SMART_CHART_AVAILABLE:
                                         try:
+                                            # smart_chart now returns a markdown string with the plotly block
+                                            smart_markdown = smart_chart(query=query, df=df)
+                                            
+                                            if smart_markdown:
+                                                ai_response += smart_markdown
+                                                sources.append("Interactive Chart")
+                                                # Create a dummy chart_json so memory context gets saved
+                                                chart_json = {"layout": {"title": "Smart Chart Visualization"}}
+                                        except Exception as smart_err:
+                                            print(f"[CHAT] smart_chart error: {smart_err}")
+                                            chart_json = None
+                                    
+                                    # Fallback to legacy if smart_chart failed or wasn't used
+                                    if not chart_json:
+                                        print(f"[CHAT] Falling back to generate_query_aware_chart")
+                                        chart_json = generate_query_aware_chart(df, query)
+                                        
+                                        # Append Plotly chart to response for legacy fallback
+                                        if chart_json and 'error' not in chart_json:
+                                            import json as json_lib
+                                            chart_block = f"\n\n```plotly_chart\n{json_lib.dumps(chart_json)}\n```"
+                                            ai_response += chart_block
+                                            sources.append("Interactive Chart")
+                                
+                                # =========================================================
+                                # STORE CHART CONTEXT for follow-up explanation
+                                # =========================================================
+                                if MEMORY_AVAILABLE and _chart_memory:
+                                    try:
+                                        # For Plotly charts
+                                        if chart_json:
                                             chart_title = chart_json.get('layout', {}).get('title', {})
                                             if isinstance(chart_title, dict):
                                                 chart_title = chart_title.get('text', 'Chart')
-                                            
-                                            # Determine chart type description
-                                            chart_descriptions = {
-                                                'trend': 'Monthly Revenue Trend showing revenue over time',
-                                                'bar': 'Revenue by Customer/Product breakdown',
-                                                'pie': 'Revenue distribution by category',
-                                                'prediction': 'Revenue prediction with forecast'
-                                            }
-                                            chart_desc = chart_descriptions.get(chart_type, 'Data visualization')
-                                            
-                                            _chart_memory.set_last_chart(user_id, {
-                                                "type": chart_type,
-                                                "title": str(chart_title),
-                                                "data_summary": chart_desc,
-                                                "timestamp": datetime.now().isoformat()
-                                            })
-                                            print(f"[MEMORY] Stored chart context: {chart_type} - {chart_title}")
-                                        except Exception as mem_err:
-                                            print(f"[MEMORY] Chart context storage failed: {mem_err}")
-                                else:
-                                    print(f"All chart types failed: {chart_json}")
+                                        else:
+                                            chart_title = 'Image Dashboard'
+                                        
+                                        # Determine chart type description
+                                        chart_descriptions = {
+                                            'trend': 'Monthly Revenue Trend showing revenue over time',
+                                            'bar': 'Revenue by Customer/Product breakdown',
+                                            'pie': 'Revenue distribution by category',
+                                            'prediction': 'Revenue prediction with forecast'
+                                        }
+                                        chart_desc = chart_descriptions.get(chart_type, 'Data visualization')
+                                        
+                                        _chart_memory.set_last_chart(user_id, {
+                                            "type": chart_type,
+                                            "title": str(chart_title),
+                                            "data_summary": chart_desc,
+                                            "timestamp": datetime.now().isoformat()
+                                        })
+                                        print(f"[MEMORY] Stored chart context: {chart_type} - {chart_title}")
+                                    except Exception as mem_err:
+                                        print(f"[MEMORY] Chart context storage failed: {mem_err}")
+                            else:
+                                print(f"All chart types failed: {chart_json}")
                         except Exception as chart_error:
                             print(f"Chart generation error: {chart_error}")
                             import traceback
@@ -1711,7 +1744,7 @@ CONVERSATION HISTORY:
                             eval_result = evaluate_answer(ai_response, data_context, query)
                             if eval_result.get("warning") and eval_result.get("confidence", 100) < 50:
                                 ai_response += f"\n\n---\n{eval_result['warning']}"
-                                print(f"📊 Evaluation: {eval_result['confidence']}% confidence")
+                                print(f" Evaluation: {eval_result['confidence']}% confidence")
                         except Exception as eval_err:
                             print(f"Evaluator error (non-critical): {eval_err}")
                     
@@ -1747,65 +1780,64 @@ async def stream_openrouter_response(
     max_tokens: int = 2000
 ):
     """
-    Stream response from OpenRouter API word by word.
+    Stream response from the AI using litellm.
     Yields SSE-formatted chunks for real-time display.
     """
-    import aiohttp
     import json as json_module
+    import os
     
-    payload = {
-        "model": model_id,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens,
-        "temperature": 0.3,
-        "stream": True
-    }
-    
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://ai-business-analyst.com",
-        "X-Title": "AI Business Analyst"
-    }
-    
+    # We will use litellm for streaming to support ALL configured providers (Nvidia, Groq, etc)
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=60)
-            ) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    yield f"data: {{\"error\": \"{error_text[:100]}\"}}\n\n"
-                    return
+        from core.llm import LITELLM_AVAILABLE, litellm
+        
+        if LITELLM_AVAILABLE:
+            # Check configured keys to determine the optimal model
+            nv_key = os.environ.get("NVIDIA_API_KEY")
+            groq_key = os.environ.get("GROQ_API_KEY")
+            
+            # Default to OpenRouter if passed
+            model_to_use = model_id
+            api_base = None
+            api_key_to_use = api_key
+            
+            # Auto-route to Nvidia if available
+            if nv_key:
+                model_to_use = "openai/meta/llama-3.1-70b-instruct"
+                api_base = "https://integrate.api.nvidia.com/v1"
+                api_key_to_use = nv_key
+            # Fallback to Groq
+            elif groq_key:
+                model_to_use = "groq/llama3-70b-8192"
+                api_base = None
+                api_key_to_use = groq_key
+            
+            if api_key_to_use:
+                # Use litellm async generator
+                response = await litellm.acompletion(
+                    model=model_to_use,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=0.3,
+                    stream=True,
+                    api_key=api_key_to_use,
+                    api_base=api_base
+                )
                 
-                # Stream the response line by line
-                buffer = ""
-                async for chunk in response.content.iter_any():
-                    if chunk:
-                        buffer += chunk.decode('utf-8')
-                        lines = buffer.split('\n')
-                        buffer = lines[-1]  # Keep incomplete line
-                        
-                        for line in lines[:-1]:
-                            line = line.strip()
-                            if line.startswith('data: '):
-                                data = line[6:]
-                                if data == '[DONE]':
-                                    yield "data: [DONE]\n\n"
-                                    return
-                                try:
-                                    parsed = json_module.loads(data)
-                                    if 'choices' in parsed and len(parsed['choices']) > 0:
-                                        delta = parsed['choices'][0].get('delta', {})
-                                        content = delta.get('content', '')
-                                        if content:
-                                            yield f"data: {json_module.dumps({'content': content})}\n\n"
-                                except:
-                                    pass
-                                    
+                async for chunk in response:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        content = chunk.choices[0].delta.content or ""
+                        if content:
+                            yield f"data: {json_module.dumps({'content': content})}\n\n"
+                
+                yield "data: [DONE]\n\n"
+                return
+            else:
+                yield "data: {\"error\": \"No API key configured for streaming\"}\n\n"
+                return
+        else:
+            yield "data: {\"error\": \"LiteLLM not available\"}\n\n"
+            return
+            
     except Exception as e:
         yield f"data: {{\"error\": \"{str(e)[:100]}\"}}\n\n"
 
@@ -1830,6 +1862,32 @@ async def stream_message(
         user_id = "default_user"
     
     query = request.message.strip()
+    
+    # ⚡ FAST-PATH: Instant responses for greetings/casual queries
+    query_lower = query.lower()
+    instant_greetings = {
+        'hi': "Hi! 👋 How can I help you analyze your data today?",
+        'hii': "Hi! 👋 How can I help you analyze your data today?",
+        'hiii': "Hi! 👋 How can I help you analyze your data today?",
+        'hello': "Hello! 👋 I'm ready to help with your data analysis. What would you like to know?",
+        'hey': "Hey! 👋 What data questions can I answer for you?",
+        'howdy': "Howdy! 🤠 Ready to dive into your data. What's on your mind?",
+        'yo': "Yo! 👋 Let's analyze some data. What would you like to know?",
+        'hola': "¡Hola! 👋 Ready to help with your data analysis!",
+        'good morning': "Good morning! ☀️ Ready to help with your data analysis today.",
+        'good afternoon': "Good afternoon! 🌤️ How can I assist with your data?",
+        'good evening': "Good evening! 🌙 What data insights can I help you find?",
+        'thanks': "You're welcome! 😊 Let me know if you need anything else.",
+        'thank you': "You're welcome! 😊 Happy to help. Any other questions?",
+        'thx': "You're welcome! 😊 Need anything else?",
+    }
+    
+    if query_lower in instant_greetings:
+        import json
+        async def fast_stream():
+            yield f"data: {json.dumps({'content': instant_greetings[query_lower]})}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(fast_stream(), media_type="text/event-stream")
     
     # Get RAG context
     rag_context, sources = rag_search(user_id, query, k=5)
@@ -1857,23 +1915,74 @@ async def stream_message(
 
 ## YOUR RESPONSE:"""
 
-    # Get API key and model
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    # Get API key and model (allow multiple sources)
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("NVIDIA_API_KEY") or os.getenv("GROQ_API_KEY")
     if not api_key:
         async def error_stream():
             yield "data: {\"error\": \"API key not configured\"}\n\n"
         return StreamingResponse(error_stream(), media_type="text/event-stream")
     
-    # Model mapping
-    models = {
-        "deepseek": "deepseek/deepseek-chat",
-        "mistral": "mistralai/mistral-7b-instruct:free",
-        "llama": "meta-llama/llama-3.3-70b-instruct:free"
-    }
-    model_id = models.get(request.model, models["deepseek"])
+    # Force Nemotron Ultra for all modes as requested
+    effective_model = "nemotron"
+        
+    try:
+        from core.model_config import get_model_api_id
+        model_id = get_model_api_id(effective_model, fallback="deepseek/deepseek-chat")
+    except ImportError:
+        model_id = "deepseek/deepseek-chat"
     
+    # The pure LLM-driven visualization task
+    import asyncio
+    
+    async def chart_augmented_stream():
+        import json
+        from agents.smart_chart import should_visualize, generate_smart_chart
+        from agents.image_agent import generate_image_dashboard
+        from api.v1.endpoints.charts import get_user_data
+        
+        # 1. Start autonomous chart generation in a background thread if needed
+        chart_task = None
+        
+        # 🧠 ORCHESTRATOR AI ROUTING FOR VISUALS
+        from agents.query_router import route_query
+        orch_decision = route_query(query)
+        orch_mode = orch_decision.get("route", "chat")
+        
+        if orch_mode in ["chart", "image"]:
+            df = get_user_data(user_id)
+            if df is not None and not df.empty:
+                wants_image = (orch_mode == "image")
+                
+                if wants_image:
+                    chart_task = asyncio.create_task(asyncio.to_thread(generate_image_dashboard, query, df))
+                else:
+                    chart_task = asyncio.create_task(asyncio.to_thread(generate_smart_chart, query, df))
+                
+        # 2. Stream the text from OpenRouter natively
+        has_yielded_chart = False
+        async for chunk in stream_openrouter_response(prompt, model_id, api_key):
+            if chunk.strip() == "data: [DONE]":
+                # Wait for chart generation before finishing
+                if chart_task and not has_yielded_chart:
+                    try:
+                        chart_json_str = await chart_task
+                        if chart_json_str:
+                            # Stream the chart block just like normal text
+                            yield f"data: {json.dumps({'content': chart_json_str})}\n\n"
+                    except Exception as e:
+                        print(f" [VIZ] Autonomous chart failed in stream: {e}")
+                
+                yield "data: [DONE]\n\n"
+                return
+                
+            yield chunk
+            
+            # If the LLM itself generated a chart, skip our autonomous agent
+            if "plotly_chart" in chunk:
+                has_yielded_chart = True
+
     return StreamingResponse(
-        stream_openrouter_response(prompt, model_id, api_key),
+        chart_augmented_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1908,13 +2017,13 @@ async def send_message(
         if authorization and authorization.startswith("Bearer "):
             try:
                 # Use core.auth module for proper JWT validation
-                from core.auth import decode_supabase_jwt
+                from core.auth import decode_jwt_token
                 token = authorization.split(" ")[1]
-                payload = decode_supabase_jwt(token)
+                payload = decode_jwt_token(token)
                 user_id = payload.get("sub")  # Subject is user ID
-                print(f"🔐 Authenticated user from JWT: {user_id}")
+                print(f" Authenticated user from JWT: {user_id}")
             except Exception as e:
-                print(f"⚠️ JWT decode error: {e}")
+                print(f" JWT decode error: {e}")
                 # Fallback to legacy decode
                 try:
                     from database.auth import decode_jwt
@@ -1926,7 +2035,7 @@ async def send_message(
         # Fallback to X-User-ID header (for authenticated requests where JWT is also sent)
         if not user_id and x_user_id and x_user_id not in ["null", "undefined", ""]:
             user_id = x_user_id
-            print(f"🔐 User from X-User-ID header: {user_id}")
+            print(f" User from X-User-ID header: {user_id}")
         
         # Generate guest ID if no authentication (DO NOT use request body user_id)
         if not user_id:
@@ -1935,10 +2044,18 @@ async def send_message(
             ua = http_request.headers.get("User-Agent", "unknown")[:100]
             fingerprint = hashlib.sha256(f"{ip}:{ua}".encode()).hexdigest()[:12]
             user_id = f"guest_{fingerprint}"
-            print(f"🔐 Generated guest user ID: {user_id}")
+            print(f" Generated guest user ID: {user_id}")
         
-        query = request.message
+        # 🛡️ SECURITY: Mask any PII before processing
+        query = SecurityVault.mask_pii(request.message)
         mode = request.mode
+        
+        # Force Nemotron Ultra for all modes as requested
+        effective_model = "nemotron"
+            
+        # Pass the requested LLM model to the backend engine
+        if effective_model:
+            set_requested_model(effective_model)
         conversation_id = request.conversationId or f"conv_{int(datetime.now().timestamp())}"
         compare_files = request.compareFiles
         
@@ -1980,7 +2097,7 @@ async def send_message(
         
         if word_count <= 3 and query_lower in instant_greetings:
             instant_response = instant_greetings[query_lower]
-            print(f"⚡ FAST-PATH: Instant greeting response for '{query}'")
+            print(f" FAST-PATH: Instant greeting response for '{query}'")
             return ChatResponse(
                 message=instant_response,
                 mode="chat",
@@ -2003,7 +2120,7 @@ async def send_message(
         
         # Only match if query is SHORT (5 words or less) AND matches pattern exactly
         if word_count <= 5 and query_lower in fast_patterns:
-            print(f"⚡ FAST-PATH: Quick pattern response for '{query}'")
+            print(f" FAST-PATH: Quick pattern response for '{query}'")
             return ChatResponse(
                 message=fast_patterns[query_lower],
                 mode="chat",
@@ -2016,7 +2133,7 @@ async def send_message(
         if AI_SECURITY_AVAILABLE:
             is_suspicious, detected_pattern = detect_prompt_injection(query)
             if is_suspicious:
-                print(f"⚠️ SECURITY: Potential prompt injection detected from user {user_id}: {detected_pattern}")
+                print(f" SECURITY: Potential prompt injection detected from user {user_id}: {detected_pattern}")
                 # Log but don't block - let AI security filter handle it in llm.py
                 # This provides defense in depth
         
@@ -2039,16 +2156,16 @@ async def send_message(
                 chart_type = routing.get('chart_type')
                 query_intent = routing.get('intent', 'lookup')
                 
-                print(f"🎯 User selected: mode={mode}, intent={query_intent}")
+                print(f" User selected: mode={mode}, intent={query_intent}")
                 if generate_chart:
-                    print(f"📊 Will generate {chart_type} chart with response")
+                    print(f" Will generate {chart_type} chart with response")
                     
             except Exception as e:
-                print(f"⚠️ Query analysis error: {e}")
+                print(f" Query analysis error: {e}")
         
         # Vision mode enhancement when image attached (user can still use other modes)
         if has_image:
-            print(f"🖼️ Image attached - mode={mode} will process image")
+            print(f" Image attached - mode={mode} will process image")
         
         # Load conversation history for context (user-specific)
         history = load_conversation(user_id, conversation_id)
@@ -2072,6 +2189,22 @@ async def send_message(
                 conversation_context = "\n\n## Previous Conversation:\n"
                 for msg in recent_messages:
                     conversation_context += f"{msg.role.upper()}: {msg.content[:500]}\n"
+        
+        # 🧠 ENHANCED QDRANT MEMORY: Semantic search for past relevant conversations
+        if VECTOR_MEMORY_AVAILABLE and vector_store:
+            try:
+                semantic_results = vector_store.search_chat_history(user_id=user_id, query=query, limit=3)
+                if semantic_results:
+                    conversation_context += "\n\n## Long-Term Semantic Memory (Past relevant chats):\n"
+                    for res in semantic_results:
+                        payload = res.get('payload', {})
+                        role = payload.get('role', 'unknown').upper()
+                        content = payload.get('content', '')
+                        # Only include if not already in recent history to avoid duplication
+                        if content and content not in conversation_context:
+                            conversation_context += f"Past {role}: {content[:300]}\n"
+            except Exception as e:
+                print(f" Vector memory retrieval failed: {e}")
         
         # Get user paths for file and memory access
         paths = get_user_paths(user_id)
@@ -2102,10 +2235,10 @@ async def send_message(
                         if msg.get('role') == 'assistant':
                             last_assistant_response = msg.get('content', '')[:3000]  # Increased for context
                             conversation_context = f"\n\n## Last AI Response:\n{last_assistant_response}\n"
-                            print(f"📖 Found previous response: {len(last_assistant_response)} chars")
+                            print(f" Found previous response: {len(last_assistant_response)} chars")
                             break
             except Exception as e:
-                print(f"⚠️ Could not load chat history: {e}")
+                print(f" Could not load chat history: {e}")
         
         # =====================================================================
         # $500K ENTERPRISE MEMORY SYSTEM - ChatGPT-Level Persistent Memory
@@ -2118,11 +2251,11 @@ async def send_message(
             # STEP 1: MEMORY WRITE - Check if user is providing their name
             personal_saved = process_personal_info(user_id, query)
             if personal_saved:
-                print(f"💾 MEMORY WRITE: Saved personal information for user {user_id}")
+                print(f" MEMORY WRITE: Saved personal information for user {user_id}")
             
             # STEP 2: MEMORY READ - Get stored name
             stored_name = get_user_name(user_id)
-            print(f"📖 MEMORY READ: Stored name = {stored_name}")
+            print(f" MEMORY READ: Stored name = {stored_name}")
             
             # CASE 1: User PROVIDING name (must check BEFORE asking)
             # Patterns: "my name is X", "i am X", "call me X"
@@ -2198,10 +2331,10 @@ async def send_message(
         # Enterprise 4-mode routing
         has_image = bool(request.attachedFiles and any(f.get('type', '').startswith('image/') for f in request.attachedFiles))
         
-        print(f"📎 Attached files: {len(request.attachedFiles) if request.attachedFiles else 0}")
-        print(f"🖼️ Has image: {has_image}")
-        print(f"❓ Query: {query[:50]}...")
-        print(f"📋 Requested mode: {mode}")
+        print(f" Attached files: {len(request.attachedFiles) if request.attachedFiles else 0}")
+        print(f" Has image: {has_image}")
+        print(f" Query: {query[:50]}...")
+        print(f" Requested mode: {mode}")
         
         # MCP status - which MCPs are enabled
         enabled_mcps = request.enabledMcps or {
@@ -2213,7 +2346,7 @@ async def send_message(
         }
         # MCP status logged only in debug mode for performance
         # enabled_count = sum(1 for v in enabled_mcps.values() if v)
-        # print(f"⚙️ MCP Servers: {enabled_count}/5 enabled")
+        # print(f" MCP Servers: {enabled_count}/5 enabled")
         
         query_lower = query.lower().strip()
         
@@ -2222,7 +2355,7 @@ async def send_message(
         # Instead of giving full analysis for empty queries, be conversational
         # =====================================================================
         if len(query_lower) < 3 or query_lower in ['', '.', '..', '?', '!', 'ok', 'go']:
-            print(f"🤝 EMPTY/MINIMAL QUERY DETECTED: '{query}' → Asking what user wants")
+            print(f" EMPTY/MINIMAL QUERY DETECTED: '{query}'  Asking what user wants")
             
             # Get data summary for helpful prompt
             try:
@@ -2381,9 +2514,9 @@ Please upload a data file first, then ask me any question about your data.
         if is_followup_query:
             is_personal = False  # Force NOT personal
             is_business_query = True  # Force business query
-            print(f"🔗 FOLLOW-UP QUERY DETECTED: '{query[:30]}...' → Forcing RAG with context")
+            print(f" FOLLOW-UP QUERY DETECTED: '{query[:30]}...'  Forcing RAG with context")
         
-        print(f"👤 Is personal: {is_personal}, Is exact greeting: {is_exact_greeting}, Is business: {is_business_query}, Is followup: {is_followup_query}")
+        print(f" Is personal: {is_personal}, Is exact greeting: {is_exact_greeting}, Is business: {is_business_query}, Is followup: {is_followup_query}")
         
         # Keywords that indicate user wants data analysis, not image analysis
         data_query_keywords = ['predict', 'forecast', 'revenue', 'chart', 'visualization', 
@@ -2399,18 +2532,48 @@ Please upload a data file first, then ask me any question about your data.
             # Use analyst mode which can handle both images and data
             original_mode = mode
             mode = 'analyst'  # Analyst can handle images via image_context
-            print(f"🖼️ AUTO-ROUTE: Image attached with mode '{original_mode}' → Switching to '{mode}' for image handling")
+            print(f" AUTO-ROUTE: Image attached with mode '{original_mode}'  Switching to '{mode}' for image handling")
         
+        # ========================================
+        # 🧠 ORCHESTRATOR AI ROUTING
+        # ========================================
+        try:
+            if mode == "auto" or mode not in ['analyst', 'deep', 'predict', 'agent', 'vision', 'rag', 'graph']:
+                from agents.query_router import route_query
+                orch_decision = route_query(query)
+                orch_mode = orch_decision.get("route", mode)
+                print(f" ORCHESTRATOR routed query to: {orch_mode} (Confidence: {orch_decision.get('confidence')}%)")
+                
+                # Map orchestrator routes to actual engine routes
+                if orch_mode == "chart":
+                    mode = "analyst"  # analyst mode handles charts natively
+                elif orch_mode == "prediction":
+                    mode = "predict"
+                elif orch_mode == "image":
+                    mode = "analyst"  # image generation happens in chat response later
+                elif orch_mode == "vision":
+                    mode = "vision"
+                elif orch_mode == "chat":
+                    mode = "chat"
+                elif orch_mode == "etl":
+                    mode = "etl"
+                elif orch_mode == "ml_pipeline":
+                    mode = "ml_pipeline"
+                else:
+                    mode = "rag"
+        except Exception as e:
+            print(f" Orchestrator error: {e}")
+
         # ========================================
         # NEW 5 UNIQUE MODE ENGINES (Silicon Valley Powerhouses)
         # Each mode has its OWN power - like OpenAI's model lineup
         # ========================================
         
         # Check if we should use the new mode engines
-        NEW_MODE_ENGINES = ['analyst', 'deep', 'predict', 'agent', 'vision']  # All modes unified
+        NEW_MODE_ENGINES = ['analyst', 'deep', 'predict', 'agent', 'vision', 'etl', 'ml_pipeline']  # All modes unified
         
         if mode in NEW_MODE_ENGINES and MODE_ENGINES_AVAILABLE:
-            print(f"🚀 USING NEW MODE ENGINE: {mode}")
+            print(f" USING NEW MODE ENGINE: {mode}")
             
             # Get DataFrame for charts/analysis (SHARED for all modes)
             df = None
@@ -2418,14 +2581,14 @@ Please upload a data file first, then ask me any question about your data.
                 from api.v1.endpoints.charts import get_user_data
                 df = get_user_data(user_id)
             except Exception as e:
-                print(f"⚠️ Failed to load user dataframe: {e}")
+                print(f" Failed to load user dataframe: {e}")
             
             # Get context from RAG
             try:
                 from core.rag import rag_search
                 context, rag_sources = rag_search(user_id, query, k=10)
             except Exception as e:
-                print(f"⚠️ RAG Search execution failed: {e}")
+                print(f" RAG Search execution failed: {e}")
                 import traceback
                 traceback.print_exc()
                 context = ""
@@ -2446,7 +2609,7 @@ Please upload a data file first, then ask me any question about your data.
                         'type': att_file.get('type', 'image/png'),
                         'content': att_file.get('content', '')  # Base64 data URL
                     })
-                print(f"🖼️ Prepared {len(processed_files)} files for vision processing")
+                print(f" Prepared {len(processed_files)} files for vision processing")
             
             if processed_files:
                 for file_info in processed_files:
@@ -2455,7 +2618,7 @@ Please upload a data file first, then ask me any question about your data.
                     
                     # Check if it's an image (base64 data URL)
                     if file_content.startswith('data:image'):
-                        print(f"🖼️ Found image attachment: {file_name}")
+                        print(f" Found image attachment: {file_name}")
                         try:
                             from core.vision import analyze_image_with_groq
                             
@@ -2467,11 +2630,11 @@ Please upload a data file first, then ask me any question about your data.
                             
                             if not analysis.startswith("❌"):
                                 image_context += f"\n\n## 🖼️ Image Analysis ({file_name})\n{analysis}\n"
-                                print(f"✅ Image analyzed: {len(analysis)} chars")
+                                print(f" Image analyzed: {len(analysis)} chars")
                             else:
-                                print(f"⚠️ Image analysis failed: {analysis[:100]}")
+                                print(f" Image analysis failed: {analysis[:100]}")
                         except Exception as e:
-                            print(f"⚠️ Vision processing error: {e}")
+                            print(f" Vision processing error: {e}")
             
             # Combine RAG context with image context
             full_context = context
@@ -2484,14 +2647,14 @@ Please upload a data file first, then ask me any question about your data.
                     result = analyst_response_sync(user_id, query, full_context, df=df)
                     response = result.get('answer', str(result)) if isinstance(result, dict) else str(result)
                     sources = result.get('sources', ["Analyst Engine"]) if isinstance(result, dict) else ["Analyst Engine"]
-                    print(f"📊 ANALYST ENGINE returned: {len(response)} chars")
+                    print(f" ANALYST ENGINE returned: {len(response)} chars")
                     
                 elif mode == 'deep':
                     # 🧠 DEEP THINK - Chain of thought reasoning
                     result = deepthink_response_sync(user_id, query, full_context, df=df)
                     response = result.get('answer', str(result)) if isinstance(result, dict) else str(result)
                     sources = result.get('sources', ["Deep Think Engine"]) if isinstance(result, dict) else ["Deep Think Engine"]
-                    print(f"🧠 DEEP THINK ENGINE returned: {len(response)} chars")
+                    print(f" DEEP THINK ENGINE returned: {len(response)} chars")
                     
                 elif mode == 'predict':
                     # 🔮 PREDICT - REAL ML Predictions using trained model
@@ -2508,10 +2671,10 @@ Please upload a data file first, then ask me any question about your data.
                         else:
                             sources = ["Predict Engine", "Data Analysis"]
                         
-                        print(f"🔮 PREDICT ENGINE (SYNC ML): {result.get('ml_used')} - {len(response)} chars")
+                        print(f" PREDICT ENGINE (SYNC ML): {result.get('ml_used')} - {len(response)} chars")
                         
                     except Exception as pred_err:
-                        print(f"⚠️ ML Predict error: {pred_err}")
+                        print(f" ML Predict error: {pred_err}")
                         import traceback
                         traceback.print_exc()
                         response = "⚠️ Error making prediction. Please try again."
@@ -2522,14 +2685,54 @@ Please upload a data file first, then ask me any question about your data.
                     result = agent_response_sync(user_id, query, full_context, df=df)
                     response = result.get('answer', str(result)) if isinstance(result, dict) else str(result)
                     sources = result.get('sources', ["Agent Engine"]) if isinstance(result, dict) else ["Agent Engine"]
-                    print(f"🤖 AGENT ENGINE returned: {len(response)} chars")
+                    print(f" AGENT ENGINE returned: {len(response)} chars")
                 
                 elif mode == 'vision':
                     # 👁️ VISION - Specialized image analysis
                     result = vision_response_sync(user_id, query, full_context, df=df)
                     response = result.get('answer', str(result)) if isinstance(result, dict) else str(result)
                     sources = result.get('sources', ["Vision Engine"]) if isinstance(result, dict) else ["Vision Engine"]
-                    print(f"👁️ VISION ENGINE returned: {len(response)} chars")
+                    print(f" VISION ENGINE returned: {len(response)} chars")
+                    
+                elif mode == 'etl':
+                    # 🧹 ETL - Autonomous Data Janitor
+                    try:
+                        from agents.data_janitor import generate_etl_script, safe_execute_etl
+                        import os
+                        
+                        if df is None or df.empty:
+                            response = "⚠️ I need a dataset to clean! Please upload a CSV first."
+                            sources = ["Data Janitor"]
+                        else:
+                            # 1. Generate ETL Script
+                            print("Generating ETL Script...")
+                            script_code = generate_etl_script(df, query)
+                            
+                            # 2. Execute Safely
+                            print("Executing Auto-ETL...")
+                            success, cleaned_df, msg = safe_execute_etl(df, script_code)
+                            
+                            if success:
+                                # Save to file for user
+                                script_path = os.path.join(os.getcwd(), 'user_scripts')
+                                os.makedirs(script_path, exist_ok=True)
+                                file_path = os.path.join(script_path, 'clean_data.py')
+                                with open(file_path, 'w') as f:
+                                    f.write(script_code)
+                                    
+                                response = f"## 🧹 Autonomous Data Janitor\n\nI have successfully analyzed your data, written a custom Python Pandas script to clean it, and executed it in memory!\n\n### 🐍 Generated ETL Script\n```python\n{script_code}\n```\n\nYour script is saved at: `{file_path}`"
+                            else:
+                                response = f"⚠️ I tried to write a cleaning script but it failed execution: {msg}\n\n```python\n{script_code}\n```"
+                            sources = ["Data Janitor Auto-ETL"]
+                    except Exception as e:
+                        response = f"⚠️ ETL Pipeline failed: {e}"
+                        sources = ["Data Janitor"]
+                        print(f" ETL Error: {e}")
+                        
+                elif mode == 'ml_pipeline':
+                    from agents.nl_pipeline_agent import handle_nl_pipeline
+                    response_text, sources = handle_nl_pipeline(user_id, query, df=df)
+                    response = response_text
                 
                 # Add chart if visualization requested - SKIP for engines that add it themselves
                 # All engines now append their own charts if df is passed
@@ -2550,7 +2753,7 @@ Please upload a data file first, then ask me any question about your data.
                 )
                 
             except Exception as engine_error:
-                print(f"⚠️ Mode engine error: {engine_error}")
+                print(f" Mode engine error: {engine_error}")
                 import traceback
                 traceback.print_exc()
                 # Fall through to legacy handling
@@ -2567,7 +2770,7 @@ Please upload a data file first, then ask me any question about your data.
         original_mode = mode
         if mode in MODE_MAPPING and not MODE_ENGINES_AVAILABLE:
             mode = MODE_MAPPING[mode]
-            print(f"🔄 LEGACY MODE MAPPING: '{original_mode}' → '{mode}'")
+            print(f" LEGACY MODE MAPPING: '{original_mode}'  '{mode}'")
         
         # ========================================
         # MODE ROUTING - PRIORITY ORDER IS CRITICAL
@@ -2576,7 +2779,7 @@ Please upload a data file first, then ask me any question about your data.
         # PRIORITY 0.5: VAGUE EXPLORATION - ChatGPT-style welcome
         # Returns immediately with conversational welcome instead of full analysis
         if is_vague_exploration:
-            print(f"🤝 VAGUE EXPLORATION DETECTED: Returning ChatGPT-style welcome")
+            print(f" VAGUE EXPLORATION DETECTED: Returning ChatGPT-style welcome")
             
             # Get data summary for welcome
             try:
@@ -2628,7 +2831,7 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
 
 **What types of data do you have?** I can help analyze HR, Sales, Finance, or any structured data! 📊"""
             except Exception as e:
-                print(f"⚠️ Welcome data error: {e}")
+                print(f" Welcome data error: {e}")
                 welcome_response = "👋 Hi! I'm ready to help analyze your data. What would you like to know?"
             
             # Save conversation and return immediately
@@ -2653,36 +2856,36 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
         # PRIORITY 1: EXACT GREETINGS - ALWAYS chat mode (hi, hello, hey)
         if is_exact_greeting:
             mode = "chat"
-            print(f"💬 EXACT GREETING DETECTED: '{query_lower}' → CHAT mode")
+            print(f" EXACT GREETING DETECTED: '{query_lower}'  CHAT mode")
         
         # PRIORITY 2: Personal/conversational queries
         elif is_personal and not has_image:
             mode = "chat"
-            print(f"💬 PERSONAL CHAT MODE - Greeting/conversational query detected")
+            print(f" PERSONAL CHAT MODE - Greeting/conversational query detected")
         
         # PRIORITY 3: RESPECT EXPLICIT MODE SELECTION (RAG modes + AI models)
         elif mode in ["graphrag", "graph", "hybrid", "rag", "vision", "prediction", "agentic", "multirag"] or mode in AI_MODELS:
             # AI MODELS - Direct to OpenRouter
             if mode in AI_MODELS:
-                print(f"🤖 AI MODEL SELECTED: {mode} - Will use OpenRouter with RAG context")
+                print(f" AI MODEL SELECTED: {mode} - Will use OpenRouter with RAG context")
             # AGENTIC RAG - Uses AI agent with tools
             elif mode == "agentic":
-                print(f"🤖 AGENTIC RAG MODE - AI Agent with tools (retrieve, calculate, visualize)")
+                print(f" AGENTIC RAG MODE - AI Agent with tools (retrieve, calculate, visualize)")
             # MULTI-RAG - Uses multiple retrieval sources with RRF fusion
             elif mode == "multirag":
-                print(f"🔀 MULTI-RAG MODE - Multi-source retrieval with RRF fusion")
+                print(f" MULTI-RAG MODE - Multi-source retrieval with RRF fusion")
             # SPECIAL CASE: Vision mode selected but query is about DATA (not image)
             elif mode == "vision" and not has_image and is_data_query:
                 mode = "graph"  # Redirect to GraphRAG for data analysis
-                print(f"🔄 SMART REDIRECT: Vision mode + data query → GRAPH mode for charts/predictions")
+                print(f" SMART REDIRECT: Vision mode + data query  GRAPH mode for charts/predictions")
             elif mode == "vision" and not has_image:
                 # Vision without image and no data query - still use vision (will show instructions)
-                print(f"🟩 VISION MODE - No image attached, showing instructions")
+                print(f" VISION MODE - No image attached, showing instructions")
             elif mode == "prediction":
                 # Prediction mode - uses HYBRID internally but displays as PREDICTION
-                print(f"📈 PREDICTION MODE - Forecasts and trends analysis (3 accuracy tiers)")
+                print(f" PREDICTION MODE - Forecasts and trends analysis (3 accuracy tiers)")
             else:
-                print(f"🎯 EXPLICIT MODE SELECTED: {mode.upper()} - Respecting user choice")
+                print(f" EXPLICIT MODE SELECTED: {mode.upper()} - Respecting user choice")
         
         # PRIORITY 4: Business queries with auto mode - use intelligent routing
         elif is_business_query and mode == "auto":
@@ -2690,14 +2893,14 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
             # Override: If routed to "vision" but no image, use "graph" instead
             if mode == "vision" and not has_image:
                 mode = "graph"
-                print(f"📊 Visualization request without image → Using GRAPH mode to generate charts")
+                print(f" Visualization request without image  Using GRAPH mode to generate charts")
             else:
-                print(f"📊 BUSINESS QUERY - Auto-routed to: {mode}")
+                print(f" BUSINESS QUERY - Auto-routed to: {mode}")
         
         # PRIORITY 5: Image attached
         elif has_image:
             mode = "vision"
-            print(f"🟩 VISION MODE - Image detected")
+            print(f" VISION MODE - Image detected")
         
         # PRIORITY 6: Default auto-routing
         elif mode == "auto":
@@ -2705,14 +2908,14 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
             # Override: If routed to "vision" but no image, use "graph"
             if mode == "vision" and not has_image:
                 mode = "graph"
-            print(f"🎯 Auto-routed to mode: {mode}")
+            print(f" Auto-routed to mode: {mode}")
         
         # 🔥 CACHE LOOKUP - Save API costs for similar queries
         cached_result = None
         if is_business_query and mode != "chat":
             cached_result = query_cache.get(query, user_id)
             if cached_result:
-                print(f"⚡ CACHE HIT - Returning cached response for: {query[:50]}...")
+                print(f" CACHE HIT - Returning cached response for: {query[:50]}...")
                 return ChatResponse(
                     message=cached_result.response,
                     mode=cached_result.route,
@@ -2754,12 +2957,12 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
         mcp_context_text = ""
         
         if enabled_mcps and is_business_query:
-            print(f"🔧 Running MCP tools for query: {query[:50]}...")
+            print(f" Running MCP tools for query: {query[:50]}...")
             mcp_result = run_enabled_mcps(query, user_id, enabled_mcps)
             
             if mcp_result and mcp_result.get("tools_used"):
                 tools_used = mcp_result["tools_used"]
-                print(f"✅ MCPs used: {', '.join(tools_used)}")
+                print(f" MCPs used: {', '.join(tools_used)}")
                 
                 # Add MCP context to enhance the response
                 mcp_context_text = mcp_result.get("mcp_context", "")
@@ -2774,7 +2977,7 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
         # =====================================================================
         if is_followup_query:
             try:
-                print(f"🔗 FOLLOW-UP QUERY: '{query[:50]}...'")
+                print(f" FOLLOW-UP QUERY: '{query[:50]}...'")
                 
                 # Get last assistant response from MAIN history (not ProductionChatHandler!)
                 last_assistant_response = ""
@@ -2784,9 +2987,9 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
                         break
                 
                 if not last_assistant_response:
-                    print(f"⚠️ No previous assistant response found in main history")
+                    print(f" No previous assistant response found in main history")
                 else:
-                    print(f"✅ Found last response ({len(last_assistant_response)} chars): {last_assistant_response[:100]}...")
+                    print(f" Found last response ({len(last_assistant_response)} chars): {last_assistant_response[:100]}...")
                 
                 # Build direct follow-up prompt - NO ProductionChatHandler
                 followup_prompt = f"""You are an AI Data Analyst explaining your previous response.
@@ -2863,7 +3066,7 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
         # ========================================
         legacy_image_context = ""
         if has_image and mode in ["rag", "graph", "graphrag", "hybrid"]:
-            print(f"🖼️ Processing image for legacy mode: {mode}")
+            print(f" Processing image for legacy mode: {mode}")
             processed_files = []
             if request.attachedFiles:
                 for att_file in request.attachedFiles:
@@ -2887,9 +3090,9 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
                             )
                             if not analysis.startswith("❌"):
                                 legacy_image_context += f"\n\n## 🖼️ Image Analysis ({file_name})\n{analysis}\n"
-                                print(f"✅ Legacy image analyzed: {len(analysis)} chars")
+                                print(f" Legacy image analyzed: {len(analysis)} chars")
                         except Exception as e:
-                            print(f"⚠️ Legacy vision error: {e}")
+                            print(f" Legacy vision error: {e}")
         
         if mode == "rag":
             from agents.nodes import rag_answer
@@ -2899,7 +3102,7 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
             modified_query = query
             if legacy_image_context:
                 modified_query = f"{query}\n\n[IMAGE CONTEXT]:{legacy_image_context}"
-                print(f"🖼️ Added image context to RAG query")
+                print(f" Added image context to RAG query")
             
             state = AgentState(company_id=user_id, question=modified_query, route="rag", answer="", context={})
             state = rag_answer(state)
@@ -2910,11 +3113,11 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
             from agents.nodes import graph_answer
             from agents.state import AgentState
             
-            print(f"🟧 Calling graph_answer for mode={mode}")
+            print(f" Calling graph_answer for mode={mode}")
             state = AgentState(company_id=user_id, question=query, route="graph", answer="", context={})
             state = graph_answer(state)
             response = state.answer
-            print(f"🟧 graph_answer returned: {len(response) if response else 0} chars")
+            print(f" graph_answer returned: {len(response) if response else 0} chars")
             sources = ["Knowledge Graph Analysis"]
             mode = "graph"  # Normalize to 'graph' for response
             
@@ -2971,7 +3174,7 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
             
         elif mode == "agentic":
             # AGENTIC RAG - AI Agent with tools
-            print(f"🤖 AGENTIC RAG: Executing agent-based analysis")
+            print(f" AGENTIC RAG: Executing agent-based analysis")
             
             # Get base context from RAG
             context, rag_sources = rag_search(user_id, query, k=10, target_files=compare_files)
@@ -2998,12 +3201,12 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
             
         elif mode == "multirag":
             # MULTI-RAG - Multiple retrieval sources with RRF fusion
-            print(f"🔀 MULTI-RAG: Executing multi-source retrieval with RRF fusion")
+            print(f" MULTI-RAG: Executing multi-source retrieval with RRF fusion")
             
             if AGENTIC_RAG:
                 # Detect which sources to use based on query
                 sources_to_use = detect_best_sources(query)
-                print(f"📚 Using sources: {[s.value for s in sources_to_use]}")
+                print(f" Using sources: {[s.value for s in sources_to_use]}")
                 
                 # Get context from vector search (primary)
                 context, rag_sources = rag_search(user_id, query, k=10, target_files=compare_files)
@@ -3041,19 +3244,19 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
             import tempfile
             
             # DEBUG: Print what we received
-            print(f"🔍 VISION MODE: request.attachedFiles = {request.attachedFiles}")
-            print(f"🔍 VISION MODE: Number of files = {len(request.attachedFiles) if request.attachedFiles else 0}")
+            print(f" VISION MODE: request.attachedFiles = {request.attachedFiles}")
+            print(f" VISION MODE: Number of files = {len(request.attachedFiles) if request.attachedFiles else 0}")
             
             # Save attached images to temporary files for Gemini Vision
             processed_files = []
             if request.attachedFiles:
                 for file_data in request.attachedFiles:
                     if file_data.get('type', '').startswith('image/'):
-                        print(f"📋 Processing attached file: {file_data.get('name', 'unknown')}")
-                        print(f"📋 File type: {file_data.get('type', 'unknown')}")
+                        print(f" Processing attached file: {file_data.get('name', 'unknown')}")
+                        print(f" File type: {file_data.get('type', 'unknown')}")
                         
                         # Check what fields are available
-                        print(f"📋 Available fields: {list(file_data.keys())}")
+                        print(f" Available fields: {list(file_data.keys())}")
                         
                         # Try different ways to get image data
                         content = None
@@ -3064,36 +3267,36 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
                             # Remove data URL prefix if present
                             if content.startswith('data:'):
                                 content = content.split(',', 1)[1] if ',' in content else content
-                            print(f"📋 Using 'content' field, length: {len(content)}")
+                            print(f" Using 'content' field, length: {len(content)}")
                         
                         # Method 2: URL field (already uploaded file)
                         elif 'url' in file_data:
                             url = file_data.get('url', '')
-                            print(f"📋 Found URL field: {url}")
+                            print(f" Found URL field: {url}")
                             # If it's a local file path
                             if url.startswith('/') or url.startswith('C:') or url.startswith('c:'):
                                 try:
                                     with open(url, 'rb') as f:
                                         content = base64.b64encode(f.read()).decode('utf-8')
-                                    print(f"📋 Loaded from file path")
+                                    print(f" Loaded from file path")
                                 except Exception as e:
-                                    print(f"❌ Failed to load from path: {e}")
+                                    print(f" Failed to load from path: {e}")
                         
                         # Method 3: Data field
                         elif 'data' in file_data:
                             content = file_data.get('data', '')
                             if content.startswith('data:'):
                                 content = content.split(',', 1)[1] if ',' in content else content
-                            print(f"📋 Using 'data' field, length: {len(content)}")
+                            print(f" Using 'data' field, length: {len(content)}")
                         
                         if not content:
-                            print(f"❌ No image data found in: {file_data}")
+                            print(f" No image data found in: {file_data}")
                             continue
                         
                         # Decode base64 and save to temp file
                         try:
                             image_bytes = base64.b64decode(content)
-                            print(f"✅ Decoded {len(image_bytes)} bytes")
+                            print(f" Decoded {len(image_bytes)} bytes")
                             
                             # Create temp file with proper extension
                             file_ext = file_data.get('type', 'image/png').split('/')[-1]
@@ -3106,10 +3309,10 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
                                 'path': temp_file.name,
                                 'type': file_data.get('type', 'image/png')
                             })
-                            print(f"💾 Saved image to: {temp_file.name}")
+                            print(f" Saved image to: {temp_file.name}")
                         except Exception as e:
-                            print(f"❌ Failed to decode image: {e}")
-                            print(f"❌ Failed to decode image: {e}")
+                            print(f" Failed to decode image: {e}")
+                            print(f" Failed to decode image: {e}")
                             traceback.print_exc()
             
             state = AgentState(company_id=user_id, question=query, route="vision", answer="", context={"attached_files": processed_files})
@@ -3131,14 +3334,14 @@ I don't see any uploaded data yet. Please upload a CSV or Excel file first!
         
         # AI MODELS VIA OPENROUTER - DeepSeek, Qwen, Nous, Gemini, Llama
         elif mode in AI_MODELS:
-            print(f"🤖 AI MODEL MODE: {mode} - Using OpenRouter with RAG context")
+            print(f" AI MODEL MODE: {mode} - Using OpenRouter with RAG context")
             response, sources = await ai_model_response(
                 user_id=user_id,
                 query=query,
                 model_key=mode,
                 conversation_context=conversation_context
             )
-            print(f"🤖 AI model returned: {len(response) if response else 0} chars")
+            print(f" AI model returned: {len(response) if response else 0} chars")
         
         # For agent modes (rag, graph, hybrid, vision), response is already complete
         # Only build prompt for chat mode
@@ -3161,6 +3364,12 @@ Rules:
         # =========================================================================
         # MCP CONTEXT INJECTION - Append MCP insights to response
         # =========================================================================
+        # Add real-time market context simulation
+        if is_business_query:
+            market_context = MarketContextAgent.get_market_context(query)
+            if market_context:
+                mcp_context_text = mcp_context_text + "\n\n" + market_context if mcp_context_text else market_context
+
         if mcp_context_text and is_business_query:
             # Add MCP insights at the end of the response
             response = response + "\n\n---\n" + mcp_context_text
@@ -3174,8 +3383,11 @@ Rules:
         # FINAL STEP: Universal Chart Injection for ALL modes
         # =========================================================================
         response = append_chart_if_needed(response, query, user_id)
+        
+        # 🛡️ SECURITY: Apply output guardrails to prevent hallucinations/harmful code
+        response = SecurityVault.apply_nemo_guardrails(response)
 
-        print(f"✅ Sending response: mode={mode}, length={len(response)}")
+        print(f" Sending response: mode={mode}, length={len(response)}")
         
         # 🔥 CACHE STORAGE - Save response for future similar queries
         if is_business_query and mode != "chat" and response:
@@ -3187,7 +3399,7 @@ Rules:
                 user_id=user_id,
                 ttl=3600  # 1 hour cache
             )
-            print(f"💾 Cached response for: {query[:50]}...")
+            print(f" Cached response for: {query[:50]}...")
         
         assistant_msg = Message(
             role="assistant",
@@ -3198,6 +3410,17 @@ Rules:
         history.append(assistant_msg)
         
         save_conversation(user_id, conversation_id, history)
+        
+        # 🧠 ENHANCED QDRANT MEMORY: Save this interaction for long-term recall
+        if VECTOR_MEMORY_AVAILABLE and vector_store:
+            try:
+                # Save user query
+                vector_store.add_chat_message(user_id=user_id, role="user", content=query, conversation_id=conversation_id)
+                # Save AI response (truncated to avoid massive embeddings)
+                vector_store.add_chat_message(user_id=user_id, role="assistant", content=response[:1500], conversation_id=conversation_id)
+                print("Saved interaction to Qdrant Semantic Memory")
+            except Exception as e:
+                print(f" Failed to save to vector memory: {e}")
         
         # 🏆 COMPETITION FEATURE: Generate smart follow-up suggestions
         try:
@@ -3223,9 +3446,9 @@ Rules:
                 data_context=response[:500],  # Use response as context
                 columns=data_columns
             )
-            print(f"💡 Generated {len(suggestions)} follow-up suggestions, confidence: {confidence:.2f}")
+            print(f" Generated {len(suggestions)} follow-up suggestions, confidence: {confidence:.2f}")
         except Exception as e:
-            print(f"⚠️ Suggestion generation failed: {e}")
+            print(f" Suggestion generation failed: {e}")
             suggestions = []
             confidence = 0.75
         
@@ -3240,7 +3463,7 @@ Rules:
         )
         
     except Exception as e:
-        print(f"❌ Chat endpoint error: {e}")
+        print(f" Chat endpoint error: {e}")
         import traceback as tb
         tb.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -3404,3 +3627,32 @@ async def health_check():
         "advanced_rag": ADVANCED_RAG if 'ADVANCED_RAG' in dir() else False,
         "charts_available": CHARTS_AVAILABLE,
     }
+
+
+# =============================================================================
+# V5: CODE EXECUTION — AI Chat v2
+# =============================================================================
+
+class CodeExecutionRequest(BaseModel):
+    code: str
+    user_id: Optional[str] = "default"
+
+@router.post("/execute-code")
+async def execute_code(
+    request: CodeExecutionRequest,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """
+    🖥️ Execute Python code in a sandboxed environment.
+    Returns stdout, stderr, matplotlib figures (base64), and DataFrames.
+    Used by AI Chat v2 for inline code execution.
+    """
+    user_id = x_user_id or request.user_id or "default"
+    
+    try:
+        from core.code_executor import execute_code_for_user
+        result = execute_code_for_user(user_id=user_id, code=request.code)
+        return {"success": True, **result}
+    except Exception as e:
+        return {"success": False, "error": str(e), "stdout": "", "stderr": str(e), "figures": [], "tables": []}

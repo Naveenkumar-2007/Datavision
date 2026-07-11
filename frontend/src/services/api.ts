@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/auth-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
@@ -19,7 +19,20 @@ export const api = axios.create({
  */
 api.interceptors.request.use(async (config) => {
   try {
-    // Get current session from Supabase
+    // 1. Check for Developer API Token (for embedded widgets)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlToken = urlParams.get('token');
+    if (urlToken && urlToken.startsWith('dv_')) {
+      sessionStorage.setItem('developerToken', urlToken);
+    }
+    const developerToken = sessionStorage.getItem('developerToken');
+    
+    if (developerToken) {
+      config.headers['Authorization'] = `Bearer ${developerToken}`;
+      return config;
+    }
+
+    // 2. Get current session
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session?.access_token) {
@@ -102,6 +115,14 @@ export const apiService = {
     return api.delete(`/api/v1/files/${userId}/${fileId}`);
   },
 
+  getLiveConnections: async () => {
+    return api.get('/api/v1/connections');
+  },
+  
+  deleteLiveConnection: async (connectionId: string) => {
+    return api.delete(`/api/v1/connections/${connectionId}`);
+  },
+
   deleteAllFiles: async () => {
     const userId = getUserId();
     return api.delete(`/api/v1/files/${userId}/all`);
@@ -115,6 +136,7 @@ export const apiService = {
   // Chat operations - USES AUTHENTICATED USER ID
   sendMessage: async (
     message: string,
+    model: string = 'llama',
     mode: string = 'rag',
     conversationId?: string,
     compareFiles?: string[],
@@ -124,6 +146,7 @@ export const apiService = {
   ) => {
     return api.post('/api/v1/chat/message', {
       message,
+      model,
       mode,
       conversationId,
       compareFiles,
@@ -402,6 +425,48 @@ export const apiService = {
         limit: params.limit || 20,
       },
     });
+  },
+
+  // Anomalies API
+  getAnomaliesOverview: async () => {
+    return api.get('/api/v1/anomalies/overview');
+  },
+  
+  triggerAnomalyScan: async () => {
+    return api.post('/api/v1/anomalies/scan');
+  },
+
+  triggerAutoFix: async () => {
+    return api.post('/api/v1/anomalies/auto-fix');
+  },
+
+  // Simulator API
+  getSimulatorVariables: async () => {
+    return api.get('/api/v1/simulator/variables');
+  },
+
+  runSimulation: async (variables: Record<string, number>) => {
+    return api.post('/api/v1/simulator/run', { variables });
+  },
+
+  // Global Search API
+  globalSearch: async (query: string) => {
+    return api.get('/api/v1/search', { params: { q: query } });
+  },
+
+  // Multi-Dataset Join API
+  getJoinSuggestions: async (file1: string, file2: string) => {
+    const userId = getUserId();
+    const response = await api.get(`/api/v1/files/${userId}/join-suggestions`, {
+      params: { file1, file2 },
+    });
+    return response.data;
+  },
+
+  joinDatasets: async (params: { file1: string, file2: string, left_on: string, right_on: string, how: string, output_filename: string }) => {
+    const userId = getUserId();
+    const response = await api.post(`/api/v1/files/${userId}/join`, params);
+    return response.data;
   },
 };
 

@@ -5,7 +5,7 @@
  * This ID is used to isolate all user data (files, models, chats, etc.)
  */
 
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/auth-client';
 
 const GUEST_ID_KEY = 'guestUserId';
 const USER_ID_KEY = 'userId';
@@ -41,16 +41,16 @@ function getOrCreateGuestId(): string {
  */
 export async function getUserId(): Promise<string> {
   try {
-    // First check Supabase session
+    // First check auth session
     const { data: { session } } = await supabase.auth.getSession();
     
     if (session?.user?.id) {
-      // Authenticated user - use their Supabase ID
+      // Authenticated user - use their user ID
       localStorage.setItem(USER_ID_KEY, session.user.id);
       return session.user.id;
     }
   } catch (error) {
-    console.warn('Could not check Supabase session:', error);
+    console.warn('Could not check auth session:', error);
   }
   
   // Check for stored authenticated user ID
