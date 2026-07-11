@@ -1,20 +1,26 @@
 """
 Notification Service - Core delivery engine
-Handles email and push notifications with retry logic and rate limiting
+Handles email and push notifications with retry logic and rate limiting.
+
+Migrated from Supabase to PostgreSQL/SQLAlchemy.
 """
 
 import asyncio
-from datetime import datetime, time as dt_time
-from typing import Dict, Any, List
-from utils.supabase_admin import get_supabase_admin, get_user_email
+import uuid
+from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy import func
+
+from database.db import AsyncSessionLocal
+from database.orm import Notification, PushToken, UserProfile
 from services.email_service import send_insight_email
 # Temporarily disabled - uncomment when pywebpush is in requirements.txt
 # from services.push_service import send_push_notification
 import logging
 
 logger = logging.getLogger(__name__)
-
-supabase = get_supabase_admin()
 
 
 class NotificationJob:
@@ -31,6 +37,53 @@ class NotificationJob:
         self.user_id = user_id
         self.channels = channels
         self.payload = payload
+
+
+async def _get_user_email(user_id: str) -> Optional[str]:
+    """Get user email from PostgreSQL."""
+    try:
+        uid = uuid.UUID(user_id)
+    except (ValueError, AttributeError):
+        return None
+    
+    async with AsyncSessionLocal() as db:
+        stmt = select(UserProfile.email).where(UserProfile.id == uid)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
+
+async def _log_notification(
+    insight_id: str,
+    workspace_id: str,
+    user_id: str,
+    channel: str,
+    payload: Dict,
+    success: bool,
+    attempt: int,
+    error_message: str = None
+):
+    """Log notification to PostgreSQL notifications table."""
+    try:
+        async with AsyncSessionLocal() as db:
+            notification = Notification(
+                workspace_id=uuid.UUID(workspace_id) if workspace_id else None,
+                user_id=uuid.UUID(user_id),
+                type=channel,
+                title=payload.get('title', 'Notification'),
+                message=payload.get('body', ''),
+                channel=payload.get('channel', 'system'),
+                status='sent' if success else 'failed',
+                metadata={
+                    'insight_id': insight_id,
+                    'attempt': attempt,
+                    'payload': payload,
+                    'error_message': error_message
+                }
+            )
+            db.add(notification)
+            await db.commit()
+    except Exception as e:
+        logger.error(f"Failed to log notification: {e}")
 
 
 async def enqueue_notification(job: NotificationJob):
@@ -50,7 +103,7 @@ async def _send_email_with_retry(job: NotificationJob, attempt: int = 1):
     
     try:
         # Get user email
-        user_email = await get_user_email(job.user_id)
+        user_email = await _get_user_email(job.user_id)
         if not user_email:
             logger.warning(f"No email found for user {job.user_id}")
             return
@@ -65,15 +118,10 @@ async def _send_email_with_retry(job: NotificationJob, attempt: int = 1):
         )
         
         # Log success
-        supabase.table('notifications_history').insert({
-            'insight_id': job.insight_id,
-            'workspace_id': job.workspace_id,
-            'user_id': job.user_id,
-            'channel': 'email',
-            'payload': job.payload,
-            'success': True,
-            'attempt': attempt
-        }).execute()
+        await _log_notification(
+            job.insight_id, job.workspace_id, job.user_id,
+            'email', job.payload, True, attempt
+        )
         
         logger.info(f"Email sent successfully to {user_email} for insight {job.insight_id}")
         
@@ -88,16 +136,10 @@ async def _send_email_with_retry(job: NotificationJob, attempt: int = 1):
             return await _send_email_with_retry(job, attempt + 1)
         
         # Log failure after max attempts
-        supabase.table('notifications_history').insert({
-            'insight_id': job.insight_id,
-            'workspace_id': job.workspace_id,
-            'user_id': job.user_id,
-            'channel': 'email',
-            'payload': job.payload,
-            'success': False,
-            'attempt': attempt,
-            'error_message': str(e)
-        }).execute()
+        await _log_notification(
+            job.insight_id, job.workspace_id, job.user_id,
+            'email', job.payload, False, attempt, str(e)
+        )
 
 
 async def _send_push_with_retry(job: NotificationJob, attempt: int = 1):
@@ -105,40 +147,50 @@ async def _send_push_with_retry(job: NotificationJob, attempt: int = 1):
     MAX_ATTEMPTS = 3
     
     try:
-        # Get push tokens for user
-        response = supabase.table('push_tokens').select('*').eq('workspace_id', job.workspace_id).eq('user_id', job.user_id).execute()
+        # Get push tokens for user from PostgreSQL
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                select(PushToken)
+                .where(
+                    PushToken.user_id == uuid.UUID(job.user_id),
+                    PushToken.is_active == True
+                )
+            )
+            if job.workspace_id:
+                stmt = stmt.where(PushToken.workspace_id == uuid.UUID(job.workspace_id))
+            
+            result = await db.execute(stmt)
+            tokens = result.scalars().all()
         
-        if not response.data:
+        if not tokens:
             logger.info(f"No push tokens found for user {job.user_id}")
             return
         
         # Send to all tokens
-        for token_data in response.data:
+        for push_token in tokens:
             try:
                 # Temporarily disabled - uncomment when pywebpush is in requirements.txt
                 # await send_push_notification(
-                #     token=token_data['token'],
+                #     token=push_token.token,
                 #     title=job.payload['title'],
                 #     body=job.payload['body'],
                 #     data={'insight_id': job.insight_id}
                 # )
                 pass  # Placeholder while push is disabled
             except Exception as token_error:
-                logger.error(f"Push failed for token {token_data['id']}: {token_error}")
+                logger.error(f"Push failed for token {push_token.id}: {token_error}")
                 # Remove invalid token
                 if 'invalid' in str(token_error).lower() or 'expired' in str(token_error).lower():
-                    supabase.table('push_tokens').delete().eq('id', token_data['id']).execute()
+                    async with AsyncSessionLocal() as db:
+                        push_token.is_active = False
+                        db.add(push_token)
+                        await db.commit()
         
         # Log success
-        supabase.table('notifications_history').insert({
-            'insight_id': job.insight_id,
-            'workspace_id': job.workspace_id,
-            'user_id': job.user_id,
-            'channel': 'push',
-            'payload': job.payload,
-            'success': True,
-            'attempt': attempt
-        }).execute()
+        await _log_notification(
+            job.insight_id, job.workspace_id, job.user_id,
+            'push', job.payload, True, attempt
+        )
         
         logger.info(f"Push sent successfully to user {job.user_id} for insight {job.insight_id}")
         
@@ -151,16 +203,10 @@ async def _send_push_with_retry(job: NotificationJob, attempt: int = 1):
             return await _send_push_with_retry(job, attempt + 1)
         
         # Log failure
-        supabase.table('notifications_history').insert({
-            'insight_id': job.insight_id,
-            'workspace_id': job.workspace_id,
-            'user_id': job.user_id,
-            'channel': 'push',
-            'payload': job.payload,
-            'success': False,
-            'attempt': attempt,
-            'error_message': str(e)
-        }).execute()
+        await _log_notification(
+            job.insight_id, job.workspace_id, job.user_id,
+            'push', job.payload, False, attempt, str(e)
+        )
 
 
 def should_notify(severity: str, threshold: str) -> bool:
@@ -198,16 +244,30 @@ def in_dnd_window(dnd_start: str | None, dnd_end: str | None) -> bool:
 
 async def check_rate_limit(workspace_id: str, user_id: str) -> bool:
     """
-    Check if user has exceeded notification rate limit
-    Returns True if rate limit exceeded, False otherwise
+    Check if user has exceeded notification rate limit.
+    Returns True if rate limit exceeded, False otherwise.
+    Uses PostgreSQL notifications table instead of Supabase.
     """
-    # Check notifications sent in last hour
-    from datetime import timedelta
     one_hour_ago = datetime.now() - timedelta(hours=1)
     
-    response = supabase.table('notifications_history').select('id').eq('workspace_id', workspace_id).eq('user_id', user_id).gte('sent_at', one_hour_ago.isoformat()).execute()
-    
-    count = len(response.data) if response.data else 0
+    try:
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                select(func.count())
+                .select_from(Notification)
+                .where(
+                    Notification.user_id == uuid.UUID(user_id),
+                    Notification.sent_at >= one_hour_ago
+                )
+            )
+            if workspace_id:
+                stmt = stmt.where(Notification.workspace_id == uuid.UUID(workspace_id))
+            
+            result = await db.execute(stmt)
+            count = result.scalar() or 0
+    except Exception as e:
+        logger.error(f"Rate limit check failed: {e}")
+        count = 0
     
     # Limit: 5 notifications per hour per user
     MAX_PER_HOUR = 5

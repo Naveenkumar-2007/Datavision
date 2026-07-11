@@ -2,19 +2,36 @@
 
 ## Production-Ready DataVision AI
 
+This project is configured with a **fully automated CI/CD pipeline**. Any code you push to the `main` branch of this GitHub repository will automatically be deployed to your HuggingFace Space.
+
+Your HuggingFace Space: [https://datavision-ai-datavision.hf.space](https://datavision-ai-datavision.hf.space)
+
 ### Pre-Deployment Checklist ✅
 
-#### 1. Environment Variables (CRITICAL)
-Set these in HuggingFace Spaces Settings > Variables:
+#### 1. Setup GitHub Actions CI/CD (One-time setup)
+To allow GitHub to push to HuggingFace Spaces on your behalf, you need a HuggingFace Write Token:
+1. Go to your HuggingFace Settings: [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+2. Create a new token with **Write** permissions and copy it.
+3. Go to this GitHub repository's Settings > **Secrets and variables** > **Actions**
+4. Click **New repository secret**
+5. Name: `HF_TOKEN`
+6. Secret: paste your copied HuggingFace token
+
+#### 2. Environment Variables (CRITICAL)
+Your actual secrets must be added to your HuggingFace Space (they are NOT in GitHub).
+Go to HuggingFace Space Settings > **Variables and secrets**. 
+Add the following as **Secrets**:
 
 ```bash
 # REQUIRED - AI Provider
 GROQ_API_KEY=gsk_your_actual_groq_key_here
 
-# REQUIRED - Database & Auth  
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your_anon_key_here
-SUPABASE_SERVICE_KEY=your_service_role_key_here
+# REQUIRED - Database (PostgreSQL hosted e.g. Neon, Supabase Postgres, Railway)
+# Localhost will NOT work on HuggingFace.
+DATABASE_URL=postgresql+asyncpg://user:password@hostname:5432/datavision
+
+# REQUIRED - Authentication
+JWT_SECRET=your_randomly_generated_jwt_secret
 
 # Production Environment
 ENVIRONMENT=production
@@ -22,257 +39,85 @@ ENVIRONMENT=production
 # CORS (Auto-configured for HF Spaces)
 CORS_ORIGINS=*
 ALLOWED_HOSTS=*.hf.space,huggingface.co
-
-# Optional - Additional AI Providers (Fallback)
-OPENAI_API_KEY=sk-your_openai_key_here
-GOOGLE_API_KEY=your_google_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_key_here
 ```
-
-#### 2. Supabase Setup (Required for Persistence)
-1. Create free account at https://supabase.com
-2. Create new project
-3. Go to Settings > API and copy:
-   - Project URL → `VITE_SUPABASE_URL`
-   - anon public key → `VITE_SUPABASE_ANON_KEY`
-   - service_role key → `SUPABASE_SERVICE_KEY`
-
-#### 3. GROQ API Key (Primary AI Provider)
-1. Get FREE key at https://console.groq.com/keys
-2. Copy key starting with `gsk_`
-3. Set as `GROQ_API_KEY` in HF Spaces
 
 ---
 
-## Deployment Steps
+## Deployment Workflow
 
-### Option 1: Using HuggingFace Web Interface (Recommended)
-
-1. **Create New Space**
-   - Go to https://huggingface.co/spaces
-   - Click "Create new Space"
-   - Choose "Docker" as Space SDK
-   - Set visibility (Public/Private)
-
-2. **Upload Code**
-   - Drag & drop your project folder OR
-   - Use Git push (see Option 2)
-
-3. **Set Environment Variables**
-   - Go to Space Settings > Variables
-   - Add all variables from checklist above
-   - Mark sensitive ones as "Secret"
-
-4. **Build & Deploy**
-   - HuggingFace auto-builds from Dockerfile
-   - First build: ~5-10 minutes
-   - Subsequent builds: ~2-3 minutes
-
-### Option 2: Using Git Push
+### 1. The Automated Way (GitHub CI/CD) - Recommended
+Because we've configured GitHub Actions, deployment is completely hands-off.
 
 ```bash
-# 1. Create Space on HuggingFace first (get the URL)
+# 1. Make your changes locally
+git add .
+git commit -m "Your descriptive commit message"
 
-# 2. Run deployment script
-.\deploy_hf.ps1
+# 2. Push to GitHub
+git push origin main
+```
+**What happens next?**
+1. GitHub Actions automatically starts the CI Pipeline (`ci.yml`). It lints the Python backend and builds the frontend.
+2. If successful, it starts the Deployment Pipeline (`deploy.yml`).
+3. GitHub pushes the code directly to HuggingFace.
+4. HuggingFace rebuilds the Docker container automatically (takes ~5 minutes).
 
-# Or manually:
-git remote add huggingface https://huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE_NAME
-git push huggingface main
+### 2. Manual Fallback Way (If CI fails)
+If you ever need to bypass GitHub Actions and push directly to HuggingFace:
+
+```bash
+# 1. Add HuggingFace remote manually (first time only)
+git remote add huggingface https://huggingface.co/spaces/datavision-ai/Datavision
+
+# 2. Force push
+git push --force huggingface main
 ```
 
 ---
 
-## Post-Deployment Configuration
+## Database Configuration for HuggingFace
+
+HuggingFace Spaces are ephemeral Docker containers. This means a local SQLite or Localhost PostgreSQL database will **lose all data when the space goes to sleep**. 
+
+To maintain user accounts, chats, and configurations, you MUST use an external hosted PostgreSQL database.
+
+**Recommended Free Providers:**
+1. **Neon** (https://neon.tech): Excellent free tier, serverless Postgres.
+2. **Railway** (https://railway.app): Easy Postgres provisioning.
+3. **Supabase** (https://supabase.com): Create a project and grab the Postgres connection string from Settings > Database. (You do not need the Supabase JS SDK, just the pure Postgres string).
+
+*Note: Your `DATABASE_URL` must start with `postgresql+asyncpg://` for our SQLAlchemy setup.*
+
+### Alembic Migrations
+When your HuggingFace space boots up, the `start.sh` script automatically runs `alembic upgrade head`. This ensures your database schema is perfectly in sync with your code!
+
+---
+
+## Post-Deployment Validation
 
 ### 1. Verify Deployment
-- Access your Space: `https://huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE_NAME`
-- Check logs for errors
-- Test file upload functionality
-- Test AI chat responses
+- Access your Space: `https://datavision-ai-datavision.hf.space`
+- Check HuggingFace logs for any runtime errors.
+- Create an account and log in.
 
-### 2. Data Persistence Check
-✅ User sessions persist across refreshes
-✅ Uploaded files remain after restart
-✅ ML models saved to storage
-✅ Chat history maintained
-
-### 3. API Rate Limiting (Production Best Practice)
-
-**How enterprises handle this:**
-- Never show users "API limit exceeded" errors
-- Use multiple API keys (load balancing)
-- Implement graceful degradation
-- Show generic "High traffic, please wait" message
-
-**Already implemented in DataVision:**
-```python
-# backend/utils/groq_client.py
-# Automatic load balancing across multiple keys
-# Automatic fallback to alternative models
-# User never sees API limit messages
-```
-
-**To add more API keys:**
-```bash
-# In HuggingFace Spaces Settings > Variables
-GROQ_API_KEY=gsk_primary_key
-GROQ_KEY_1=gsk_backup_key_1
-GROQ_KEY_2=gsk_backup_key_2
-GROQ_KEY_3=gsk_backup_key_3
-# System auto-rotates between them
-```
-
----
-
-## Security Features (Production-Grade)
-
-### ✅ Already Implemented
-
-1. **No Exposed API Keys**
-   - All keys from environment variables
-   - Sensitive data filtered from logs
-   - No keys in frontend code
-
-2. **Data Isolation**
-   - Each user has separate storage directory
-   - No cross-user data leakage
-   - Secure file upload validation
-
-3. **Input Validation**
-   - File type whitelist
-   - File size limits (100MB)
-   - Filename sanitization
-   - Path traversal prevention
-
-4. **Secure Headers**
-   - X-Content-Type-Options: nosniff
-   - X-XSS-Protection enabled
-   - CORS properly configured
-   - Server header removed
-
-5. **Database Security**
-   - Row Level Security (RLS) in Supabase
-   - JWT token authentication
-   - Service role key server-side only
-
----
-
-## Monitoring & Maintenance
-
-### Check Space Logs
-```
-HuggingFace Space > Logs tab
-Monitor for:
-- ❌ API errors
-- ⚠️ Rate limit warnings (add more keys if frequent)
-- 🔒 Security issues
-- 💾 Storage capacity
-```
-
-### Storage Management
-- Default HF Spaces: 50GB persistent storage
-- Monitor: Space Settings > Storage
-- Clean old files: Admin dashboard coming soon
-
-### Performance Optimization
-```bash
-# Already configured in Dockerfile:
-- Non-root user for security
-- Health checks enabled
-- Optimized Python dependencies
-- Pre-built frontend (no build in container)
-```
+### 2. Check Persistent Storage
+HuggingFace Spaces comes with 50GB of persistent storage mounted at `/app/storage` (where we configured it in the Dockerfile).
+- Upload a file and verify it persists after the space reboots.
+- Check that trained AutoML models and vector FAISS indexes are saved properly.
 
 ---
 
 ## Troubleshooting
 
-### Issue: "No API key found"
-**Fix:** Add `GROQ_API_KEY` in Space Settings > Variables
+### Issue: GitHub Action Fails on Deploy
+**Fix:** Ensure you added the `HF_TOKEN` exactly as specified in the GitHub Secrets. Check the action logs for specific Git errors.
 
-### Issue: "Database connection failed"
-**Fix:** Add Supabase variables (VITE_SUPABASE_URL, etc.)
+### Issue: "Application Startup Failed" in HF Logs
+**Fix:** Likely a database connection issue or missing `GROQ_API_KEY`. Verify all secrets in HF Settings and ensure your `DATABASE_URL` is accessible from the internet.
 
-### Issue: "Files not persisting"
-**Fix:** Ensure `/app/storage` directory has write permissions (already configured in Dockerfile)
-
-### Issue: "CORS error"
-**Fix:** Set `CORS_ORIGINS=*` in environment variables
-
-### Issue: "API rate limit"
-**Fix:** Add multiple GROQ keys (GROQ_KEY_1, GROQ_KEY_2, etc.)
+### Issue: "Database schema out of date"
+**Fix:** Restart the space. The `start.sh` script will run `alembic upgrade head` again.
 
 ---
 
-## Scaling Up
-
-### Free Tier Limits
-- ✅ 2 CPU cores
-- ✅ 16GB RAM
-- ✅ 50GB storage
-- ✅ Unlimited requests
-
-### Upgrade to Pro ($10/month)
-- 🚀 4 CPU cores
-- 🚀 32GB RAM
-- 🚀 100GB storage
-- 🚀 GPU access
-
-### Enterprise Features
-- Multiple API key rotation ✅ (already implemented)
-- Graceful error handling ✅ (already implemented)
-- User data isolation ✅ (already implemented)
-- Audit logging ✅ (already implemented)
-- Auto-scaling → Available in HF Pro
-
----
-
-## Success Checklist
-
-Before going live:
-- [ ] All environment variables set in HF Spaces
-- [ ] Supabase project created and configured
-- [ ] GROQ API key active and tested
-- [ ] Test file upload (CSV, Excel, JSON)
-- [ ] Test AI chat responses
-- [ ] Test AutoML model training
-- [ ] Verify data persists after refresh
-- [ ] Check logs for errors
-- [ ] Test from multiple devices
-- [ ] Verify HTTPS working
-
----
-
-## Support & Documentation
-
-- HuggingFace Spaces Docs: https://huggingface.co/docs/hub/spaces
-- Supabase Docs: https://supabase.com/docs
-- GROQ API Docs: https://console.groq.com/docs
-- DataVision Issues: Check backend/DEPLOYMENT.md for detailed architecture
-
----
-
-## Production URL Structure
-
-```
-Production Space: https://huggingface.co/spaces/YOUR_USERNAME/YOUR_SPACE_NAME
-API Endpoint: https://YOUR_USERNAME-YOUR_SPACE_NAME.hf.space/api
-Frontend: https://YOUR_USERNAME-YOUR_SPACE_NAME.hf.space/
-Docs (dev only): https://YOUR_USERNAME-YOUR_SPACE_NAME.hf.space/docs
-```
-
----
-
-**Your DataVision AI is now production-ready! 🎉**
-
-Users can:
-- Upload any data (CSV, Excel, JSON, PDF, images)
-- Get instant AI analysis
-- Train ML models without code
-- Generate reports and forecasts
-- Everything persists across sessions
-- No API limits shown to users
-- Enterprise-grade security
-
-Questions? Check logs in HuggingFace Space dashboard.
+See `MLOPS.md` for complete architecture and lifecycle details.

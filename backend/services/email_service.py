@@ -83,98 +83,107 @@ def render_insight_email_template(
     chart_payload: Optional[dict],
     workspace_id: str
 ) -> str:
-    """Render premium HTML email template for insight notification (DataVision Dark Theme)"""
+    """Render ultra-premium HTML email template for insight notification (DataVision Enterprise)"""
     
-    # Build action button based on chart availability
-    action_button = ""
-    # DataVision Gradient: Teal to Amber
-    button_gradient = "linear-gradient(135deg, #0d9488 0%, #d97706 100%)" 
+    # Modern Enterprise Gradient (Teal/Emerald)
+    button_gradient = "linear-gradient(135deg, #0d9488 0%, #059669 100%)" 
     
-    if chart_payload:
-        action_button = f'''
-        <table cellpadding="0" cellspacing="0" style="margin: 25px 0;">
-            <tr>
-                <td style="border-radius: 12px; background: {button_gradient}; box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);">
-                    <a href="{APP_URL}/chat" 
-                       style="display: inline-block; padding: 16px 36px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px; letter-spacing: 0.5px;">
-                        View Insights in Dashboard →
-                    </a>
-                </td>
-            </tr>
-        </table>
-        '''
-    else:
-        action_button = f'''
-        <table cellpadding="0" cellspacing="0" style="margin: 25px 0;">
-            <tr>
-                <td style="border-radius: 12px; background: {button_gradient}; box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);">
-                    <a href="{APP_URL}/chat" 
-                       style="display: inline-block; padding: 16px 36px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px; letter-spacing: 0.5px;">
-                        Discuss with AI Analyst →
-                    </a>
-                </td>
-            </tr>
-        </table>
-        '''
-    
+    # Check if we should link to a specific chat context or general dashboard
+    cta_text = "View Dashboard Insights"
+    if not chart_payload:
+        cta_text = "Discuss with AI Analyst"
+        
     return f'''
-
-    <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-    <html xmlns="http://www.w3.org/1999/xhtml">
+    <!DOCTYPE html>
+    <html lang="en">
     <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-        <title>DataVision Intelligence Alert</title>
-        <style type="text/css">
-            body, td, div, p, a, input {{ font-family: 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif; }}
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="color-scheme" content="light dark">
+        <meta name="supported-color-schemes" content="light dark">
+        <title>{title}</title>
+        <!--[if mso]>
+        <style>
+            table {{border-collapse:collapse;border:0;padding:0;margin:0;}}
+            div, td {{font-family: Arial, sans-serif !important;}}
         </style>
+        <![endif]-->
     </head>
-    <body style="margin: 0; padding: 0; background-color: #0a0a0b; color: #e2e8f0;">
-        <!-- Wrapper Table (Forces Background) -->
-        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #0a0a0b;">
+    <body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #f4f4f5; padding: 40px 20px;">
             <tr>
-                <td align="center" style="padding: 40px 10px;">
-                    <!-- Main Card -->
-                    <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #141414; border-radius: 16px; overflow: hidden; border: 1px solid #262626; box-shadow: 0 4px 24px rgba(0,0,0,0.5); max-width: 600px;">
+                <td align="center">
+                    <!-- Main Container -->
+                    <table border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 16px; border: 1px solid #e4e4e7; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05); overflow: hidden;">
                         
-                        <!-- Header with Gradient Border Top -->
+                        <!-- Header -->
                         <tr>
-                            <td style="background-color: #1a1a1a; padding: 40px 30px; border-bottom: 1px solid #262626; text-align: center;">
-                                <div style="display: inline-block; padding: 6px 12px; border-radius: 50px; background-color: rgba(20, 184, 166, 0.1); border: 1px solid rgba(20, 184, 166, 0.2); margin-bottom: 16px;">
-                                    <span style="color: #2dd4bf; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">AI Analyst Insight</span>
-                                </div>
-                                <h1 style="margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px; color: #ffffff;">
-                                    <span style="color: #2dd4bf;">Data</span><span style="color: #f59e0b;">Vision</span>
-                                </h1>
+                            <td style="padding: 40px 48px; background: #fafafa; border-bottom: 1px solid #f4f4f5;">
+                                <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                    <tr>
+                                        <td>
+                                            <div style="display: inline-block; padding: 6px 12px; background: rgba(13, 148, 136, 0.1); border-radius: 20px; border: 1px solid rgba(13, 148, 136, 0.2); margin-bottom: 24px;">
+                                                <span style="color: #0d9488; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">✨ AI Intelligence Digest</span>
+                                            </div>
+                                            <h1 style="margin: 0 0 12px 0; font-size: 32px; font-weight: 700; color: #18181b; letter-spacing: -0.02em; line-height: 1.2;">
+                                                {title}
+                                            </h1>
+                                            <p style="margin: 0; font-size: 15px; color: #71717a; font-weight: 400;">
+                                                Autonomous Insights powered by Nvidia Enterprise LLMs.
+                                            </p>
+                                        </td>
+                                    </tr>
+                                </table>
                             </td>
                         </tr>
-
+                        
                         <!-- Content Body -->
                         <tr>
-                            <td style="padding: 40px 30px; background-color: #141414;">
-                                <h2 style="margin: 0 0 16px 0; font-size: 22px; font-weight: 700; color: #ffffff;">
-                                    {title}
-                                </h2>
-                                
-                                <div style="color: #cccccc; font-size: 16px; line-height: 1.6; margin-bottom: 24px;">
+                            <td style="padding: 48px;">
+                                <!-- LLM Generated Content -->
+                                <div style="font-size: 16px; color: #3f3f46; line-height: 1.7; margin-bottom: 40px; font-weight: 400;">
                                     {body.replace(chr(10), '<br/>')}
                                 </div>
-
-                                <!-- Action Button -->
-                                {action_button}
+                                
+                                <!-- Call to Action -->
+                                <table cellpadding="0" cellspacing="0" width="100%">
+                                    <tr>
+                                        <td align="center" style="padding-top: 16px; border-top: 1px solid #f4f4f5;">
+                                            <table cellpadding="0" cellspacing="0" style="margin: 24px auto 0 auto;">
+                                                <tr>
+                                                    <td style="border-radius: 8px; background: {button_gradient};">
+                                                        <a href="{APP_URL}/chat" 
+                                                           style="display: inline-block; padding: 14px 32px; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 15px; box-shadow: 0 4px 14px 0 rgba(13, 148, 136, 0.39);">
+                                                            {cta_text} &rarr;
+                                                        </a>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                </table>
                             </td>
                         </tr>
-
+                        
                         <!-- Footer -->
                         <tr>
-                            <td style="background-color: #0f0f0f; padding: 24px; text-align: center; border-top: 1px solid #262626;">
-                                <p style="margin: 0; color: #64748b; font-size: 13px;">
-                                    &copy; 2026 DataVision AI. All rights reserved.
-                                </p>
-                                <p style="margin: 8px 0 0 0; font-size: 12px; color: #475569;">
-                                    <a href="{APP_URL}" style="color: #2dd4bf; text-decoration: none;">Dashboard</a> &bull; 
-                                    <a href="{APP_URL}/settings" style="color: #2dd4bf; text-decoration: none;">Unsubscribe</a>
-                                </p>
+                            <td style="padding: 32px 48px; background-color: #fafafa; border-top: 1px solid #f4f4f5; text-align: center;">
+                                <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                                    <tr>
+                                        <td align="center">
+                                            <h2 style="margin: 0 0 12px 0; font-size: 18px; font-weight: 800; letter-spacing: -0.02em;">
+                                                <span style="color: #0d9488;">Data</span><span style="color: #18181b;">Vision</span>
+                                            </h2>
+                                            <p style="margin: 0 0 16px 0; font-size: 13px; color: #71717a; line-height: 1.5;">
+                                                This report was autonomously generated by your DataVision agents.<br/>
+                                                If you wish to change your notification preferences, you can do so in your <a href="{APP_URL}/settings" style="color: #0d9488; text-decoration: underline;">account settings</a>.
+                                            </p>
+                                            <p style="margin: 0; font-size: 12px; color: #a1a1aa;">
+                                                &copy; 2026 DataVision AI Analytics. All rights reserved.
+                                            </p>
+                                        </td>
+                                    </tr>
+                                </table>
                             </td>
                         </tr>
                     </table>

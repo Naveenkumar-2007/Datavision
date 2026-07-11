@@ -434,77 +434,11 @@ class AuditLogger:
 
 
 # =============================================================================
-# RATE LIMITER
+# RATE LIMITER — Delegated to core.rate_limiter
 # =============================================================================
+# The unified rate limiter lives in core/rate_limiter.py (Redis + in-memory).
+# This module re-exports a convenience function for backward compatibility.
 
-class RateLimiter:
-    """
-    🚦 Rate Limiter
-    
-    Prevent API abuse:
-    - Per-user limits
-    - Per-endpoint limits
-    - Sliding window
-    """
-    
-    def __init__(
-        self,
-        requests_per_minute: int = 60,
-        requests_per_hour: int = 1000
-    ):
-        self.requests_per_minute = requests_per_minute
-        self.requests_per_hour = requests_per_hour
-        self.user_requests: Dict[str, List[datetime]] = defaultdict(list)
-        self._lock = threading.Lock()
-    
-    def is_allowed(self, user_id: str) -> Tuple[bool, Optional[int]]:
-        """
-        Check if request is allowed
-        
-        Returns:
-            (allowed, retry_after_seconds)
-        """
-        now = datetime.now()
-        
-        with self._lock:
-            # Clean old entries
-            minute_ago = now - timedelta(minutes=1)
-            hour_ago = now - timedelta(hours=1)
-            
-            self.user_requests[user_id] = [
-                t for t in self.user_requests[user_id]
-                if t > hour_ago
-            ]
-            
-            requests = self.user_requests[user_id]
-            
-            # Check minute limit
-            requests_last_minute = sum(1 for t in requests if t > minute_ago)
-            if requests_last_minute >= self.requests_per_minute:
-                return False, 60 - (now - minute_ago).seconds
-            
-            # Check hour limit
-            if len(requests) >= self.requests_per_hour:
-                return False, 3600 - (now - hour_ago).seconds
-            
-            # Allow and record
-            self.user_requests[user_id].append(now)
-            return True, None
-    
-    def get_usage(self, user_id: str) -> Dict[str, int]:
-        """Get current usage for user"""
-        now = datetime.now()
-        minute_ago = now - timedelta(minutes=1)
-        hour_ago = now - timedelta(hours=1)
-        
-        requests = self.user_requests.get(user_id, [])
-        
-        return {
-            "requests_last_minute": sum(1 for t in requests if t > minute_ago),
-            "requests_last_hour": sum(1 for t in requests if t > hour_ago),
-            "limit_per_minute": self.requests_per_minute,
-            "limit_per_hour": self.requests_per_hour
-        }
 
 
 # =============================================================================
@@ -624,7 +558,7 @@ class SessionManager:
 
 action_engine = ActionEngine()
 audit_logger = AuditLogger()
-rate_limiter = RateLimiter()
+# rate_limiter — now managed by core.rate_limiter module
 session_manager = SessionManager()
 
 
@@ -662,10 +596,29 @@ def log_action(
 
 
 def check_rate_limit(user_id: str) -> Dict[str, Any]:
-    """Quick function to check rate limit"""
-    allowed, retry_after = rate_limiter.is_allowed(user_id)
+    """Quick synchronous rate limit check (delegates to core.rate_limiter)."""
+    from core.rate_limiter import get_rate_limiter, RATE_LIMITS
+    import asyncio
+    import time
+
+    limiter = get_rate_limiter()
+    limits = RATE_LIMITS["default"]
+    key = f"user:{user_id}:default"
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Can't await in a sync context inside a running loop
+            return {"allowed": True, "retry_after": None}
+        is_limited, remaining, retry_after = loop.run_until_complete(
+            limiter.is_rate_limited(key, limits["max_requests"], limits["window_seconds"])
+        )
+    except RuntimeError:
+        return {"allowed": True, "retry_after": None}
+
     return {
-        "allowed": allowed,
-        "retry_after": retry_after,
-        **rate_limiter.get_usage(user_id)
+        "allowed": not is_limited,
+        "retry_after": retry_after if is_limited else None,
+        "requests_last_minute": limits["max_requests"] - remaining,
+        "limit_per_minute": limits["max_requests"]
     }

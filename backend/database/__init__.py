@@ -2,14 +2,9 @@
 Database module initialization
 """
 
-from database.supabase_client import (
-    get_supabase_client,
-    get_supabase_admin_client,
-    get_user_client,
+from database.storage import (
+    LocalStorage,
     get_storage,
-    SupabaseStorage,
-    SUPABASE_URL,
-    STORAGE_BUCKET
 )
 
 from database.models import (
@@ -53,14 +48,9 @@ from database.auth import (
 )
 
 __all__ = [
-    # Clients
-    "get_supabase_client",
-    "get_supabase_admin_client",
-    "get_user_client",
+    # Storage
     "get_storage",
-    "SupabaseStorage",
-    "SUPABASE_URL",
-    "STORAGE_BUCKET",
+    "LocalStorage",
     
     # Enums
     "UserRole",

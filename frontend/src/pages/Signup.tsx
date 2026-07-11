@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { motion } from 'framer-motion';
 import { useUserStore } from '../store/userStore';
@@ -14,6 +14,7 @@ import { Sun, Moon } from 'lucide-react';
 export default function Signup() {
     const { signUp, signInWithGoogle, signInWithGithub } = useAuth();
     const { isDark, toggleTheme } = useUserStore();
+    const navigate = useNavigate();
 
     const [formData, setFormData] = useState({
         email: '',
@@ -24,7 +25,6 @@ export default function Signup() {
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    const [success, setSuccess] = useState(false);
 
     // Theme colors matching Landing page (using global vars)
     // Legacy theme logic removed - handled by App.tsx / userStore
@@ -60,9 +60,9 @@ export default function Signup() {
             });
 
             if (error) {
-                setError(error.message || 'Signup failed');
+                setError(typeof error === 'string' ? error : (error.message || 'Signup failed'));
             } else {
-                setSuccess(true);
+                navigate('/data-hub', { replace: true });
             }
         } catch (err: any) {
             setError(err.message || 'An error occurred');
@@ -78,7 +78,7 @@ export default function Signup() {
             const { error } = await signInWithGoogle();
             if (error) throw error;
         } catch (err: any) {
-            setError(err.message || 'An error occurred');
+            setError(typeof err === 'string' ? err : (err.message || 'An error occurred'));
         } finally {
             setLoading(false);
         }
@@ -91,81 +91,13 @@ export default function Signup() {
             const { error } = await signInWithGithub();
             if (error) throw error;
         } catch (err: any) {
-            setError(err.message || 'An error occurred');
+            setError(typeof err === 'string' ? err : (err.message || 'An error occurred'));
         } finally {
             setLoading(false);
         }
     };
 
-    if (success) {
-        return (
-            <div className="min-h-screen flex items-center justify-center p-4 transition-colors duration-300 relative overflow-hidden bg-primary text-primary">
-                {/* Background Orbs */}
-                <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
-                    <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] rounded-full blur-[100px] opacity-20 bg-emerald-500/20" />
-                    <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] rounded-full blur-[120px] opacity-10 bg-green-500/20" />
-                </div>
 
-                <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="max-w-md w-full rounded-2xl p-8 text-center glass-card shadow-2xl backdrop-blur-xl border border-white/10 relative z-10"
-                >
-                    {/* Email Icon */}
-                    <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-500/20">
-                        <svg className="w-10 h-10 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-
-                    <h2 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Account Created!</h2>
-
-                    {/* Check Your Inbox - Prominent */}
-                    <div className="py-4 px-6 rounded-xl mb-4 glass-panel border border-emerald-500/20 bg-emerald-500/5">
-                        <p className="text-xl font-bold mb-1 text-emerald-500">
-                            📧 Check your inbox
-                        </p>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            We've sent a confirmation email to:
-                        </p>
-                        <p className="font-medium mt-1" style={{ color: 'var(--text-primary)' }}>
-                            {formData.email}
-                        </p>
-                    </div>
-
-                    <div className="space-y-3 text-sm mb-8 text-left bg-white/5 p-4 rounded-xl border border-white/5">
-                        <p className="flex items-center gap-3">
-                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 text-xs">✓</span>
-                            <span style={{ color: 'var(--text-muted)' }}>Click the link in the email to verify</span>
-                        </p>
-                        <p className="flex items-center gap-3">
-                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-500 text-xs">✓</span>
-                            <span style={{ color: 'var(--text-muted)' }}>Sign in to access your dashboard</span>
-                        </p>
-                    </div>
-
-                    <Link
-                        to="/login"
-                        className="block w-full px-8 py-3.5 font-semibold rounded-xl transition-all hover:scale-[1.02] shadow-lg shadow-emerald-500/20"
-                        style={{
-                            background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                            color: '#FFFFFF'
-                        }}
-                    >
-                        Go to Login
-                    </Link>
-
-                    <button
-                        onClick={() => setSuccess(false)}
-                        className="mt-4 text-sm hover:underline"
-                        style={{ color: 'var(--text-muted)' }}
-                    >
-                        Back to signup
-                    </button>
-                </motion.div>
-            </div>
-        );
-    }
 
     return (
         <div className="min-h-screen flex items-center justify-center p-4 transition-colors duration-300 relative overflow-hidden bg-primary text-primary">

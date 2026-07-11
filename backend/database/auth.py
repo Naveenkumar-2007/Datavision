@@ -1,353 +1,193 @@
-"""
-Authentication Helpers
-JWT verification and user authentication utilities
-"""
-
-import os
+import uuid
 from typing import Optional
-from datetime import datetime
-from fastapi import HTTPException, Header, Depends, Request
-from jose import jwt, JWTError
-from functools import wraps
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
-from database.supabase_client import get_supabase_client, get_supabase_admin_client
-from database.models import AuthUser, UserRole
-
-# Supabase JWT secret (get from Supabase Dashboard -> Settings -> API -> JWT Secret)
-# SECURITY: Never fall back to service role key - it has elevated privileges
-JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
-JWT_ALGORITHM = "HS256"
-
-if not JWT_SECRET:
-    import logging
-    logging.getLogger("auth").warning(
-        "⚠️ SUPABASE_JWT_SECRET not configured! JWT verification will fail. "
-        "Get this from Supabase Dashboard -> Settings -> API -> JWT Secret"
-    )
-
-
-def decode_jwt(token: str) -> dict:
-    """
-    Decode and verify a Supabase JWT token.
-    Returns the payload if valid, raises exception otherwise.
-    """
-    try:
-        # Supabase JWTs are signed with the JWT secret
-        payload = jwt.decode(
-            token,
-            JWT_SECRET,
-            algorithms=[JWT_ALGORITHM],
-            audience="authenticated"
-        )
-        return payload
-    except JWTError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-
-
-def get_user_id_from_headers(
-    x_user_id: Optional[str] = None,
-    authorization: Optional[str] = None,
-    require_auth: bool = False
-) -> Optional[str]:
-    """
-    Extract user ID from JWT token or X-User-ID header.
-    Works for both authenticated and legacy/demo sessions.
-    
-    SECURITY: Set require_auth=True for sensitive operations.
-    """
-    user_id = None
-    
-    # Try JWT token first (most secure)
-    if authorization and authorization.startswith("Bearer "):
-        try:
-            token = authorization.split(" ")[1]
-            payload = decode_jwt(token)
-            user_id = payload.get("sub")
-            print(f"🔐 Auth - User from JWT: {user_id}")
-        except Exception as e:
-            print(f"⚠️ JWT decode error: {e}")
-            if require_auth:
-                raise HTTPException(status_code=401, detail="Invalid authentication token")
-    
-    # Fallback to X-User-ID header (only if explicitly provided)
-    if not user_id and x_user_id:
-        # SECURITY: Validate the user_id format
-        import re
-        if re.match(r'^[a-zA-Z0-9_-]+$', x_user_id) and '..' not in x_user_id:
-            user_id = x_user_id
-            print(f"🔐 Auth - User from header: {user_id}")
-        else:
-            print(f"⚠️ Invalid X-User-ID format: {x_user_id}")
-    
-    if not user_id:
-        if require_auth:
-            raise HTTPException(status_code=401, detail="Authentication required")
-        # SECURITY: Return None instead of default user - let caller decide
-        return None
-    
-    return user_id
-
-
-async def get_current_user(
-    authorization: Optional[str] = Header(None, alias="Authorization")
-) -> AuthUser:
-    """
-    Dependency to get current authenticated user from JWT.
-    Raises 401 if not authenticated.
-    """
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    
-    # Extract token from "Bearer <token>"
-    try:
-        scheme, token = authorization.split(" ", 1)
-        if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid authentication scheme")
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
-    
-    # Decode JWT
-    payload = decode_jwt(token)
-    
-    # Extract user info
-    user_id = payload.get("sub")
-    email = payload.get("email", "")
-    
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
-    
-    # Get user role from database
-    try:
-        client = get_supabase_admin_client()
-        result = client.table("profiles").select("role").eq("id", user_id).single().execute()
-        role = result.data.get("role", "user") if result.data else "user"
-    except Exception:
-        role = "user"
-    
-    return AuthUser(
-        id=user_id,
-        email=email,
-        role=UserRole(role),
-        is_admin=role in ["admin", "super_admin"]
-    )
-
-
-async def get_current_user_optional(
-    authorization: Optional[str] = Header(None, alias="Authorization")
-) -> Optional[AuthUser]:
-    """
-    Dependency to get current user if authenticated, None otherwise.
-    Does not raise exception if not authenticated.
-    """
-    if not authorization:
-        return None
-    
-    try:
-        return await get_current_user(authorization)
-    except HTTPException:
-        return None
-
-
-async def get_admin_user(
-    current_user: AuthUser = Depends(get_current_user)
-) -> AuthUser:
-    """
-    Dependency to ensure current user is an admin.
-    Raises 403 if not admin.
-    """
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return current_user
-
-
-async def get_super_admin_user(
-    current_user: AuthUser = Depends(get_current_user)
-) -> AuthUser:
-    """
-    Dependency to ensure current user is a super admin.
-    Raises 403 if not super admin.
-    """
-    if current_user.role != UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Super admin access required")
-    return current_user
-
-
-def require_auth(func):
-    """Decorator to require authentication"""
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        # Check for authorization header in request
-        request = kwargs.get('request')
-        if request:
-            auth_header = request.headers.get('authorization')
-            if not auth_header:
-                raise HTTPException(status_code=401, detail="Not authenticated")
-        return await func(*args, **kwargs)
-    return wrapper
-
+from database.orm import UserProfile
+from core.auth import create_access_token, verify_password, get_password_hash
+from core.auth import get_current_user, get_current_user_optional, AuthenticatedUser as AuthUser, get_admin_user, get_super_admin_user, decode_jwt
+from database.models import AuthSignUp, AuthLogin, AuthMagicLink, UserRole
 
 class AuthService:
-    """Service class for authentication operations"""
-    
-    def __init__(self):
-        self.client = get_supabase_client()
-        self.admin_client = get_supabase_admin_client()
-    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
     async def signup(self, email: str, password: str, metadata: dict = None) -> dict:
-        """
-        Sign up a new user with email and password.
-        """
+        metadata = metadata or {}
+        stmt = select(UserProfile).where(UserProfile.email == email)
+        result = await self.db.execute(stmt)
+        if result.scalar_one_or_none():
+            return {"success": False, "message": "Email already registered"}
+        
+        hashed_password = get_password_hash(password)
+        new_user = UserProfile(
+            email=email,
+            hashed_password=hashed_password,
+            full_name=metadata.get("full_name"),
+            company_name=metadata.get("company_name")
+        )
+        self.db.add(new_user)
         try:
-            response = self.client.auth.sign_up({
-                "email": email,
-                "password": password,
-                "options": {
-                    "data": metadata or {}
-                }
-            })
-            
-            if response.user:
-                return {
-                    "success": True,
-                    "user": {
-                        "id": response.user.id,
-                        "email": response.user.email
-                    },
-                    "session": {
-                        "access_token": response.session.access_token if response.session else None,
-                        "refresh_token": response.session.refresh_token if response.session else None
-                    },
-                    "message": "Signup successful" if response.session else "Please check your email to confirm your account"
-                }
-            else:
-                return {"success": False, "message": "Signup failed"}
-                
+            await self.db.commit()
+            await self.db.refresh(new_user)
         except Exception as e:
+            await self.db.rollback()
             return {"success": False, "message": str(e)}
-    
+
+        access_token = create_access_token(data={"sub": str(new_user.id), "email": new_user.email, "role": new_user.role})
+        
+        return {
+            "success": True,
+            "user": {"id": str(new_user.id), "email": new_user.email},
+            "session": {"access_token": access_token},
+            "message": "Signup successful"
+        }
+
     async def login(self, email: str, password: str) -> dict:
-        """
-        Login with email and password.
-        """
-        try:
-            response = self.client.auth.sign_in_with_password({
-                "email": email,
-                "password": password
-            })
-            
-            if response.user and response.session:
-                return {
-                    "success": True,
-                    "user": {
-                        "id": response.user.id,
-                        "email": response.user.email
-                    },
-                    "session": {
-                        "access_token": response.session.access_token,
-                        "refresh_token": response.session.refresh_token,
-                        "expires_at": response.session.expires_at
-                    }
-                }
-            else:
-                return {"success": False, "message": "Login failed"}
-                
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-    
-    async def logout(self, access_token: str) -> dict:
-        """
-        Logout user and invalidate session.
-        """
-        try:
-            self.client.auth.sign_out()
-            return {"success": True, "message": "Logged out successfully"}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-    
-    async def send_magic_link(self, email: str) -> dict:
-        """
-        Send magic link for passwordless login.
-        """
-        try:
-            response = self.client.auth.sign_in_with_otp({
-                "email": email
-            })
-            return {
-                "success": True,
-                "message": f"Magic link sent to {email}"
-            }
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-    
-    async def refresh_token(self, refresh_token: str) -> dict:
-        """
-        Refresh access token using refresh token.
-        """
-        try:
-            response = self.client.auth.refresh_session(refresh_token)
-            
-            if response.session:
-                return {
-                    "success": True,
-                    "session": {
-                        "access_token": response.session.access_token,
-                        "refresh_token": response.session.refresh_token,
-                        "expires_at": response.session.expires_at
-                    }
-                }
-            else:
-                return {"success": False, "message": "Token refresh failed"}
-                
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-    
-    async def get_oauth_url(self, provider: str, redirect_to: str = None) -> dict:
-        """
-        Get OAuth URL for social login.
-        Supported providers: google, github
-        """
-        try:
-            response = self.client.auth.sign_in_with_oauth({
-                "provider": provider,
-                "options": {
-                    "redirect_to": redirect_to or "http://localhost:5173/auth/callback"
-                }
-            })
-            return {
-                "success": True,
-                "url": response.url
-            }
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-    
+        stmt = select(UserProfile).where(UserProfile.email == email)
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user or not verify_password(password, user.hashed_password):
+            return {"success": False, "message": "Invalid credentials"}
+        
+        access_token = create_access_token(data={"sub": str(user.id), "email": user.email, "role": user.role})
+        
+        return {
+            "success": True,
+            "user": {"id": str(user.id), "email": user.email},
+            "session": {"access_token": access_token}
+        }
+
     async def get_user_profile(self, user_id: str) -> dict:
-        """
-        Get user profile from database.
-        """
-        try:
-            result = self.admin_client.table("profiles").select("*").eq("id", user_id).single().execute()
-            return {"success": True, "profile": result.data}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
-    
+        stmt = select(UserProfile).where(UserProfile.id == uuid.UUID(user_id))
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user:
+            return {
+                "success": True, 
+                "profile": {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "full_name": user.full_name,
+                    "company_name": user.company_name,
+                    "avatar_url": user.avatar_url,
+                    "role": user.role
+                }
+            }
+        return {"success": False, "message": "User not found"}
+
     async def update_user_profile(self, user_id: str, updates: dict) -> dict:
-        """
-        Update user profile.
-        """
+        stmt = select(UserProfile).where(UserProfile.id == uuid.UUID(user_id))
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+        if not user:
+            return {"success": False, "message": "User not found"}
+        
+        for k, v in updates.items():
+            if hasattr(user, k):
+                setattr(user, k, v)
+                
         try:
-            result = self.admin_client.table("profiles").update(updates).eq("id", user_id).execute()
-            return {"success": True, "profile": result.data[0] if result.data else None}
+            await self.db.commit()
+            await self.db.refresh(user)
+            return {
+                "success": True, 
+                "profile": {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "full_name": user.full_name,
+                    "company_name": user.company_name,
+                    "avatar_url": user.avatar_url,
+                    "role": user.role
+                }
+            }
         except Exception as e:
+            await self.db.rollback()
             return {"success": False, "message": str(e)}
+            
+    async def logout(self, token: str) -> dict:
+        return {"success": True, "message": "Logged out successfully"}
+        
+    async def refresh_token(self, token: str) -> dict:
+        return {"success": False, "message": "Refresh tokens require implementation"}
 
+    async def send_magic_link(self, email: str) -> dict:
+        return {"success": False, "message": "Magic link not supported natively yet"}
 
-# Singleton instance
-_auth_service: Optional[AuthService] = None
+    async def update_or_create_oauth_user(self, provider: str, email: str, full_name: str = None) -> dict:
+        stmt = select(UserProfile).where(UserProfile.email == email)
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            import secrets
+            random_password = secrets.token_urlsafe(32)
+            hashed_password = get_password_hash(random_password)
+            user = UserProfile(
+                email=email,
+                hashed_password=hashed_password,
+                full_name=full_name
+            )
+            self.db.add(user)
+            try:
+                await self.db.commit()
+                await self.db.refresh(user)
+            except Exception as e:
+                await self.db.rollback()
+                return {"success": False, "message": str(e)}
+        
+        access_token = create_access_token(data={"sub": str(user.id), "email": user.email, "role": user.role})
+        
+        return {
+            "success": True,
+            "user": {"id": str(user.id), "email": user.email},
+            "session": {"access_token": access_token}
+        }
 
+def get_auth_service(db: AsyncSession) -> AuthService:
+    return AuthService(db)
 
-def get_auth_service() -> AuthService:
-    """Get auth service singleton"""
-    global _auth_service
-    if _auth_service is None:
-        _auth_service = AuthService()
-    return _auth_service
+async def get_user_id_from_headers(x_user_id: Optional[str] = None, authorization: Optional[str] = None) -> str:
+    # 1. First, always prioritize the Authorization header for absolute security.
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[7:]
+        
+        # Check if it's a Developer API Token
+        if token.startswith("dv_live_") or token.startswith("dv_test_"):
+            try:
+                from database.db import AsyncSessionLocal
+                from database.orm import DeveloperAPIKey
+                from sqlalchemy import select
+                
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(select(DeveloperAPIKey).filter(DeveloperAPIKey.api_key == token))
+                    key = result.scalars().first()
+                    if key:
+                        if key.status == 'revoked':
+                            print(f"❌ Developer Token Revoked: {token}")
+                            return "default"
+                        key.total_calls += 1
+                        await db.commit()
+                        print(f"✅ Developer Token Auth Success for user: {key.user_id}")
+                        return str(key.user_id)
+                    else:
+                        print(f"❌ Developer Token not found in DB: {token}")
+            except Exception as e:
+                print(f"💥 Developer Token Auth Error: {e}")
+                
+        # Otherwise, decode as JWT
+        else:
+            try:
+                payload = decode_jwt(token)
+                return payload.get("sub", "default")
+            except Exception as e:
+                print(f"💥 JWT Decode Error: {e}")
+
+    # 2. Fallback to X-User-ID for guests and legacy endpoints.
+    if x_user_id and x_user_id not in ["default", "guest", "", "null", "undefined"]:
+        print(f"⚠️ Falling back to X-User-ID: {x_user_id}")
+        return x_user_id
+
+    print("⚠️ Falling back to 'default'")
+    return "default"

@@ -7,6 +7,14 @@ SECURED: AI security filter for prompt injection protection
 import logging
 from typing import List, Dict, Any, Optional, Union
 import os
+import contextvars
+
+# Global context var to store requested model per-request
+_requested_model: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("requested_model", default=None)
+
+def set_requested_model(model: str):
+    """Set the requested model for the current context (used by FastAPI endpoints)"""
+    _requested_model.set(model)
 
 # 🔒 SECURITY: Import AI security filter
 try:
@@ -45,8 +53,9 @@ _embedding_model_cache = {}
 try:
     from sentence_transformers import SentenceTransformer
     SENTENCE_TRANSFORMER_AVAILABLE = True
-except ImportError:
-    pass
+except Exception as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"SentenceTransformer not available: {e}")
     
 from config.settings import Settings
 
@@ -166,7 +175,9 @@ def chat(
     system: Optional[str] = None,
     temperature: float = 0.7,
     model: str = None,
-    max_tokens: int = 4000
+    max_tokens: int = 4000,
+    images: Optional[List[str]] = None,
+    **kwargs
 ) -> str:
     """
     Send chat to LLM and get response.
@@ -186,6 +197,10 @@ def chat(
     if not LITELLM_AVAILABLE:
         logger.error("LiteLLM not installed. Please install: pip install litellm")
         return "Error: LLM driver (LiteLLM) missing."
+
+    # Use requested model from context if not explicitly provided
+    if model is None:
+        model = _requested_model.get()
 
     # 🔒 SECURITY: Apply AI security filter to user input
     ai_filter = None
@@ -215,119 +230,145 @@ def chat(
                 safe_content, was_suspicious, pattern = ai_filter.filter_input(msg.get("content", ""))
                 if was_suspicious:
                     logger.warning(f"Prompt injection attempt detected: {pattern}")
-                final_messages.append({"role": msg["role"], "content": safe_content})
+                
+                # Handle multimodal content formatting
+                if images and msg == messages[-1]: # Only attach images to the latest user message
+                    content_block = [{"type": "text", "text": safe_content}]
+                    for img in images:
+                        # Add base64 prefix if missing
+                        img_str = img if img.startswith("data:image") else f"data:image/jpeg;base64,{img}"
+                        content_block.append({"type": "image_url", "image_url": {"url": img_str}})
+                    final_messages.append({"role": "user", "content": content_block})
+                else:
+                    final_messages.append({"role": msg["role"], "content": safe_content})
             else:
                 final_messages.append(msg)
+                
+    # If it was a string prompt and we have images, format the single message
+    if isinstance(messages, str) and images and final_messages[-1]["role"] == "user":
+        safe_content = final_messages.pop()["content"]
+        content_block = [{"type": "text", "text": safe_content}]
+        for img in images:
+            img_str = img if img.startswith("data:image") else f"data:image/jpeg;base64,{img}"
+            content_block.append({"type": "image_url", "image_url": {"url": img_str}})
+        final_messages.append({"role": "user", "content": content_block})
     
     # =========================================================================
-    # ☁️ GROQ FIRST - Fast cloud AI (openai/gpt-oss-120b)
+    # ☁️ CASCADING PROVIDER FALLBACK CHAIN
+    # Chain: Nvidia NIM -> HuggingFace -> Ollama
     # =========================================================================
-    primary_model = model or Settings.MODEL_NAME
     
-    # 🔑 KEY ROTATION LOGIC with smart caching of failing keys
-    keys_to_try = Settings.GROQ_API_KEYS if hasattr(Settings, 'GROQ_API_KEYS') and Settings.GROQ_API_KEYS else [os.environ.get("GROQ_API_KEY")]
+    # 1. Build the Provider Chain
+    providers = []
     
-    # Remove None values
-    keys_to_try = [k for k in keys_to_try if k]
+    nv_key = os.environ.get("NVIDIA_API_KEY")
+    groq_key = os.environ.get("GROQ_API_KEY")
     
-    if not keys_to_try:
-        keys_to_try = ["MISSING_KEY"] # Try once to trigger error handling
+    # --- 1. PRIMARY: GROQ (Ultra-Fast) ---
+    if groq_key:
+        providers.append({
+            "name": "Groq-Llama3",
+            "model": "groq/llama-3.1-70b-versatile",
+            "api_key": groq_key,
+            "api_base": None
+        })
     
-    # 🚀 PERFORMANCE: Track failing keys to skip them (cache for 5 minutes)
-    global _failing_keys_cache
-    if '_failing_keys_cache' not in globals():
-        _failing_keys_cache = {}
-    
-    import time as time_module
-    current_time = time_module.time()
-    
-    # Clean old entries (older than 5 minutes)
-    _failing_keys_cache = {k: v for k, v in _failing_keys_cache.items() if current_time - v < 300}
-    
-    # Reorder keys - put non-failing keys first
-    working_keys = [k for k in keys_to_try if k not in _failing_keys_cache]
-    failing_keys = [k for k in keys_to_try if k in _failing_keys_cache]
-    keys_to_try = working_keys + failing_keys  # Try working keys first
+    # --- 2. SECONDARY: NVIDIA LLAMA ---
+    if nv_key:
+        providers.append({
+            "name": "Nvidia-Llama",
+            "model": "openai/meta/llama-3.1-70b-instruct",
+            "api_key": nv_key,
+            "api_base": "https://integrate.api.nvidia.com/v1"
+        })
         
-    last_error = None
+
+    # --- HUGGINGFACE ---
+    hf_key = os.environ.get("HUGGINGFACE_API_KEY")
+    if hf_key:
+        providers.append({
+            "name": "HuggingFace",
+            "model": "huggingface/meta-llama/Meta-Llama-3-8B-Instruct",
+            "api_key": hf_key,
+            "api_base": None
+        })
+        
+    # --- OLLAMA (Local fallback) ---
+    providers.append({
+        "name": "Ollama",
+        "model": "ollama/llama3",
+        "api_key": None,
+        "api_base": "http://localhost:11434"
+    })
     
-    for i, api_key in enumerate(keys_to_try):
-        # Skip keys that recently failed (but still in list as fallback)
-        if api_key in _failing_keys_cache and i < len(keys_to_try) - 1:
-            logger.info(f"⏭️ Skipping Key {i+1} (recently failed)")
-            continue
-            
+    # 2. Execute the Chain
+    last_error = None
+    import time as time_module
+    
+    for i, p in enumerate(providers):
         try:
-            logger.info(f"☁️ Using Groq model: {primary_model} (Key {i+1}/{len(keys_to_try)})")
+            logger.info(f"Try {i+1}/{len(providers)}: {p['name']} ({p['model']})")
             
-            # 🚀 FAST RETRY LOGIC - Only 1 retry for speed
-            max_retries = 2  # Reduced from 3
-            for attempt in range(max_retries):
-                try:
-                    response = litellm.completion(
-                        model=primary_model,
-                        messages=final_messages,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        api_key=api_key # 🔑 Explicitly pass key
-                    )
-                    logger.info(f"✅ Success with: {primary_model}")
-                    
-                    # 🔒 SECURITY: Filter output to remove any leaked sensitive data
-                    result = response.choices[0].message.content
-                    if ai_filter:
-                        result = ai_filter.filter_output(result)
-                    return result
-                except Exception as e:
-                    error_str = str(e).lower()
-                    
-                    # 🚀 FAST FAIL: Don't retry on auth/org/bad request errors
-                    is_fast_fail = any(x in error_str for x in [
-                        'api_key', 'unauthorized', 'authentication', '401',
-                        'organization', 'restricted', 'blocked', 'badrequest'
-                    ])
-                    
-                    if is_fast_fail:
-                        _failing_keys_cache[api_key] = current_time  # Cache failing key
-                        raise e  # Skip retries, go to next key immediately
-                        
-                    # If this was the last attempt, reraise to outer loop
-                    if attempt == max_retries - 1:
-                        raise e
-                        
-                    # Otherwise wait briefly and retry (reduced delay)
-                    wait_time = 0.5  # 🚀 Reduced from 1s, 2s
-                    logger.warning(f"   ⚠️ Attempt {attempt+1}/{max_retries} failed ({str(e)[:50]}). Retrying in {wait_time}s...")
-                    time_module.sleep(wait_time)
+            call_kwargs = {
+                "model": p["model"],
+                "messages": final_messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens
+            }
+            # Inject any additional kwargs (like response_format, tools, tool_choice)
+            call_kwargs.update(kwargs)
+            
+            if p["api_key"]:
+                call_kwargs["api_key"] = p["api_key"]
+            if p["api_base"]:
+                call_kwargs["api_base"] = p["api_base"]
+                
+            is_raw_response = call_kwargs.pop('raw_response', False)
+                
+            # 🔥 FIX: Set ultra-low timeout (15s) so the UI doesn't hang!
+            if "timeout" not in call_kwargs:
+                call_kwargs["timeout"] = 15
+            
+            # 🩹 FIX: Disable OpenAI client's internal retries - let our cascade handle failover
+            # Without this, the OpenAI client retries internally (the "Retrying request..." logs)
+            # which can cause requests to hang for 5+ minutes before our cascade kicks in
+            if "num_retries" not in call_kwargs:
+                call_kwargs["num_retries"] = 0
+                
+            response = litellm.completion(**call_kwargs)
+            logger.info(f"Success with {p['name']}")
+            
+            if is_raw_response:
+                return response
+                
+            result = response.choices[0].message.content
+            if ai_filter:
+                result = ai_filter.filter_output(result)
+            return result
             
         except Exception as e:
             last_error = e
             error_str = str(e).lower()
             
-            # Cache this key as failing
-            _failing_keys_cache[api_key] = current_time
-            
-            # Check if we should try next key
+            # Fast-Fail Check
             is_rate_limit = 'rate_limit' in error_str or 'rate limit' in error_str or '429' in error_str
             is_auth_error = 'api_key' in error_str or 'unauthorized' in error_str or 'authentication' in error_str or '401' in error_str
             is_org_restricted = 'organization' in error_str and ('restricted' in error_str or 'blocked' in error_str)
             is_bad_request = 'badrequest' in error_str.replace(' ', '') or 'invalid_request' in error_str
+            is_connection = 'connection' in error_str or 'timeout' in error_str
             
-            # Rotate to next key on any of these errors
-            should_rotate = is_rate_limit or is_auth_error or is_org_restricted or is_bad_request
+            reason = 'Rate Limit' if is_rate_limit else ('Org Restricted' if is_org_restricted else ('Bad Request' if is_bad_request else ('Auth Error' if is_auth_error else ('Connection Error' if is_connection else 'Unknown Error'))))
             
-            if should_rotate and i < len(keys_to_try) - 1:
-                reason = 'Rate Limit' if is_rate_limit else ('Org Restricted' if is_org_restricted else ('Bad Request' if is_bad_request else 'Auth Error'))
-                logger.warning(f"⚠️ Key {i+1} failed ({reason}). Rotating to next key...")
-                continue # Try next key
+            if i < len(providers) - 1:
+                logger.warning(f"{p['name']} failed ({reason}). Cascading to next provider...")
+                continue
             else:
-                logger.error(f"Groq model failed with all {len(keys_to_try)} keys: {e}")
-                break 
-                
-    # All Groq keys exhausted - return clean user-friendly error (no technical details)
+                logger.error(f"All providers in the cascade chain exhausted. Last error: {e}")
+                break
+
+    # 3. Handle Complete Failure
     e = last_error
     error_str = str(e).lower() if e else ''
-    logger.error(f"All API keys exhausted. Last error: {e}")
     
     # Generic friendly message - don't expose technical details to users
     if 'context' in error_str or 'too large' in error_str or 'token' in error_str:
@@ -340,7 +381,6 @@ def chat(
             "I'm having trouble connecting right now. Please check your internet connection and try again."
         )
     else:
-        # Generic message for all other errors (rate limit, auth, org restricted, etc.)
         return (
             "I'm temporarily unable to process your request. Please try again in a moment. "
             "If this continues, the system administrator has been notified."

@@ -1,6 +1,6 @@
 """
 Database Models
-Pydantic models for Supabase tables
+Pydantic models for database tables
 """
 
 from datetime import datetime

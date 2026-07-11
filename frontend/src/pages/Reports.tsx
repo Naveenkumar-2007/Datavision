@@ -16,6 +16,12 @@ import {
   FileDown,
   BarChart3,
   PieChart as PieChartIcon,
+  Calendar,
+  Clock,
+  Trash2,
+  Settings,
+  Plus,
+  Mail
 } from 'lucide-react';
 import {
   AreaChart,
@@ -42,7 +48,7 @@ import {
   ScatterChart,
   Scatter,
 } from 'recharts';
-import { apiService } from '@/services/api';
+import { apiService, api } from '@/services/api';
 import { getCurrencySymbol, getUserPreferredCurrency } from '@/utils/currency';
 import { exportToPDF } from '@/utils/pdfExport';
 import { getUserIdSync, getAuthHeadersSync } from '@/utils/userId';
@@ -64,8 +70,11 @@ interface GeneratedReport {
   error?: string;
 }
 
+import { useLiveStore } from '@/store/liveStore';
+
 const Reports: React.FC = () => {
   const { isDark } = useUserStore();
+  const { getDashboardCache, setDashboardCache, lastRowCount, setLastRowCount } = useLiveStore();
 
   // Derived theme object for JS-side libraries (Charts) that need explicit hex values
   const theme = {
@@ -86,6 +95,14 @@ const Reports: React.FC = () => {
   const [hasMLModel, setHasMLModel] = useState(false);
   const [mlModelInfo, setMlModelInfo] = useState<any>(null);
 
+  // Scheduled Reports State
+  const [activeTab, setActiveTab] = useState<'manual' | 'scheduled' | 'history' | 'templates'>('manual');
+  const [scheduledReports, setScheduledReports] = useState<any[]>([]);
+  const [reportHistory, setReportHistory] = useState<any[]>([]);
+  const [reportTemplates, setReportTemplates] = useState<any[]>([]);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState({ name: '', type: 'executive', cron: '0 9 * * 1', emails: '' });
+
   const CHART_COLORS = ['#22c55e', '#16a34a', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899'];
   const userPreferredCurrency = getUserPreferredCurrency();
   const currency = userPreferredCurrency;
@@ -95,7 +112,112 @@ const Reports: React.FC = () => {
   useEffect(() => {
     loadAnalytics();
     checkMLModel();
+    fetchScheduledReports();
   }, []);
+
+  const fetchReportHistory = async () => {
+    try {
+      const res = await api.get('/api/v1/reports/history');
+      if (res.data?.success) {
+        setReportHistory(res.data.history || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch history", e);
+    }
+  };
+
+  const fetchReportTemplates = async () => {
+    try {
+      const res = await api.get('/api/v1/reports/templates');
+      if (res.data?.success) {
+        setReportTemplates(res.data.templates || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch templates", e);
+    }
+  };
+
+  const toggleSchedule = async (id: string, currentStatus: boolean) => {
+    try {
+      await api.put(`/api/v1/reports/scheduled/${id}/toggle`);
+      fetchScheduledReports();
+    } catch (e) {
+      console.error("Failed to toggle schedule", e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'history') fetchReportHistory();
+    if (activeTab === 'templates') fetchReportTemplates();
+  }, [activeTab]);
+
+  const fetchScheduledReports = async () => {
+    try {
+      const res = await api.get('/api/v1/reports/scheduled');
+      if (res.data?.success) {
+        setScheduledReports(res.data.reports || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch scheduled reports", e);
+    }
+  };
+
+  const handleCreateSchedule = async () => {
+    try {
+      const emails = scheduleForm.emails.split(',').map(e => e.trim()).filter(Boolean);
+      await api.post('/api/v1/reports/scheduled', {
+        name: scheduleForm.name,
+        report_type: scheduleForm.type,
+        schedule_cron: scheduleForm.cron,
+        recipients: emails
+      });
+      setShowScheduleModal(false);
+      setScheduleForm({ name: '', type: 'executive', cron: '0 9 * * 1', emails: '' });
+      fetchScheduledReports();
+    } catch (e) {
+      console.error("Failed to create schedule", e);
+    }
+  };
+
+  const handleDeleteSchedule = async (id: string) => {
+    try {
+      await api.delete(`/api/v1/reports/scheduled/${id}`);
+      fetchScheduledReports();
+    } catch (e) {
+      console.error("Failed to delete schedule", e);
+    }
+  };
+
+  // Listen for live data updates (Delta Auto-Regeneration)
+  useEffect(() => {
+      let interval: ReturnType<typeof setInterval>;
+      
+      const checkDelta = async () => {
+          try {
+              const res = await api.get('/api/v1/live/delta');
+              const data = res.data || res; // depending on axios mapping
+              if (data.total_rows !== undefined) {
+                  const currentRows = data.total_rows;
+                  const lastRows = lastRowCount;
+                  
+                  if (lastRows !== null && Math.abs(currentRows - lastRows) >= 500) {
+                      // Delta threshold met! Auto-regenerate!
+                      console.log(`[Reports] Delta trigger: ${currentRows} vs ${lastRows}. Regenerating!`);
+                      setLastRowCount(currentRows);
+                      loadAnalytics(true); // force load
+                      handleGenerate(); // auto regenerate report!
+                  } else if (lastRows === null && currentRows > 0) {
+                      setLastRowCount(currentRows);
+                  }
+              }
+          } catch (e) {
+              // ignore polling errors
+          }
+      };
+
+      interval = setInterval(checkDelta, 5000); // 5 sec poll
+      return () => clearInterval(interval);
+  }, [lastRowCount, setLastRowCount]);
 
   // Listen for file updates from DataHub - refresh analytics when files change
   useEffect(() => {
@@ -109,11 +231,19 @@ const Reports: React.FC = () => {
     return () => window.removeEventListener('filesUpdated', handleFilesUpdated);
   }, []);
 
-  const loadAnalytics = async () => {
+  const loadAnalytics = async (forceRefresh = false) => {
     try {
+      if (!forceRefresh) {
+          const cached = getDashboardCache('reports_analytics');
+          if (cached) {
+              setAnalytics(cached);
+              return;
+          }
+      }
       // Use unified analytics for consistency with Overview and Dashboards
       const analyticsResponse = await apiService.getUnifiedAnalytics();
       setAnalytics(analyticsResponse.data);
+      setDashboardCache('reports_analytics', analyticsResponse.data);
     } catch (err) {
       console.error('Failed to load analytics:', err);
     }
@@ -377,9 +507,37 @@ const Reports: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="px-1">
-        <h1 className="text-2xl font-bold">Data Reports</h1>
-        <p className="text-sm text-muted-foreground">Automatic reports generated from your uploaded data</p>
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="px-1 flex justify-between items-start">
+        <div>
+          <h1 className="text-2xl font-bold">Data Reports</h1>
+          <p className="text-sm text-muted-foreground">Automatic reports generated from your uploaded data</p>
+        </div>
+        <div className={`flex bg-black/5 dark:bg-white/5 p-1 rounded-xl border ${theme.isDark ? 'border-white/10' : 'border-gray-200'}`}>
+          <button 
+            onClick={() => setActiveTab('manual')}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all ${activeTab === 'manual' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-500' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+          >
+            <FileText className="w-4 h-4" /> Manual
+          </button>
+          <button 
+            onClick={() => setActiveTab('scheduled')}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all ${activeTab === 'scheduled' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-500' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+          >
+            <Calendar className="w-4 h-4" /> Scheduled
+          </button>
+          <button 
+            onClick={() => setActiveTab('history')}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all ${activeTab === 'history' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-500' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+          >
+            <Clock className="w-4 h-4" /> History
+          </button>
+          <button 
+            onClick={() => setActiveTab('templates')}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all ${activeTab === 'templates' ? 'bg-white dark:bg-zinc-800 shadow-sm text-indigo-500' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+          >
+            <FileText className="w-4 h-4" /> Templates
+          </button>
+        </div>
       </motion.div>
 
       {/* ML Model Status Banner */}
@@ -550,12 +708,122 @@ const Reports: React.FC = () => {
       )
       }
 
-      {/* Generate Report */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="p-6 rounded-2xl border glass-panel"
+      {activeTab === 'history' ? (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Run History</h2>
+          </div>
+          {reportHistory.length === 0 ? (
+            <div className="p-12 rounded-2xl text-center border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+              <Clock className="w-12 h-12 mx-auto mb-4 opacity-20" />
+              <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No Run History</h3>
+              <p className="text-sm text-gray-500">Your generated reports will appear here.</p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border overflow-hidden" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }}>
+              <table className="w-full text-left text-sm">
+                <thead className="bg-black/5 dark:bg-white/5 border-b" style={{ borderColor: 'var(--border-color)' }}>
+                  <tr>
+                    <th className="p-4 font-semibold text-gray-500">Report Type</th>
+                    <th className="p-4 font-semibold text-gray-500">Generated At</th>
+                    <th className="p-4 font-semibold text-gray-500">Status</th>
+                    <th className="p-4 font-semibold text-gray-500 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportHistory.map((run: any) => (
+                    <tr key={run.id} className="border-b last:border-0 hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ borderColor: 'var(--border-color)' }}>
+                      <td className="p-4 font-medium capitalize" style={{ color: 'var(--text-primary)' }}>{run.report_type}</td>
+                      <td className="p-4 text-gray-500">{new Date(run.generated_at).toLocaleString()}</td>
+                      <td className="p-4">
+                        <span className="px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-bold uppercase tracking-wider">{run.status || 'Success'}</span>
+                      </td>
+                      <td className="p-4 text-right">
+                        <button className="text-indigo-500 hover:text-indigo-400 font-semibold text-xs">View</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </motion.div>
+      ) : activeTab === 'templates' ? (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Report Templates</h2>
+            <button className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm flex items-center gap-2 transition-all">
+              <Plus className="w-4 h-4" /> New Template
+            </button>
+          </div>
+          {reportTemplates.length === 0 ? (
+            <div className="p-12 rounded-2xl text-center border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+              <FileText className="w-12 h-12 mx-auto mb-4 opacity-20" />
+              <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No Templates</h3>
+              <p className="text-sm text-gray-500">Create custom templates for your reports.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+               {/* Template cards would go here */}
+            </div>
+          )}
+        </motion.div>
+      ) : activeTab === 'scheduled' ? (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Automated Delivery</h2>
+            <button onClick={() => setShowScheduleModal(true)} className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm flex items-center gap-2 transition-all">
+              <Plus className="w-4 h-4" /> New Schedule
+            </button>
+          </div>
+
+          {scheduledReports.length === 0 ? (
+            <div className="p-12 rounded-2xl text-center border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+              <Calendar className="w-12 h-12 mx-auto mb-4 opacity-20" />
+              <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No Scheduled Reports</h3>
+              <p className="text-sm text-gray-500">Set up automated report delivery to your team's inbox.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {scheduledReports.map(schedule => (
+                <div key={schedule.id} className="p-5 rounded-2xl border bg-white dark:bg-zinc-900/50 dark:border-white/10 relative group">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{schedule.name}</h4>
+                        <div className="text-[10px] text-gray-500 uppercase font-semibold">{schedule.report_type} Report</div>
+                      </div>
+                    </div>
+                    <button onClick={() => handleDeleteSchedule(schedule.id)} className="p-1.5 rounded-lg text-gray-400 hover:bg-red-500/10 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-2 text-gray-500"><Clock className="w-3.5 h-3.5" /> <span className="font-mono">{schedule.schedule_cron}</span></div>
+                    <div className="flex items-center gap-2 text-gray-500"><Mail className="w-3.5 h-3.5" /> {schedule.recipients.join(', ')}</div>
+                  </div>
+                  <div className="mt-4 pt-3 border-t dark:border-white/5 flex justify-between items-center text-[10px]">
+                    <span className="text-gray-400">Created {new Date(schedule.created_at).toLocaleDateString()}</span>
+                    <button onClick={() => toggleSchedule(schedule.id, schedule.is_active !== false)} className={`px-2 py-0.5 rounded-full font-bold transition-colors ${schedule.is_active !== false ? 'bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20' : 'bg-gray-500/10 text-gray-500 hover:bg-gray-500/20'}`}>
+                      {schedule.is_active !== false ? 'Active' : 'Inactive'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </motion.div>
+      ) : (
+        <>
+          {/* Generate Report */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="p-6 rounded-2xl border glass-panel"
         style={{ borderColor: 'var(--border-color)' }}
       >
         <h2 className="text-lg font-semibold mb-6" style={{ color: 'var(--text-primary)' }}>Generate New Report</h2>
@@ -1216,6 +1484,74 @@ const Reports: React.FC = () => {
         </motion.div>
       )
       }
+      </>
+      )}
+
+      {/* Schedule Modal */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className={`w-full max-w-md p-6 rounded-3xl shadow-2xl ${theme.isDark ? 'bg-zinc-900 border border-white/10' : 'bg-white'}`}>
+            <h3 className="text-xl font-bold mb-6" style={{ color: theme.isDark ? 'white' : 'black' }}>Schedule Automated Report</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-400">Schedule Name</label>
+                <input 
+                  type="text" 
+                  value={scheduleForm.name}
+                  onChange={(e) => setScheduleForm({...scheduleForm, name: e.target.value})}
+                  placeholder="e.g., Weekly Executive Brief"
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-400">Report Type</label>
+                <select 
+                  value={scheduleForm.type}
+                  onChange={(e) => setScheduleForm({...scheduleForm, type: e.target.value})}
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm outline-none ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+                >
+                  {reportTypes.map(rt => <option key={rt.value} value={rt.value}>{rt.label}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-400">Cron Schedule</label>
+                <input 
+                  type="text" 
+                  value={scheduleForm.cron}
+                  onChange={(e) => setScheduleForm({...scheduleForm, cron: e.target.value})}
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm font-mono ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+                />
+                <p className="text-[10px] text-gray-500 mt-1">Format: min hour day month day-of-week (e.g., 0 9 * * 1 for Monday 9AM)</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1 text-gray-400">Recipient Emails</label>
+                <input 
+                  type="text" 
+                  value={scheduleForm.emails}
+                  onChange={(e) => setScheduleForm({...scheduleForm, emails: e.target.value})}
+                  placeholder="team@company.com, ceo@company.com"
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+                />
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setShowScheduleModal(false)} className="flex-1 py-3 rounded-xl border dark:border-white/10 font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
+                <button 
+                  onClick={handleCreateSchedule}
+                  disabled={!scheduleForm.name || !scheduleForm.emails}
+                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold disabled:opacity-50 transition-all"
+                >
+                  Save Schedule
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

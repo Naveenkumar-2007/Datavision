@@ -10,6 +10,7 @@ from .automl_api import router as automl_router
 from .data_health_api import router as data_health_router
 from .explainability_api import router as explainability_router
 from .playground_api import router as playground_router
+from .deploy import router as deploy_router
 
 # Export all routers
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "data_health_router",
     "explainability_router",
     "playground_router",
+    "deploy_router"
 ]

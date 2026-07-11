@@ -40,9 +40,9 @@ MODELS: Dict[str, ModelConfig] = {
     # ----------------------
     "deepseek": ModelConfig(
         id="deepseek",
-        name="DeepSeek Chat",
+        name="DeepSeek V4 Pro",
         provider="DeepSeek",
-        api_id="deepseek/deepseek-chat",
+        api_id="deepseek-ai/deepseek-v4-pro",
         description="Fast • Accurate • Recommended",
         context_length=32768,
         supports_streaming=True,
@@ -110,6 +110,46 @@ MODELS: Dict[str, ModelConfig] = {
         category="vision",
         badge="Vision",
         strengths=["document_analysis", "report_reading", "table_extraction", "charts"]
+    ),
+    
+    "nemotron": ModelConfig(
+        id="nemotron",
+        name="Nemotron Ultra",
+        provider="NVIDIA",
+        api_id="nvidia/nemotron-3-ultra-550b-a55b",
+        description="Predictive & rigorous analysis",
+        context_length=128000,
+        supports_streaming=True,
+        supports_charts=True,
+        category="general",
+        strengths=["predictive", "reasoning", "charts"]
+    ),
+    
+    "glm": ModelConfig(
+        id="glm",
+        name="GLM 5.1",
+        provider="Zhipu",
+        api_id="z-ai/glm-5.1",
+        description="Agentic multi-tool execution",
+        context_length=128000,
+        supports_streaming=True,
+        supports_charts=True,
+        category="general",
+        strengths=["agentic", "tool_use", "charts"]
+    ),
+    
+    "kimi": ModelConfig(
+        id="kimi",
+        name="Kimi 2.6",
+        provider="Moonshot",
+        api_id="moonshotai/kimi-k2.6",
+        description="Fast multimodal inference",
+        context_length=32768,
+        supports_streaming=True,
+        supports_vision=True,
+        supports_charts=True,
+        category="vision",
+        strengths=["fast_inference", "vision", "charts"]
     ),
     
     # ----------------------

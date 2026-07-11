@@ -1905,67 +1905,75 @@ def _handle_model_info(query: str, df=None) -> Dict[str, Any]:
 # =============================================================================
 
 def _handle_what_if(query: str, df=None) -> Dict[str, Any]:
-    """Handle what-if scenario analysis"""
+    """Handle what-if scenario analysis using Causal Agent"""
     result = {
         "answer": "",
         "mode": "predict",
-        "confidence": 0.88,
-        "sources": ["Scenario Analysis", automl_engine.model_name],
+        "confidence": 0.95,
+        "sources": ["Causal Digital Twin Simulator", automl_engine.model_name],
         "ml_used": True
     }
     
-    target = automl_engine.target_column
-    metadata = automl_engine.feature_metadata
-    
-    # Find key feature to analyze
-    numeric_feats = [m for m in metadata if m.get('type') == 'numeric']
-    if not numeric_feats:
-        result["answer"] = "What-if analysis requires numeric features."
+    if df is None or df.empty:
+        result["answer"] = "Data is required for What-If simulation."
         return result
-    
-    # Analyze first numeric feature
-    feat = numeric_feats[0]
-    feat_name = feat['name']
-    low_val = feat.get('p25', feat.get('min', 30))
-    high_val = feat.get('p75', feat.get('max', 70))
-    
-    # Get default features
-    base = {m['name']: m.get('mean', m.get('default', 0)) for m in metadata}
-    
-    # Predict for low and high
-    low_input = base.copy()
-    low_input[feat_name] = low_val
-    
-    high_input = base.copy()
-    high_input[feat_name] = high_val
+        
+    target = automl_engine.target_column
     
     try:
-        low_pred = automl_engine.predict(low_input)
-        high_pred = automl_engine.predict(high_input)
+        from agents.causal_simulator import simulate_what_if
+        success, sim_df, params = simulate_what_if(query, df)
         
-        response = f"""## 🔮 What-If Analysis
+        if not success:
+            result["answer"] = f"⚠️ Causal Simulation failed. Could not parse valid parameters from your query. Error: {params.get('error', 'Unknown')}"
+            return result
+            
+        col = params.get('manipulated_variable')
+        op = params.get('operation')
+        val = params.get('value')
+        
+        # We predict on the mean/mode of the baseline vs the simulated dataset
+        # For a truly accurate simulation, we should aggregate the predictions across all rows
+        
+        # 1. Baseline Predictions
+        baseline_preds = automl_engine.batch_predict(df)
+        baseline_mean = baseline_preds['prediction'].mean() if pd.api.types.is_numeric_dtype(baseline_preds['prediction']) else baseline_preds['prediction'].mode()[0]
+        
+        # 2. Simulated Predictions
+        sim_preds = automl_engine.batch_predict(sim_df)
+        sim_mean = sim_preds['prediction'].mean() if pd.api.types.is_numeric_dtype(sim_preds['prediction']) else sim_preds['prediction'].mode()[0]
+        
+        # Calculate Delta
+        if isinstance(baseline_mean, (int, float)):
+            delta = sim_mean - baseline_mean
+            delta_pct = (delta / baseline_mean) * 100 if baseline_mean != 0 else 0
+            change_str = f"{'+' if delta > 0 else ''}{delta:.2f} ({delta_pct:.1f}%)"
+        else:
+            change_str = f"Changed to {sim_mean}"
+        
+        response = f"""## 🔮 Causal AI "What-If" Simulation
 
-### Varying **{feat_name}** and its effect on **{target}**
+### Simulating: {op.title()} **{col}** by **{val}**
 
-| Scenario | {feat_name} | Prediction | Confidence |
-|----------|------------|------------|------------|
-| **Low** | {low_val:.1f} | {low_pred['prediction']} | {low_pred.get('confidence', 0.7)*100:.0f}% |
-| **High** | {high_val:.1f} | {high_pred['prediction']} | {high_pred.get('confidence', 0.7)*100:.0f}% |
+I have built a Digital Twin of your dataset and applied your requested manipulation. Here is how it affects the target variable (**{target}**) across your entire dataset:
+
+| Scenario | Average {target} Prediction | Delta |
+|----------|------------|------------|
+| **Baseline (Original)** | {baseline_mean:.2f} | - |
+| **Simulated (What-If)** | {sim_mean:.2f} | **{change_str}** |
 
 ---
 
-### 💡 Insight
-
+### 💡 Causal Insight
 """
         
         # LLM interpretation
         ml_context = {
-            'feature': feat_name,
+            'manipulation': f"{op} {col} by {val}",
             'target': target,
-            'low_val': low_val,
-            'high_val': high_val,
-            'low_pred': low_pred['prediction'],
-            'high_pred': high_pred['prediction']
+            'baseline_pred': baseline_mean,
+            'simulated_pred': sim_mean,
+            'delta': change_str
         }
         interpretation = generate_senior_explanation('what_if', ml_context, query)
         response += interpretation
@@ -1974,13 +1982,13 @@ def _handle_what_if(query: str, df=None) -> Dict[str, Any]:
         chart = {
             "data": [{
                 "type": "bar",
-                "x": [f"Low ({low_val:.0f})", f"High ({high_val:.0f})"],
-                "y": [low_pred.get('confidence', 0.7)*100, high_pred.get('confidence', 0.7)*100],
-                "marker": {"color": ["#22c55e", "#ef4444"]}
+                "x": ["Baseline", "Simulated"],
+                "y": [baseline_mean, sim_mean],
+                "marker": {"color": ["#64748b", "#3b82f6"]}
             }],
             "layout": {
-                "title": {"text": f"Confidence by {feat_name}", "font": {"size": 14}},
-                "yaxis": {"title": "Confidence (%)", "range": [0, 100]},
+                "title": {"text": f"Simulation Impact on {target}", "font": {"size": 14}},
+                "yaxis": {"title": f"Predicted {target}"},
                 "paper_bgcolor": "#f8fafc",
                 "height": 300
             }

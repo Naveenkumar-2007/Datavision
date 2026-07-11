@@ -19,6 +19,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+from core.rate_limiter import check_rate_limit
+
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
 # Import report generator
@@ -123,7 +125,9 @@ async def generate_new_report(
     # Get user ID from request or body
     user_id = report_request.userId or getattr(request.state, 'user_id', None) or 'default'
     report_type = report_request.reportType or 'summary'
-    
+
+    await check_rate_limit(request, "report_generate", user_id)
+
     logger.info(f"Generating {report_type} report for user {user_id} (V2 Advanced Agent)")
     
     # Use Dynamic Report Generator V2 with Advanced Agent
@@ -221,6 +225,8 @@ async def generate_claude_style_report(
     
     # Get user ID
     user_id = getattr(request.state, 'user_id', 'default')
+
+    await check_rate_limit(request, "report_generate", user_id)
     
     # Get current DataFrame from session or files
     import pandas as pd
@@ -368,5 +374,57 @@ async def get_available_formats():
             {"id": "markdown", "name": "Markdown", "extension": ".md", "description": "Plain text markdown format"},
             {"id": "json", "name": "JSON Data", "extension": ".json", "description": "Structured JSON export"},
             {"id": "csv", "name": "CSV Data", "extension": ".csv", "description": "Raw data CSV export"}
+        ]
+    }
+
+
+@router.get("/types")
+async def get_report_types():
+    """
+    📋 Get list of available report types.
+
+    Returns:
+        List of supported report types with descriptions.
+    """
+    return {
+        "report_types": [
+            {
+                "id": "metrics",
+                "name": "Metrics Dashboard",
+                "description": "Numeric data analysis with trends, KPIs, and aggregation tables.",
+                "icon": "📊",
+            },
+            {
+                "id": "breakdown",
+                "name": "Category Breakdown",
+                "description": "Distribution analysis across categorical dimensions (customer, product, region).",
+                "icon": "📦",
+            },
+            {
+                "id": "summary",
+                "name": "Data Summary",
+                "description": "Complete overview of your dataset — columns, types, null rates, and statistics.",
+                "icon": "📋",
+            },
+            {
+                "id": "executive",
+                "name": "Executive Brief",
+                "description": "High-level insights and strategic recommendations for leadership.",
+                "icon": "🏢",
+            },
+            {
+                "id": "predictive",
+                "name": "Predictive Forecast",
+                "description": "ML-based forecasting using your trained AutoML model.",
+                "icon": "🔮",
+                "requires_model": True,
+            },
+            {
+                "id": "anomaly",
+                "name": "Anomaly Detection",
+                "description": "Outlier and anomaly detection report highlighting unusual patterns.",
+                "icon": "🚨",
+                "requires_model": True,
+            },
         ]
     }

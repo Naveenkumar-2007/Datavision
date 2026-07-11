@@ -23,11 +23,15 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy pre-built frontend (built locally, committed to repo)
+# Copy pre-built frontend (built locally, committed to repo or built in CI)
 COPY frontend/dist /app/static
 
 # Copy backend source files
 COPY backend/ backend/
+
+# Copy start script
+COPY start.sh /app/
+RUN chmod +x /app/start.sh
 
 # Create ALL storage directories with proper ownership
 # SECURITY: Use 755 (rwxr-xr-x) instead of 777
@@ -69,8 +73,8 @@ WORKDIR /app/backend
 EXPOSE 7860
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:7860/api || exit 1
 
-# Start FastAPI server from backend directory
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Start using the start script (handles migrations)
+CMD ["/app/start.sh"]

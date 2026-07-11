@@ -51,15 +51,45 @@ async def analyze_data_health(request: HealthRequest):
         user_paths = get_user_paths(request.user_id)
         file_path = user_paths['files'] / request.file_name
         
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail=f"File not found: {request.file_name}")
-        
-        if request.file_name.endswith('.csv'):
-            df = pd.read_csv(file_path)
-        elif request.file_name.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(file_path)
+        if request.file_name.startswith("LIVE_") and request.file_name.endswith(".csv"):
+            conn_id = request.file_name.replace("LIVE_", "").replace(".csv", "")
+            from database.db import AsyncSessionLocal
+            from database.orm import DataConnection
+            from sqlalchemy import select
+            import psycopg2
+            
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(DataConnection).where(DataConnection.id == conn_id))
+                conn = result.scalar_one_or_none()
+                
+                if not conn:
+                    raise HTTPException(status_code=404, detail=f"Live Connection not found: {request.file_name}")
+                
+                try:
+                    import urllib.parse
+                    safe_creds = urllib.parse.quote_plus(conn.credentials)
+                    conn_str = f"postgresql://postgres:{safe_creds}@{conn.host}/{conn.database_name}"
+                    import asyncio
+                    loop = asyncio.get_running_loop()
+                    
+                    def fetch_to_df():
+                        with psycopg2.connect(conn_str) as pg_conn:
+                            return pd.read_sql(f"SELECT * FROM {conn.target_table} LIMIT 1000", pg_conn)
+                            
+                    df = await loop.run_in_executor(None, fetch_to_df)
+                except Exception as db_e:
+                    logger.error(f"Live fetch failed: {db_e}")
+                    raise HTTPException(status_code=500, detail=f"Failed to fetch live data: {db_e}")
         else:
-            raise HTTPException(status_code=400, detail="Unsupported file format")
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail=f"File not found: {request.file_name}")
+            
+            if request.file_name.endswith('.csv'):
+                df = pd.read_csv(file_path)
+            elif request.file_name.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(file_path)
+            else:
+                raise HTTPException(status_code=400, detail="Unsupported file format")
         
         logger.info(f"🏥 Analyzing data health for {request.file_name} ({len(df)} rows)")
         
@@ -104,15 +134,45 @@ async def quick_health_check(
         user_paths = get_user_paths(user_id)
         file_path = user_paths['files'] / file_name
         
-        if not file_path.exists():
-            return {"score": None, "grade": "?", "error": "File not found"}
-        
-        if file_name.endswith('.csv'):
-            df = pd.read_csv(file_path, nrows=1000)
-        elif file_name.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(file_path, nrows=1000)
+        if file_name.startswith("LIVE_") and file_name.endswith(".csv"):
+            conn_id = file_name.replace("LIVE_", "").replace(".csv", "")
+            from database.db import AsyncSessionLocal
+            from database.orm import DataConnection
+            from sqlalchemy import select
+            import psycopg2
+            
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(DataConnection).where(DataConnection.id == conn_id))
+                conn = result.scalar_one_or_none()
+                
+                if not conn:
+                    return {"score": None, "grade": "?", "error": "Live Connection not found"}
+                
+                try:
+                    import urllib.parse
+                    safe_creds = urllib.parse.quote_plus(conn.credentials)
+                    conn_str = f"postgresql://postgres:{safe_creds}@{conn.host}/{conn.database_name}"
+                    import asyncio
+                    loop = asyncio.get_running_loop()
+                    
+                    def fetch_to_df():
+                        with psycopg2.connect(conn_str) as pg_conn:
+                            return pd.read_sql(f"SELECT * FROM {conn.target_table} LIMIT 1000", pg_conn)
+                            
+                    df = await loop.run_in_executor(None, fetch_to_df)
+                except Exception as db_e:
+                    logger.error(f"Live fetch failed: {db_e}")
+                    return {"score": None, "grade": "?", "error": f"Failed to fetch live data: {db_e}"}
         else:
-            return {"score": None, "grade": "?", "error": "Unsupported format"}
+            if not file_path.exists():
+                return {"score": None, "grade": "?", "error": "File not found"}
+            
+            if file_name.endswith('.csv'):
+                df = pd.read_csv(file_path, nrows=1000)
+            elif file_name.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(file_path, nrows=1000)
+            else:
+                return {"score": None, "grade": "?", "error": "Unsupported format"}
         
         analyzer = DataQualityAnalyzer()
         report = analyzer.analyze(df)

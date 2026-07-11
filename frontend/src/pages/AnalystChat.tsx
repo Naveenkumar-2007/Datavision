@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Send,
@@ -30,7 +30,7 @@ import {
   Zap,
   Bot,
 } from 'lucide-react';
-import apiService from '@/services/api';
+import apiService, { api as axiosApi } from '@/services/api';
 import { useUserStore } from '@/store/userStore';
 import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
@@ -315,6 +315,139 @@ const ChartImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
   );
 };
 
+// =============================================================================
+// 🖥️ V5: INTERACTIVE CODE BLOCK — Inline Python Execution (AI Chat v2)
+// =============================================================================
+const InteractiveCodeBlock: React.FC<{
+  code: string;
+  language: string;
+  isPython: boolean;
+}> = ({ code, language, isPython }) => {
+  const [isRunning, setIsRunning] = React.useState(false);
+  const [result, setResult] = React.useState<{
+    success?: boolean;
+    stdout?: string;
+    stderr?: string;
+    figures?: { base64: string; format: string }[];
+    tables?: { columns: string[]; data: any[][]; shape?: number[] }[];
+    error?: string;
+    execution_time_ms?: number;
+  } | null>(null);
+  const [copied, setCopied] = React.useState(false);
+
+  const handleRun = async () => {
+    setIsRunning(true);
+    setResult(null);
+    try {
+      const userId = getUserIdSync();
+      const headers = getAuthHeadersSync();
+      const baseUrl = axiosApi.defaults.baseURL || '';
+      const res = await fetch(`${baseUrl}/api/v1/chat/execute-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ code, user_id: userId }),
+      });
+      const data = await res.json();
+      setResult(data);
+    } catch (err: any) {
+      setResult({ success: false, error: err.message, stdout: '', stderr: err.message, figures: [], tables: [] });
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="my-3 rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)', background: 'var(--bg-card)' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: 'var(--border-color)', background: isPython ? 'rgba(59, 130, 246, 0.05)' : 'transparent' }}>
+        <span className="text-xs font-mono font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+          {language || 'code'}
+        </span>
+        <div className="flex items-center gap-2">
+          <button onClick={handleCopy} className="text-xs px-2 py-1 rounded-md hover:bg-white/10 transition-colors flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+            {copied ? <><CheckCheck className="w-3 h-3 text-green-400" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+          </button>
+          {isPython && (
+            <button
+              onClick={handleRun}
+              disabled={isRunning}
+              className={`text-xs px-3 py-1 rounded-md font-semibold flex items-center gap-1.5 transition-all ${
+                isRunning ? 'bg-blue-500/20 text-blue-300 cursor-wait' : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 hover:text-emerald-300'
+              }`}
+            >
+              {isRunning ? (
+                <><span className="w-3 h-3 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin inline-block" /> Running...</>
+              ) : (
+                <><Zap className="w-3 h-3" /> Run</>
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+      {/* Code */}
+      <pre className="p-4 overflow-x-auto">
+        <code className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>{code}</code>
+      </pre>
+      {/* Execution Result */}
+      {result && (
+        <div className="border-t" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="px-3 py-1.5 flex items-center justify-between" style={{ background: result.success ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)' }}>
+            <span className={`text-xs font-semibold ${result.success ? 'text-emerald-400' : 'text-red-400'}`}>
+              {result.success ? '✓ Output' : '✗ Error'}
+            </span>
+            {result.execution_time_ms != null && (
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{result.execution_time_ms}ms</span>
+            )}
+          </div>
+          {result.stdout && (
+            <pre className="px-4 py-3 text-sm font-mono overflow-x-auto whitespace-pre-wrap" style={{ color: 'var(--text-primary)', maxHeight: '300px', overflowY: 'auto' }}>
+              {result.stdout}
+            </pre>
+          )}
+          {(result.stderr || result.error) && (
+            <pre className="px-4 py-3 text-sm font-mono text-red-400 overflow-x-auto whitespace-pre-wrap" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+              {result.stderr || result.error}
+            </pre>
+          )}
+          {result.figures && result.figures.length > 0 && (
+            <div className="px-4 py-3 space-y-3">
+              {result.figures.map((fig, i) => (
+                <img key={i} src={`data:image/png;base64,${fig.base64}`} alt={`Figure ${i+1}`}
+                  className="max-w-full rounded-lg border shadow-lg" style={{ borderColor: 'var(--border-color)', maxHeight: '400px' }} />
+              ))}
+            </div>
+          )}
+          {result.tables && result.tables.length > 0 && (
+            <div className="px-4 py-3 overflow-x-auto">
+              {result.tables.map((table, i) => (
+                <div key={i}>
+                  {table.shape && <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>DataFrame: {table.shape[0]} rows × {table.shape[1]} cols</p>}
+                  <table className="w-full text-xs border-collapse">
+                    <thead><tr>{table.columns.map((col, ci) => (
+                      <th key={ci} className="text-left px-2 py-1.5 border-b font-semibold" style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>{col}</th>
+                    ))}</tr></thead>
+                    <tbody>{table.data.slice(0,20).map((row, ri) => (
+                      <tr key={ri} className="hover:bg-white/[0.03]">{row.map((cell, ci) => (
+                        <td key={ci} className="px-2 py-1 border-b" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{cell != null ? String(cell) : '—'}</td>
+                      ))}</tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Lazy-loaded ForecastChartBlock for rendering prediction charts
 const ForecastChartBlock: React.FC<{ payload: Record<string, unknown> }> = ({ payload }) => {
   const PredictionChart = React.lazy(() =>
@@ -412,12 +545,12 @@ const MLChartsContainer: React.FC<{
   );
 };
 
-// Typewriter Animation Component - ChatGPT-like word-by-word reveal
+// Typewriter Animation Component - ChatGPT-like word-by-word reveal - Memoized for Performance
 const TypewriterText: React.FC<{
   content: string;
   isNew?: boolean;
   onComplete?: () => void;
-}> = ({ content, isNew = false, onComplete }) => {
+}> = React.memo(({ content, isNew = false, onComplete }) => {
   const [displayedContent, setDisplayedContent] = useState(isNew ? '' : content);
   const [isComplete, setIsComplete] = useState(!isNew);
   const hasAnimatedRef = useRef(false);
@@ -502,10 +635,10 @@ const TypewriterText: React.FC<{
       {!isComplete && <span className="typing-cursor"></span>}
     </>
   );
-};
+});
 
-// Component to format markdown-like responses
-const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
+// Component to format markdown-like responses - Memoized for Performance
+const FormattedMessage: React.FC<{ content: string }> = React.memo(({ content }) => {
   const formatContent = (text: string) => {
     let normalizedText = text.replace(/\r\n/g, '\n');
 
@@ -727,12 +860,14 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
           }
         }
 
-        // Regular code block
+        // Regular code block — with V5 inline execution for Python
+        const langMatch = para.match(/^```(\w+)/);
+        const lang = langMatch ? langMatch[1].toLowerCase() : '';
         const codeContent = para.replace(/^```\w*\n?/, '').replace(/```$/, '');
+        const isPython = lang === 'python' || lang === 'py' || (!lang && (codeContent.includes('import pandas') || codeContent.includes('import numpy') || codeContent.includes('print(') || codeContent.includes('df.')));
+        
         return (
-          <pre key={idx} className="my-3 p-4 glass-panel rounded-xl overflow-x-auto border border-[var(--border-color)]">
-            <code className="text-sm font-mono" style={{ color: 'var(--text-secondary)' }}>{codeContent}</code>
-          </pre>
+          <InteractiveCodeBlock key={idx} code={codeContent} language={lang || (isPython ? 'python' : 'text')} isPython={isPython} />
         );
       }
 
@@ -839,7 +974,7 @@ const FormattedMessage: React.FC<{ content: string }> = ({ content }) => {
   };
 
   return <div className="space-y-1">{formatContent(content)}</div>;
-};
+});
 
 // Animated Logo for AI Assistant - Uses actual DataVision logo with subtle animation
 // Adapts to light/dark mode automatically
@@ -894,24 +1029,61 @@ const getModeThinkingText = (modeId: string): string => {
   return thinkingTexts[modeId] || 'Processing...';
 };
 
-// Typing Indicator - ChatGPT Style with mode-specific thinking
-const TypingIndicator: React.FC<{ mode?: string; isDark?: boolean }> = ({ mode = 'rag', isDark = true }) => (
-  <div className="flex items-start gap-3 max-w-3xl message-slide-up">
-    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-      <AnimatedBotIcon size={24} isDark={isDark} />
-    </div>
-    <div className="flex flex-col gap-1 py-2">
-      <div className="flex items-center gap-2">
-        <div className="streaming-indicator flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-green-400"></span>
-          <span className="w-2 h-2 rounded-full bg-green-400"></span>
-          <span className="w-2 h-2 rounded-full bg-green-400"></span>
+// Agent Swarm Loading Indicator
+const TypingIndicator: React.FC<{ mode?: string; isDark?: boolean }> = ({ mode = 'rag', isDark = true }) => {
+  const [stepIndex, setStepIndex] = useState(0);
+  
+  const agentSteps = [
+    { icon: '🧠', text: 'Agent Swarm Intialized...' },
+    { icon: '🌐', text: 'Agent 1: Fetching Market Context...' },
+    { icon: '🗄️', text: 'Agent 2: Generating SQL/Vector Search...' },
+    { icon: '📈', text: 'Agent 3: Causal Inference Checking...' },
+    { icon: '✨', text: 'Synthesizing Final Insights...' }
+  ];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setStepIndex((prev) => (prev < agentSteps.length - 1 ? prev + 1 : prev));
+    }, 1500);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex items-start gap-3 max-w-3xl message-slide-up">
+      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+        <AnimatedBotIcon size={24} isDark={isDark} />
+      </div>
+      <div className="flex flex-col gap-2 py-1">
+        <div className="flex items-center gap-2">
+          <div className="streaming-indicator flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-green-400"></span>
+            <span className="w-2 h-2 rounded-full bg-green-400"></span>
+            <span className="w-2 h-2 rounded-full bg-green-400"></span>
+          </div>
+          <span className="text-sm font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
+            Autonomous Swarm Processing
+          </span>
         </div>
-        <span className="text-sm text-[var(--text-secondary)] italic">{getModeThinkingText(mode)}</span>
+        <div className="flex flex-col gap-1 mt-1">
+          {agentSteps.slice(0, stepIndex + 1).map((step, idx) => (
+            <motion.div 
+              key={idx}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex items-center gap-2 text-xs"
+            >
+              <span className={idx === stepIndex ? "animate-pulse" : "opacity-50"}>{step.icon}</span>
+              <span className={idx === stepIndex ? "text-indigo-400" : "text-gray-500 line-through decoration-gray-700"}>
+                {step.text}
+              </span>
+              {idx < stepIndex && <Check className="w-3 h-3 text-green-500" />}
+            </motion.div>
+          ))}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 // ChatGPT-Style Welcome Screen with Centered Input (includes Mode & MCP controls)
 interface WelcomeScreenProps {
@@ -929,6 +1101,8 @@ interface WelcomeScreenProps {
   onModeClick: () => void;
   onMcpClick: () => void;
   mcpCount: { active: number; total: number };
+  llm: string;
+  setLlm: (val: string) => void;
 }
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
@@ -945,7 +1119,9 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
   currentMode,
   onModeClick,
   onMcpClick,
-  mcpCount
+  mcpCount,
+  llm,
+  setLlm
 }) => {
   const suggestions = [
     { icon: TrendingUp, text: "Analyze trends in my data" },
@@ -1044,6 +1220,8 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
             {currentMode.label}
             <ChevronDown className="w-4 h-4" />
           </button>
+          
+
 
           {/* Send Button */}
           <button
@@ -1082,6 +1260,7 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({
 
 const AnalystChat: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     conversations,
     currentConversationId,
@@ -1101,6 +1280,7 @@ const AnalystChat: React.FC = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [mode, setMode] = useState<string>('analyst');
+  const [llm, setLlm] = useState<string>('llama');
   const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -1331,6 +1511,19 @@ const AnalystChat: React.FC = () => {
     ...m,
     timestamp: new Date(m.timestamp)
   })) || [];
+
+  // Auto-send prefilled message from other pages (like Anomaly Monitor)
+  useEffect(() => {
+    if (location.state?.prefillMessage) {
+      const msg = location.state.prefillMessage;
+      // Clear the state so it doesn't fire again if the user refreshes the page
+      navigate(location.pathname, { replace: true, state: {} });
+      // Small delay to ensure state and component are fully mounted
+      setTimeout(() => {
+        handleSend(msg);
+      }, 500);
+    }
+  }, [location.state, navigate]);
 
   useEffect(() => {
     if (!currentConversationId && conversations.length > 0) {
@@ -1654,14 +1847,8 @@ const AnalystChat: React.FC = () => {
 
         let fullContent = '';
 
-        // Get model based on mode
-        const modelMap: Record<string, string> = {
-          'rag': 'deepseek',
-          'hybrid': 'deepseek',
-          'mistral-7b': 'mistral',
-          'llama-70b': 'llama',
-        };
-        const model = modelMap[mode] || 'deepseek';
+        // Get model based on selected LLM
+        const model = llm;
 
         await apiService.streamMessage(
           messageText,
@@ -1762,6 +1949,7 @@ const AnalystChat: React.FC = () => {
 
         const response = await apiService.sendMessage(
           messageText,
+          llm,
           mode,
           convId,
           filesToCompare && filesToCompare.length > 0 ? filesToCompare : undefined,
@@ -1820,8 +2008,14 @@ const AnalystChat: React.FC = () => {
     }
   };
 
-  const handleSend = async () => {
-    const hasContent = input.trim().length > 0 || selectedImage || attachedFiles.length > 0;
+  const handleSend = async (eOrText?: React.MouseEvent | string) => {
+    let textOverride: string | undefined;
+    if (typeof eOrText === 'string') {
+      textOverride = eOrText;
+    }
+
+    const textToProcess = typeof textOverride === 'string' ? textOverride : input;
+    const hasContent = textToProcess.trim().length > 0 || selectedImage || attachedFiles.length > 0;
     if (!hasContent || isLoading) return;
 
     let convId = currentConversationId;
@@ -1832,7 +2026,7 @@ const AnalystChat: React.FC = () => {
     const userMessage: any = {
       id: Date.now().toString(),
       role: 'user' as const,
-      content: input.trim(),
+      content: textToProcess.trim(),
       timestamp: new Date().toISOString(),
       imageData: null,
     };
@@ -1856,7 +2050,7 @@ const AnalystChat: React.FC = () => {
     // Scroll to bottom immediately after sending message (ChatGPT behavior)
     setTimeout(() => scrollToBottom('smooth'), 100);
 
-    const messageToSend = input.trim();
+    const messageToSend = textToProcess.trim();
     const filesToCompare = attachedFiles.map(f => f.name);
 
     // Create vision attachments
@@ -1877,8 +2071,10 @@ const AnalystChat: React.FC = () => {
       window.dispatchEvent(new CustomEvent('filesUpdated'));
     }
 
-    // Reset Input
-    setInput('');
+    // Reset Input if we were using the text area
+    if (typeof textOverride !== 'string') {
+      setInput('');
+    }
     setSelectedImage(null);
     setImagePreviewUrl(null);
     setAttachedFiles([]);
@@ -2255,6 +2451,21 @@ const AnalystChat: React.FC = () => {
           {/* Top Right Actions */}
           <div className="flex items-center gap-2">
             <button
+              onClick={async () => {
+                if (messages.length === 0) {
+                  toast.warning("No chat history to export.");
+                  return;
+                }
+                const content = messages.map(m => `[${m.role.toUpperCase()}]\n${m.content}`).join('\n\n');
+                await handleExportMessage(content, 'pdf');
+              }}
+              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-[var(--bg-hover)] text-gray-400 hover:text-white"
+              title="Export Chat to PDF"
+            >
+              <FileText className="w-3 h-3" />
+              Export PDF
+            </button>
+            <button
               onClick={() => setUseStreaming(!useStreaming)}
               className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${useStreaming ? 'bg-green-500/10 text-green-400' : 'bg-[var(--bg-hover)] text-gray-500'
                 }`}
@@ -2285,6 +2496,8 @@ const AnalystChat: React.FC = () => {
                 onModeClick={() => setModeDropdownOpen(true)}
                 onMcpClick={() => setMcpDropdownOpen(true)}
                 mcpCount={{ active: Object.values(enabledMcps).filter(Boolean).length, total: mcpServers.length }}
+                llm={llm}
+                setLlm={setLlm}
               />
             ) : (
               <div className="space-y-4">
@@ -2899,14 +3112,14 @@ const AnalystChat: React.FC = () => {
                     </button>
 
                     {/* Mode Selector - Works on mobile and desktop */}
-                    <div className="relative">
-
+                    <div className="flex items-center gap-1.5 ml-2">
                       <button
-                        onClick={() => setModeDropdownOpen(!modeDropdownOpen)}
-                        className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-dark-hover hover:bg-dark-surface rounded-lg transition-colors text-gray-200 text-sm font-medium whitespace-nowrap"
+                        onClick={() => setModeDropdownOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg-secondary)] hover:bg-dark-hover rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+                        style={{ color: 'var(--text-primary)' }}
                       >
                         {currentMode.label}
-                        <ChevronDown className={`w-4 h-4 transition-transform ${modeDropdownOpen ? 'rotate-180' : ''}`} />
+                        <ChevronDown className="w-4 h-4 text-gray-500" />
                       </button>
                     </div>
 

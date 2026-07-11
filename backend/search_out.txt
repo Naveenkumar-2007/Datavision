@@ -1,0 +1,17 @@
+413: # 8. api_server.py for deployment
+414: zf.writestr('api_server.py', _generate_api_server_script(config))
+3557: "├── api_server.py                 # Flask REST API for deployment",
+3625: | `api_server.py` | Start a web API server with a form | When you want a web interface or REST API |
+3807: ## STEP 7: Deploy as Web API (api_server.py)
+3812: python api_server.py
+3833: python api_server.py --port 8080
+3894: | `Port already in use` | Use `python api_server.py --port 8080` |
+4932: python api_server.py
+4933: python api_server.py --port 8080
+5747: CMD ["python", "api_server.py", "--port", "5000"]
+5832: # 8. api_server.py
+5833: zf.writestr('api_server.py', _generate_clustering_api_script(
+6381: python api_server.py
+6382: python api_server.py --port 8000
+6547: ├── api_server.py                 # Flask REST API
+6583: python api_server.py --port 5000

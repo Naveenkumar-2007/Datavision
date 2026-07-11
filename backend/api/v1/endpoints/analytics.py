@@ -1399,7 +1399,7 @@ async def get_unified_analytics(
     
     try:
         # Resolve user
-        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        authenticated_user = await get_user_id_from_headers(x_user_id, authorization)
         if authenticated_user and authenticated_user != user_id:
             user_id = authenticated_user
 
@@ -1947,7 +1947,7 @@ async def get_dashboard_stats(
     """
     try:
         # Resolve authenticated user_id
-        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        authenticated_user = await get_user_id_from_headers(x_user_id, authorization)
         if authenticated_user and authenticated_user != user_id:
             user_id = authenticated_user
             

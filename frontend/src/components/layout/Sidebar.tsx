@@ -12,20 +12,32 @@ import {
   Boxes,
   Brain,
   TrendingUp,
+  TrendingDown,
+  Rocket,
+  BookOpen,
+  Activity,
+  Workflow,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Logo from '@/components/Logo';
 import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
+
   { path: '/data-hub', icon: Database, label: 'Data Hub' },
-  { path: '/chat', icon: MessageSquare, label: 'Chat' },
-  { path: '/automl', icon: Brain, label: 'AutoML' },
-  { path: '/ml-predictions', icon: TrendingUp, label: 'Predictions' },
-  { path: '/clustering', icon: Boxes, label: 'Clustering' },
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/anomalies', icon: TrendingDown, label: 'Anomaly Monitor' },
+  { path: '/lineage', icon: Boxes, label: 'Data Lineage' },
+  { path: '/simulator', icon: TrendingUp, label: 'Scenario Simulator' },
   { path: '/reports', icon: FileText, label: 'Reports' },
+  { path: '/data-stories', icon: BookOpen, label: 'Data Stories', badge: 'V5' },
+  { path: '/ml-predictions', icon: Brain, label: 'ML Predictions' },
+  { path: '/model-monitoring', icon: Activity, label: 'Model Monitoring', badge: 'V5' },
+  { path: '/pipelines', icon: Workflow, label: 'Pipeline Builder', badge: 'V5' },
+  { path: '/chat', icon: MessageSquare, label: 'AI Analyst' },
+  { path: '/collaborate', icon: MessageSquare, label: 'Collaborate' },
   { path: '/settings', icon: Settings, label: 'Settings' },
+  { path: '/developer', icon: Boxes, label: 'Developer' },
 ];
 
 interface SidebarProps {
@@ -88,6 +100,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileMenuOpen = false, onClose }) 
               <>
                 <item.icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-primary-400' : ''}`} />
                 <span className="font-medium">{item.label}</span>
+                {(item as any).badge && (
+                  <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white">
+                    {(item as any).badge}
+                  </span>
+                )}
               </>
             )}
           </NavLink>

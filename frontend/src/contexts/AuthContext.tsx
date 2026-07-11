@@ -4,8 +4,24 @@
  */
 
 import { createContext, useContext, useEffect, useState, ReactNode, useMemo } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase, auth } from '../lib/supabase';
+import { supabase, auth } from '../lib/auth-client';
+
+export interface User {
+    id: string;
+    email?: string;
+    user_metadata?: any;
+    app_metadata?: any;
+    [key: string]: any;
+}
+
+export interface Session {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    expires_at?: number;
+    token_type?: string;
+    user: User;
+}
 
 interface AuthState {
     user: User | null;
@@ -89,13 +105,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
     }, []);
 
+    const updateAuthState = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+            setState({
+                user: session.user,
+                session,
+                loading: false,
+                isAuthenticated: true
+            });
+            localStorage.setItem('userId', session.user.id);
+        }
+    };
+
     const signUp = async (email: string, password: string, metadata?: Record<string, any>) => {
         const result = await auth.signUp(email, password, metadata);
+        if (!result.error) await updateAuthState();
         return { error: result.error };
     };
 
     const signIn = async (email: string, password: string) => {
         const result = await auth.signIn(email, password);
+        if (!result.error) await updateAuthState();
         return { error: result.error };
     };
 
@@ -116,7 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const signOut = async () => {
         try {
-            // Sign out from Supabase
+            // Sign out from auth service
             await auth.signOut();
         } catch (error) {
             console.error('Sign out error:', error);
@@ -134,13 +165,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         });
 
-        // Clear session - force clear any Supabase storage
-        const supabaseKeys = keys.filter(key =>
+        // Clear session - force clear any auth storage
+        const authKeys = keys.filter(key =>
             key.startsWith('sb-') ||
-            key.includes('supabase') ||
             key.includes('auth')
         );
-        supabaseKeys.forEach(key => localStorage.removeItem(key));
+        authKeys.forEach(key => localStorage.removeItem(key));
 
         // Redirect to landing page
         window.location.href = '/';

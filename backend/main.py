@@ -1,4 +1,18 @@
 import os
+import sys
+import time
+import asyncio
+# Force UTF-8 for Windows console emoji printing
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
+os.environ["USE_TF"] = "0"
+os.environ["USE_TORCH"] = "1"
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
 import uvicorn
 import logging
 from fastapi import FastAPI, Request
@@ -27,7 +41,17 @@ from api.v1.endpoints import (
     files,
     analytics,
     reports,
-    email_prefs
+    email_prefs,
+    decisions,
+    synthetic,
+    anomalies,
+    lineage,
+    collaboration,
+    simulator,
+    search,
+    voice,
+    ws,
+    live_streaming
 )
 
 # Import Autonomous Dashboard API
@@ -40,11 +64,10 @@ logger.info("✅ Autonomous Brain API loaded")
 # Initialize App
 app = FastAPI(
     title="DataVision - Autonomous AI Data Platform",
-    description="$50B Silicon Valley AI Data Analysis System",
     version="3.0.0",
-    # Security: Hide docs in production
-    docs_url="/docs" if os.environ.get("ENVIRONMENT", "development") != "production" else None,
-    redoc_url="/redoc" if os.environ.get("ENVIRONMENT", "development") != "production" else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
 
 # ============================================
@@ -72,16 +95,59 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
 
+class APICallLogMiddleware(BaseHTTPMiddleware):
+    """Log all API requests to the APICallLog table"""
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        response = await call_next(request)
+        process_time_ms = int((time.time() - start_time) * 1000)
+        
+        # Log all /api/ requests, ignoring /api/config and static files
+        if request.url.path.startswith("/api/") and not request.url.path.startswith("/api/config"):
+            asyncio.create_task(self.log_request(
+                endpoint=request.url.path,
+                method=request.method,
+                status_code=response.status_code,
+                latency_ms=process_time_ms,
+                user_id=request.headers.get("X-User-ID")
+            ))
+            
+        return response
+
+    async def log_request(self, endpoint: str, method: str, status_code: int, latency_ms: int, user_id: str):
+        try:
+            from database.db import AsyncSessionLocal
+            from database.orm import APICallLog
+            async with AsyncSessionLocal() as db:
+                log = APICallLog(
+                    user_id=user_id,
+                    endpoint=endpoint,
+                    method=method,
+                    status_code=status_code,
+                    latency_ms=latency_ms
+                )
+                db.add(log)
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Failed to log API call: {e}")
+
+app.add_middleware(APICallLogMiddleware)
+
+# Rate Limit Header Middleware
+from core.rate_limiter import RateLimitHeaderMiddleware, get_rate_limiter
+app.add_middleware(RateLimitHeaderMiddleware)
+logger.info(f"✅ Rate limiter: {type(get_rate_limiter()).__name__}")
+
 # Trusted host middleware (prevent host header injection)
-ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
-if os.environ.get("ENVIRONMENT") == "production":
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
+# ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+# if os.environ.get("ENVIRONMENT") == "production":
+#     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
 
 # CORS - Secure configuration
 # Allow HuggingFace Spaces domains and local development
 ALLOWED_ORIGINS = os.environ.get(
     "CORS_ORIGINS", 
-    "http://localhost:5173,http://localhost:3000,http://localhost:8000,https://huggingface.co,https://killerkumar-ai-business-analyst.hf.space,https://*.hf.space"
+    "http://localhost:5173,http://localhost:5174,http://localhost:3000,http://localhost:8000,https://huggingface.co,https://killerkumar-ai-business-analyst.hf.space,https://datavision-ai-datavision.hf.space,https://*.hf.space"
 ).split(",")
 
 # For HuggingFace Spaces, we need to allow all origins for the embedded iframe
@@ -107,6 +173,21 @@ app.include_router(files.router, prefix="/api/v1/files", tags=["Files"])
 app.include_router(analytics.router, prefix="/api/v1/analytics", tags=["Analytics"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["Reports"])
 app.include_router(email_prefs.router, prefix="/api/v1/settings", tags=["Settings"])
+app.include_router(decisions.router, prefix="/api/v1/decisions", tags=["Decisions"])
+app.include_router(synthetic.router, prefix="/api/v1/synthetic", tags=["Synthetic Data"])
+
+# Mount new feature APIs
+app.include_router(anomalies.router, prefix="/api/v1", tags=["Anomalies"])
+app.include_router(lineage.router, prefix="/api/v1/lineage", tags=["Lineage"])
+app.include_router(collaboration.router, prefix="/api/v1/collaboration", tags=["Collaboration"])
+app.include_router(simulator.router, prefix="/api/v1", tags=["Simulator"])
+app.include_router(search.router, prefix="/api/v1", tags=["Search"])
+app.include_router(voice.router, prefix="/api/v1/voice", tags=["Voice"])
+app.include_router(ws.router, prefix="/api/v1/ws", tags=["WebSockets"])
+app.include_router(live_streaming.router, prefix="/api/v1", tags=["Live Streaming"])
+
+from api.v1.endpoints import auth
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
 
 # 📤 Exports API (PDF, PPTX, Email)
 from api.v1.endpoints import exports
@@ -161,6 +242,32 @@ from api.v1.endpoints import clustering_api
 app.include_router(clustering_api.router, prefix="/api/v1/ml", tags=["Clustering"])
 logger.info("✅ Clustering API loaded (K-Means, DBSCAN, GMM, Spectral)")
 
+# 💻 Web IDE API (Execution & Chat)
+from api.v1.endpoints import ide_api
+app.include_router(ide_api.router, prefix="/api/v1/ide", tags=["Web IDE"])
+logger.info("✅ Web IDE API loaded (Code Execution)")
+
+# 🧠 Agentic Autopilot API (V5 — Autonomous Data Science)
+# ⚙️ Autopilot & Agents
+from api.v1.endpoints import autopilot_api
+app.include_router(autopilot_api.router, prefix="/api/v1/autopilot", tags=["Autopilot"])
+
+# 🛠 Developer & API Center
+from api.v1.endpoints import developer
+app.include_router(developer.router, prefix="/api/v1/developer", tags=["Developer"])
+
+# 🚀 Model Deploy API
+from api.v1.endpoints import deploy
+app.include_router(deploy.router, prefix="/api/v1", tags=["Deploy"])
+
+# 🚨 Anomaly Detection
+from api.v1.endpoints import anomalies
+app.include_router(anomalies.router, prefix="/api/v1/anomalies", tags=["Anomalies"])
+
+# ==========================================
+# 🚀 V2 APIs (Agentic + RAG)
+# ==========================================
+
 from fastapi.responses import FileResponse
 
 # Frontend static directory (pre-built React app)
@@ -170,12 +277,11 @@ frontend_static_dir = "/app/static"
 async def get_frontend_config():
     """
     Secure config endpoint for frontend.
-    Returns only PUBLIC keys needed for client-side auth.
-    Note: Supabase anon key is designed to be public (used with RLS).
+    Returns only PUBLIC configuration needed for client-side operations.
     """
     return {
-        "VITE_SUPABASE_URL": os.environ.get("VITE_SUPABASE_URL", os.environ.get("SUPABASE_URL", "")),
-        "VITE_SUPABASE_ANON_KEY": os.environ.get("VITE_SUPABASE_ANON_KEY", os.environ.get("SUPABASE_ANON_KEY", ""))
+        "VITE_API_URL": os.environ.get("VITE_API_URL", ""),
+        "auth_mode": "jwt"
     }
 
 @app.get("/api")
@@ -287,8 +393,8 @@ if os.path.exists(frontend_static_dir):
 @app.get("/{full_path:path}")
 async def spa_fallback(full_path: str):
     """Fallback for client-side routing"""
-    # Don't catch API routes
-    if full_path.startswith("api/"):
+    # Don't catch API routes or FastAPI built-in docs
+    if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc") or full_path.startswith("openapi.json"):
         return {"error": "Not found"}
     index_path = os.path.join(frontend_static_dir, "index.html")
     if os.path.exists(index_path):
@@ -329,6 +435,15 @@ async def startup_event():
         
     except Exception as e:
         logger.warning(f"⚠️ Email scheduler not started: {e}")
+        
+    # 🔌 Start WebSocket real-time updates task
+    try:
+        from api.v1.endpoints.ws import push_realtime_updates
+        import asyncio
+        asyncio.create_task(push_realtime_updates())
+        logger.info("🔌 WebSocket real-time updates: ACTIVE")
+    except Exception as e:
+        logger.warning(f"⚠️ WebSocket task not started: {e}")
     
     logger.info("=" * 50)
     logger.info("📡 API v2 available at: /api/v2")
@@ -340,4 +455,4 @@ async def shutdown_event():
     logger.info("🛑 DataVision Shutting Down...")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

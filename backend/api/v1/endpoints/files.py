@@ -151,7 +151,7 @@ async def upload_files(
     user_id = validate_user_id(user_id)
     
     # Get the actual user_id first for cancellation checks
-    authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+    authenticated_user = await get_user_id_from_headers(x_user_id, authorization)
     actual_user_id = authenticated_user if authenticated_user else user_id
     
     # SECURITY: Validate authenticated user_id as well
@@ -213,6 +213,39 @@ async def upload_files(
                 cleanup_uploaded_files(uploaded_files, paths)
                 clear_cancellation(user_id)
                 return {"success": False, "cancelled": True, "message": "Upload cancelled by user"}
+            
+            # 🔍 Deduplication / Schema Conflict Logic
+            import pandas as pd
+            
+            # Check if there are existing files
+            existing_csvs = list(paths["files"].glob("*.csv"))
+            existing_csvs = [f for f in existing_csvs if not f.name.startswith("cleaned_") and not f.name.startswith("LIVE_")]
+            
+            if len(existing_csvs) > 0 and file.filename.endswith(".csv"):
+                try:
+                    # Read header of the incoming file without saving it yet
+                    file.file.seek(0)
+                    new_df = pd.read_csv(file.file, nrows=0)
+                    new_cols = set(new_df.columns)
+                    
+                    # Read header of the first existing file
+                    existing_df = pd.read_csv(existing_csvs[0], nrows=0)
+                    existing_cols = set(existing_df.columns)
+                    
+                    if new_cols != existing_cols:
+                        # Schemas don't match! This is a different dataset.
+                        raise HTTPException(
+                            status_code=409, 
+                            detail="⚠️ Different dataset detected! Please delete your previous data files first to avoid AI context conflicts."
+                        )
+                    else:
+                        print(f"✅ Schema matched existing data. Allowing upload of {file.filename}.")
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    print(f"⚠️ Could not verify schema: {e}")
+                    
+            file.file.seek(0)
             
             file_path = paths["files"] / file.filename
             file.file.seek(0)
@@ -403,7 +436,7 @@ async def get_schema_intelligence(
     """
     try:
         # SECURITY: Validate user
-        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        authenticated_user = await get_user_id_from_headers(x_user_id, authorization)
         if authenticated_user != user_id:
             user_id = authenticated_user
         
@@ -474,7 +507,7 @@ async def refresh_schema_intelligence(
     """
     try:
         # SECURITY: Validate user
-        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        authenticated_user = await get_user_id_from_headers(x_user_id, authorization)
         if authenticated_user != user_id:
             user_id = authenticated_user
         
@@ -539,7 +572,7 @@ async def list_files(
     """List all uploaded files - SECURED"""
     try:
         # SECURITY: Validate user (only override if auth returns valid user)
-        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        authenticated_user = await get_user_id_from_headers(x_user_id, authorization)
         if authenticated_user and authenticated_user != user_id:
             user_id = authenticated_user
         
@@ -567,6 +600,33 @@ async def list_files(
                         "uploadedAt": datetime.fromtimestamp(file_path.stat().st_mtime).isoformat(),
                         "status": "completed"
                     })
+                    
+        # ✨ MAGIC: Append Live Connections as virtual files so ML/Reports can use them natively!
+        try:
+            from database.db import AsyncSessionLocal
+            from database.orm import DataConnection
+            from sqlalchemy import select
+            import asyncio
+            
+            async def get_live_connections():
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(select(DataConnection).where(DataConnection.user_id == user_id))
+                    return result.scalars().all()
+                    
+            connections = await get_live_connections()
+                
+            for conn in connections:
+                if conn.source_type.lower() in ('postgres', 'postgresql'):
+                    files.append({
+                        "id": f"LIVE_{conn.id}.csv",
+                        "name": f"LIVE_{conn.id}.csv",
+                        "size": 999999999, # Indicate it's massive
+                        "type": "csv",
+                        "uploadedAt": conn.created_at.isoformat(),
+                        "status": "completed"
+                    })
+        except Exception as live_e:
+            print(f"⚠️ Could not list live connections: {live_e}")
         
         return {"files": files, "total": len(files)}
         
@@ -583,7 +643,7 @@ async def delete_all_files(
     """Delete all files and indexes - SECURED"""
     try:
         # SECURITY: Validate user
-        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        authenticated_user = await get_user_id_from_headers(x_user_id, authorization)
         if authenticated_user != user_id:
             user_id = authenticated_user
         
@@ -644,9 +704,27 @@ async def delete_file(
     """Delete a file and retrain indexes - SECURED"""
     try:
         # SECURITY: Validate user
-        authenticated_user = get_user_id_from_headers(x_user_id, authorization)
+        authenticated_user = await get_user_id_from_headers(x_user_id, authorization)
         if authenticated_user != user_id:
             user_id = authenticated_user
+            
+        # ✨ MAGIC: Intercept Live Connection Deletions
+        if file_id.startswith("LIVE_") and file_id.endswith(".csv"):
+            conn_id = file_id.replace("LIVE_", "").replace(".csv", "")
+            
+            from database.db import AsyncSessionLocal
+            from database.orm import DataConnection
+            from sqlalchemy import select
+            
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(DataConnection).where(DataConnection.id == conn_id))
+                conn = result.scalar_one_or_none()
+                if conn:
+                    await db.delete(conn)
+                    await db.commit()
+            
+            invalidate_user_cache(user_id)
+            return {"success": True, "message": "Live connection deleted"}
         
         paths = get_user_paths(user_id)
         file_path = paths["files"] / file_id
@@ -957,10 +1035,55 @@ async def detect_currency_endpoint(user_id: str):
 
 @router.get("/{user_id}/{file_id}/download")
 async def download_file(user_id: str, file_id: str):
-    """Download a specific file"""
+    """Download a specific file, intercepting Live Connections to return real-time CSV"""
     try:
-        from fastapi.responses import FileResponse
+        from fastapi.responses import FileResponse, StreamingResponse
         
+        # ✨ MAGIC: Intercept Live Connections
+        if file_id.startswith("LIVE_") and file_id.endswith(".csv"):
+            conn_id = file_id.replace("LIVE_", "").replace(".csv", "")
+            
+            from database.db import AsyncSessionLocal
+            from database.orm import DataConnection
+            from sqlalchemy import select
+            import pandas as pd
+            import psycopg2
+            import io
+            
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(DataConnection).where(DataConnection.id == conn_id))
+                conn = result.scalar_one_or_none()
+                
+                if not conn:
+                    raise HTTPException(status_code=404, detail="Live Connection not found")
+                
+                try:
+                    import urllib.parse
+                    safe_creds = urllib.parse.quote_plus(conn.credentials)
+                    conn_str = f"postgresql://postgres:{safe_creds}@{conn.host}/{conn.database_name}"
+                    
+                    # Offload the blocking DB read and CSV generation to a background thread
+                    import asyncio
+                    loop = asyncio.get_running_loop()
+                    
+                    def fetch_to_csv():
+                        with psycopg2.connect(conn_str) as pg_conn:
+                            df = pd.read_sql(f"SELECT * FROM {conn.target_table}", pg_conn)
+                            csv_data = df.to_csv(index=False)
+                            return csv_data
+                            
+                    csv_string = await loop.run_in_executor(None, fetch_to_csv)
+                    
+                    return StreamingResponse(
+                        io.StringIO(csv_string),
+                        media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename={file_id}"}
+                    )
+                except Exception as db_e:
+                    print(f"⚠️ Live download failed: {db_e}")
+                    raise HTTPException(status_code=500, detail=f"Failed to fetch live data: {db_e}")
+
+        # Normal file download
         paths = get_user_paths(user_id)
         file_path = paths["files"] / file_id
         
@@ -1074,4 +1197,102 @@ async def preview_google_sheet(
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{user_id}/join-suggestions")
+async def get_join_suggestions(
+    user_id: str,
+    file1: str = Query(..., description="First filename"),
+    file2: str = Query(..., description="Second filename")
+):
+    """
+    Suggests possible join keys between two files.
+    """
+    try:
+        paths = get_user_paths(user_id)
+        file1_path = paths["files"] / sanitize_filename(file1)
+        file2_path = paths["files"] / sanitize_filename(file2)
+        
+        if not file1_path.exists() or not file2_path.exists():
+            raise HTTPException(status_code=404, detail="One or both files not found")
+            
+        import pandas as pd
+        df1 = pd.read_csv(file1_path, nrows=1000)
+        df2 = pd.read_csv(file2_path, nrows=1000)
+        
+        from core.multi_dataset_engine import MultiDatasetEngine
+        suggestions = MultiDatasetEngine.infer_joins(df1, df2, file1, file2)
+        
+        return {"suggestions": suggestions}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+from pydantic import BaseModel
+class JoinRequest(BaseModel):
+    file1: str
+    file2: str
+    left_on: str
+    right_on: str
+    how: str = "left"
+    output_filename: str = "joined_dataset.csv"
+
+@router.post("/{user_id}/join")
+async def join_datasets(
+    user_id: str,
+    req: JoinRequest
+):
+    """
+    Joins two datasets and saves the result as a new file.
+    """
+    try:
+        paths = get_user_paths(user_id)
+        file1_path = paths["files"] / sanitize_filename(req.file1)
+        file2_path = paths["files"] / sanitize_filename(req.file2)
+        
+        if not file1_path.exists() or not file2_path.exists():
+            raise HTTPException(status_code=404, detail="One or both files not found")
+            
+        import pandas as pd
+        df1 = pd.read_csv(file1_path)
+        df2 = pd.read_csv(file2_path)
+        
+        from core.multi_dataset_engine import MultiDatasetEngine
+        merged_df = MultiDatasetEngine.join_datasets(
+            df1, df2, req.left_on, req.right_on, req.how
+        )
+        
+        # Save output
+        output_name = sanitize_filename(req.output_filename)
+        if not output_name.endswith('.csv'):
+            output_name += '.csv'
+            
+        output_path = paths["files"] / output_name
+        merged_df.to_csv(output_path, index=False)
+        
+        # Invalidate cache
+        invalidate_user_cache(user_id)
+        
+        # Register in metadata
+        pipeline = IngestionPipeline()
+        file_info = [{
+            "filename": output_name,
+            "original_name": output_name,
+            "path": str(output_path),
+            "size": output_path.stat().st_size,
+            "type": "text/csv"
+        }]
+        pipeline.process(file_info, user_id, paths["files"].parent)
+        
+        return {
+            "success": True,
+            "message": "Datasets joined successfully",
+            "filename": output_name,
+            "rows": len(merged_df),
+            "columns": list(merged_df.columns)
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

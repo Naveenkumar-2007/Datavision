@@ -21,6 +21,7 @@ interface ToastContextType {
     warning: (message: string, description?: string) => void;
     info: (message: string, description?: string) => void;
     deleted: (message: string, description?: string) => void;
+    addToast: (type: string, title: string, message?: string) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -176,6 +177,7 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
     const warning = useCallback((message: string, description?: string) => showToast('warning', message, description), [showToast]);
     const info = useCallback((message: string, description?: string) => showToast('info', message, description), [showToast]);
     const deleted = useCallback((message: string, description?: string) => showToast('delete', message, description, 4000), [showToast]);
+    const addToast = useCallback((type: string, title: string, message?: string) => showToast((type as ToastType) || 'info', title, message), [showToast]);
 
     const contextValue = useMemo(() => ({
         toasts,
@@ -185,8 +187,9 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
         error,
         warning,
         info,
-        deleted
-    }), [toasts, showToast, removeToast, success, error, warning, info, deleted]);
+        deleted,
+        addToast
+    }), [toasts, showToast, removeToast, success, error, warning, info, deleted, addToast]);
 
     return (
         <ToastContext.Provider value={contextValue}>

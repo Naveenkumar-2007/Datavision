@@ -15,7 +15,7 @@ import {
     ChevronRight, ChevronDown, TrendingUp, Search, Mic, Download,
     Shield, RefreshCw, Layers, GitBranch, Zap, Clock,
     PieChart, Activity, Users, Loader2, LayoutDashboard, BrainCircuit, Target,
-    PanelLeftClose, PanelLeftOpen, LogOut
+    PanelLeftClose, PanelLeftOpen, LogOut, Sparkles
 } from 'lucide-react';
 import AnimatedLogo from '../components/AnimatedLogo';
 import LogoImage from '../components/LogoImage';
@@ -250,11 +250,19 @@ const Landing: React.FC = () => {
     }, [activePage]);
 
     return (
-        <div className="min-h-screen" style={{ backgroundColor: bg, color: text }}>
-            {/* Navigation */}
-            <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-lg" style={{ backgroundColor: isDark ? 'rgba(10, 10, 15, 0.9)' : 'rgba(255, 255, 255, 0.95)', borderBottom: `1px solid ${border}` }}>
-                <div className="max-w-6xl mx-auto px-6">
-                    <div className="h-16 flex items-center justify-between">
+        <div className="min-h-screen relative overflow-hidden" style={{ backgroundColor: bg, color: text }}>
+            {/* V3 Aurora Background Effect */}
+            <div className="absolute top-0 left-0 right-0 h-[80vh] overflow-hidden -z-10 pointer-events-none">
+                <div className={`absolute -top-[20%] -left-[10%] w-[50%] h-[50%] rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-pulse ${isDark ? 'bg-indigo-600' : 'bg-indigo-300'}`} style={{ animationDuration: '8s' }} />
+                <div className={`absolute top-[10%] -right-[10%] w-[40%] h-[40%] rounded-full mix-blend-screen filter blur-[120px] opacity-30 animate-pulse ${isDark ? 'bg-emerald-600' : 'bg-emerald-300'}`} style={{ animationDuration: '10s', animationDelay: '2s' }} />
+                <div className={`absolute -top-[10%] left-[30%] w-[60%] h-[40%] rounded-full mix-blend-screen filter blur-[150px] opacity-20 animate-pulse ${isDark ? 'bg-purple-600' : 'bg-purple-300'}`} style={{ animationDuration: '12s', animationDelay: '1s' }} />
+                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay"></div>
+            </div>
+
+            {/* Navigation - V3 Floating Glassmorphic */}
+            <nav className="fixed top-4 left-0 right-0 z-50 px-4 md:px-6 flex justify-center">
+                <div className="w-full max-w-6xl rounded-2xl backdrop-blur-xl shadow-lg border" style={{ backgroundColor: isDark ? 'rgba(15, 20, 25, 0.6)' : 'rgba(255, 255, 255, 0.7)', border: `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'}`, boxShadow: isDark ? '0 10px 30px -10px rgba(0,0,0,0.5)' : '0 10px 30px -10px rgba(0,0,0,0.1)' }}>
+                    <div className="h-14 px-5 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <AnimatedLogo size="sm" showText={true} isDark={isDark} />
                         </div>
@@ -267,28 +275,39 @@ const Landing: React.FC = () => {
                             </button>
                             <button
                                 onClick={() => navigate('/data-hub')}
-                                className="text-sm font-medium px-4 py-2 rounded-lg text-white"
-                                style={{ backgroundColor: accent }}
+                                className="text-sm font-semibold px-5 py-2 rounded-xl text-white shadow-lg transition-transform hover:scale-105 active:scale-95 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 hover:shadow-indigo-500/25"
                             >
-                                Get Started
+                                Start Free
                             </button>
                         </div>
                     </div>
                 </div>
             </nav>
 
-            {/* Hero Section - Premium $5M Copy */}
-            <section className="pt-24 md:pt-28 pb-8 md:pb-12 px-4 md:px-6">
-                <div className="max-w-4xl mx-auto text-center">
+            {/* Hero Section - V3 Premium Silicon Valley Design */}
+            <section className="pt-32 md:pt-40 pb-12 md:pb-16 px-4 md:px-6 relative z-10">
+                <div className="max-w-5xl mx-auto text-center">
+                    
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border mb-8 bg-white/5 backdrop-blur-md"
+                        style={{ borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
+                    >
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+                        <span className="text-[11px] font-medium uppercase tracking-wider text-indigo-500">DataVision V3 is Live</span>
+                    </motion.div>
 
                     <motion.h1
-                        initial={{ opacity: 1, y: 0 }}
+                        initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] mb-4 md:mb-6"
+                        className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-extrabold tracking-tight leading-[1.05] mb-6 md:mb-8"
                     >
                         Your data doesn't need dashboards.
                         <br />
-                        <span style={{ color: accent }}>It needs intelligence.</span>
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 animate-gradient-x">
+                            It needs intelligence.
+                        </span>
                     </motion.h1>
 
                     <motion.p
@@ -304,10 +323,10 @@ const Landing: React.FC = () => {
                     </motion.p>
 
                     <motion.p
-                        initial={{ opacity: 1, y: 0 }}
+                        initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.15 }}
-                        className="text-sm sm:text-base leading-relaxed mb-8 md:mb-10 max-w-2xl mx-auto px-2"
+                        className="text-base sm:text-lg md:text-xl leading-relaxed mb-10 max-w-2xl mx-auto px-2"
                         style={{ color: textSecondary }}
                     >
                         Upload any CSV or Excel file. Get autonomous dashboards, Ultra AutoML predictions,
@@ -315,16 +334,29 @@ const Landing: React.FC = () => {
                     </motion.p>
 
                     <motion.div
-                        initial={{ opacity: 1, y: 0 }}
+                        initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2 }}
+                        className="flex flex-col sm:flex-row items-center justify-center gap-4"
                     >
                         <button
                             onClick={() => navigate('/data-hub')}
-                            className="flex items-center gap-2 text-sm font-semibold px-8 py-4 rounded-xl text-white mx-auto transition-all hover:scale-105"
-                            style={{ backgroundColor: accent, boxShadow: `0 8px 30px -10px ${accent}` }}
+                            className="group relative flex items-center gap-2 text-base font-semibold px-8 py-4 rounded-2xl text-white transition-all hover:scale-[1.02] active:scale-[0.98] w-full sm:w-auto justify-center overflow-hidden"
                         >
-                            Start with your data <ArrowRight className="w-4 h-4" />
+                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500"></div>
+                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                            <span className="relative z-10">Start with your data</span>
+                            <ArrowRight className="w-4 h-4 relative z-10 group-hover:translate-x-1 transition-transform" />
+                        </button>
+                        <button
+                            onClick={() => {
+                                const demoSection = document.getElementById('product-demo');
+                                demoSection?.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="flex items-center gap-2 text-base font-semibold px-8 py-4 rounded-2xl transition-all hover:bg-black/5 dark:hover:bg-white/5 border w-full sm:w-auto justify-center"
+                            style={{ borderColor: border, color: text }}
+                        >
+                            <Search className="w-4 h-4" /> Watch Demo
                         </button>
                     </motion.div>
 
@@ -350,16 +382,19 @@ const Landing: React.FC = () => {
             </section>
 
             {/* Product Demo */}
-            <section className="pb-20 px-4 md:px-6 overflow-hidden">
-                <div className="max-w-5xl mx-auto">
+            <section id="product-demo" className="pb-20 px-4 md:px-6 overflow-hidden relative z-10">
+                <div className="max-w-5xl mx-auto relative group">
+                    {/* Glowing effect behind the demo */}
+                    <div className="absolute -inset-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500 rounded-2xl blur-xl opacity-20 group-hover:opacity-40 transition duration-1000"></div>
+                    
                     <motion.div
                         initial={{ opacity: 0, y: 40 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.3 }}
-                        className="rounded-2xl overflow-hidden shadow-2xl relative max-w-full"
+                        className="rounded-2xl overflow-hidden relative max-w-full"
                         style={{
                             backgroundColor: demoBg,
-                            border: `1px solid ${demoBorder}`,
+                            border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
                             boxShadow: isDark ? '0 25px 50px rgba(0,0,0,0.5)' : '0 25px 50px rgba(0,0,0,0.1)'
                         }}
                     >

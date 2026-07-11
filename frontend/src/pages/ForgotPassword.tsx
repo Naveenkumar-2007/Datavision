@@ -26,7 +26,7 @@ export default function ForgotPassword() {
 
         try {
             // Use custom backend endpoint for branded password reset emails
-            // This avoids Supabase's plain-text emails that often go to spam
+            // Uses our custom branded email service
             const response = await api.post('/api/v1/settings/auth/request-password-reset', {
                 email: email.trim().toLowerCase()
             });

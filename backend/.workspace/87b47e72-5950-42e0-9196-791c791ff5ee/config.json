@@ -1,0 +1,615 @@
+{
+  "target_column": "price_range",
+  "feature_columns": [
+    "battery_power",
+    "blue",
+    "clock_speed",
+    "dual_sim",
+    "fc",
+    "four_g",
+    "int_memory",
+    "m_dep",
+    "mobile_wt",
+    "n_cores",
+    "pc",
+    "px_height",
+    "px_width",
+    "ram",
+    "sc_h",
+    "sc_w",
+    "talk_time",
+    "three_g",
+    "touch_screen",
+    "wifi"
+  ],
+  "task_type": "classification",
+  "best_mode": "traditional",
+  "modes_trained": [
+    "traditional"
+  ],
+  "best_model_name": "RandomForest",
+  "metrics": {
+    "accuracy": 0.8925,
+    "f1": 0.892925039212415,
+    "precision": 0.8937266322786124,
+    "recall": 0.8925,
+    "roc_auc": 0.9796333333333334
+  },
+  "data_summary": {
+    "rows": 2000,
+    "columns": 21,
+    "features_engineered": 20
+  },
+  "feature_metadata": [
+    {
+      "name": "battery_power",
+      "type": "numeric",
+      "min": 510.0,
+      "max": 1987.0,
+      "mean": 1238.513
+    },
+    {
+      "name": "blue",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.495
+    },
+    {
+      "name": "clock_speed",
+      "type": "numeric",
+      "min": 0.5,
+      "max": 3.0,
+      "mean": 1.52225
+    },
+    {
+      "name": "dual_sim",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.5095
+    },
+    {
+      "name": "fc",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 16.0,
+      "mean": 4.294
+    },
+    {
+      "name": "four_g",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.5215
+    },
+    {
+      "name": "int_memory",
+      "type": "numeric",
+      "min": 2.0,
+      "max": 64.0,
+      "mean": 32.0465
+    },
+    {
+      "name": "m_dep",
+      "type": "numeric",
+      "min": 0.1,
+      "max": 1.0,
+      "mean": 0.50175
+    },
+    {
+      "name": "mobile_wt",
+      "type": "numeric",
+      "min": 80.0,
+      "max": 199.0,
+      "mean": 140.2395
+    },
+    {
+      "name": "n_cores",
+      "type": "numeric",
+      "min": 1.0,
+      "max": 8.0,
+      "mean": 4.5205
+    },
+    {
+      "name": "pc",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 20.0,
+      "mean": 9.9165
+    },
+    {
+      "name": "px_height",
+      "type": "numeric",
+      "min": 15.0,
+      "max": 1791.01,
+      "mean": 644.4581000000001
+    },
+    {
+      "name": "ram",
+      "type": "numeric",
+      "min": 296.99,
+      "max": 3958.01,
+      "mean": 2124.2565
+    },
+    {
+      "name": "sc_h",
+      "type": "numeric",
+      "min": 5.0,
+      "max": 19.0,
+      "mean": 12.3065
+    },
+    {
+      "name": "sc_w",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 17.0,
+      "mean": 5.763
+    },
+    {
+      "name": "three_g",
+      "type": "numeric",
+      "min": 1.0,
+      "max": 1.0,
+      "mean": 1.0
+    },
+    {
+      "name": "touch_screen",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.503
+    },
+    {
+      "name": "wifi",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.507
+    },
+    {
+      "name": "talk_time",
+      "type": "datetime",
+      "min": "1970-01-01T00:00:00.000000002",
+      "max": "1970-01-01T00:00:00.000000020",
+      "placeholder": "Select date..."
+    }
+  ],
+  "numeric_features": [
+    {
+      "name": "battery_power",
+      "type": "numeric",
+      "min": 510.0,
+      "max": 1987.0,
+      "mean": 1238.513
+    },
+    {
+      "name": "blue",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.495
+    },
+    {
+      "name": "clock_speed",
+      "type": "numeric",
+      "min": 0.5,
+      "max": 3.0,
+      "mean": 1.52225
+    },
+    {
+      "name": "dual_sim",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.5095
+    },
+    {
+      "name": "fc",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 16.0,
+      "mean": 4.294
+    },
+    {
+      "name": "four_g",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.5215
+    },
+    {
+      "name": "int_memory",
+      "type": "numeric",
+      "min": 2.0,
+      "max": 64.0,
+      "mean": 32.0465
+    },
+    {
+      "name": "m_dep",
+      "type": "numeric",
+      "min": 0.1,
+      "max": 1.0,
+      "mean": 0.50175
+    },
+    {
+      "name": "mobile_wt",
+      "type": "numeric",
+      "min": 80.0,
+      "max": 199.0,
+      "mean": 140.2395
+    },
+    {
+      "name": "n_cores",
+      "type": "numeric",
+      "min": 1.0,
+      "max": 8.0,
+      "mean": 4.5205
+    },
+    {
+      "name": "pc",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 20.0,
+      "mean": 9.9165
+    },
+    {
+      "name": "px_height",
+      "type": "numeric",
+      "min": 15.0,
+      "max": 1791.01,
+      "mean": 644.4581000000001
+    },
+    {
+      "name": "ram",
+      "type": "numeric",
+      "min": 296.99,
+      "max": 3958.01,
+      "mean": 2124.2565
+    },
+    {
+      "name": "sc_h",
+      "type": "numeric",
+      "min": 5.0,
+      "max": 19.0,
+      "mean": 12.3065
+    },
+    {
+      "name": "sc_w",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 17.0,
+      "mean": 5.763
+    },
+    {
+      "name": "three_g",
+      "type": "numeric",
+      "min": 1.0,
+      "max": 1.0,
+      "mean": 1.0
+    },
+    {
+      "name": "touch_screen",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.503
+    },
+    {
+      "name": "wifi",
+      "type": "numeric",
+      "min": 0.0,
+      "max": 1.0,
+      "mean": 0.507
+    }
+  ],
+  "categorical_features": [],
+  "text_features": [],
+  "nlp_text_column": null,
+  "results_per_mode": {
+    "traditional": {
+      "success": true,
+      "best_model": "RandomForest",
+      "metrics": {
+        "accuracy": 0.8925,
+        "f1": 0.892925039212415,
+        "precision": 0.8937266322786124,
+        "recall": 0.8925,
+        "roc_auc": 0.9796333333333334
+      },
+      "leaderboard": [
+        {
+          "name": "RandomForest",
+          "metrics": {
+            "accuracy": 0.8925,
+            "f1": 0.892925039212415,
+            "precision": 0.8937266322786124,
+            "recall": 0.8925,
+            "roc_auc": 0.9796333333333334
+          },
+          "score": 0.8925
+        }
+      ],
+      "task_type": "classification",
+      "algorithms_used": [
+        "random_forest"
+      ],
+      "feature_columns": [
+        "battery_power",
+        "blue",
+        "clock_speed",
+        "dual_sim",
+        "fc",
+        "four_g",
+        "int_memory",
+        "m_dep",
+        "mobile_wt",
+        "n_cores",
+        "pc",
+        "px_height",
+        "px_width",
+        "ram",
+        "sc_h",
+        "sc_w",
+        "talk_time",
+        "three_g",
+        "touch_screen",
+        "wifi"
+      ],
+      "feature_importance": [
+        {
+          "feature": "sc_h",
+          "importance": 0.5233,
+          "rank": 1
+        },
+        {
+          "feature": "battery_power",
+          "importance": 0.0759,
+          "rank": 2
+        },
+        {
+          "feature": "ram",
+          "importance": 0.0568,
+          "rank": 3
+        },
+        {
+          "feature": "px_height",
+          "importance": 0.0535,
+          "rank": 4
+        },
+        {
+          "feature": "mobile_wt",
+          "importance": 0.0384,
+          "rank": 5
+        },
+        {
+          "feature": "int_memory",
+          "importance": 0.0339,
+          "rank": 6
+        },
+        {
+          "feature": "touch_screen",
+          "importance": 0.0278,
+          "rank": 7
+        },
+        {
+          "feature": "pc",
+          "importance": 0.0271,
+          "rank": 8
+        },
+        {
+          "feature": "three_g",
+          "importance": 0.0262,
+          "rank": 9
+        },
+        {
+          "feature": "clock_speed",
+          "importance": 0.0243,
+          "rank": 10
+        },
+        {
+          "feature": "sc_w",
+          "importance": 0.0236,
+          "rank": 11
+        },
+        {
+          "feature": "m_dep",
+          "importance": 0.0226,
+          "rank": 12
+        },
+        {
+          "feature": "fc",
+          "importance": 0.022,
+          "rank": 13
+        },
+        {
+          "feature": "n_cores",
+          "importance": 0.0209,
+          "rank": 14
+        },
+        {
+          "feature": "four_g",
+          "importance": 0.0064,
+          "rank": 15
+        }
+      ],
+      "feature_metadata": [
+        {
+          "name": "battery_power",
+          "type": "numeric",
+          "min": 510.0,
+          "max": 1987.0,
+          "mean": 1238.513
+        },
+        {
+          "name": "blue",
+          "type": "numeric",
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.495
+        },
+        {
+          "name": "clock_speed",
+          "type": "numeric",
+          "min": 0.5,
+          "max": 3.0,
+          "mean": 1.52225
+        },
+        {
+          "name": "dual_sim",
+          "type": "numeric",
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.5095
+        },
+        {
+          "name": "fc",
+          "type": "numeric",
+          "min": 0.0,
+          "max": 16.0,
+          "mean": 4.294
+        },
+        {
+          "name": "four_g",
+          "type": "numeric",
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.5215
+        },
+        {
+          "name": "int_memory",
+          "type": "numeric",
+          "min": 2.0,
+          "max": 64.0,
+          "mean": 32.0465
+        },
+        {
+          "name": "m_dep",
+          "type": "numeric",
+          "min": 0.1,
+          "max": 1.0,
+          "mean": 0.50175
+        },
+        {
+          "name": "mobile_wt",
+          "type": "numeric",
+          "min": 80.0,
+          "max": 199.0,
+          "mean": 140.2395
+        },
+        {
+          "name": "n_cores",
+          "type": "numeric",
+          "min": 1.0,
+          "max": 8.0,
+          "mean": 4.5205
+        },
+        {
+          "name": "pc",
+          "type": "numeric",
+          "min": 0.0,
+          "max": 20.0,
+          "mean": 9.9165
+        },
+        {
+          "name": "px_height",
+          "type": "numeric",
+          "min": 15.0,
+          "max": 1791.01,
+          "mean": 644.4581000000001
+        },
+        {
+          "name": "ram",
+          "type": "numeric",
+          "min": 296.99,
+          "max": 3958.01,
+          "mean": 2124.2565
+        },
+        {
+          "name": "sc_h",
+          "type": "numeric",
+          "min": 5.0,
+          "max": 19.0,
+          "mean": 12.3065
+        },
+        {
+          "name": "sc_w",
+          "type": "numeric",
+          "min": 0.0,
+          "max": 17.0,
+          "mean": 5.763
+        },
+        {
+          "name": "three_g",
+          "type": "numeric",
+          "min": 1.0,
+          "max": 1.0,
+          "mean": 1.0
+        },
+        {
+          "name": "touch_screen",
+          "type": "numeric",
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.503
+        },
+        {
+          "name": "wifi",
+          "type": "numeric",
+          "min": 0.0,
+          "max": 1.0,
+          "mean": 0.507
+        },
+        {
+          "name": "talk_time",
+          "type": "datetime",
+          "min": "1970-01-01T00:00:00.000000002",
+          "max": "1970-01-01T00:00:00.000000020",
+          "placeholder": "Select date..."
+        }
+      ],
+      "n_rows": 2000,
+      "n_cols": 21,
+      "cleaned_file_path": "cleaned_1782413753.csv",
+      "reliability_score": 75,
+      "validation_warnings": null
+    }
+  },
+  "leaderboard": [
+    {
+      "mode": "Traditional ML",
+      "model": "RandomForest",
+      "score": 0.8925,
+      "metrics": {
+        "accuracy": 0.8925,
+        "f1": 0.892925039212415,
+        "precision": 0.8937266322786124,
+        "recall": 0.8925,
+        "roc_auc": 0.9796333333333334
+      }
+    }
+  ],
+  "actual_model_params": {
+    "bootstrap": true,
+    "ccp_alpha": 0.0,
+    "class_weight": "balanced",
+    "criterion": "gini",
+    "max_depth": 10,
+    "max_features": "sqrt",
+    "max_leaf_nodes": null,
+    "max_samples": null,
+    "min_impurity_decrease": 0.0,
+    "min_samples_leaf": 1,
+    "min_samples_split": 2,
+    "min_weight_fraction_leaf": 0.0,
+    "monotonic_cst": null,
+    "n_estimators": 150,
+    "n_jobs": -1,
+    "oob_score": false,
+    "random_state": 42,
+    "verbose": 0,
+    "warm_start": false
+  },
+  "actual_model_class": "RandomForestClassifier",
+  "has_production_engineer": true
+}

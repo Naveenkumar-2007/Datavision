@@ -107,11 +107,11 @@
 html.light-theme {
   --bg-primary: #f8fafc;
   --bg-secondary: #ffffff;
-  --bg-card: #ffffff;
+  --bg-card: rgba(255, 255, 255, 0.7);
   --bg-hover: #f1f5f9;
   --bg-active: #e2e8f0;
 
-  --border-color: #cbd5e1;
+  --border-color: rgba(203, 213, 225, 0.5);
   --border-hover: #94a3b8;
 
   /* Text - DARK & READABLE */
@@ -124,9 +124,40 @@ html.light-theme {
   --accent-glow: rgba(34, 197, 94, 0.3);
 
   /* Table */
-  --table-header-bg: #f0fdfa;
-  --table-row-hover: #f8fafc;
+  --table-header-bg: rgba(240, 253, 250, 0.8);
+  --table-row-hover: rgba(248, 250, 252, 0.8);
   --table-row-active: #ccfbf1;
+}
+
+/* ==================================================================
+   ULTRA-PREMIUM CURATED THEMES
+   ================================================================== */
+
+html.theme-obsidian {
+  --bg-primary: #050505;
+  --bg-secondary: #0a0a0a;
+  --bg-card: rgba(15, 15, 15, 0.6);
+  --border-color: rgba(255, 255, 255, 0.05);
+  --accent-primary: #38bdf8;
+  --accent-glow: rgba(56, 189, 248, 0.2);
+}
+
+html.theme-aurora {
+  --bg-primary: #0b1121;
+  --bg-secondary: #111827;
+  --bg-card: rgba(17, 24, 39, 0.65);
+  --border-color: rgba(99, 102, 241, 0.15);
+  --accent-primary: #a855f7;
+  --accent-glow: rgba(168, 85, 247, 0.25);
+}
+
+html.theme-cyber {
+  --bg-primary: #09090b;
+  --bg-secondary: #18181b;
+  --bg-card: rgba(24, 24, 27, 0.7);
+  --border-color: rgba(236, 72, 153, 0.15);
+  --accent-primary: #ec4899;
+  --accent-glow: rgba(236, 72, 153, 0.3);
 }
 
 /* ------------------------------------------------------------------
@@ -135,8 +166,8 @@ html.light-theme {
 html,
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: var(--bg-primary) !important;
-  color: var(--text-primary) !important;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
   transition: background-color 0.2s ease, color 0.2s ease;
   -webkit-tap-highlight-color: transparent;
 }
@@ -214,7 +245,6 @@ html.light-theme pre {
 
 button:active,
 a:active,
-div:active,
 tr:active,
 td:active {
   background-color: inherit !important;
@@ -480,9 +510,11 @@ html.light-theme .recharts-tooltip-label {
    ------------------------------------------------------------------ */
 .glass-card {
   background-color: var(--bg-card) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-color) !important;
   border-radius: 16px;
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-md), 0 4px 30px rgba(0, 0, 0, 0.1);
   transition: all 0.3s var(--ease-smooth);
 }
 
@@ -3453,5 +3485,235 @@ html.light-theme .input-premium:focus {
   40% {
     transform: scale(1);
     opacity: 1;
+  }
+}
+
+/* ==================================================================
+   MOBILE-RESPONSIVE DASHBOARD OVERHAUL
+   Comprehensive media queries for all enterprise pages
+   ================================================================== */
+
+/* ---- Touch Targets & Safe Area ---- */
+.touch-target {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* ---- Small Screens (max-width: 640px) ---- */
+@media (max-width: 640px) {
+  /* Typography Scale Down */
+  h1 { font-size: 1.5rem !important; }
+  h2 { font-size: 1.25rem !important; }
+  h3 { font-size: 1.1rem !important; }
+
+  /* Reduce padding on glass-card, card-premium */
+  .glass-card,
+  .card-premium,
+  .glass-panel {
+    padding: 16px !important;
+    border-radius: 16px !important;
+  }
+
+  /* KPI stat numbers - scale to fit */
+  .text-3xl { font-size: 1.5rem !important; }
+  .text-4xl { font-size: 1.75rem !important; }
+
+  /* Main content area padding */
+  main > div {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
+
+  /* Tables: horizontal scroll wrapper */
+  .table-wrapper,
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Charts: constrain height on mobile */
+  .recharts-wrapper,
+  .recharts-surface {
+    max-width: 100% !important;
+  }
+
+  /* Training overlay: tighter layout */
+  .fixed.inset-0 .w-40 {
+    width: 6rem !important;
+    height: 6rem !important;
+  }
+
+  /* Tabs: horizontal scroll for many tabs */
+  .flex.border-b {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .flex.border-b::-webkit-scrollbar {
+    display: none;
+  }
+  .flex.border-b > button {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+@layer utilities {
+  .animate-gradient-x {
+    background-size: 200% 200%;
+    animation: gradient-x 15s ease infinite;
+  }
+}
+
+@keyframes gradient-x {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+  /* Landing page feature grids */
+  .grid-cols-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  /* File list items: stack actions below */
+  .p-6.flex.items-center.justify-between {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  /* Command palette: full width */
+  .max-w-xl {
+    max-width: calc(100vw - 32px) !important;
+  }
+
+  /* Button groups: allow wrapping */
+  .flex.gap-2,
+  .flex.gap-3 {
+    flex-wrap: wrap;
+  }
+
+  /* Safe area for bottom nav / gesture bars on iOS */
+  body {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+/* ---- Medium Screens (max-width: 768px) ---- */
+@media (max-width: 768px) {
+  /* Settings / Email schedule: 3-col → 1-col stack */
+  .grid.grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Collaborate sidebar: push below chat */
+  .grid.grid-cols-1.lg\:grid-cols-4 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Developer page: push sidebar below */
+  .grid.grid-cols-1.lg\:grid-cols-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Scenario Simulator: full width panels */
+  .grid.grid-cols-1.lg\:grid-cols-12 {
+    grid-template-columns: 1fr !important;
+  }
+  .lg\:col-span-4,
+  .lg\:col-span-8,
+  .lg\:col-span-3,
+  .lg\:col-span-2 {
+    grid-column: span 1 !important;
+  }
+
+  /* Modal/overlay sizing */
+  .max-w-lg {
+    max-width: calc(100vw - 24px) !important;
+  }
+}
+
+/* ---- Tablet Screens (max-width: 1024px) ---- */
+@media (max-width: 1024px) {
+  /* Header: compact padding */
+  header {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* Collapsed sidebar on tablet becomes icon-only */
+  .lg\:w-64 {
+    width: 5rem !important;
+  }
+}
+
+/* ---- Landscape Phone ---- */
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Training overlay: reduce vertical space */
+  .fixed.inset-0 .flex.flex-col.items-center {
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+  .fixed.inset-0 .w-40 {
+    width: 4rem !important;
+    height: 4rem !important;
+  }
+  .fixed.inset-0 h2 {
+    font-size: 1.25rem !important;
+    margin-bottom: 8px !important;
+  }
+}
+
+/* ---- Hover only on pointer devices (prevents sticky hover on touch) ---- */
+@media (hover: none) {
+  .hover\:bg-white\/5:hover,
+  .hover\:bg-white\/10:hover {
+    background-color: transparent !important;
+  }
+  
+  /* Make tap targets generous on touch */
+  button,
+  a,
+  [role="button"] {
+    min-height: 44px;
+  }
+  
+  /* Remove hover-only transitions on touch */
+  .hover-glow:hover {
+    box-shadow: none !important;
+  }
+}
+
+/* ---- Print Styles ---- */
+@media print {
+  .glass-card,
+  .card-premium,
+  .glass-panel {
+    background: white !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  aside,
+  header,
+  nav,
+  .fixed {
+    display: none !important;
+  }
+
+  main {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 }
