@@ -41,6 +41,8 @@ jobs:
           pip install huggingface_hub
           
           # Ensure frontend/dist is tracked before pushing
+          # Delete source maps because they exceed HF 10MB limit
+          find frontend/dist/ -name "*.map" -type f -delete
           git add -f frontend/dist/
           git commit -m "Auto-build frontend for deployment" || echo "No changes to commit"
           
