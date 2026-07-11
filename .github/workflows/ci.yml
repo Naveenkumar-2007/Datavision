@@ -27,7 +27,7 @@ jobs:
           
       - name: Lint with Ruff
         run: |
-          ruff check backend/ --select=E9,F63,F7,F82 --show-source
+          ruff check backend/ --select=E9,F63,F7,F82
           ruff check backend/ --exit-zero
           
   frontend-build:
