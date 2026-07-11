@@ -9,6 +9,17 @@ DATABASE_URL = os.environ.get(
     "postgresql+asyncpg://postgres:Naveen%402007@127.0.0.1:5432/datavision"
 )
 
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+asyncpg://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+if "?sslmode=require" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("?sslmode=require", "?ssl=require")
+elif "&sslmode=require" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("&sslmode=require", "&ssl=require")
+
 # Async Engine
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 
