@@ -22,6 +22,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 from pathlib import Path
+from starlette.middleware.sessions import SessionMiddleware
 
 # Configure Logging
 # Configure Logging
@@ -94,6 +95,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Add session middleware (required for Authlib OAuth)
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get("JWT_SECRET_KEY", "super-secret-session-key"))
 
 class APICallLogMiddleware(BaseHTTPMiddleware):
     """Log all API requests to the APICallLog table"""
