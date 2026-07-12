@@ -205,7 +205,7 @@ const MLPredictions: React.FC = () => {
 
     // File & Training state - SAME AS DATAHUB
     const [existingFiles, setExistingFiles] = useState<FileItem[]>([]);
-    const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+    const [selectedFiles, setSelectedFiles] = useState<FileItem[]>([]);
     const [training, setTraining] = useState(false);
     const [modelAStatus, setModelAStatus] = useState('Active');
     const [modelBStatus, setModelBStatus] = useState('Testing');
@@ -871,16 +871,34 @@ const MLPredictions: React.FC = () => {
         }
     };
 
-    // Select existing file
+    // Select existing file(s)
     const handleSelectFile = async (file: FileItem) => {
-        setSelectedFile(file);
-        await fetchColumnsFromFile(file.name);
+        let newSelected: FileItem[];
+        if (selectedFiles.some(f => f.id === file.id)) {
+            // Deselect
+            newSelected = selectedFiles.filter(f => f.id !== file.id);
+        } else {
+            // Select (max 5)
+            if (selectedFiles.length >= 5) {
+                toast.error('You can only select up to 5 datasets.');
+                return;
+            }
+            newSelected = [...selectedFiles, file];
+        }
+        setSelectedFiles(newSelected);
+        
+        if (newSelected.length > 0) {
+            await fetchColumnsFromFile(newSelected[0].name);
+        } else {
+            setAvailableColumns([]);
+            setTargetColumn('');
+        }
     };
 
     // Training handler - Updated for ML Type support
     const handleRunAutoML = async () => {
-        if (!selectedFile) {
-            toast.error('Please select a data file first.');
+        if (selectedFiles.length === 0) {
+            toast.error('Please select at least one data file first.');
             return;
         }
 
@@ -891,18 +909,20 @@ const MLPredictions: React.FC = () => {
         setAbortController(controller);
 
         try {
-            // Get the file from server and send to AutoML - SAME AS DATAHUB
+            // Get the files from server and send to AutoML - SAME AS DATAHUB
             const userId = getUserIdSync();
-            const fileResponse = await fetch(`/api/v1/files/${userId}/${selectedFile.name}/download`, {
-                signal: controller.signal,
-                headers: getAuthHeadersSync()
-            });
-
-            if (!fileResponse.ok) throw new Error('Failed to get file');
-
-            const fileBlob = await fileResponse.blob();
             const formData = new FormData();
-            formData.append('file', fileBlob, selectedFile.name);
+            
+            for (const f of selectedFiles) {
+                const fileResponse = await fetch(`/api/v1/files/${userId}/${f.name}/download`, {
+                    signal: controller.signal,
+                    headers: getAuthHeadersSync()
+                });
+                if (!fileResponse.ok) throw new Error(`Failed to get file ${f.name}`);
+                const fileBlob = await fileResponse.blob();
+                formData.append('files', fileBlob, f.name);
+            }
+            
             formData.append('user_id', userId);
 
             // Add target column if selected/detected
@@ -991,7 +1011,7 @@ const MLPredictions: React.FC = () => {
 
     // Clustering handler - For UNSUPERVISED learning (no target column)
     const handleRunClustering = async () => {
-        if (!selectedFile) {
+        if (selectedFiles.length === 0) {
             toast.error('Please select a data file first.');
             return;
         }
@@ -1002,6 +1022,7 @@ const MLPredictions: React.FC = () => {
         try {
             const userId = getUserIdSync();
             const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+            const fileId = selectedFiles.length > 0 ? (selectedFiles[0].id || selectedFiles[0].name) : '';
 
             const response = await fetch('/api/v1/ml/clustering', {
                 method: 'POST',
@@ -1011,7 +1032,7 @@ const MLPredictions: React.FC = () => {
                     ...(token && { 'Authorization': `Bearer ${token}` })
                 },
                 body: JSON.stringify({
-                    file_id: selectedFile.id || selectedFile.name,
+                    file_id: fileId,
                     user_id: userId,
                     algorithm: clusteringAlgorithm,
                     n_clusters: clusterCount,
@@ -1390,7 +1411,7 @@ const MLPredictions: React.FC = () => {
                     </div>
 
                     {/* 🤖 ML Train Button - Shows when data files exist - SAME AS DATAHUB */}
-                    {hasDataFiles && selectedFile && (
+                    {hasDataFiles && selectedFiles.length > 0 && (
                         <div className="flex items-center gap-2 w-full md:w-auto">
                             {/* For Supervised: Show Fast/Ultra toggle ONLY when 'auto' is selected */}
                             {/* Hide when user has manually selected specific algorithms */}
@@ -1518,18 +1539,18 @@ const MLPredictions: React.FC = () => {
                                     disabled={training}
                                     className="p-4 rounded-xl border text-left transition-all flex items-center gap-3 hover:border-emerald-500/50"
                                     style={{
-                                        backgroundColor: selectedFile?.id === file.id
+                                        backgroundColor: selectedFiles.some(f => f.id === file.id)
                                             ? (isDark ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.1)')
                                             : (isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
-                                        borderColor: selectedFile?.id === file.id ? '#10b981' : 'var(--border-color)'
+                                        borderColor: selectedFiles.some(f => f.id === file.id) ? '#10b981' : 'var(--border-color)'
                                     }}
                                 >
-                                    <FileText className="w-6 h-6 flex-shrink-0" style={{ color: selectedFile?.id === file.id ? '#10b981' : 'var(--text-muted)' }} />
+                                    <FileText className="w-6 h-6 flex-shrink-0" style={{ color: selectedFiles.some(f => f.id === file.id) ? '#10b981' : 'var(--text-muted)' }} />
                                     <div className="flex-1 min-w-0">
                                         <p className="font-medium truncate" style={{ color: 'var(--text-primary)' }}>{file.name}</p>
                                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{(file.size / 1024).toFixed(1)} KB</p>
                                     </div>
-                                    {selectedFile?.id === file.id && <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: '#10b981' }} />}
+                                    {selectedFiles.some(f => f.id === file.id) && <CheckCircle className="w-5 h-5 flex-shrink-0" style={{ color: '#10b981' }} />}
                                 </button>
                             ))}
                         </div>
@@ -1957,7 +1978,7 @@ const MLPredictions: React.FC = () => {
                         {/* Train Clustering Button */}
                         <button
                             onClick={handleStartTraining}
-                            disabled={training || !selectedFile}
+                            disabled={training || selectedFiles.length === 0}
                             className="mt-4 w-full px-6 py-3 rounded-xl font-medium text-white flex items-center justify-center gap-2
                                      bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500
                                      disabled:opacity-50 disabled:cursor-not-allowed transition-all"
@@ -2021,21 +2042,21 @@ const MLPredictions: React.FC = () => {
                 )}
 
                 {/* 🏥 Data Health Card - Shows before training */}
-                {selectedFile && (
+                {selectedFiles.length > 0 && (
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.2 }}
                     >
                         <DataHealthCard
-                            fileName={selectedFile.name}
+                            fileName={selectedFiles[0].name}
                             targetColumn={targetColumn}
                         />
                     </motion.div>
                 )}
 
                 {/* Instructions when no file selected */}
-                {!selectedFile && existingFiles.length > 0 && (
+                {selectedFiles.length === 0 && existingFiles.length > 0 && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}

@@ -90,6 +90,7 @@ class UserFile(Base):
 
     user = relationship("UserProfile", back_populates="files")
 
+
 class UserQuery(Base):
     __tablename__ = 'user_queries'
     
