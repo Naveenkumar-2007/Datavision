@@ -84,7 +84,8 @@ def get_secure_user_id(
 
 @router.post("/production_train")
 async def production_train(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
     target_column: Optional[str] = Form(None),
     algorithm: Optional[str] = Form(None),  # Specific algorithm or 'auto'
     user_id: str = Form("default"),
@@ -109,46 +110,62 @@ async def production_train(
         algo_msg = f" with {algorithm}" if algorithm and algorithm != 'auto' else ""
         print(f"🚀 [PRODUCTION] AutoML Training{algo_msg} for user: {user_id}")
         
-        content = await file.read()
-        filename = file.filename or "data.csv"
-        
-        # 🌐 MAGIC: Intercept Live Connections for ML Training
-        if filename.startswith("LIVE_") and filename.endswith(".csv"):
-            conn_id = filename.replace("LIVE_", "").replace(".csv", "")
-            from database.db import AsyncSessionLocal
-            from database.orm import DataConnection
-            from sqlalchemy import select
-            import psycopg2
+        # Collect all files
+        all_files = []
+        if files:
+            all_files.extend(files)
+        if file:
+            all_files.append(file)
             
-            async with AsyncSessionLocal() as db:
-                result = await db.execute(select(DataConnection).where(DataConnection.id == conn_id))
-                conn = result.scalar_one_or_none()
+        if not all_files:
+            raise HTTPException(status_code=400, detail="No valid files uploaded")
+            
+        dfs = []
+        for f in all_files:
+            content = await f.read()
+            filename = f.filename or "data.csv"
+            
+            # 🌐 MAGIC: Intercept Live Connections for ML Training
+            if filename.startswith("LIVE_") and filename.endswith(".csv"):
+                conn_id = filename.replace("LIVE_", "").replace(".csv", "")
+                from database.db import AsyncSessionLocal
+                from database.orm import DataConnection
+                from sqlalchemy import select
+                import psycopg2
                 
-                if not conn:
-                    raise HTTPException(status_code=404, detail=f"Live Connection not found: {filename}")
-                
-                try:
-                    import urllib.parse
-                    safe_creds = urllib.parse.quote_plus(conn.credentials)
-                    conn_str = f"postgresql://postgres:{safe_creds}@{conn.host}/{conn.database_name}"
-                    import asyncio
-                    loop = asyncio.get_running_loop()
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(select(DataConnection).where(DataConnection.id == conn_id))
+                    conn = result.scalar_one_or_none()
                     
-                    def fetch_to_df():
-                        with psycopg2.connect(conn_str) as pg_conn:
-                            # Pull ALL data for ML training
-                            return pd.read_sql(f"SELECT * FROM {conn.target_table}", pg_conn)
-                            
-                    df = await loop.run_in_executor(None, fetch_to_df)
-                except Exception as db_e:
-                    raise HTTPException(status_code=500, detail=f"Failed to fetch live data for ML: {db_e}")
-        else:
-            if filename.endswith('.csv'):
-                df = pd.read_csv(io.BytesIO(content))
+                    if not conn:
+                        raise HTTPException(status_code=404, detail=f"Live Connection not found: {filename}")
+                    
+                    try:
+                        import urllib.parse
+                        safe_creds = urllib.parse.quote_plus(conn.credentials)
+                        conn_str = f"postgresql://postgres:{safe_creds}@{conn.host}/{conn.database_name}"
+                        import asyncio
+                        loop = asyncio.get_running_loop()
+                        
+                        def fetch_to_df():
+                            with psycopg2.connect(conn_str) as pg_conn:
+                                # Pull ALL data for ML training
+                                return pd.read_sql(f"SELECT * FROM {conn.target_table}", pg_conn)
+                                
+                        df_part = await loop.run_in_executor(None, fetch_to_df)
+                        dfs.append(df_part)
+                    except Exception as db_e:
+                        raise HTTPException(status_code=500, detail=f"Failed to fetch live data for ML: {db_e}")
             else:
-                df = pd.read_excel(io.BytesIO(content))
+                if filename.endswith('.csv'):
+                    df_part = pd.read_csv(io.BytesIO(content))
+                else:
+                    df_part = pd.read_excel(io.BytesIO(content))
+                dfs.append(df_part)
         
-        print(f"📂 File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
+        df = pd.concat(dfs, ignore_index=True)
+        filename = all_files[0].filename or "combined_data.csv"
+        print(f"📂 Combined File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols) from {len(all_files)} files")
         
         from ml.automl_engine import automl_engine
         
@@ -697,7 +714,8 @@ async def train_with_test_file(
 
 @router.post("/train")
 async def train_automl(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
     target_column: Optional[str] = Form(None),
     user_id: str = Form("default"),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
@@ -714,19 +732,33 @@ async def train_automl(
         user_id = get_secure_user_id(user_id, x_user_id, authorization)
         print(f"🚀 [AUTOML] Training request for user: {user_id}")
         
-        # Load file
-        content = await file.read()
-        filename = file.filename or "data.csv"
-        print(f"📂 [AUTOML] File: {filename}")
+        # Collect all files
+        all_files = []
+        if files:
+            all_files.extend(files)
+        if file:
+            all_files.append(file)
+            
+        if not all_files:
+            raise HTTPException(status_code=400, detail="No valid files uploaded")
+            
+        dfs = []
+        for f in all_files:
+            content = await f.read()
+            filename = f.filename or "data.csv"
+            print(f"📂 [AUTOML] Reading File: {filename}")
+            
+            if filename.endswith('.csv'):
+                dfs.append(pd.read_csv(io.BytesIO(content)))
+            elif filename.endswith(('.xlsx', '.xls')):
+                dfs.append(pd.read_excel(io.BytesIO(content)))
+            else:
+                dfs.append(pd.read_csv(io.BytesIO(content)))
+                
+        df = pd.concat(dfs, ignore_index=True)
+        filename = all_files[0].filename or "combined_data.csv"
         
-        if filename.endswith('.csv'):
-            df = pd.read_csv(io.BytesIO(content))
-        elif filename.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(io.BytesIO(content))
-        else:
-            df = pd.read_csv(io.BytesIO(content))
-        
-        print(f"📊 [AUTOML] Data: {df.shape[0]} rows, {df.shape[1]} columns")
+        print(f"📊 [AUTOML] Combined Data: {df.shape[0]} rows, {df.shape[1]} columns from {len(all_files)} files")
         
         if len(df) == 0:
             raise HTTPException(status_code=400, detail="Empty dataset")
@@ -1953,7 +1985,8 @@ async def deep_learning_predict(
 
 @router.post("/multi_mode/train")
 async def multi_mode_train(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    files: Optional[List[UploadFile]] = File(None),
     target_column: Optional[str] = Form(None),
     modes: str = Form('["traditional"]'),  # JSON array of modes
     algorithms: str = Form('{}'),  # JSON object of algorithms per mode
@@ -2003,16 +2036,30 @@ async def multi_mode_train(
         print(f"   Algorithms: {selected_algorithms}")
         print(f"   Ultra mode: {is_ultra}")
         
-        # Read file
-        content = await file.read()
-        filename = file.filename or "data.csv"
+        # Collect all files
+        all_files = []
+        if files:
+            all_files.extend(files)
+        if file:
+            all_files.append(file)
+            
+        if not all_files:
+            raise HTTPException(status_code=400, detail="No valid files uploaded")
+            
+        # Read and combine files
+        dfs = []
+        for f in all_files:
+            content = await f.read()
+            filename = f.filename or "data.csv"
+            if filename.endswith('.csv'):
+                dfs.append(pd.read_csv(io.BytesIO(content)))
+            else:
+                dfs.append(pd.read_excel(io.BytesIO(content)))
+                
+        df = pd.concat(dfs, ignore_index=True)
+        filename = all_files[0].filename or "combined_data.csv"
         
-        if filename.endswith('.csv'):
-            df = pd.read_csv(io.BytesIO(content))
-        else:
-            df = pd.read_excel(io.BytesIO(content))
-        
-        print(f"📂 File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols)")
+        print(f"📂 Combined File: {filename} ({df.shape[0]} rows, {df.shape[1]} cols) from {len(all_files)} files")
         
         # ============================================================
         # SAVE CLEANED DATA UPFRONT (for all modes to use)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useUserStore } from '@/store/userStore';
+import { getUserIdSync } from '@/utils/userId';
 import { useLiveStore } from '@/store/liveStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -72,7 +73,7 @@ const Developer: React.FC = () => {
     setUsageLoading(true);
     try {
       const res = await fetch('/api/v1/developer/usage-analytics', {
-        headers: { 'X-User-ID': useUserStore.getState().user?.id || 'default' }
+        headers: { 'X-User-ID': getUserIdSync() }
       });
       if (res.ok) {
         const data = await res.json();
@@ -88,7 +89,7 @@ const Developer: React.FC = () => {
   const fetchWebhooks = async () => {
     try {
       const res = await fetch('/api/v1/developer/webhooks', {
-        headers: { 'X-User-ID': useUserStore.getState().user?.id || 'default' }
+        headers: { 'X-User-ID': getUserIdSync() }
       });
       if (res.ok) {
         const data = await res.json();
@@ -105,7 +106,7 @@ const Developer: React.FC = () => {
       const res = await fetch('/api/v1/developer/webhooks', {
         method: 'POST',
         headers: { 
-          'X-User-ID': useUserStore.getState().user?.id || 'default',
+          'X-User-ID': getUserIdSync(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ url: newWebhook.trim() })
@@ -123,7 +124,7 @@ const Developer: React.FC = () => {
     try {
       const res = await fetch(`/api/v1/developer/webhooks/${webhookId}`, {
         method: 'DELETE',
-        headers: { 'X-User-ID': useUserStore.getState().user?.id || 'default' }
+        headers: { 'X-User-ID': getUserIdSync() }
       });
       if (res.ok) {
         await fetchWebhooks();
@@ -148,7 +149,7 @@ const Developer: React.FC = () => {
     setLoadingLogs(prev => ({...prev, [webhookId]: true}));
     try {
       const res = await fetch(`/api/v1/developer/webhooks/${webhookId}/deliveries`, {
-        headers: { 'X-User-ID': useUserStore.getState().user?.id || 'default' }
+        headers: { 'X-User-ID': getUserIdSync() }
       });
       if (res.ok) {
         const data = await res.json();
@@ -166,7 +167,7 @@ const Developer: React.FC = () => {
     try {
       const res = await fetch(`/api/v1/developer/webhooks/${webhookId}/test`, {
         method: 'POST',
-        headers: { 'X-User-ID': useUserStore.getState().user?.id || 'default' }
+        headers: { 'X-User-ID': getUserIdSync() }
       });
       const data = await res.json();
       if (data.success) {
@@ -202,7 +203,7 @@ const Developer: React.FC = () => {
     setLoading(true);
     try {
       const res = await fetch('/api/v1/developer/keys', {
-        headers: { 'X-User-ID': useUserStore.getState().user?.id || 'default' }
+        headers: { 'X-User-ID': getUserIdSync() }
       });
       if (res.ok) {
         const data = await res.json();
@@ -235,7 +236,7 @@ const Developer: React.FC = () => {
     try {
       const res = await fetch('/api/v1/developer/keys/generate', {
         method: 'POST',
-        headers: { 'X-User-ID': useUserStore.getState().user?.id || 'default' }
+        headers: { 'X-User-ID': getUserIdSync() }
       });
       if (res.ok) {
         await fetchKeys();
@@ -251,7 +252,7 @@ const Developer: React.FC = () => {
     try {
       const res = await fetch(`/api/v1/developer/keys/${keyId}/revoke`, {
         method: 'POST',
-        headers: { 'X-User-ID': useUserStore.getState().user?.id || 'default' }
+        headers: { 'X-User-ID': getUserIdSync() }
       });
       if (res.ok) {
         await fetchKeys();
@@ -308,7 +309,7 @@ const Developer: React.FC = () => {
     setIsFetchingSuggestions(true);
     try {
       const res = await fetch('/api/v1/developer/suggest-goals', {
-        headers: { 'X-User-ID': useUserStore.getState().user?.id || 'default' }
+        headers: { 'X-User-ID': getUserIdSync() }
       });
       const data = await res.json();
       if (data.suggestions) {

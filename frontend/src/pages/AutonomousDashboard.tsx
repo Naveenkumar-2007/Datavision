@@ -897,6 +897,22 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                 <MessageSquare className="w-4 h-4" />
                             </button>
 
+                            {/* Regenerate Dashboard */}
+                            <button
+                                onClick={() => {
+                                    // Clear cache before regenerating
+                                    const userId = user?.id || getUserIdSync();
+                                    const cacheKey = `dashboard_cache_${userId}_${JSON.stringify(activeFilters)}`;
+                                    setDashboardCache(cacheKey, null);
+                                    loadDashboard(true);
+                                }}
+                                className={`p-1.5 rounded-lg transition-all flex items-center gap-1 ${isDark ? 'bg-purple-500/20 text-purple-400 hover:bg-purple-500/30' : 'bg-purple-100 text-purple-600 hover:bg-purple-200'}`}
+                                title="Force AI to regenerate the dashboard from scratch"
+                            >
+                                <RefreshCw className="w-3.5 h-3.5" />
+                                <span className="text-[10px] font-semibold hidden sm:inline">Regenerate</span>
+                            </button>
+
                             {/* Refresh */}
                             <button
                                 onClick={() => loadDashboard()}

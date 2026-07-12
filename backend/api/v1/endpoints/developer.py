@@ -106,7 +106,7 @@ async def revoke_key(key_id: str, x_user_id: Optional[str] = Header(None, alias=
             key = result.scalars().first()
             if not key:
                 raise HTTPException(status_code=404, detail="Key not found")
-            key.status = "revoked"
+            await db.delete(key)
             await db.commit()
             return {"success": True}
     except HTTPException:
