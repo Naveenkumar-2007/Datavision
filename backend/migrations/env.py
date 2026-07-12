@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from database.orm import Base
 target_metadata = Base.metadata
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres:Naveen%402007@127.0.0.1:5432/datavision")
+from database.db import DATABASE_URL
 config.set_main_option("sqlalchemy.url", DATABASE_URL.replace('%', '%%'))
 
 # other values from the config, defined by the needs of env.py,
