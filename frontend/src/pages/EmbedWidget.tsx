@@ -4,7 +4,7 @@ import { Loader2 } from 'lucide-react';
 import AutonomousDashboard from './AutonomousDashboard';
 import MLPredictions from './MLPredictions';
 import DataHub from './DataHub';
-import AnomalyMonitor from './AnomalyMonitor';
+
 import { useUserStore } from '@/store/userStore';
 
 const EmbedWidget: React.FC = () => {
@@ -62,15 +62,7 @@ const EmbedWidget: React.FC = () => {
     );
   }
 
-  if (widgetId === 'anomaly-monitor') {
-    return (
-      <div className="w-full h-screen overflow-auto bg-transparent">
-        <Suspense fallback={<div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-indigo-500 w-8 h-8" /></div>}>
-          <AnomalyMonitor />
-        </Suspense>
-      </div>
-    );
-  }
+
 
   const isDark = theme === 'dark';
 

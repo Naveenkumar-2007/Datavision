@@ -305,15 +305,8 @@ def get_user_data(user_id: str) -> pd.DataFrame:
         if len(all_dfs) == 1:
             result_df = all_dfs[0]
         else:
-            # Check if they have same columns
-            first_cols = set(all_dfs[0].columns)
-            can_concat = all(set(df.columns) == first_cols for df in all_dfs)
-            
-            if can_concat:
-                result_df = pd.concat(all_dfs, ignore_index=True)
-            else:
-                # Return largest file/stream if they can't be concatenated safely
-                result_df = max(all_dfs, key=len)
+            # Combine all datastreams into a unified view regardless of matching columns
+            result_df = pd.concat(all_dfs, ignore_index=True)
         
         # ⚡ Cache the result
         _set_cached_df(user_id, result_df)

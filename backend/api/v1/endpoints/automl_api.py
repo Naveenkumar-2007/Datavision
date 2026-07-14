@@ -827,7 +827,87 @@ async def train_automl(
             if isinstance(obj, np.ndarray):
                 return json_safe(obj.tolist())
             return obj
-        
+            
+        # =========================================
+        # TRAIN DEPLOYMENT ARTIFACT
+        # =========================================
+        try:
+            import joblib
+            import os
+            from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+            from sklearn.impute import SimpleImputer
+            from sklearn.preprocessing import OrdinalEncoder
+            from sklearn.compose import ColumnTransformer
+            from sklearn.pipeline import Pipeline
+            
+            os.makedirs("models/deployments", exist_ok=True)
+            target = result.target_column
+            if target and target in df.columns:
+                X = df.drop(columns=[target])
+                y = df[target]
+                
+                # Fill NaNs in target if any
+                if y.isna().any():
+                    if result.task_type.lower() == 'classification':
+                        y = y.fillna(y.mode()[0])
+                    else:
+                        y = y.fillna(y.mean())
+                        
+                numeric_features = X.select_dtypes(include=['int64', 'float64']).columns.tolist()
+                categorical_features = X.select_dtypes(include=['object', 'category']).columns.tolist()
+                
+                numeric_transformer = SimpleImputer(strategy='median')
+                categorical_transformer = Pipeline(steps=[
+                    ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+                    ('encoder', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1))
+                ])
+                
+                preprocessor = ColumnTransformer(
+                    transformers=[
+                        ('num', numeric_transformer, numeric_features),
+                        ('cat', categorical_transformer, categorical_features)
+                    ], remainder='drop')
+                    
+                is_classification = result.task_type.lower() == 'classification'
+                model = RandomForestClassifier(n_estimators=15, max_depth=10, random_state=42) if is_classification else RandomForestRegressor(n_estimators=15, max_depth=10, random_state=42)
+                
+                clf = Pipeline(steps=[('preprocessor', preprocessor), ('model', model)])
+                clf.fit(X, y)
+                
+                # Save as latest for this user
+                latest_path = f"models/deployments/{user_id}_latest.joblib"
+                joblib.dump(clf, latest_path)
+                
+                # Auto-Register to Model Registry
+                from database.orm import MLRegistryModel, MLRegistryVersion
+                import uuid
+                import shutil
+                
+                try:
+                    user_uuid = uuid.UUID(user_id)
+                    model_name = f"{result.task_type.capitalize()} on {target}"
+                    
+                    registry_model = MLRegistryModel(user_id=user_uuid, name=model_name, task_type=result.task_type, target_column=target)
+                    db.add(registry_model)
+                    await db.flush()
+                    
+                    version = MLRegistryVersion(model_id=registry_model.id, version=1, algorithm=result.best_model_name, status="Production")
+                    db.add(version)
+                    await db.commit()
+                    
+                    # Copy joblib to version ID
+                    version_path = f"models/deployments/{version.id}.joblib"
+                    shutil.copy(latest_path, version_path)
+                    print(f"✅ Real deployment model serialized to {version_path}")
+                except Exception as db_err:
+                    print(f"⚠️ Failed to register model in DB: {db_err}")
+                    await db.rollback()
+                    
+        except Exception as e:
+            print(f"⚠️ Failed to serialize deployment model: {e}")
+            import traceback
+            traceback.print_exc()
+
         # Build response
         response = {
             "success": True,
@@ -3250,6 +3330,24 @@ async def list_experiments(
         ]
     }
 
+@router.get("/download-model/{version_id}")
+async def download_model(
+    version_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    import os
+    from fastapi.responses import FileResponse
+    
+    model_path = f"models/deployments/{version_id}.joblib"
+    if not os.path.exists(model_path):
+        raise HTTPException(status_code=404, detail="Model file not found")
+        
+    return FileResponse(
+        path=model_path,
+        filename=f"model_{version_id}.joblib",
+        media_type="application/octet-stream"
+    )
+
 @router.post("/batch-predict")
 async def batch_predict(
     file: UploadFile = File(...),
@@ -3276,28 +3374,33 @@ async def batch_predict(
         db.add(job)
         await db.flush()
         
-        # Load model using persistence manager
-        from ml.model_persistence import model_persistence
-        model_data = model_persistence.load_model(user_id)
-        if not model_data:
+        # Load model from disk using version_id (passed as model_name)
+        import joblib
+        import os
+        model_path = f"models/deployments/{model_name}.joblib"
+        
+        if not os.path.exists(model_path):
             job.status = 'failed'
-            job.error = "No active model found"
+            job.error = "Model file not found"
             await db.commit()
-            raise HTTPException(status_code=404, detail="No active model found")
-            
-        model = model_data.get('model')
-        if not model:
-            job.status = 'failed'
-            job.error = "Model file is invalid"
-            await db.commit()
-            raise HTTPException(status_code=500, detail="Model file is invalid")
+            raise HTTPException(status_code=404, detail="Model file not found")
             
         try:
+            model = joblib.load(model_path)
+            
+            # The model is a full Scikit-Learn Pipeline (Preprocessor + Estimator)
+            # So we can just call predict on the raw DataFrame
             predictions = model.predict(df)
-            df['Prediction'] = predictions
+            
+            # Convert predictions back to string if they are numeric categories?
+            # We don't have the original labels, so we leave it as is
+            df['Predicted_Value'] = predictions
             if hasattr(model, "predict_proba"):
-                probs = model.predict_proba(df.drop(columns=['Prediction']))
-                df['Confidence'] = probs.max(axis=1)
+                try:
+                    probs = model.predict_proba(df)
+                    df['Confidence'] = probs.max(axis=1)
+                except:
+                    pass
                 
             job.status = 'completed'
             job.completed_rows = total_rows

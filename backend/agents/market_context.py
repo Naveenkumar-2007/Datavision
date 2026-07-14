@@ -51,7 +51,7 @@ class DataCleanerAgent:
         """
         try:
             initial_rows = len(df)
-            initial_nulls = df.isnull().sum().sum()
+            initial_nulls = int(df.isnull().sum().sum())
             
             # Actual fixing operations
             # 1. Forward-fill and backward-fill missing values
