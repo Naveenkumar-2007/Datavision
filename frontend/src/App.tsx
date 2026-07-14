@@ -25,7 +25,6 @@ const EmailConfirm = React.lazy(() => import('./pages/EmailConfirm'));
 const AutonomousDashboard = React.lazy(() => import('./pages/AutonomousDashboard'));
 const MLPredictions = React.lazy(() => import('./pages/MLPredictions'));
 const Clustering = React.lazy(() => import('./pages/Clustering'));
-const AnomalyMonitor = React.lazy(() => import('./pages/AnomalyMonitor'));
 const ScenarioSimulator = React.lazy(() => import('./pages/ScenarioSimulator'));
 const DataLineage = React.lazy(() => import('./pages/DataLineage'));
 const Collaborate = React.lazy(() => import('./pages/Collaborate'));
@@ -36,9 +35,9 @@ const TermsOfService = React.lazy(() => import('./pages/TermsOfService'));
 const HelpCenter = React.lazy(() => import('./pages/HelpCenter'));
 
 const DataStories = React.lazy(() => import('./pages/DataStories'));
-const ModelMonitoring = React.lazy(() => import('./pages/ModelMonitoring'));
 const PipelineBuilder = React.lazy(() => import('./pages/PipelineBuilder'));
 const EmbedWidget = React.lazy(() => import('./pages/EmbedWidget'));
+const ModelRegistry = React.lazy(() => import('./pages/ModelRegistry'));
 
 function App() {
   const [showSplash, setShowSplash] = useState(false); // Splash screen disabled
@@ -120,18 +119,17 @@ function App() {
                   <Route path="/data-hub" element={<DataHub />} />
                   <Route path="/datahub" element={<DataHub />} />
                   <Route path="/ml-predictions" element={<MLPredictions />} />
-                  <Route path="/model-monitoring" element={<ModelMonitoring />} />
                   <Route path="/pipelines" element={<PipelineBuilder />} />
                   <Route path="/clustering" element={<Clustering />} />
                   
                   {/* V3 New Pages */}
-                  <Route path="/anomalies" element={<AnomalyMonitor />} />
                   <Route path="/simulator" element={<ScenarioSimulator />} />
                   <Route path="/lineage" element={<DataLineage />} />
                   <Route path="/collaborate" element={<Collaborate />} />
                   <Route path="/developer" element={<Developer />} />
                   
-                  
+                  {/* MLOps Enterprise Platform Routes */}
+                  <Route path="/registry" element={<ModelRegistry />} />
 
                   <Route path="/reports" element={<Reports />} />
                   <Route path="/data-stories" element={<DataStories />} />

@@ -23,6 +23,7 @@ import {
   Users,
   Terminal,
   Command,
+  Rocket,
   Lightbulb,
   ChevronRight,
   TrendingDown,
@@ -30,7 +31,6 @@ import {
   WifiOff,
   Cpu,
   Search,
-  Rocket,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserStore } from '@/store/userStore';
@@ -172,8 +172,7 @@ const AppLayout: React.FC = () => {
     {
       title: 'Intelligence & Analytics',
       items: [
-        { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }, 
-        { path: '/anomalies', label: 'Anomaly Monitor', icon: Activity },
+        { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       ]
     },
     {
@@ -181,6 +180,7 @@ const AppLayout: React.FC = () => {
       items: [
         { path: '/chat', label: 'AI Analyst', icon: MessageSquare },
         { path: '/ml-predictions', label: 'AutoML & Predict', icon: Brain }, 
+        { path: '/registry', label: 'Model Registry', icon: Rocket },
       ]
     },
     {

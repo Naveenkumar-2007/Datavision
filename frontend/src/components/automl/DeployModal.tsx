@@ -19,12 +19,15 @@ const DeployModal: React.FC<DeployModalProps> = ({ isOpen, onClose, modelName, t
     const [copied, setCopied] = useState(false);
     const [copiedKey, setCopiedKey] = useState(false);
 
+    const [deployTarget, setDeployTarget] = useState<'datavision' | 'aws' | 'azure' | 'huggingface'>('datavision');
+
     // Reset when opened
     useEffect(() => {
         if (isOpen) {
             setStatus('idle');
             setDeployment(null);
             setErrorMsg('');
+            setDeployTarget('datavision');
         }
     }, [isOpen]);
 
@@ -32,10 +35,18 @@ const DeployModal: React.FC<DeployModalProps> = ({ isOpen, onClose, modelName, t
         setStatus('deploying');
         try {
             const userId = useUserStore.getState().user?.id || 'default';
-            const res = await api.post(`/api/v1/deploy/${userId}`, {}, {
-                headers: { 'X-User-ID': userId }
+            const res = await api.post('/api/v1/mlops/deploy', {
+                name: modelName || "Deployed Model",
+                champion_traffic: 100,
+                challenger_traffic: 0
             });
             setDeployment(res.data.deployment);
+            
+            // Artificial delay to simulate cloud provisioning if not datavision
+            if (deployTarget !== 'datavision') {
+                await new Promise(resolve => setTimeout(resolve, 2500));
+            }
+            
             setStatus('success');
         } catch (err: any) {
             console.error('Deploy error:', err);
@@ -44,12 +55,15 @@ const DeployModal: React.FC<DeployModalProps> = ({ isOpen, onClose, modelName, t
         }
     };
 
+    const host = window.location.origin;
+
     const handleCopyCode = () => {
         if (!deployment) return;
+        
         const code = `import requests
 
 # API Endpoint
-url = "${window.location.origin}${deployment.endpoint}"
+url = "${host}${deployment.endpoint}"
 
 # Authentication Key
 headers = {
@@ -59,8 +73,9 @@ headers = {
 
 # Example Payload
 payload = {
-    "data": {
-        # Add your feature columns here
+    "deployment_id": "${deployment.deploy_id}",
+    "features": {
+        # Replace these with your actual dataset columns and values
         "feature_1": 0.5,
         "feature_2": 1.2
     }
@@ -82,6 +97,10 @@ print(response.json())`;
     };
 
     if (!isOpen) return null;
+
+    const targets = [
+        { id: 'datavision', name: 'DataVision Cloud', icon: <Server className="w-5 h-5" />, desc: 'Instant local deployment' }
+    ];
 
     return (
         <AnimatePresence>
@@ -119,20 +138,44 @@ print(response.json())`;
                     {/* Content */}
                     <div className="p-6">
                         {status === 'idle' && (
-                            <div className="text-center py-8">
-                                <Server className="w-16 h-16 mx-auto mb-4 text-blue-500/50" />
-                                <h3 className="text-xl font-semibold mb-2">Ready for deployment</h3>
-                                <p className="mb-6 max-w-md mx-auto" style={{ color: 'var(--text-secondary)' }}>
-                                    We will package your trained <strong>{modelName}</strong> model into a scalable REST API.
-                                    This takes less than 5 seconds and generates integration code automatically.
-                                </p>
-                                <button
-                                    onClick={handleDeploy}
-                                    className="px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5 flex items-center gap-2 mx-auto"
-                                >
-                                    <Rocket className="w-5 h-5" />
-                                    Launch Deployment
-                                </button>
+                            <div className="space-y-6">
+                                <div>
+                                    <h3 className="text-sm font-semibold uppercase tracking-wider mb-3 text-gray-400">Select Deployment Target</h3>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {targets.map(t => (
+                                            <button
+                                                key={t.id}
+                                                onClick={() => setDeployTarget(t.id as any)}
+                                                className={`p-4 rounded-xl border text-left transition-all ${
+                                                    deployTarget === t.id 
+                                                        ? 'bg-blue-600/10 border-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.15)]' 
+                                                        : 'bg-white/5 border-transparent hover:bg-white/10'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3 mb-1">
+                                                    <div className={deployTarget === t.id ? 'text-blue-400' : 'text-gray-400'}>
+                                                        {t.icon}
+                                                    </div>
+                                                    <span className="font-semibold">{t.name}</span>
+                                                </div>
+                                                <p className="text-xs text-gray-500 ml-8">{t.desc}</p>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div className="text-center pt-4 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                                    <p className="mb-6 max-w-md mx-auto" style={{ color: 'var(--text-secondary)' }}>
+                                        We will package your trained <strong>{modelName}</strong> model and deploy it to <strong>{targets.find(t => t.id === deployTarget)?.name}</strong>.
+                                    </p>
+                                    <button
+                                        onClick={handleDeploy}
+                                        className="px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5 flex items-center gap-2 mx-auto"
+                                    >
+                                        <Rocket className="w-5 h-5" />
+                                        Deploy Now
+                                    </button>
+                                </div>
                             </div>
                         )}
 
@@ -179,7 +222,7 @@ print(response.json())`;
                                         <label className="block text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>API Endpoint</label>
                                         <div className="flex items-center gap-2 p-3 rounded-lg border font-mono text-sm" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                                             <Globe className="w-4 h-4 text-blue-400" />
-                                            <span className="truncate flex-1">{window.location.origin}{deployment.endpoint}</span>
+                                            <span className="truncate flex-1">{host}{deployment.endpoint}</span>
                                         </div>
                                     </div>
 
@@ -202,7 +245,7 @@ print(response.json())`;
                                             </button>
                                         </div>
                                         <pre className="p-4 rounded-lg border overflow-x-auto text-sm font-mono" style={{ backgroundColor: '#1e1e1e', borderColor: 'var(--border-color)', color: '#d4d4d4' }}>
-                                            <code dangerouslySetInnerHTML={{ __html: `import requests\n\nurl = <span style="color:#ce9178">"${window.location.origin}${deployment.endpoint}"</span>\n\nheaders = {\n    <span style="color:#ce9178">"X-API-Key"</span>: <span style="color:#ce9178">"${deployment.api_key}"</span>,\n    <span style="color:#ce9178">"Content-Type"</span>: <span style="color:#ce9178">"application/json"</span>\n}\n\npayload = {\n    <span style="color:#ce9178">"data"</span>: {\n        <span style="color:#6a9955"># Add your features here</span>\n    }\n}\n\nresponse = requests.post(url, json=payload, headers=headers)\n<span style="color:#569cd6">print</span>(response.json())` }} />
+                                            <code dangerouslySetInnerHTML={{ __html: `import requests\n\nurl = <span style="color:#ce9178">"${host}${deployment.endpoint}"</span>\n\nheaders = {\n    <span style="color:#ce9178">"X-API-Key"</span>: <span style="color:#ce9178">"${deployment.api_key}"</span>,\n    <span style="color:#ce9178">"Content-Type"</span>: <span style="color:#ce9178">"application/json"</span>\n}\n\npayload = {\n    <span style="color:#ce9178">"data"</span>: {\n        <span style="color:#6a9955"># Add your features here</span>\n    }\n}\n\nresponse = requests.post(url, json=payload, headers=headers)\n<span style="color:#569cd6">print</span>(response.json())` }} />
                                         </pre>
                                     </div>
                                 </div>

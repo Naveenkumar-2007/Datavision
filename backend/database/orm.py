@@ -498,3 +498,70 @@ class Webhook(Base):
     last_triggered_at = Column(DateTime, nullable=True)
     failure_count = Column(Integer, default=0)
 
+# =============================================================================
+# ENTERPRISE MLOPS PLATFORM
+# =============================================================================
+
+class MLRegistryModel(Base):
+    __tablename__ = 'ml_registry_models'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String, nullable=False, index=True)
+    task_type = Column(String)  # Classification, Regression, etc.
+    target_column = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    versions = relationship("MLRegistryVersion", back_populates="model", cascade="all, delete-orphan")
+
+class MLRegistryVersion(Base):
+    __tablename__ = 'ml_registry_versions'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    model_id = Column(UUID(as_uuid=True), ForeignKey('ml_registry_models.id', ondelete='CASCADE'), nullable=False, index=True)
+    version = Column(Integer, nullable=False)
+    algorithm = Column(String)
+    training_time_sec = Column(Float)
+    metrics = Column(JSONB, default={})
+    feature_importance = Column(JSONB, default={})
+    model_size_bytes = Column(BigInteger)
+    status = Column(String, default='Draft')  # Draft, Staging, Production, Archived
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    model = relationship("MLRegistryModel", back_populates="versions")
+
+class MLOpsDeployment(Base):
+    __tablename__ = 'mlops_deployments'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    deployment_type = Column(String, default='Single')  # Single, A/B Testing, Canary, Shadow
+    champion_version_id = Column(UUID(as_uuid=True), ForeignKey('ml_registry_versions.id', ondelete='SET NULL'), nullable=True)
+    challenger_version_id = Column(UUID(as_uuid=True), ForeignKey('ml_registry_versions.id', ondelete='SET NULL'), nullable=True)
+    champion_traffic = Column(Integer, default=100)
+    challenger_traffic = Column(Integer, default=0)
+    status = Column(String, default='Active')  # Active, Paused, Stopped
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class MLOpsExperiment(Base):
+    __tablename__ = 'mlops_experiments'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    deployment_id = Column(UUID(as_uuid=True), ForeignKey('mlops_deployments.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    primary_metric = Column(String)  # Accuracy, Latency, etc.
+    start_time = Column(DateTime, default=datetime.utcnow)
+    end_time = Column(DateTime, nullable=True)
+    winner_version_id = Column(UUID(as_uuid=True), ForeignKey('ml_registry_versions.id', ondelete='SET NULL'), nullable=True)
+    status = Column(String, default='Running')  # Running, Completed, Rolled Back
+
+class MLOpsPredictionLog(Base):
+    __tablename__ = 'mlops_prediction_logs'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    deployment_id = Column(UUID(as_uuid=True), ForeignKey('mlops_deployments.id', ondelete='CASCADE'), nullable=False, index=True)
+    version_id = Column(UUID(as_uuid=True), ForeignKey('ml_registry_versions.id', ondelete='CASCADE'), nullable=False)
+    input_data = Column(JSONB, default={})
+    prediction = Column(JSONB, default={})
+    latency_ms = Column(Float)
+    cpu_usage = Column(Float)
+    memory_mb = Column(Float)
+    is_shadow = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

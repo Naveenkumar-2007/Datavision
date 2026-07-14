@@ -241,6 +241,11 @@ from api.v1.endpoints import explainability_api
 app.include_router(explainability_api.router, prefix="/api/v1", tags=["Explainability"])
 logger.info("✅ Explainability API loaded")
 
+# 🚢 Enterprise MLOps Deployment API
+from api.v1.endpoints import mlops
+app.include_router(mlops.router, prefix="/api/v1", tags=["MLOps"])
+logger.info("✅ MLOps API loaded")
+
 # 🎯 Clustering API (Unsupervised Learning)
 from api.v1.endpoints import clustering_api
 app.include_router(clustering_api.router, prefix="/api/v1/ml", tags=["Clustering"])

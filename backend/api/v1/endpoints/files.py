@@ -1033,6 +1033,37 @@ async def detect_currency_endpoint(user_id: str):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/{user_id}/{file_id}/columns")
+async def get_file_columns(
+    user_id: str, 
+    file_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    authorization: Optional[str] = Header(None, alias="Authorization")
+):
+    """Get columns of a file (handles CSV and Excel safely)"""
+    try:
+        authenticated_user = await get_user_id_from_headers(x_user_id, authorization)
+        if authenticated_user and authenticated_user != user_id:
+            user_id = authenticated_user
+            
+        paths = get_user_paths(user_id)
+        file_path = paths["files"] / file_id
+        
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+            
+        import pandas as pd
+        if file_path.suffix.lower() == '.csv':
+            df = pd.read_csv(file_path, nrows=0)
+        elif file_path.suffix.lower() in ['.xlsx', '.xls']:
+            df = pd.read_excel(file_path, nrows=0)
+        else:
+            return {"success": False, "error": "Unsupported file format for column extraction"}
+            
+        return {"success": True, "columns": list(df.columns)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @router.get("/{user_id}/{file_id}/download")
 async def download_file(user_id: str, file_id: str):
     """Download a specific file, intercepting Live Connections to return real-time CSV"""

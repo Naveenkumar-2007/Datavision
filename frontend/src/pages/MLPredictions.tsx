@@ -15,6 +15,8 @@ import { motion } from 'framer-motion';
 import { WebIDE } from '../components/WebIDE';
 import { api } from '../services/api';
 import { useLiveStore } from '../store/liveStore';
+// Force Vite HMR reload
+// Force Vite HMR reload
 import {
     Brain,
     TrendingUp,
@@ -193,7 +195,7 @@ const MLPredictions: React.FC = () => {
     }, [result, setMlCache]);
 
     const [loading, setLoading] = useState(!result);
-    const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'features' | 'predict' | 'playground' | 'history' | 'data' | 'clustering' | 'experiments' | 'ab_testing'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'features' | 'predict' | 'playground' | 'history' | 'data' | 'clustering' | 'experiments'>('overview');
     const [showExplainModal, setShowExplainModal] = useState(false);
     const [showDeployModal, setShowDeployModal] = useState(false);
     const [explainInputValues, setExplainInputValues] = useState<Record<string, any>>({});
@@ -851,21 +853,22 @@ const MLPredictions: React.FC = () => {
     const fetchColumnsFromFile = async (fileName: string) => {
         try {
             const userId = getUserIdSync();
-            // Download file and parse columns
-            const fileResponse = await fetch(`/api/v1/files/${userId}/${fileName}/download`, {
+            // Fetch parsed columns safely using pandas on the backend (handles .csv and .xlsx)
+            const fileResponse = await fetch(`/api/v1/files/${userId}/${fileName}/columns`, {
                 headers: getAuthHeadersSync()
             });
             if (!fileResponse.ok) return;
 
-            const blob = await fileResponse.blob();
-            const text = await blob.text();
-            const firstLine = text.split('\n')[0];
-            const columns = firstLine.split(',').map(col => col.trim().replace(/"/g, ''));
-
-            setAvailableColumns(columns);
-            const detected = detectTargetColumn(columns);
-            setTargetColumn(detected);
-            console.log(`📊 Detected columns: ${columns.length}, Target: ${detected}`);
+            const resData = await fileResponse.json();
+            if (resData.success && resData.columns) {
+                const columns = resData.columns;
+                setAvailableColumns(columns);
+                const detected = detectTargetColumn(columns);
+                setTargetColumn(detected);
+                console.log(`📊 Detected columns: ${columns.length}, Target: ${detected}`);
+            } else {
+                console.warn('Failed to parse columns from backend:', resData.error);
+            }
         } catch (error) {
             console.error('Failed to fetch columns:', error);
         }
@@ -2986,7 +2989,6 @@ const MLPredictions: React.FC = () => {
                         { id: 'predict', label: 'Predict', icon: Play },
                         { id: 'playground', label: 'Playground', icon: Sliders },
                         { id: 'experiments', label: 'Experiments', icon: History },
-                        { id: 'ab_testing', label: 'A/B Testing', icon: GitBranch },
                         { id: 'data', label: 'Data', icon: Database },
                     ].map((tab) => (
                         <button
@@ -3797,85 +3799,6 @@ const MLPredictions: React.FC = () => {
                     </div>
                 )}
 
-                {activeTab === 'ab_testing' && (
-                    <div className="p-6 rounded-2xl border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
-                        <h3 className="text-xl font-bold mb-6 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <GitBranch className="w-6 h-6 text-indigo-500" />
-                            Model A/B Testing
-                        </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Model A */}
-                            <div className="p-6 rounded-xl border-2" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card-secondary)' }}>
-                                <div className="flex justify-between items-center mb-4">
-                                    <h4 className="text-lg font-bold">Model A (Champion)</h4>
-                                    <span className={`px-3 py-1 rounded-full text-sm font-bold ${modelAStatus.includes('Active') ? 'bg-green-500/20 text-green-500' : 'bg-gray-500/20 text-gray-500'}`}>
-                                        {modelAStatus.includes('Active') ? (modelBStatus.includes('Active') ? '0% Traffic' : '80% Traffic') : 'Offline'}
-                                    </span>
-                                </div>
-                                <div className="space-y-4">
-                                    <div className="flex justify-between">
-                                        <span style={{ color: 'var(--text-muted)' }}>Name</span>
-                                        <span className="font-medium">{result?.best_model?.name || 'Production Model v1'}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span style={{ color: 'var(--text-muted)' }}>Status</span>
-                                        <div className="flex items-center gap-3">
-                                            <span className={modelAStatus.includes('Active') ? 'text-green-500 font-medium' : 'text-gray-500 font-medium'}>
-                                                {modelAStatus}
-                                            </span>
-                                            <button onClick={toggleModelA} className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 bg-black/10 dark:bg-white/10 rounded hover:bg-indigo-500/20 hover:text-indigo-500 transition-colors">
-                                                Toggle
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span style={{ color: 'var(--text-muted)' }}>Performance</span>
-                                        <span className="font-medium">{(result as any)?.accuracy ? ((result as any).accuracy * 100).toFixed(1) + '%' : '94.2%'}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            {/* Model B */}
-                            <div className="p-6 rounded-xl border-2 border-dashed" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }}>
-                                <div className="flex justify-between items-center mb-4">
-                                    <h4 className="text-lg font-bold">Model B (Challenger)</h4>
-                                    <span className={`px-3 py-1 rounded-full text-sm font-bold ${modelBStatus.includes('Active') ? 'bg-green-500/20 text-green-500' : 'bg-blue-500/20 text-blue-500'}`}>
-                                        {modelBStatus.includes('Active') ? '100% Traffic' : '20% Traffic'}
-                                    </span>
-                                </div>
-                                <div className="space-y-4">
-                                    <div className="flex justify-between">
-                                        <span style={{ color: 'var(--text-muted)' }}>Name</span>
-                                        <span className="font-medium">{(result as any)?.alternatives?.[0]?.name || 'New Tuned Model v2'}</span>
-                                    </div>
-                                    <div className="flex justify-between items-center">
-                                        <span style={{ color: 'var(--text-muted)' }}>Status</span>
-                                        <span className={modelBStatus.includes('Active') ? 'text-green-500 font-medium' : 'text-amber-500 font-medium'}>
-                                            {modelBStatus}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span style={{ color: 'var(--text-muted)' }}>Performance</span>
-                                        <span className="font-medium">
-                                            {(result as any)?.alternatives?.[0]?.metrics?.accuracy 
-                                                ? ((result as any).alternatives[0].metrics.accuracy * 100).toFixed(1) + '%' 
-                                                : ((result as any)?.accuracy ? (((result as any).accuracy * 100) + 1.2).toFixed(1) + '% (Est)' : '95.1% (Est)')}
-                                        </span>
-                                    </div>
-                                </div>
-                                {modelBStatus === 'Testing' && (
-                                    <button 
-                                        onClick={promoteModelB}
-                                        className="w-full mt-6 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium transition-colors"
-                                    >
-                                        Promote to Champion
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
                 {activeTab === 'data' && (
                     <div className="p-8 rounded-2xl border border-dashed" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
                         <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-4xl mx-auto">
@@ -3892,32 +3815,7 @@ const MLPredictions: React.FC = () => {
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                                {/* One-Click Deploy */}
-                                <div className="p-5 rounded-xl border text-center relative overflow-hidden" style={{ borderColor: isDark ? '#3b82f6' : '#2563eb', backgroundColor: isDark ? 'rgba(59,130,246,0.05)' : 'rgba(59,130,246,0.03)' }}>
-                                    <div className="absolute top-0 right-0 px-2 py-0.5 text-[10px] font-bold rounded-bl-lg text-white" style={{ backgroundColor: '#3b82f6' }}>
-                                        V5 NEW
-                                    </div>
-                                    <div className="w-14 h-14 mx-auto bg-blue-500/20 rounded-full flex items-center justify-center mb-4">
-                                        <Rocket className="w-7 h-7 text-blue-500" />
-                                    </div>
-                                    <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
-                                        Deploy as API
-                                    </h3>
-                                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-                                        One-click deploy your model to a scalable REST endpoint.
-                                    </p>
-                                    <button
-                                        onClick={() => setShowDeployModal(true)}
-                                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold transition-all hover:scale-105 shadow-lg shadow-blue-500/20"
-                                    >
-                                        <Rocket className="w-4 h-4" />
-                                        Deploy Now
-                                    </button>
-                                    <p className="text-xs mt-3 flex items-center justify-center gap-2" style={{ color: 'var(--text-muted)' }}>
-                                        <CheckCircle className="w-3 h-3 text-blue-400" />
-                                        Instant Activation
-                                    </p>
-                                </div>
+
                                 {/* Trained Model Download */}
                                 <div className="p-5 rounded-xl border text-center" style={{ borderColor: 'var(--border-color)', backgroundColor: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
                                     <div className="w-14 h-14 mx-auto bg-purple-500/20 rounded-full flex items-center justify-center mb-4">
@@ -4072,6 +3970,14 @@ docker build -t ml-model . && docker run -p 5000:5000 ml-model`}
                 onClose={() => setShowExplainModal(false)}
                 inputValues={explainInputValues}
                 mode={result.mode || 'traditional'}
+            />
+
+            {/* Deploy Modal */}
+            <DeployModal
+                isOpen={showDeployModal}
+                onClose={() => setShowDeployModal(false)}
+                modelName={result.best_model?.name || "Production Model"}
+                taskType={result.task_type || "AutoML"}
             />
 
             {/* Footer */}

@@ -1058,6 +1058,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
 
                 {/* ============ MAIN CONTENT ============ */}
                 <main 
+                    id="dashboard-content"
                     className="flex-1 min-w-0 p-3 lg:p-4 space-y-4 overflow-x-hidden"
                     onClick={() => setActiveDropdown(null)}
                 >
