@@ -889,24 +889,25 @@ async def train_automl(
                 import shutil
                 
                 try:
-                    user_uuid = uuid.UUID(user_id)
-                    model_name = f"{result.task_type.capitalize()} on {target}"
-                    
-                    registry_model = MLRegistryModel(user_id=user_uuid, name=model_name, task_type=result.task_type, target_column=target)
-                    db.add(registry_model)
-                    await db.flush()
-                    
-                    version = MLRegistryVersion(model_id=registry_model.id, version=1, algorithm=result.best_model_name, status="Production")
-                    db.add(version)
-                    await db.commit()
-                    
-                    # Copy joblib to version ID
-                    version_path = f"{models_dir}/{version.id}.joblib"
-                    shutil.copy(latest_path, version_path)
-                    print(f"✅ Real deployment model serialized to {version_path}")
+                    from database.db import AsyncSessionLocal
+                    async with AsyncSessionLocal() as db:
+                        user_uuid = uuid.UUID(user_id)
+                        model_name = f"{result.task_type.capitalize()} on {target}"
+                        
+                        registry_model = MLRegistryModel(user_id=user_uuid, name=model_name, task_type=result.task_type, target_column=target)
+                        db.add(registry_model)
+                        await db.flush()
+                        
+                        version = MLRegistryVersion(model_id=registry_model.id, version=1, algorithm=result.best_model_name, status="Production")
+                        db.add(version)
+                        await db.commit()
+                        
+                        # Copy joblib to version ID
+                        version_path = f"{models_dir}/{version.id}.joblib"
+                        shutil.copy(latest_path, version_path)
+                        print(f"✅ Real deployment model serialized to {version_path}")
                 except Exception as db_err:
                     print(f"⚠️ Failed to register model in DB: {db_err}")
-                    await db.rollback()
                     
         except Exception as e:
             print(f"⚠️ Failed to serialize deployment model: {e}")
