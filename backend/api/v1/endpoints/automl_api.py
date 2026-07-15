@@ -874,8 +874,13 @@ async def train_automl(
                 clf = Pipeline(steps=[('preprocessor', preprocessor), ('model', model)])
                 clf.fit(X, y)
                 
+                # Determine storage path
+                import os
+                models_dir = "/data/models/deployments" if os.path.exists("/data") else "models/deployments"
+                os.makedirs(models_dir, exist_ok=True)
+                
                 # Save as latest for this user
-                latest_path = f"models/deployments/{user_id}_latest.joblib"
+                latest_path = f"{models_dir}/{user_id}_latest.joblib"
                 joblib.dump(clf, latest_path)
                 
                 # Auto-Register to Model Registry
@@ -896,7 +901,7 @@ async def train_automl(
                     await db.commit()
                     
                     # Copy joblib to version ID
-                    version_path = f"models/deployments/{version.id}.joblib"
+                    version_path = f"{models_dir}/{version.id}.joblib"
                     shutil.copy(latest_path, version_path)
                     print(f"✅ Real deployment model serialized to {version_path}")
                 except Exception as db_err:
@@ -3338,7 +3343,8 @@ async def download_model(
     import os
     from fastapi.responses import FileResponse
     
-    model_path = f"models/deployments/{version_id}.joblib"
+    models_dir = "/data/models/deployments" if os.path.exists("/data") else "models/deployments"
+    model_path = f"{models_dir}/{version_id}.joblib"
     if not os.path.exists(model_path):
         raise HTTPException(status_code=404, detail="Model file not found")
         
@@ -3377,7 +3383,8 @@ async def batch_predict(
         # Load model from disk using version_id (passed as model_name)
         import joblib
         import os
-        model_path = f"models/deployments/{model_name}.joblib"
+        models_dir = "/data/models/deployments" if os.path.exists("/data") else "models/deployments"
+        model_path = f"{models_dir}/{model_name}.joblib"
         
         if not os.path.exists(model_path):
             job.status = 'failed'
