@@ -263,6 +263,10 @@ def chat(
     
     nv_key = os.environ.get("NVIDIA_API_KEY")
     groq_key = os.environ.get("GROQ_API_KEY")
+    hf_key = os.environ.get("HUGGINGFACE_API_KEY")
+    
+    # Check if we have any remote API keys
+    has_remote_keys = bool(nv_key or groq_key or hf_key)
     
     # --- 1. PRIMARY: GROQ (Ultra-Fast) ---
     if groq_key:
@@ -284,7 +288,6 @@ def chat(
         
 
     # --- HUGGINGFACE ---
-    hf_key = os.environ.get("HUGGINGFACE_API_KEY")
     if hf_key:
         providers.append({
             "name": "HuggingFace",
@@ -371,7 +374,12 @@ def chat(
     error_str = str(e).lower() if e else ''
     
     # Generic friendly message - don't expose technical details to users
-    if 'context' in error_str or 'too large' in error_str or 'token' in error_str:
+    if not has_remote_keys and ('timeout' in error_str or 'connection' in error_str):
+        return (
+            "🚨 **API Key Missing:** I couldn't process your request because no AI Provider API Keys were found! "
+            "Please go to your HuggingFace Space Settings -> **Variables and secrets**, and add your `GROQ_API_KEY` or `NVIDIA_API_KEY`."
+        )
+    elif 'context' in error_str or 'too large' in error_str or 'token' in error_str:
         return (
             "Your question is quite detailed! Could you try asking something more specific? "
             "This will help me give you a better answer."
@@ -382,8 +390,8 @@ def chat(
         )
     else:
         return (
-            "I'm temporarily unable to process your request. Please try again in a moment. "
-            "If this continues, the system administrator has been notified."
+            f"I'm temporarily unable to process your request. Please try again in a moment. "
+            f"If this continues, the system administrator has been notified. (Error: {reason if 'reason' in locals() else 'Unknown'})"
         )
 
 

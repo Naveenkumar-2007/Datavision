@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 # Fallback to local SQLite if Postgres URL is not provided
 # In production, set DATABASE_URL="postgresql://user:password@localhost/datavision"
-SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./datavision.db")
+default_db_path = "/data/datavision.db" if os.path.exists("/data") else "./datavision.db"
+SQLALCHEMY_DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{default_db_path}")
 
 try:
     if SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
