@@ -23,6 +23,7 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
   const [dataStream, setDataStream] = useState<LiveData[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState('');
+  const [activeTab, setActiveTab] = useState<'Generic' | 'PostgreSQL' | 'Snowflake' | 'Kafka'>('Generic');
   const ws = useRef<WebSocket | null>(null);
   const toast = useToast();
 
@@ -133,9 +134,22 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
               <h3 className="text-sm font-bold text-green-400 mb-2 flex items-center gap-2">
                 <Activity className="w-4 h-4" /> API Push is Active!
               </h3>
-              <p className="text-xs text-gray-300 mb-3">Copy and run this Python script on your local machine to instantly push data here without any databases or tunnels:</p>
+              <p className="text-xs text-gray-300 mb-3">Select your database and run this Python script on your local machine to instantly push data here without any firewalls or tunnels:</p>
+              
+              <div className="flex gap-2 mb-3">
+                {['Generic', 'PostgreSQL', 'Snowflake', 'Kafka'].map(tab => (
+                  <button 
+                    key={tab}
+                    onClick={() => setActiveTab(tab as any)}
+                    className={`px-3 py-1.5 text-xs rounded-lg font-medium transition-colors border ${activeTab === tab ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-black/40 text-gray-400 border-gray-800 hover:bg-white/5'}`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
               <pre className="text-xs bg-black/60 p-3 rounded text-green-300 overflow-x-auto whitespace-pre-wrap border border-gray-800">
-{`import requests, time, random
+{activeTab === 'Generic' && `import requests, time, random
 
 # Your unique DataVision Live Dashboard URL
 URL = "${window.location.protocol}//${window.location.host}/api/v1/push/${connectionId}"
@@ -153,7 +167,123 @@ while True:
     }
     res = requests.post(URL, json=data)
     print("Sent:", data, "-> Response:", res.json())
-    time.sleep(1)
+    time.sleep(1)`}
+
+{activeTab === 'PostgreSQL' && `import psycopg2, requests, time
+
+# Your unique DataVision Live Dashboard URL
+URL = "${window.location.protocol}//${window.location.host}/api/v1/push/${connectionId}"
+
+print("Connecting to local PostgreSQL...")
+conn = psycopg2.connect(
+    dbname="streaming_db", # Replace with your DB name
+    user="postgres",       # Replace with your DB user
+    password="YOUR_PASSWORD", # <-- Enter your pgAdmin password!
+    host="localhost",
+    port="5432"
+)
+conn.autocommit = True 
+cursor = conn.cursor()
+
+print("Connected! Streaming Postgres data to HuggingFace Cloud...")
+previous_count = 0
+
+while True:
+    try:
+        cursor.execute("SELECT COUNT(*) FROM weather_data;") # Replace with your table
+        total_rows = cursor.fetchone()[0]
+        
+        rows_per_sec = max(0, total_rows - previous_count) if previous_count > 0 else 0
+        previous_count = total_rows
+        
+        data = {
+            "total_rows": total_rows,
+            "rows_per_sec": rows_per_sec,
+            "cpu_usage": 15.4, 
+            "error_rate": 0.0,
+            "status": "Streaming Local Postgres to Cloud!"
+        }
+        
+        res = requests.post(URL, json=data)
+        print("Sent:", data["total_rows"], "rows -> Response:", res.json())
+    except Exception as e:
+        print("Error:", e)
+    time.sleep(1)`}
+
+{activeTab === 'Snowflake' && `import snowflake.connector, requests, time
+
+# Your unique DataVision Live Dashboard URL
+URL = "${window.location.protocol}//${window.location.host}/api/v1/push/${connectionId}"
+
+print("Connecting to Snowflake...")
+conn = snowflake.connector.connect(
+    user='YOUR_USER',
+    password='YOUR_PASSWORD',
+    account='YOUR_ACCOUNT_IDENTIFIER',
+    warehouse='COMPUTE_WH',
+    database='PRODUCTION',
+    schema='PUBLIC'
+)
+cursor = conn.cursor()
+
+previous_count = 0
+while True:
+    try:
+        cursor.execute("SELECT COUNT(*) FROM sales_data") # Replace with your table
+        total_rows = cursor.fetchone()[0]
+        
+        rows_per_sec = max(0, total_rows - previous_count) if previous_count > 0 else 0
+        previous_count = total_rows
+        
+        res = requests.post(URL, json={
+            "total_rows": total_rows,
+            "rows_per_sec": rows_per_sec,
+            "cpu_usage": 0.0,
+            "error_rate": 0.0,
+            "status": "Streaming Snowflake to Cloud!"
+        })
+        print("Sent:", total_rows, "rows -> Response:", res.json())
+    except Exception as e:
+        print("Error:", e)
+    time.sleep(1)`}
+
+{activeTab === 'Kafka' && `from confluent_kafka import Consumer
+import requests
+
+# Your unique DataVision Live Dashboard URL
+URL = "${window.location.protocol}//${window.location.host}/api/v1/push/${connectionId}"
+
+c = Consumer({
+    'bootstrap.servers': 'localhost:9092',
+    'group.id': 'datavision-push-group',
+    'auto.offset.reset': 'latest'
+})
+
+c.subscribe(['your_topic_name']) # Replace with your Kafka Topic
+
+print("Listening to Kafka Topic and streaming to DataVision...")
+total_messages = 0
+
+while True:
+    msg = c.poll(1.0)
+    if msg is None:
+        continue
+    if msg.error():
+        print("Consumer error: {}".format(msg.error()))
+        continue
+
+    total_messages += 1
+    
+    data = {
+        "total_rows": total_messages,
+        "rows_per_sec": 1, # Increment logic based on batch size
+        "cpu_usage": 0.0,
+        "error_rate": 0.0,
+        "status": "Receiving Kafka Messages!"
+    }
+    
+    res = requests.post(URL, json=data)
+    print("Pushed Kafka Message:", msg.value().decode('utf-8'))
 `}
               </pre>
             </div>
