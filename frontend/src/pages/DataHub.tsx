@@ -1016,14 +1016,21 @@ const DataHub: React.FC = () => {
         <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Connect directly to live data warehouses and streaming platforms for real-time Agentic AI analytics.</p>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[
-            { name: 'Snowflake', icon: '??', status: 'Connect Live', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20 cursor-pointer hover:bg-blue-500/20' },
-            { name: 'PostgreSQL', icon: '??', status: 'Connect Live', color: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 cursor-pointer hover:bg-indigo-500/20' },
-            { name: 'Kafka', icon: '?', status: 'Connect Live', color: 'bg-gray-500/10 text-gray-400 border-gray-500/20 cursor-pointer hover:bg-gray-500/20' }
-          ].map((connector) => (
-            <button 
-              key={connector.name} 
-              onClick={() => setShowConnectionModal(connector.name)}
+            {[
+              { name: 'DataVision API Push', icon: '🚀', status: 'Easiest', color: 'bg-green-500/10 text-green-400 border-green-500/20 cursor-pointer hover:bg-green-500/20' },
+              { name: 'Snowflake', icon: '❄️', status: 'Connect Live', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20 cursor-pointer hover:bg-blue-500/20' },
+              { name: 'PostgreSQL', icon: '🐘', status: 'Connect Live', color: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 cursor-pointer hover:bg-indigo-500/20' },
+              { name: 'Kafka', icon: '⚡', status: 'Connect Live', color: 'bg-gray-500/10 text-gray-400 border-gray-500/20 cursor-pointer hover:bg-gray-500/20' }
+            ].map((connector) => (
+              <button 
+                key={connector.name} 
+                onClick={() => {
+                  if (connector.name === 'DataVision API Push') {
+                    handleDirectApiPush();
+                  } else {
+                    setShowConnectionModal(connector.name);
+                  }
+                }}
               className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-3 transition-all hover:scale-105 ${connector.color}`}
             >
               <div className="text-3xl">{connector.icon}</div>
@@ -1069,15 +1076,18 @@ const DataHub: React.FC = () => {
           <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
             {activeConnections.map((conn, i) => {
               // Map source type to icon and display name
-              let icon = '??';
-              let displayName = 'PostgreSQL';
-              if (conn.source_type.toLowerCase() === 'snowflake') {
-                icon = '??';
-                displayName = 'Snowflake';
-              } else if (conn.source_type.toLowerCase() === 'kafka') {
-                icon = '?';
-                displayName = 'Kafka';
-              }
+                let icon = '🐘';
+                let displayName = 'PostgreSQL';
+                if (conn.source_type.toLowerCase() === 'snowflake') {
+                  icon = '❄️';
+                  displayName = 'Snowflake';
+                } else if (conn.source_type.toLowerCase() === 'kafka') {
+                  icon = '⚡';
+                  displayName = 'Kafka';
+                } else if (conn.source_type.toLowerCase() === 'api_push') {
+                  icon = '🚀';
+                  displayName = 'API Push';
+                }
 
               return (
                 <motion.div

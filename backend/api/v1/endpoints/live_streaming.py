@@ -41,6 +41,12 @@ async def create_connection(
     Securely store user connection credentials in the native postgres DB.
     Returns a connection_id that the WebSocket can use to authenticate and stream.
     """
+    # 🚀 API Push (Ephemeral) - Bypass database entirely
+    if req.source_type == "api_push":
+        import uuid
+        fake_conn_id = f"push_{uuid.uuid4()}"
+        return {"connection_id": fake_conn_id, "status": "success", "message": "API Push connection created."}
+        
     # 🔍 Deduplication / Conflict Logic
     from sqlalchemy import select
     existing_result = await db.execute(select(DataConnection).where(DataConnection.user_id == user.id))
@@ -169,19 +175,28 @@ async def websocket_live_data(websocket: WebSocket, connection_id: str):
     """
     await manager.connect(websocket, connection_id)
     
-    # Fetch credentials from native Postgres DB without holding the session open indefinitely
+    # Fetch credentials
     conn_data = None
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(DataConnection).where(DataConnection.id == connection_id))
-        db_conn = result.scalar_one_or_none()
-        if db_conn:
-            conn_data = {
-                "source_type": db_conn.source_type,
-                "host": db_conn.host,
-                "database_name": db_conn.database_name,
-                "target_table": db_conn.target_table,
-                "credentials": db_conn.credentials
-            }
+    if connection_id.startswith("push_"):
+        conn_data = {
+            "source_type": "api_push",
+            "host": "datavision",
+            "database_name": "push",
+            "target_table": "push",
+            "credentials": "none"
+        }
+    else:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(DataConnection).where(DataConnection.id == connection_id))
+            db_conn = result.scalar_one_or_none()
+            if db_conn:
+                conn_data = {
+                    "source_type": db_conn.source_type,
+                    "host": db_conn.host,
+                    "database_name": db_conn.database_name,
+                    "target_table": db_conn.target_table,
+                    "credentials": db_conn.credentials
+                }
             
     if not conn_data:
         await websocket.send_text(json.dumps({"error": "Invalid connection ID or unauthorized."}))
