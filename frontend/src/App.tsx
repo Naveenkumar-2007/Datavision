@@ -37,7 +37,7 @@ const HelpCenter = React.lazy(() => import('./pages/HelpCenter'));
 const DataStories = React.lazy(() => import('./pages/DataStories'));
 const PipelineBuilder = React.lazy(() => import('./pages/PipelineBuilder'));
 const EmbedWidget = React.lazy(() => import('./pages/EmbedWidget'));
-const ModelRegistry = React.lazy(() => import('./pages/ModelRegistry'));
+
 
 function App() {
   const [showSplash, setShowSplash] = useState(false); // Splash screen disabled
@@ -129,7 +129,7 @@ function App() {
                   <Route path="/developer" element={<Developer />} />
                   
                   {/* MLOps Enterprise Platform Routes */}
-                  <Route path="/registry" element={<ModelRegistry />} />
+
 
                   <Route path="/reports" element={<Reports />} />
                   <Route path="/data-stories" element={<DataStories />} />
