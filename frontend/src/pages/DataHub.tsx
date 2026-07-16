@@ -1041,6 +1041,64 @@ const DataHub: React.FC = () => {
         </div>
       </motion.div>
 
+      {/* Connection Guide Documentation */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.18 }}
+        className="p-6 rounded-2xl border glass-panel mb-4"
+        style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }}
+      >
+        <div className="flex items-center gap-3 mb-6 border-b pb-4" style={{ borderColor: 'var(--border-color)' }}>
+          <FileText className="w-6 h-6 text-blue-500" />
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>How to Connect</h2>
+        </div>
+        
+        <div className="space-y-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+          <div className="bg-black/20 p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <h3 className="font-bold text-green-400 mb-2 flex items-center gap-2"><span className="text-xl">🚀</span> DataVision API Push (Recommended)</h3>
+            <p className="mb-2">The fastest way to stream data. Bypasses databases and firewalls entirely.</p>
+            <ol className="list-decimal list-inside space-y-1 ml-2">
+              <li>Click the <strong>DataVision API Push</strong> button above.</li>
+              <li>A Live Dashboard will open with a unique Python code snippet.</li>
+              <li>Copy the script, run it anywhere, and watch your dashboard instantly light up.</li>
+            </ol>
+          </div>
+
+          <div className="bg-black/20 p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <h3 className="font-bold text-blue-400 mb-2 flex items-center gap-2"><span className="text-xl">❄️</span> Snowflake</h3>
+            <ol className="list-decimal list-inside space-y-1 ml-2">
+              <li>Click <strong>Snowflake</strong> above.</li>
+              <li><strong>Database Name:</strong> The exact name of your Snowflake database.</li>
+              <li><strong>Target Table:</strong> The table or view you want to stream.</li>
+              <li><strong>Host:</strong> Your full account identifier URI (e.g., <code>xy12345.us-east-1.snowflakecomputing.com</code>).</li>
+              <li><strong>Password:</strong> Your Snowflake user password.</li>
+            </ol>
+          </div>
+
+          <div className="bg-black/20 p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <h3 className="font-bold text-indigo-400 mb-2 flex items-center gap-2"><span className="text-xl">🐘</span> PostgreSQL</h3>
+            <ol className="list-decimal list-inside space-y-1 ml-2">
+              <li>Click <strong>PostgreSQL</strong> above.</li>
+              <li><strong>Database Name:</strong> The exact name of your DB (e.g., <code>postgres</code>).</li>
+              <li><strong>Target Table:</strong> The table to stream (e.g., <code>weather_data</code>).</li>
+              <li><strong>Host:</strong> The IP/Hostname (e.g., <code>127.0.0.1</code> for local, or cloud URI).</li>
+              <li><strong>Password:</strong> Your DB password.</li>
+            </ol>
+          </div>
+
+          <div className="bg-black/20 p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
+            <h3 className="font-bold text-gray-400 mb-2 flex items-center gap-2"><span className="text-xl">⚡</span> Kafka</h3>
+            <ol className="list-decimal list-inside space-y-1 ml-2">
+              <li>Click <strong>Kafka</strong> above.</li>
+              <li><strong>Target Table:</strong> Enter the exact Kafka <strong>Topic Name</strong>.</li>
+              <li><strong>Host:</strong> Your Kafka Bootstrap Server (e.g., <code>localhost:9092</code>).</li>
+              <li><strong>Password:</strong> Your SASL/SCRAM token, or leave blank if unauthenticated.</li>
+            </ol>
+          </div>
+        </div>
+      </motion.div>
+
 
       {/* Render Live Streaming Dashboard if active */}
       {activeStreamSource && activeConnectionId && (
