@@ -174,6 +174,32 @@ const DataHub: React.FC = () => {
     return columns[columns.length - 1];
   };
 
+  const handleDirectApiPush = async () => {
+    try {
+      const response = await fetch('/api/v1/connections', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeadersSync()
+        },
+        body: JSON.stringify({
+          source_type: 'api_push',
+          host: 'datavision',
+          database_name: 'push',
+          target_table: 'push',
+          credentials: 'none'
+        })
+      });
+      const data = await response.json();
+      const connectionId = data.connection_id;
+      setActiveConnectionId(connectionId);
+      setActiveStreamSource('DataVision API Push');
+      loadConnections();
+    } catch (err) {
+      console.error('Failed to create API Push:', err);
+    }
+  };
+
   const loadConnections = async () => {
     try {
       setFetchingConnections(true);
@@ -776,7 +802,7 @@ const DataHub: React.FC = () => {
                   {isDragActive ? 'Drop files here' : 'Drag & drop files here'}
                 </p>
                 <p className="mb-4" style={{ color: 'var(--text-muted)' }}>
-                  or click to browse • AutoML trains automatically after upload
+                  or click to browse  AutoML trains automatically after upload
                 </p>
                 <div className="mb-4">
                   <p className="text-sm text-green-500 font-semibold mb-3">Supported Formats:</p>
@@ -791,7 +817,7 @@ const DataHub: React.FC = () => {
                     ))}
                   </div>
                   <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-                    ? One-click ML training • ?? 15+ auto-generated charts • ?? LLM-powered analyst
+                    ? One-click ML training  ?? 15+ auto-generated charts  ?? LLM-powered analyst
                   </p>
 
                   {/* Auto-Fix Toggle */}
@@ -840,7 +866,7 @@ const DataHub: React.FC = () => {
                 ?? Target Column (What to predict)
               </p>
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                Auto-detected: <span className="text-purple-400">{targetColumn}</span> • Change if needed
+                Auto-detected: <span className="text-purple-400">{targetColumn}</span>  Change if needed
               </p>
             </div>
           </div>
@@ -961,7 +987,7 @@ const DataHub: React.FC = () => {
             <div className="p-4 rounded-xl border" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)', borderColor: 'var(--border-color)' }}>
               <div className="flex items-center justify-between mb-3">
                 <span style={{ color: 'var(--text-primary)' }} className="font-medium">Preview</span>
-                <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{sheetPreview.rowCount} rows × {sheetPreview.columnCount} columns</span>
+                <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{sheetPreview.rowCount} rows  {sheetPreview.columnCount} columns</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {sheetPreview.columns?.slice(0, 8).map((col: string, i: number) => (
@@ -1077,9 +1103,9 @@ const DataHub: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-4 text-sm" style={{ color: 'var(--text-muted)' }}>
                         <span>{displayName} Connector</span>
-                        <span>•</span>
+                        <span></span>
                         <span>DB: {conn.database_name}</span>
-                        <span>•</span>
+                        <span></span>
                         <span>Host: {conn.host}</span>
                       </div>
                     </div>
@@ -1181,7 +1207,7 @@ const DataHub: React.FC = () => {
                   <h3 className="font-medium mb-1 truncate" style={{ color: 'var(--text-primary)' }}>{file.name}</h3>
                   <div className="flex items-center gap-4 text-sm" style={{ color: 'var(--text-muted)' }}>
                     <span>{formatFileSize(file.size)}</span>
-                    <span>•</span>
+                    <span></span>
                     <span>{new Date(file.uploadedAt).toLocaleDateString()}</span>
                   </div>
                 </div>
@@ -1279,15 +1305,15 @@ const DataHub: React.FC = () => {
                 {ultraMode ? (
                   <>
                     <span className="text-sm font-medium">15+ Algorithms</span>
-                    <span className="opacity-50">•</span>
+                    <span className="opacity-50"></span>
                     <span className="text-sm font-medium">Ensembles</span>
-                    <span className="opacity-50">•</span>
+                    <span className="opacity-50"></span>
                     <span className="text-sm font-medium">Auto-Tuning</span>
                   </>
                 ) : (
                   <>
                     <span className="text-sm font-medium">10 Core Algorithms</span>
-                    <span className="opacity-50">•</span>
+                    <span className="opacity-50"></span>
                     <span className="text-sm font-medium">Quick Training</span>
                   </>
                 )}
