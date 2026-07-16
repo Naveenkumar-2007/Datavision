@@ -180,7 +180,7 @@ const AppLayout: React.FC = () => {
       items: [
         { path: '/chat', label: 'AI Analyst', icon: MessageSquare },
         { path: '/ml-predictions', label: 'AutoML & Predict', icon: Brain }, 
-        { path: '/registry', label: 'Model Registry', icon: Rocket },
+
       ]
     },
     {

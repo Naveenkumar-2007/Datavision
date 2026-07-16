@@ -73,8 +73,9 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def verify_tables():
-    from database.db import engine, Base
-    from database import orm, models
+    from database.db import engine
+    from database import orm
+    from database.orm import Base
     try:
         async with engine.begin() as conn:
             logger.info("📦 Verifying database tables exist (auto-healing)...")

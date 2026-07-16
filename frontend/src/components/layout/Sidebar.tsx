@@ -32,7 +32,7 @@ const navItems = [
   { path: '/reports', icon: FileText, label: 'Reports' },
   { path: '/data-stories', icon: BookOpen, label: 'Data Stories', badge: 'V5' },
   { path: '/ml-predictions', icon: Brain, label: 'ML Predictions' },
-  { path: '/registry', icon: Rocket, label: 'Model Registry', badge: 'New' },
+
   { path: '/model-monitoring', icon: Activity, label: 'Model Monitoring', badge: 'V5' },
   { path: '/pipelines', icon: Workflow, label: 'Pipeline Builder', badge: 'V5' },
   { path: '/chat', icon: MessageSquare, label: 'AI Analyst' },
