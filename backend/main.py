@@ -71,6 +71,18 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+@app.on_event("startup")
+async def verify_tables():
+    from database.db import engine, Base
+    from database import orm, models
+    try:
+        async with engine.begin() as conn:
+            logger.info("📦 Verifying database tables exist (auto-healing)...")
+            await conn.run_sync(Base.metadata.create_all)
+            logger.info("✅ Database tables verified/created successfully!")
+    except Exception as e:
+        logger.error(f"⚠️ Failed to auto-heal database tables: {e}")
+
 # ============================================
 # SECURITY MIDDLEWARE
 # ============================================
