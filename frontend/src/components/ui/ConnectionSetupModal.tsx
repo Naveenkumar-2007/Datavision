@@ -41,6 +41,13 @@ export const ConnectionSetupModal: React.FC<Props> = ({ source, onClose, onConne
       
       const connectionId = response.data.connection_id;
       
+      // Persist guest connections
+      if (response.data.is_guest && response.data.connection) {
+        const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
+        stored.unshift(response.data.connection); // Add to top
+        localStorage.setItem('guest_live_connections', JSON.stringify(stored));
+      }
+      
       setStep(2);
       
       // After success step, trigger connect with the real connectionId

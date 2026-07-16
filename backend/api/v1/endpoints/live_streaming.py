@@ -41,11 +41,29 @@ async def create_connection(
     Securely store user connection credentials in the native postgres DB.
     Returns a connection_id that the WebSocket can use to authenticate and stream.
     """
-    # 🚀 API Push (Ephemeral) - Bypass database entirely
+    import uuid
+    conn_id = str(uuid.uuid4())
     if req.source_type == "api_push":
-        import uuid
-        fake_conn_id = f"push_{uuid.uuid4()}"
-        return {"connection_id": fake_conn_id, "status": "success", "message": "API Push connection created."}
+        conn_id = f"push_{conn_id}"
+
+    is_guest = str(user.id).startswith('guest_')
+
+    # If guest user, bypass DB to avoid UUID errors and return mock connection for localStorage
+    if is_guest:
+        return {
+            "connection_id": conn_id, 
+            "status": "success", 
+            "message": "Guest connection created.",
+            "is_guest": True,
+            "connection": {
+                "id": conn_id,
+                "source_type": req.source_type,
+                "host": req.host,
+                "database_name": req.database_name,
+                "target_table": req.target_table,
+                "created_at": datetime.utcnow().isoformat()
+            }
+        }
         
     # 🔍 Deduplication / Conflict Logic
     from sqlalchemy import select
@@ -67,8 +85,6 @@ async def create_connection(
             detail="⚠️ Different dataset detected! Please delete your previous data connections first to avoid AI context conflicts."
         )
 
-    conn_id = str(uuid4())
-    
     # Store in the native Datavision PostgreSQL database (data_connections table)
     new_connection = DataConnection(
         id=conn_id,
@@ -86,7 +102,7 @@ async def create_connection(
     from api.v1.endpoints.charts import clear_user_cache
     clear_user_cache(user.id)
     
-    return {"connection_id": conn_id, "status": "success"}
+    return {"connection_id": conn_id, "status": "success", "is_guest": False}
 
 @router.get("/connections")
 async def get_connections(
@@ -119,6 +135,9 @@ async def delete_connection(
     db: AsyncSession = Depends(get_db)
 ):
     """Delete a live connection."""
+    if str(user.id).startswith('guest_'):
+        return {"status": "success"}
+
     from sqlalchemy import select
     result = await db.execute(select(DataConnection).where(DataConnection.id == connection_id, DataConnection.user_id == user.id))
     conn = result.scalar_one_or_none()

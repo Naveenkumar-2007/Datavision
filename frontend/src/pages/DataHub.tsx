@@ -192,6 +192,14 @@ const DataHub: React.FC = () => {
       });
       const data = await response.json();
       const connectionId = data.connection_id;
+      
+      // Persist guest connections
+      if (data.is_guest && data.connection) {
+        const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
+        stored.unshift(data.connection); // Add to top
+        localStorage.setItem('guest_live_connections', JSON.stringify(stored));
+      }
+      
       setActiveConnectionId(connectionId);
       setActiveStreamSource('DataVision API Push');
       loadConnections();
@@ -204,7 +212,15 @@ const DataHub: React.FC = () => {
     try {
       setFetchingConnections(true);
       const response = await apiService.getLiveConnections();
-      setActiveConnections(response.data.connections || []);
+      let conns = response.data.connections || [];
+      
+      // Merge guest connections from localStorage
+      if (getUserIdSync()?.startsWith('guest_')) {
+        const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
+        conns = [...stored, ...conns];
+      }
+      
+      setActiveConnections(conns);
     } catch (error) {
       console.error('Failed to load connections:', error);
     } finally {
@@ -1015,12 +1031,12 @@ const DataHub: React.FC = () => {
         </div>
         <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Connect directly to live data warehouses and streaming platforms for real-time Agentic AI analytics.</p>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {[
-              { name: 'DataVision API Push', icon: '🚀', status: 'Easiest', color: 'bg-green-500/10 text-green-400 border-green-500/20 cursor-pointer hover:bg-green-500/20' },
-              { name: 'Snowflake', icon: '❄️', status: 'Connect Live', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20 cursor-pointer hover:bg-blue-500/20' },
-              { name: 'PostgreSQL', icon: '🐘', status: 'Connect Live', color: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 cursor-pointer hover:bg-indigo-500/20' },
-              { name: 'Kafka', icon: '⚡', status: 'Connect Live', color: 'bg-gray-500/10 text-gray-400 border-gray-500/20 cursor-pointer hover:bg-gray-500/20' }
+              { name: 'DataVision API Push', icon: '🚀', status: 'Easiest', color: 'bg-green-500/10 text-green-400 border-green-500/20 cursor-pointer hover:bg-green-500/20', desc: 'Local/Firewalled DBs' },
+              { name: 'Snowflake', icon: '❄️', status: 'Connect Live', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20 cursor-pointer hover:bg-blue-500/20', desc: 'Cloud-to-Cloud' },
+              { name: 'PostgreSQL', icon: '🐘', status: 'Connect Live', color: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 cursor-pointer hover:bg-indigo-500/20', desc: 'Cloud-to-Cloud' },
+              { name: 'Kafka', icon: '⚡', status: 'Connect Live', color: 'bg-gray-500/10 text-gray-400 border-gray-500/20 cursor-pointer hover:bg-gray-500/20', desc: 'Cloud-to-Cloud' }
             ].map((connector) => (
               <button 
                 key={connector.name} 
@@ -1031,11 +1047,12 @@ const DataHub: React.FC = () => {
                     setShowConnectionModal(connector.name);
                   }
                 }}
-              className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-3 transition-all hover:scale-105 ${connector.color}`}
+              className={`p-4 rounded-xl border flex flex-col items-center justify-center gap-2 transition-all hover:scale-105 ${connector.color}`}
             >
-              <div className="text-3xl">{connector.icon}</div>
-              <div className="font-semibold">{connector.name}</div>
-              <div className="text-xs px-2 py-1 rounded bg-black/20 font-bold">{connector.status}</div>
+              <div className="text-3xl mb-1">{connector.icon}</div>
+              <div className="font-semibold text-center leading-tight">{connector.name}</div>
+              <div className="text-[10px] opacity-70 mb-1">{connector.desc}</div>
+              <div className="text-[10px] px-2 py-0.5 rounded bg-black/20 font-bold">{connector.status}</div>
             </button>
           ))}
         </div>
@@ -1192,6 +1209,13 @@ const DataHub: React.FC = () => {
                     <button
                       onClick={async () => {
                         try {
+                          // Handle guest deletion
+                          if (getUserIdSync()?.startsWith('guest_')) {
+                            const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
+                            const updated = stored.filter((c: any) => c.id !== conn.id);
+                            localStorage.setItem('guest_live_connections', JSON.stringify(updated));
+                          }
+                          
                           await apiService.deleteLiveConnection(conn.id);
                           toast.success('Pipeline disconnected successfully');
                           loadConnections();
