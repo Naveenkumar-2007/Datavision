@@ -1470,7 +1470,7 @@ const DataHub: React.FC = () => {
           onConnect={(connectionId) => {
             setShowConnectionModal(null);
             setActiveConnectionId(connectionId);
-            setActiveStreamSource(showConnectionModal);
+            setActiveStreamSource('DataVision API Push');
             loadConnections();
           }}
         />
