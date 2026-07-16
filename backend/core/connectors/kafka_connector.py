@@ -1,6 +1,5 @@
 import asyncio
 from datetime import datetime
-from aiokafka import AIOKafkaConsumer
 from .base import LiveConnector
 
 class KafkaConnector(LiveConnector):
@@ -8,6 +7,7 @@ class KafkaConnector(LiveConnector):
         while True:
             try:
                 # We would connect to the Kafka broker at self.host
+                from aiokafka import AIOKafkaConsumer
                 topic = self.database_name if hasattr(self, 'database_name') and self.database_name else "live_sensor_data"
                 consumer = AIOKafkaConsumer(
                     topic,
