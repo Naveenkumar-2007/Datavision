@@ -1,6 +1,5 @@
 import asyncio
 from datetime import datetime
-import snowflake.connector
 from .base import LiveConnector
 
 class SnowflakeConnector(LiveConnector):
@@ -9,6 +8,7 @@ class SnowflakeConnector(LiveConnector):
             try:
                 # Run snowflake connection synchronously in thread since it doesn't have native async
                 def _fetch():
+                    import snowflake.connector
                     conn = snowflake.connector.connect(
                         user="admin", # Fallback/Mock - in real scenario, parse self.credentials
                         password=self.credentials,

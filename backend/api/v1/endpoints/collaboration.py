@@ -520,10 +520,33 @@ async def add_member(
     await db.commit()
     
     name = target_user.full_name or target_user.email.split("@")[0]
+    
+    # Send invite email via existing email service
+    try:
+        from services.email_service import send_insight_email
+        inviter_name = "Your team"
+        try:
+            inviter_stmt = select(UserProfile).filter(UserProfile.id == user_id)
+            inviter_res = await db.execute(inviter_stmt)
+            inviter = inviter_res.scalars().first()
+            if inviter:
+                inviter_name = inviter.full_name or inviter.email.split("@")[0]
+        except:
+            pass
+            
+        await send_insight_email(
+            to_email=req.email,
+            title=f"You've been invited to DataVision",
+            body=f"{inviter_name} invited you to collaborate on DataVision as a {req.role}. Log in to start analyzing data together with your team.",
+        )
+        logger.info(f"Invite email sent to {req.email}")
+    except Exception as e:
+        logger.warning(f"Failed to send invite email to {req.email}: {e}")
+    
     return {
         "success": True, 
         "member": {"name": name, "email": target_user.email, "role": new_member.role, "status": "Invited", "avatar": name[0].upper()}, 
-        "message": f"Added {req.email}"
+        "message": f"Invitation sent to {req.email}"
     }
 
 

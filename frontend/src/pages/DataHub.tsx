@@ -211,18 +211,25 @@ const DataHub: React.FC = () => {
   const loadConnections = async () => {
     try {
       setFetchingConnections(true);
-      const response = await apiService.getLiveConnections();
-      let conns = response.data.connections || [];
+      let conns: any[] = [];
       
-      // Merge guest connections from localStorage
-      if (getUserIdSync()?.startsWith('guest_')) {
-        const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
-        conns = [...stored, ...conns];
+      try {
+        const response = await apiService.getLiveConnections();
+        conns = response.data.connections || [];
+      } catch {
+        // API may fail for guest users — that's OK
+      }
+      
+      // Always merge guest connections from localStorage
+      const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
+      if (stored.length > 0) {
+        // Deduplicate by id
+        const existingIds = new Set(conns.map((c: any) => c.id));
+        const uniqueStored = stored.filter((c: any) => !existingIds.has(c.id));
+        conns = [...uniqueStored, ...conns];
       }
       
       setActiveConnections(conns);
-    } catch (error) {
-      console.error('Failed to load connections:', error);
     } finally {
       setFetchingConnections(false);
     }
@@ -1068,50 +1075,78 @@ const DataHub: React.FC = () => {
       >
         <div className="flex items-center gap-3 mb-6 border-b pb-4" style={{ borderColor: 'var(--border-color)' }}>
           <FileText className="w-6 h-6 text-blue-500" />
-          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>How to Connect</h2>
+          <div>
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>How to Connect Live Data</h2>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Step-by-step guide for each connector</p>
+          </div>
         </div>
         
-        <div className="space-y-6 text-sm" style={{ color: 'var(--text-muted)' }}>
-          <div className="bg-black/20 p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-            <h3 className="font-bold text-green-400 mb-2 flex items-center gap-2"><span className="text-xl">🚀</span> DataVision API Push (Recommended)</h3>
-            <p className="mb-2">The fastest way to stream data. Bypasses databases and firewalls entirely.</p>
-            <ol className="list-decimal list-inside space-y-1 ml-2">
-              <li>Click the <strong>DataVision API Push</strong> button above.</li>
-              <li>A Live Dashboard will open with a unique Python code snippet.</li>
-              <li>Copy the script, run it anywhere, and watch your dashboard instantly light up.</li>
+        <div className="space-y-5 text-sm" style={{ color: 'var(--text-muted)' }}>
+          {/* API Push */}
+          <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
+            <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <span className="text-xl">🚀</span> DataVision API Push
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/20 text-green-600 font-bold">RECOMMENDED</span>
+            </h3>
+            <p className="mb-3" style={{ color: 'var(--text-muted)' }}>Stream any data to the cloud instantly. No database setup required.</p>
+            <ol className="list-decimal list-inside space-y-2 ml-1">
+              <li>Click the <strong style={{ color: 'var(--text-primary)' }}>DataVision API Push</strong> button above.</li>
+              <li>A Live Dashboard opens with a unique Python script and your <strong style={{ color: 'var(--text-primary)' }}>secure Push URL</strong>.</li>
+              <li>Copy the script, run it on your machine: <code className="px-1.5 py-0.5 rounded text-xs font-mono bg-blue-500/10 text-blue-600">python script.py</code></li>
+              <li>Data streams to the dashboard in real-time. Charts and KPIs update live.</li>
+            </ol>
+            <p className="mt-3 text-xs italic" style={{ color: 'var(--text-muted)' }}>Best for: Quick demos, custom data sources, IoT sensors, any Python script.</p>
+          </div>
+
+          {/* PostgreSQL */}
+          <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
+            <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <span className="text-xl">🐘</span> PostgreSQL
+            </h3>
+            <ol className="list-decimal list-inside space-y-2 ml-1">
+              <li>Click <strong style={{ color: 'var(--text-primary)' }}>PostgreSQL</strong> above.</li>
+              <li>Enter your <strong>Host</strong> (e.g., <code className="px-1 py-0.5 rounded text-xs font-mono bg-blue-500/10 text-blue-600">localhost</code>), <strong>Database Name</strong>, <strong>Table Name</strong>, and <strong>Username</strong>.</li>
+              <li>Click <strong style={{ color: 'var(--text-primary)' }}>"Generate Streaming Client"</strong>.</li>
+              <li>A Python script appears with your exact details pre-filled. Copy it.</li>
+              <li>Add your <strong>password</strong> to the script (line 10). Your password <em>never</em> leaves your machine.</li>
+              <li>Run: <code className="px-1.5 py-0.5 rounded text-xs font-mono bg-blue-500/10 text-blue-600">python datavision_postgresql_push.py</code></li>
+              <li>Click <strong style={{ color: 'var(--text-primary)' }}>"Launch Live Dashboard"</strong> to see your data streaming.</li>
             </ol>
           </div>
 
-          <div className="bg-black/20 p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-            <h3 className="font-bold text-blue-400 mb-2 flex items-center gap-2"><span className="text-xl">❄️</span> Snowflake</h3>
-            <ol className="list-decimal list-inside space-y-1 ml-2">
-              <li>Click <strong>Snowflake</strong> above.</li>
-              <li><strong>Database Name:</strong> The exact name of your Snowflake database.</li>
-              <li><strong>Target Table:</strong> The table or view you want to stream.</li>
-              <li><strong>Host:</strong> Your full account identifier URI (e.g., <code>xy12345.us-east-1.snowflakecomputing.com</code>).</li>
-              <li><strong>Password:</strong> Your Snowflake user password.</li>
+          {/* Snowflake */}
+          <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
+            <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <span className="text-xl">❄️</span> Snowflake
+            </h3>
+            <ol className="list-decimal list-inside space-y-2 ml-1">
+              <li>Click <strong style={{ color: 'var(--text-primary)' }}>Snowflake</strong> above.</li>
+              <li>Enter your <strong>Account Identifier</strong> (e.g., <code className="px-1 py-0.5 rounded text-xs font-mono bg-blue-500/10 text-blue-600">xy12345.us-east-1</code>), <strong>Database</strong>, <strong>Table</strong>, and <strong>Username</strong>.</li>
+              <li>Click <strong style={{ color: 'var(--text-primary)' }}>"Generate Streaming Client"</strong>.</li>
+              <li>A Python script with <code className="px-1 py-0.5 rounded text-xs font-mono bg-blue-500/10 text-blue-600">snowflake.connector</code> appears. Copy it.</li>
+              <li>Add your Snowflake <strong>password</strong> locally (line 10). It never reaches the cloud.</li>
+              <li>Run: <code className="px-1.5 py-0.5 rounded text-xs font-mono bg-blue-500/10 text-blue-600">python datavision_snowflake_push.py</code></li>
+              <li>Click <strong style={{ color: 'var(--text-primary)' }}>"Launch Live Dashboard"</strong>.</li>
             </ol>
           </div>
 
-          <div className="bg-black/20 p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-            <h3 className="font-bold text-indigo-400 mb-2 flex items-center gap-2"><span className="text-xl">🐘</span> PostgreSQL</h3>
-            <ol className="list-decimal list-inside space-y-1 ml-2">
-              <li>Click <strong>PostgreSQL</strong> above.</li>
-              <li><strong>Database Name:</strong> The exact name of your DB (e.g., <code>postgres</code>).</li>
-              <li><strong>Target Table:</strong> The table to stream (e.g., <code>weather_data</code>).</li>
-              <li><strong>Host:</strong> The IP/Hostname (e.g., <code>127.0.0.1</code> for local, or cloud URI).</li>
-              <li><strong>Password:</strong> Your DB password.</li>
+          {/* Kafka */}
+          <div className="p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
+            <h3 className="font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <span className="text-xl">⚡</span> Kafka
+            </h3>
+            <ol className="list-decimal list-inside space-y-2 ml-1">
+              <li>Click <strong style={{ color: 'var(--text-primary)' }}>Kafka</strong> above.</li>
+              <li>Enter your <strong>Bootstrap Server</strong> (e.g., <code className="px-1 py-0.5 rounded text-xs font-mono bg-blue-500/10 text-blue-600">localhost:9092</code>) and <strong>Topic Name</strong>.</li>
+              <li>Click <strong style={{ color: 'var(--text-primary)' }}>"Generate Streaming Client"</strong>.</li>
+              <li>A Python script using <code className="px-1 py-0.5 rounded text-xs font-mono bg-blue-500/10 text-blue-600">confluent_kafka</code> appears. Copy it.</li>
+              <li>Run: <code className="px-1.5 py-0.5 rounded text-xs font-mono bg-blue-500/10 text-blue-600">python datavision_kafka_push.py</code></li>
+              <li>Messages from your Kafka topic stream directly to the Live Dashboard.</li>
             </ol>
           </div>
 
-          <div className="bg-black/20 p-4 rounded-xl border" style={{ borderColor: 'var(--border-color)' }}>
-            <h3 className="font-bold text-gray-400 mb-2 flex items-center gap-2"><span className="text-xl">⚡</span> Kafka</h3>
-            <ol className="list-decimal list-inside space-y-1 ml-2">
-              <li>Click <strong>Kafka</strong> above.</li>
-              <li><strong>Target Table:</strong> Enter the exact Kafka <strong>Topic Name</strong>.</li>
-              <li><strong>Host:</strong> Your Kafka Bootstrap Server (e.g., <code>localhost:9092</code>).</li>
-              <li><strong>Password:</strong> Your SASL/SCRAM token, or leave blank if unauthenticated.</li>
-            </ol>
+          <div className="p-3 rounded-lg text-xs" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-muted)' }}>
+            <strong style={{ color: 'var(--text-primary)' }}>🔒 Security Note:</strong> All connectors use the API Push architecture. Your database credentials stay on your local machine — only aggregated metrics (row counts, velocity) are sent to the cloud. No raw data or passwords are transmitted.
           </div>
         </div>
       </motion.div>
