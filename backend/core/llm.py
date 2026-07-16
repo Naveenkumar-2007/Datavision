@@ -268,8 +268,20 @@ def chat(
     # Check if we have any remote API keys
     has_remote_keys = bool(nv_key or groq_key or hf_key)
     
-    # --- 1. PRIMARY: GROQ (Ultra-Fast) ---
-    if groq_key:
+    # --- 1. PRIMARY: GROQ (Ultra-Fast with Key Rotation) ---
+    from config.settings import Settings
+    
+    # Add all available Groq keys to the fallback chain
+    for i, g_key in enumerate(Settings.GROQ_API_KEYS):
+        providers.append({
+            "name": f"Groq-Llama3 (Key {i})",
+            "model": "groq/llama-3.1-70b-versatile",
+            "api_key": g_key,
+            "api_base": None
+        })
+        
+    # If no keys in settings (fallback), try direct env
+    if not Settings.GROQ_API_KEYS and groq_key:
         providers.append({
             "name": "Groq-Llama3",
             "model": "groq/llama-3.1-70b-versatile",
