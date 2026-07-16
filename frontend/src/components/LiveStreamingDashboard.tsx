@@ -127,6 +127,38 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
 
         {/* Dashboard Content */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          
+          {source === 'DataVision API Push' && (
+            <div className="p-4 rounded-xl border bg-black/40 border-green-500/30 text-left">
+              <h3 className="text-sm font-bold text-green-400 mb-2 flex items-center gap-2">
+                <Activity className="w-4 h-4" /> API Push is Active!
+              </h3>
+              <p className="text-xs text-gray-300 mb-3">Copy and run this Python script on your local machine to instantly push data here without any databases or tunnels:</p>
+              <pre className="text-xs bg-black/60 p-3 rounded text-green-300 overflow-x-auto whitespace-pre-wrap border border-gray-800">
+{`import requests, time, random
+
+# Your unique DataVision Live Dashboard URL
+URL = "${window.location.protocol}//${window.location.host}/api/v1/push/${connectionId}"
+
+print("Starting live push to DataVision...")
+total_rows = 0
+while True:
+    total_rows += random.randint(10, 50)
+    data = {
+        "total_rows": total_rows,
+        "rows_per_sec": random.randint(5, 20),
+        "cpu_usage": round(random.uniform(5.0, 30.0), 2),
+        "error_rate": 0.0,
+        "status": "Receiving Live Pushes"
+    }
+    res = requests.post(URL, json=data)
+    print("Sent:", data, "-> Response:", res.json())
+    time.sleep(1)
+`}
+              </pre>
+            </div>
+          )}
+
           {/* Top KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-dark-card border border-gray-800 p-4 rounded-xl">
