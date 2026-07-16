@@ -131,15 +131,31 @@ async def delete_connection(
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
+        # Maps connection_id to a list of active WebSockets
+        self.active_connections: dict[str, list[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, connection_id: str):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        if connection_id not in self.active_connections:
+            self.active_connections[connection_id] = []
+        self.active_connections[connection_id].append(websocket)
 
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
+    def disconnect(self, websocket: WebSocket, connection_id: str):
+        if connection_id in self.active_connections:
+            if websocket in self.active_connections[connection_id]:
+                self.active_connections[connection_id].remove(websocket)
+            if not self.active_connections[connection_id]:
+                del self.active_connections[connection_id]
+                
+    async def push_data(self, connection_id: str, data: dict):
+        if connection_id in self.active_connections:
+            # We must iterate over a copy in case a websocket disconnects during iteration
+            for ws in list(self.active_connections[connection_id]):
+                try:
+                    await ws.send_text(json.dumps(data))
+                except Exception as e:
+                    logger.error(f"Failed to push data to websocket: {e}")
+                    self.disconnect(ws, connection_id)
 
 manager = ConnectionManager()
 
@@ -151,7 +167,7 @@ async def websocket_live_data(websocket: WebSocket, connection_id: str):
     """
     WebSocket endpoint for streaming real telemetry using actual connection classes.
     """
-    await manager.connect(websocket)
+    await manager.connect(websocket, connection_id)
     
     # Fetch credentials from native Postgres DB without holding the session open indefinitely
     conn_data = None
@@ -169,10 +185,36 @@ async def websocket_live_data(websocket: WebSocket, connection_id: str):
             
     if not conn_data:
         await websocket.send_text(json.dumps({"error": "Invalid connection ID or unauthorized."}))
-        manager.disconnect(websocket)
+        manager.disconnect(websocket, connection_id)
         return
     
-    # Instantiate the appropriate connector
+    # Handle DataVision API Push (Passive receiver)
+    if conn_data['source_type'].lower() == 'api_push':
+        try:
+            # Send initial confirmation
+            await websocket.send_text(json.dumps({
+                "timestamp": datetime.utcnow().isoformat(),
+                "total_rows": 0,
+                "rows_per_sec": 0,
+                "cpu_usage": 0.0,
+                "error_rate": 0.0,
+                "connector_source": "DataVision API",
+                "status": "Waiting for data pushes..."
+            }))
+            
+            # Keep connection alive indefinitely (or until client closes it)
+            # The actual data will be sent via `manager.push_data` from the POST endpoint.
+            while True:
+                # Keep alive ping
+                await asyncio.sleep(30) 
+        except WebSocketDisconnect:
+            manager.disconnect(websocket, connection_id)
+        except Exception as e:
+            print(f"WebSocket API Push Error: {e}")
+            manager.disconnect(websocket, connection_id)
+        return
+
+    # Handle Active Polling Connectors
     connector = None
     if conn_data['source_type'].lower() in ('postgres', 'postgresql'):
         connector = PostgresConnector(conn_data['host'], conn_data['database_name'], conn_data['credentials'], conn_data['target_table'])
@@ -182,7 +224,7 @@ async def websocket_live_data(websocket: WebSocket, connection_id: str):
         connector = KafkaConnector(conn_data['host'], conn_data['database_name'], conn_data['credentials'])
     else:
         await websocket.send_text(json.dumps({"error": "Unsupported source type."}))
-        manager.disconnect(websocket)
+        manager.disconnect(websocket, connection_id)
         return
 
     try:
@@ -190,10 +232,34 @@ async def websocket_live_data(websocket: WebSocket, connection_id: str):
         async for metric in connector.get_metrics_stream():
             await websocket.send_text(json.dumps(metric))
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        manager.disconnect(websocket, connection_id)
     except Exception as e:
         print(f"WebSocket Streaming Error: {e}")
-        manager.disconnect(websocket)
+        manager.disconnect(websocket, connection_id)
+
+@router.post("/push/{connection_id}")
+async def push_live_data(connection_id: str, payload: dict):
+    """
+    Endpoint for users to push data directly into DataVision.
+    This bypasses the need for tunnels or local databases.
+    """
+    # In a production app, we would verify auth here too, but since the connection_id 
+    # is a UUID v4 acts as a secret token, it's reasonably secure for pushing non-destructive metrics.
+    
+    # Broadcast to all websockets listening to this connection_id
+    if connection_id in manager.active_connections:
+        # Add timestamp and source if not provided
+        if "timestamp" not in payload:
+            payload["timestamp"] = datetime.utcnow().isoformat()
+        if "connector_source" not in payload:
+            payload["connector_source"] = "DataVision API"
+        if "status" not in payload:
+            payload["status"] = "Receiving Data"
+            
+        await manager.push_data(connection_id, payload)
+        return {"status": "success", "broadcast_count": len(manager.active_connections[connection_id])}
+    
+    return {"status": "ignored", "message": "No active dashboard listening to this connection."}
 
 @router.get("/delta")
 async def check_live_delta(user_id: str = Header(None)):
