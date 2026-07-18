@@ -310,6 +310,15 @@ def get_user_data(user_id: str) -> pd.DataFrame:
         else:
             # Combine all datastreams into a unified view regardless of matching columns
             result_df = pd.concat(all_dfs, ignore_index=True)
+            
+            # NEVER drop columns based on missing percentage, because live stream 
+            # dataframes have different columns than uploaded CSVs. If we drop them, 
+            # the dashboard completely loses the live streaming data!
+            result_df = result_df.dropna(how='all', axis=1)
+            
+            # Fill numeric NaNs with 0 for better charting
+            numeric_cols = result_df.select_dtypes(include=['int64', 'float64']).columns
+            result_df[numeric_cols] = result_df[numeric_cols].fillna(0)
         
         # ⚡ Cache the result
         _set_cached_df(user_id, result_df)
