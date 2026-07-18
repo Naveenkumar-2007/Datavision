@@ -7,14 +7,16 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { motion } from 'framer-motion';
 import { useUserStore } from '../store/userStore';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, CheckCircle2, ChevronRight, XCircle } from 'lucide-react';
 
 export default function Signup() {
+    const navigate = useNavigate();
     const { signUp, signInWithGoogle, signInWithGithub } = useAuth();
     const { isDark, toggleTheme } = useUserStore();
-    const navigate = useNavigate();
+    const toast = useToast();
 
     const [formData, setFormData] = useState({
         email: '',
