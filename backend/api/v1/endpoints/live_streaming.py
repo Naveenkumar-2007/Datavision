@@ -43,10 +43,15 @@ async def create_connection(
     """
     import uuid
     conn_id = str(uuid.uuid4())
-    if req.source_type == "api_push":
-        conn_id = f"push_{conn_id}"
-
     is_guest = str(user.id).startswith('guest_')
+
+    if req.source_type == "api_push":
+        if is_guest:
+            # Embed the guest user_id into the connection_id so the push endpoint knows who it is!
+            conn_id = f"{user.id}_push_{conn_id}"
+        else:
+            # For authenticated users, keep it as a raw UUID so it can be saved in the database
+            pass
 
     # If guest user, bypass DB to avoid UUID errors and return mock connection for localStorage
     if is_guest:
@@ -196,7 +201,7 @@ async def websocket_live_data(websocket: WebSocket, connection_id: str):
     
     # Fetch credentials
     conn_data = None
-    if connection_id.startswith("push_"):
+    if "_push_" in connection_id or connection_id.startswith("push_"):
         conn_data = {
             "source_type": "api_push",
             "host": "datavision",
@@ -205,6 +210,7 @@ async def websocket_live_data(websocket: WebSocket, connection_id: str):
             "credentials": "none"
         }
     else:
+        # Check database. If it's a UUID, it might be an authenticated user's api_push or postgres/snowflake
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(DataConnection).where(DataConnection.id == connection_id))
             db_conn = result.scalar_one_or_none()
@@ -293,8 +299,10 @@ async def push_live_data(connection_id: str, payload: dict):
         
         # Determine the user who owns this connection
         owner_user_id = None
-        if not connection_id.startswith("push_"):
-            # DB connection — look up user
+        if "_push_" in connection_id and connection_id.startswith("guest_"):
+            owner_user_id = connection_id.split("_push_")[0]
+        else:
+            # Always check the DB to find the owner, even for push connections
             async with AsyncSessionLocal() as db:
                 result = await db.execute(select(DataConnection).where(DataConnection.id == connection_id))
                 conn = result.scalar_one_or_none()
