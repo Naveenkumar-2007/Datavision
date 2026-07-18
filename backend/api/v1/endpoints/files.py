@@ -602,6 +602,9 @@ async def list_files(
                     })
                     
         # ✨ MAGIC: Append Live Connections as virtual files so ML/Reports can use them natively!
+        # Also discover any live_stream_*.csv files on disk that were created by push endpoints
+        live_file_ids = set(f["id"] for f in files)  # Track already-listed files
+        
         try:
             from database.db import AsyncSessionLocal
             from database.orm import DataConnection
@@ -616,15 +619,24 @@ async def list_files(
             connections = await get_live_connections()
                 
             for conn in connections:
+                file_id = f"live_stream_{str(conn.id)[:12]}.csv"
+                if file_id in live_file_ids:
+                    continue  # Already listed from disk scan above
+                    
                 source_label = conn.source_type.upper()
                 table_name = conn.target_table or conn.database_name or "live_data"
+                
+                # Check if CSV actually exists on disk
+                csv_path = paths["files"] / file_id
+                actual_size = csv_path.stat().st_size if csv_path.exists() else 0
+                
                 files.append({
-                    "id": f"live_stream_{str(conn.id)[:12]}.csv",
+                    "id": file_id,
                     "name": f"📡 {table_name} ({source_label} Live)",
-                    "size": 0,
+                    "size": actual_size,
                     "type": "csv",
                     "uploadedAt": conn.created_at.isoformat(),
-                    "status": "streaming",
+                    "status": "streaming" if actual_size > 0 else "waiting",
                     "is_live": True
                 })
         except Exception as live_e:

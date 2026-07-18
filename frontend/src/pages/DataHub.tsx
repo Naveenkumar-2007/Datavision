@@ -220,10 +220,43 @@ const DataHub: React.FC = () => {
         // API may fail for guest users — that's OK
       }
       
-      // Always merge guest connections from localStorage
+      // Auto-adopt guest connections from localStorage when a real user is logged in
+      const currentUserId = getUserIdSync();
+      const isRealUser = currentUserId && !currentUserId.startsWith('guest_');
       const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
-      if (stored.length > 0) {
-        // Deduplicate by id
+      
+      if (isRealUser && stored.length > 0) {
+        // Try to adopt each guest connection into the DB
+        for (const guestConn of stored) {
+          try {
+            const existingIds = new Set(conns.map((c: any) => c.id));
+            // Skip if already adopted (same table/host exists in DB connections)
+            const alreadyAdopted = conns.some((c: any) => 
+              c.target_table === guestConn.target_table && 
+              c.host === guestConn.host &&
+              c.database_name === guestConn.database_name
+            );
+            
+            if (!alreadyAdopted && !existingIds.has(guestConn.id)) {
+              await apiService.adoptGuestConnection(guestConn.id, guestConn);
+              console.log(`✅ Adopted guest connection: ${guestConn.id}`);
+            }
+          } catch (err: any) {
+            // 409 = already has different data, just skip
+            console.log(`⚠️ Could not adopt guest connection: ${err?.response?.data?.detail || err.message}`);
+          }
+        }
+        
+        // Clear localStorage after adoption attempt
+        localStorage.removeItem('guest_live_connections');
+        
+        // Re-fetch from DB to get the adopted connections with clean IDs
+        try {
+          const response = await apiService.getLiveConnections();
+          conns = response.data.connections || [];
+        } catch { /* ignore */ }
+      } else if (stored.length > 0) {
+        // Guest user — merge localStorage connections as before
         const existingIds = new Set(conns.map((c: any) => c.id));
         const uniqueStored = stored.filter((c: any) => !existingIds.has(c.id));
         conns = [...uniqueStored, ...conns];
@@ -251,8 +284,12 @@ const DataHub: React.FC = () => {
       }
     } catch { /* ignore */ }
     
-    loadFiles();
-    loadConnections();
+    // Load connections first (may trigger adoption), then load files
+    const init = async () => {
+      await loadConnections();
+      await loadFiles();
+    };
+    init();
   }, []);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {

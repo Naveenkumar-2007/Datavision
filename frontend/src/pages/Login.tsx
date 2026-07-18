@@ -4,7 +4,7 @@
  * Supports both light and dark mode
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -27,6 +27,23 @@ export default function Login() {
     // Get redirect path from location state
     const from = (location.state as any)?.from?.pathname || '/data-hub';
 
+    // Check for OAuth error in URL params
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const oauthError = params.get('error');
+        if (oauthError === 'google_not_configured') {
+            setError('Google login is not configured. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET as HuggingFace Space secrets.');
+        } else if (oauthError === 'github_not_configured') {
+            setError('GitHub login is not configured. Please add GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET as HuggingFace Space secrets.');
+        } else if (oauthError === 'oauth_failed') {
+            setError('OAuth login failed. Please try again or use email/password.');
+        }
+        // Clean the URL
+        if (oauthError) {
+            window.history.replaceState({}, '', '/login');
+        }
+    }, []);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -43,11 +60,28 @@ export default function Login() {
     };
 
     const handleGoogleSignin = async () => {
-        toast.error('Google login is not configured in this environment. Please use email and password.');
+        setLoading(true);
+        setError('');
+        try {
+            const { error } = await signInWithGoogle();
+            if (error) throw error;
+            // Navigation handled by OAuth callback
+        } catch (err: any) {
+            setError(typeof err === 'string' ? err : (err.message || 'Failed to sign in with Google'));
+            setLoading(false);
+        }
     };
 
     const handleGithubSignin = async () => {
-        toast.error('GitHub login is not configured in this environment. Please use email and password.');
+        setLoading(true);
+        setError('');
+        try {
+            const { error } = await signInWithGithub();
+            if (error) throw error;
+        } catch (err: any) {
+            setError(typeof err === 'string' ? err : (err.message || 'Failed to sign in with GitHub'));
+            setLoading(false);
+        }
     };
 
     return (

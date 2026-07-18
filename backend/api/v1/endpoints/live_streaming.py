@@ -171,6 +171,104 @@ async def delete_connection(
     
     return {"status": "success"}
 
+@router.post("/connections/adopt")
+async def adopt_guest_connection(
+    payload: dict,
+    user: AuthenticatedUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Adopt a guest localStorage connection into the authenticated user's account.
+    This creates a real DB entry and copies any existing CSV data.
+    """
+    if str(user.id).startswith('guest_'):
+        raise HTTPException(status_code=400, detail="Guest users cannot adopt connections")
+    
+    guest_conn_id = payload.get("guest_connection_id", "")
+    source_type = payload.get("source_type", "api_push")
+    host = payload.get("host", "localhost")
+    database_name = payload.get("database_name", "")
+    target_table = payload.get("target_table", "live_data")
+    
+    if not guest_conn_id:
+        raise HTTPException(status_code=400, detail="guest_connection_id is required")
+    
+    import uuid as uuid_mod
+    
+    # Extract the clean UUID from the guest connection ID
+    clean_uuid = guest_conn_id
+    if "_push_" in guest_conn_id:
+        clean_uuid = guest_conn_id.split("_push_")[1]
+    elif guest_conn_id.startswith("push_"):
+        clean_uuid = guest_conn_id[5:]
+    
+    # Validate it's a proper UUID
+    try:
+        uuid_mod.UUID(clean_uuid)
+    except ValueError:
+        # Generate a new UUID if the old one isn't valid
+        clean_uuid = str(uuid_mod.uuid4())
+    
+    # Check if this exact connection already exists for the user
+    from sqlalchemy import select
+    existing = await db.execute(
+        select(DataConnection).where(DataConnection.user_id == user.id)
+    )
+    existing_conns = existing.scalars().all()
+    
+    for ec in existing_conns:
+        if (ec.source_type == source_type and ec.host == host and 
+            ec.database_name == database_name and ec.target_table == target_table):
+            # Already adopted — just return the existing connection
+            return {"status": "success", "connection_id": str(ec.id), "message": "Already adopted"}
+    
+    if len(existing_conns) > 0:
+        # Different data exists — don't conflict
+        raise HTTPException(status_code=409, detail="Delete existing connections first")
+    
+    # Create the DB entry
+    new_conn = DataConnection(
+        id=clean_uuid,
+        user_id=user.id,
+        source_type=source_type,
+        host=host,
+        database_name=database_name,
+        target_table=target_table,
+        credentials="adopted"
+    )
+    db.add(new_conn)
+    await db.commit()
+    
+    # Copy any existing CSV from guest folder to user folder
+    try:
+        from utils.paths import get_user_paths
+        import shutil
+        
+        guest_user_id = guest_conn_id.split("_push_")[0] if "_push_" in guest_conn_id else None
+        if guest_user_id:
+            guest_paths = get_user_paths(guest_user_id)
+            user_paths = get_user_paths(str(user.id))
+            
+            # Look for any CSV files in the guest folder matching this connection
+            if guest_paths["files"].exists():
+                for csv_file in guest_paths["files"].glob("live_stream_*.csv"):
+                    dest = user_paths["files"] / f"live_stream_{clean_uuid[:12]}.csv"
+                    shutil.copy2(str(csv_file), str(dest))
+                    logger.info(f"Migrated CSV {csv_file} -> {dest}")
+                    break  # Only copy the first match
+    except Exception as e:
+        logger.warning(f"Failed to copy guest CSV: {e}")
+    
+    # Clear the user's DataFrame cache
+    from api.v1.endpoints.charts import clear_user_cache
+    clear_user_cache(user.id)
+    
+    return {
+        "status": "success", 
+        "connection_id": clean_uuid,
+        "message": "Guest connection adopted to your account"
+    }
+
 class ConnectionManager:
     def __init__(self):
         # Maps connection_id to a list of active WebSockets
@@ -309,33 +407,39 @@ async def push_live_data(connection_id: str, payload: dict):
         import pandas as pd
         from utils.paths import get_user_paths
         
-        # Determine the user who owns this connection
+        # Determine the user who owns this connection and the clean UUID for file naming
         owner_user_id = None
-        if "_push_" in connection_id and connection_id.startswith("guest_"):
-            owner_user_id = connection_id.split("_push_")[0]
-        else:
-            # Clean up old connection IDs that might still have "push_" prefix (backwards compatibility)
-            clean_id = connection_id
-            if clean_id.startswith("push_"):
-                clean_id = clean_id[5:]
-            elif "_push_" in clean_id:
-                clean_id = clean_id.split("_push_")[1]
-                
-            from sqlalchemy.exc import DBAPIError
-            try:
-                # Always check the DB to find the owner, even for push connections
-                async with AsyncSessionLocal() as db:
-                    result = await db.execute(select(DataConnection).where(DataConnection.id == clean_id))
-                    conn = result.scalar_one_or_none()
-                    if conn:
-                        owner_user_id = str(conn.user_id)
-            except DBAPIError:
-                # If clean_id is totally invalid UUID, ignore it
-                owner_user_id = None
+        clean_uuid = connection_id  # Used for consistent CSV file naming
+        
+        # Extract the actual UUID from any connection_id format:
+        #   guest_xxx_push_UUID  -> UUID is the part after _push_
+        #   push_UUID            -> UUID is after push_
+        #   plain UUID           -> UUID is the connection_id itself
+        if "_push_" in connection_id:
+            clean_uuid = connection_id.split("_push_")[1]
+            # If it was a guest-created connection, the guest portion is the owner for legacy data
+            if connection_id.startswith("guest_"):
+                owner_user_id = connection_id.split("_push_")[0]
+        elif connection_id.startswith("push_"):
+            clean_uuid = connection_id[5:]
+        
+        # Always try to find the real DB owner (authenticated user) using the UUID
+        from sqlalchemy.exc import DBAPIError
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(DataConnection).where(DataConnection.id == clean_uuid))
+                conn = result.scalar_one_or_none()
+                if conn:
+                    # Real authenticated user owns this — use their folder
+                    owner_user_id = str(conn.user_id)
+        except DBAPIError:
+            # clean_uuid is not a valid UUID — keep the guest owner_user_id if we had one
+            pass
         
         if owner_user_id:
             paths = get_user_paths(owner_user_id)
-            csv_path = paths["files"] / f"live_stream_{connection_id[:12]}.csv"
+            # Use clean_uuid for consistent naming so list_files can match it
+            csv_path = paths["files"] / f"live_stream_{clean_uuid[:12]}.csv"
             
             # Build a row from the payload (exclude internal fields)
             row_data = {k: v for k, v in payload.items() if k not in ('connector_source', 'status')}

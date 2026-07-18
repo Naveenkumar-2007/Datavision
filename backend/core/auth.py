@@ -12,27 +12,39 @@ from starlette.config import Config
 
 logger = logging.getLogger(__name__)
 
-# Setup Authlib OAuth
+# Setup Authlib OAuth — reads from .env file or OS environment variables (HuggingFace Spaces secrets)
 oauth_config = Config(".env")
 oauth = OAuth(oauth_config)
 
-oauth.register(
-    name='google',
-    server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
-    client_kwargs={
-        'scope': 'openid email profile'
-    }
-)
+# Register Google OAuth (only works if GOOGLE_CLIENT_ID is set)
+try:
+    oauth.register(
+        name='google',
+        client_id=os.environ.get('GOOGLE_CLIENT_ID'),
+        client_secret=os.environ.get('GOOGLE_CLIENT_SECRET'),
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+        client_kwargs={
+            'scope': 'openid email profile'
+        }
+    )
+except Exception as e:
+    logger.warning(f"Google OAuth registration failed: {e}")
 
-oauth.register(
-    name='github',
-    api_base_url='https://api.github.com/',
-    access_token_url='https://github.com/login/oauth/access_token',
-    authorize_url='https://github.com/login/oauth/authorize',
-    client_kwargs={
-        'scope': 'user:email'
-    }
-)
+# Register GitHub OAuth (only works if GITHUB_CLIENT_ID is set)
+try:
+    oauth.register(
+        name='github',
+        client_id=os.environ.get('GITHUB_CLIENT_ID'),
+        client_secret=os.environ.get('GITHUB_CLIENT_SECRET'),
+        api_base_url='https://api.github.com/',
+        access_token_url='https://github.com/login/oauth/access_token',
+        authorize_url='https://github.com/login/oauth/authorize',
+        client_kwargs={
+            'scope': 'user:email'
+        }
+    )
+except Exception as e:
+    logger.warning(f"GitHub OAuth registration failed: {e}")
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super-secret-key-change-in-production")
 ALGORITHM = "HS256"
