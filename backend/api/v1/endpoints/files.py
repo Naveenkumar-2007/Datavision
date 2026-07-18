@@ -616,15 +616,17 @@ async def list_files(
             connections = await get_live_connections()
                 
             for conn in connections:
-                if conn.source_type.lower() in ('postgres', 'postgresql'):
-                    files.append({
-                        "id": f"LIVE_{conn.id}.csv",
-                        "name": f"LIVE_{conn.id}.csv",
-                        "size": 999999999, # Indicate it's massive
-                        "type": "csv",
-                        "uploadedAt": conn.created_at.isoformat(),
-                        "status": "completed"
-                    })
+                source_label = conn.source_type.upper()
+                table_name = conn.target_table or conn.database_name or "live_data"
+                files.append({
+                    "id": f"live_stream_{str(conn.id)[:12]}.csv",
+                    "name": f"📡 {table_name} ({source_label} Live)",
+                    "size": 0,
+                    "type": "csv",
+                    "uploadedAt": conn.created_at.isoformat(),
+                    "status": "streaming",
+                    "is_live": True
+                })
         except Exception as live_e:
             print(f"⚠️ Could not list live connections: {live_e}")
         

@@ -207,7 +207,11 @@ const Collaborate: React.FC = () => {
         setShowInviteModal(false);
         setInviteName('');
         setInviteEmail('');
-        toast.success(res.data.message || `Invitation sent to ${inviteEmail}!`);
+        if (res.data.email_sent) {
+          toast.success(`Invitation email sent to ${inviteEmail}!`);
+        } else {
+          toast.success(res.data.message || 'Member added');
+        }
       }
     } catch (err) { console.error("Error adding member", err); }
   };

@@ -276,20 +276,56 @@ async def push_live_data(connection_id: str, payload: dict):
     """
     Endpoint for users to push data directly into DataVision.
     This bypasses the need for tunnels or local databases.
+    Also saves data as CSV so it appears in Uploaded Files and feeds AI/ML/Dashboard.
     """
-    # In a production app, we would verify auth here too, but since the connection_id 
-    # is a UUID v4 acts as a secret token, it's reasonably secure for pushing non-destructive metrics.
+    # Add timestamp and source if not provided
+    if "timestamp" not in payload:
+        payload["timestamp"] = datetime.utcnow().isoformat()
+    if "connector_source" not in payload:
+        payload["connector_source"] = "DataVision API"
+    if "status" not in payload:
+        payload["status"] = "Receiving Data"
+    
+    # Save data as CSV for Uploaded Files integration
+    try:
+        import pandas as pd
+        from utils.paths import get_user_paths
+        
+        # Determine the user who owns this connection
+        owner_user_id = None
+        if not connection_id.startswith("push_"):
+            # DB connection — look up user
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(DataConnection).where(DataConnection.id == connection_id))
+                conn = result.scalar_one_or_none()
+                if conn:
+                    owner_user_id = str(conn.user_id)
+        
+        if owner_user_id:
+            paths = get_user_paths(owner_user_id)
+            csv_path = paths["files"] / f"live_stream_{connection_id[:12]}.csv"
+            
+            # Build a row from the payload (exclude internal fields)
+            row_data = {k: v for k, v in payload.items() if k not in ('connector_source', 'status')}
+            
+            # Append to existing CSV or create new one
+            new_df = pd.DataFrame([row_data])
+            if csv_path.exists():
+                try:
+                    existing = pd.read_csv(csv_path)
+                    combined = pd.concat([existing, new_df], ignore_index=True)
+                    # Keep last 10000 rows to prevent unbounded growth
+                    combined = combined.tail(10000)
+                    combined.to_csv(csv_path, index=False)
+                except Exception:
+                    new_df.to_csv(csv_path, index=False)
+            else:
+                new_df.to_csv(csv_path, index=False)
+    except Exception as e:
+        logger.warning(f"Failed to save push data as CSV: {e}")
     
     # Broadcast to all websockets listening to this connection_id
     if connection_id in manager.active_connections:
-        # Add timestamp and source if not provided
-        if "timestamp" not in payload:
-            payload["timestamp"] = datetime.utcnow().isoformat()
-        if "connector_source" not in payload:
-            payload["connector_source"] = "DataVision API"
-        if "status" not in payload:
-            payload["status"] = "Receiving Data"
-            
         await manager.push_data(connection_id, payload)
         return {"status": "success", "broadcast_count": len(manager.active_connections[connection_id])}
     

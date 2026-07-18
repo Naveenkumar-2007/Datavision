@@ -15,7 +15,7 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 # FROM_EMAIL must be from a verified domain in Resend
 # User has verified: ai20insights.tech
 FROM_EMAIL = os.getenv("FROM_EMAIL", "insights@ai20insights.tech")
-APP_URL = os.getenv("APP_URL", "https://killerkumar-ai-business-analyst.hf.space")
+APP_URL = os.getenv("APP_URL", "https://datavision-ai-datavision.hf.space")
 
 
 async def send_insight_email(
