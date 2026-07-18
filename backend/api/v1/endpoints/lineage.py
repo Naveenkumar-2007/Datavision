@@ -47,12 +47,15 @@ def build_real_lineage(user_id: str) -> Dict[str, Any]:
         try:
             import psycopg2
             import os
-            db_url = os.environ.get("DATABASE_URL", "postgresql://postgres:Naveen%402007@127.0.0.1:5432/datavision")
-            sync_url = db_url.replace("+asyncpg", "")
-            with psycopg2.connect(sync_url) as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id, source_type, host, target_table, created_at FROM data_connections WHERE user_id = %s", (user_id,))
-                    live_connections = cur.fetchall()
+            # Use raw psycopg2 for synchronous queries since this is a standard fastAPI endpoint without async DB session
+            live_connections = []
+            if not str(user_id).startswith('guest_'):
+                db_url = os.environ.get("DATABASE_URL", "postgresql://postgres:Naveen%402007@127.0.0.1:5432/datavision")
+                sync_url = db_url.replace("+asyncpg", "")
+                with psycopg2.connect(sync_url) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id, source_type, host, target_table, created_at FROM data_connections WHERE user_id = %s", (user_id,))
+                        live_connections = cur.fetchall()
             
             for conn_row in live_connections:
                 c_id, source_type, host, target_table, created_at = conn_row

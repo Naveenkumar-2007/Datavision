@@ -245,14 +245,17 @@ def get_user_data(user_id: str) -> pd.DataFrame:
         try:
             import psycopg2
             import os
-            # Connect to datavision DB
-            db_url = os.environ.get("DATABASE_URL", "postgresql://postgres:Naveen%402007@127.0.0.1:5432/datavision")
-            sync_url = db_url.replace("+asyncpg", "") # Convert async url to sync for psycopg2
             
-            with psycopg2.connect(sync_url) as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id, source_type, host, database_name, credentials, target_table FROM data_connections WHERE user_id = %s", (user_id,))
-                    connections = cur.fetchall()
+            connections = []
+            if not str(user_id).startswith('guest_'):
+                # Connect to datavision DB
+                db_url = os.environ.get("DATABASE_URL", "postgresql://postgres:Naveen%402007@127.0.0.1:5432/datavision")
+                sync_url = db_url.replace("+asyncpg", "") # Convert async url to sync for psycopg2
+                
+                with psycopg2.connect(sync_url) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT id, source_type, host, database_name, credentials, target_table FROM data_connections WHERE user_id = %s", (user_id,))
+                        connections = cur.fetchall()
             
             for conn_row in connections:
                 c_id, source_type, host, database_name, credentials, target_table = conn_row
