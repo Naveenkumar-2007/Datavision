@@ -144,7 +144,7 @@ async def delete_connection(
         return {"status": "success"}
 
     from sqlalchemy import select
-    from sqlalchemy.exc import DataError
+    from sqlalchemy.exc import DBAPIError
     
     clean_id = connection_id
     if clean_id.startswith("push_"):
@@ -155,7 +155,7 @@ async def delete_connection(
     try:
         result = await db.execute(select(DataConnection).where(DataConnection.id == clean_id, DataConnection.user_id == user.id))
         conn = result.scalar_one_or_none()
-    except DataError:
+    except DBAPIError:
         # If it's completely unparseable as UUID, it doesn't exist in DB
         raise HTTPException(status_code=404, detail="Connection not found")
     
@@ -318,13 +318,20 @@ async def push_live_data(connection_id: str, payload: dict):
             clean_id = connection_id
             if clean_id.startswith("push_"):
                 clean_id = clean_id[5:]
+            elif "_push_" in clean_id:
+                clean_id = clean_id.split("_push_")[1]
                 
-            # Always check the DB to find the owner, even for push connections
-            async with AsyncSessionLocal() as db:
-                result = await db.execute(select(DataConnection).where(DataConnection.id == clean_id))
-                conn = result.scalar_one_or_none()
-                if conn:
-                    owner_user_id = str(conn.user_id)
+            from sqlalchemy.exc import DBAPIError
+            try:
+                # Always check the DB to find the owner, even for push connections
+                async with AsyncSessionLocal() as db:
+                    result = await db.execute(select(DataConnection).where(DataConnection.id == clean_id))
+                    conn = result.scalar_one_or_none()
+                    if conn:
+                        owner_user_id = str(conn.user_id)
+            except DBAPIError:
+                # If clean_id is totally invalid UUID, ignore it
+                owner_user_id = None
         
         if owner_user_id:
             paths = get_user_paths(owner_user_id)
