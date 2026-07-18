@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { motion } from 'framer-motion';
 import { useUserStore } from '../store/userStore';
 import { Sun, Moon } from 'lucide-react';
@@ -16,6 +17,7 @@ export default function Login() {
     const location = useLocation();
     const { signIn, signInWithGoogle, signInWithGithub } = useAuth();
     const { isDark, toggleTheme } = useUserStore();
+    const toast = useToast();
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
