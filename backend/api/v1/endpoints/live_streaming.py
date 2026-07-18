@@ -302,9 +302,14 @@ async def push_live_data(connection_id: str, payload: dict):
         if "_push_" in connection_id and connection_id.startswith("guest_"):
             owner_user_id = connection_id.split("_push_")[0]
         else:
+            # Clean up old connection IDs that might still have "push_" prefix (backwards compatibility)
+            clean_id = connection_id
+            if clean_id.startswith("push_"):
+                clean_id = clean_id[5:]
+                
             # Always check the DB to find the owner, even for push connections
             async with AsyncSessionLocal() as db:
-                result = await db.execute(select(DataConnection).where(DataConnection.id == connection_id))
+                result = await db.execute(select(DataConnection).where(DataConnection.id == clean_id))
                 conn = result.scalar_one_or_none()
                 if conn:
                     owner_user_id = str(conn.user_id)
