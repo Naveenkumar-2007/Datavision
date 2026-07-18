@@ -123,6 +123,16 @@ export const apiService = {
     return api.delete(`/api/v1/connections/${connectionId}`);
   },
 
+  adoptGuestConnection: async (guestConnectionId: string, connectionMeta: any) => {
+    return api.post('/api/v1/connections/adopt', {
+      guest_connection_id: guestConnectionId,
+      source_type: connectionMeta.source_type || 'api_push',
+      host: connectionMeta.host || 'localhost',
+      database_name: connectionMeta.database_name || '',
+      target_table: connectionMeta.target_table || 'live_data',
+    });
+  },
+
   deleteAllFiles: async () => {
     const userId = getUserId();
     return api.delete(`/api/v1/files/${userId}/all`);

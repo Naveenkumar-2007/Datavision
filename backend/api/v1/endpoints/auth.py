@@ -180,12 +180,26 @@ async def login_via_oauth(provider: str, request: Request):
         raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider}")
     
     from core.auth import oauth
-    redirect_uri = request.url_for('auth_via_oauth_callback', provider=provider)
-    # Ensure redirect_uri uses https if running in production/HF Spaces
-    redirect_uri_str = str(redirect_uri).replace("http://", "https://") if "hf.space" in str(redirect_uri) else str(redirect_uri)
+    import os
+    from fastapi.responses import RedirectResponse
     
-    client = oauth.create_client(provider)
-    return await client.authorize_redirect(request, redirect_uri_str)
+    # Check if credentials are configured
+    client_id = os.environ.get(f"{provider.upper()}_CLIENT_ID")
+    if not client_id:
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5174"))
+        return RedirectResponse(f"{frontend_url}/login?error={provider}_not_configured")
+    
+    try:
+        redirect_uri = request.url_for('auth_via_oauth_callback', provider=provider)
+        # Ensure redirect_uri uses https if running in production/HF Spaces
+        redirect_uri_str = str(redirect_uri).replace("http://", "https://") if "hf.space" in str(redirect_uri) else str(redirect_uri)
+        
+        client = oauth.create_client(provider)
+        return await client.authorize_redirect(request, redirect_uri_str)
+    except Exception as e:
+        logger.error(f"OAuth redirect failed for {provider}: {e}")
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5174"))
+        return RedirectResponse(f"{frontend_url}/login?error=oauth_failed")
 
 
 @router.get("/oauth/{provider}/callback")
