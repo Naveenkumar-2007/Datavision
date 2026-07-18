@@ -4,10 +4,13 @@ Handles signup, login, logout, OAuth, and magic link authentication
 """
 
 import re
+import logging
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from database.db import get_db
 from database import (
