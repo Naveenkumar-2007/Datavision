@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Activity, X, Server, Database, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/contexts/ToastContext';
+import { useUserStore } from '@/store/userStore';
 
 interface LiveData {
   timestamp: string;
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, onClose }) => {
+  const { isDark } = useUserStore();
   const [dataStream, setDataStream] = useState<LiveData[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState('');
@@ -27,18 +29,13 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
   const toast = useToast();
 
   useEffect(() => {
-    // Determine WS URL based on current host
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    // Append the connectionId to the URL path
     const wsUrl = `${protocol}//${host}/api/v1/ws/live-data/${connectionId}`;
     
     const connectWs = () => {
       try {
-        // Use relative path via Vite proxy for local dev, or current host for prod
-        const finalWsUrl = wsUrl;
-        
-        ws.current = new WebSocket(finalWsUrl);
+        ws.current = new WebSocket(wsUrl);
         
         ws.current.onopen = () => {
           setIsConnected(true);
@@ -47,80 +44,75 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
 
         ws.current.onmessage = (event) => {
           try {
-            const parsedData = JSON.parse(event.data);
-            
-            // Check if backend sent an error message
-            if (parsedData.error) {
-              setConnectionError(parsedData.error);
-              setIsConnected(false);
-              return;
-            }
-            
-            // Override source with the one requested
-            parsedData.connector_source = source;
-            
-            setDataStream((prev) => {
-              const newStream = [...prev, parsedData];
-              // Keep only last 20 data points
-              if (newStream.length > 20) {
-                newStream.shift();
-              }
-              return newStream;
-            });
+            const data = JSON.parse(event.data);
+            const entry: LiveData = {
+              timestamp: new Date().toISOString(),
+              total_rows: data.total_rows,
+              rows_per_sec: data.rows_per_sec,
+              cpu_usage: data.cpu_usage,
+              error_rate: data.error_rate,
+              connector_source: source,
+              status: data.status || 'OK'
+            };
+            setDataStream(prev => [...prev.slice(-99), entry]);
           } catch (e) {
-            console.error('Error parsing live data', e);
+            console.error('Failed to parse WS data', e);
           }
         };
 
-        ws.current.onerror = (error) => {
-          console.error('WebSocket Error:', error);
-          setConnectionError('Failed to connect to streaming server.');
-          setIsConnected(false);
+        ws.current.onerror = () => {
+          setConnectionError('Connection error. Retrying...');
         };
 
         ws.current.onclose = () => {
           setIsConnected(false);
+          setTimeout(connectWs, 3000);
         };
-      } catch (e: any) {
-        setConnectionError(e.message);
+      } catch (e) {
+        setConnectionError('Failed to establish WebSocket');
       }
     };
 
     connectWs();
-
-    return () => {
-      if (ws.current) {
-        ws.current.close();
-      }
-    };
+    return () => { ws.current?.close(); };
   }, [source, connectionId]);
 
   const latestData = dataStream.length > 0 ? dataStream[dataStream.length - 1] : null;
+
+  // Theme
+  const bg = isDark ? 'bg-[#111]' : 'bg-white';
+  const bgHeader = isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50';
+  const border = isDark ? 'border-gray-800' : 'border-gray-200';
+  const textPrimary = isDark ? 'text-white' : 'text-gray-900';
+  const textSecondary = isDark ? 'text-gray-400' : 'text-gray-600';
+  const textMuted = isDark ? 'text-gray-500' : 'text-gray-400';
+  const cardBg = isDark ? 'bg-[#1a1a1a]' : 'bg-gray-50';
+  const logBg = isDark ? 'bg-black' : 'bg-gray-900';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <motion.div 
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-4xl bg-[#111] border border-gray-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[80vh]"
+        className={`w-full max-w-4xl ${bg} border ${border} rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[80vh]`}
       >
         {/* Header */}
-        <div className="p-4 border-b border-gray-800 flex items-center justify-between bg-[#1a1a1a]">
+        <div className={`p-4 border-b ${border} flex items-center justify-between ${bgHeader}`}>
           <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-lg ${isConnected ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+            <div className={`p-2 rounded-lg ${isConnected ? 'bg-green-500/20 text-green-500' : 'bg-yellow-500/20 text-yellow-500'}`}>
               <Activity className={`w-5 h-5 ${isConnected ? 'animate-pulse' : ''}`} />
             </div>
             <div>
-              <h2 className="font-bold text-white flex items-center gap-2">
+              <h2 className={`font-bold ${textPrimary} flex items-center gap-2`}>
                 {source} Live Stream
                 {isConnected && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>}
               </h2>
-              <p className="text-xs text-gray-400">
+              <p className={`text-xs ${textSecondary}`}>
                 {isConnected ? 'Receiving real-time telemetry' : connectionError ? connectionError : 'Connecting...'}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors">
+          <button onClick={onClose} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-200 text-gray-500 hover:text-gray-900'}`}>
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -129,60 +121,40 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           
           {source === 'DataVision API Push' && (
-            <div className="p-4 rounded-xl border bg-black/40 border-green-500/30 text-left">
-              <h3 className="text-sm font-bold text-green-400 mb-2 flex items-center gap-2">
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-green-500/5 border-green-500/30' : 'bg-green-50 border-green-200'} text-left`}>
+              <h3 className={`text-sm font-bold mb-2 flex items-center gap-2 ${isDark ? 'text-green-400' : 'text-green-700'}`}>
                 <Activity className="w-4 h-4" /> API Push is Active!
               </h3>
-              <p className="text-xs text-gray-300 mb-2">Your unique Push URL:</p>
-              <code className="text-xs bg-black/60 p-2 rounded text-green-300 block overflow-x-auto border border-gray-800 font-mono">
+              <p className={`text-xs mb-2 ${textSecondary}`}>Your unique Push URL:</p>
+              <code className={`text-xs p-2 rounded block overflow-x-auto font-mono ${isDark ? 'bg-black/60 text-green-300 border border-gray-800' : 'bg-gray-100 text-green-700 border border-gray-200'}`}>
                 {`${window.location.protocol}//${window.location.host}/api/v1/push/${connectionId}`}
               </code>
-              <p className="text-xs text-gray-500 mt-2">Run your generated Python script locally. Data will appear here in real-time.</p>
+              <p className={`text-xs mt-2 ${textMuted}`}>Run your generated Python script locally. Data will appear here in real-time.</p>
             </div>
           )}
 
           {/* Top KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-dark-card border border-gray-800 p-4 rounded-xl">
-              <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2">
-                <Database className="w-4 h-4" /> Total Rows
+            {[
+              { icon: Database, label: 'Total Rows', value: latestData?.total_rows?.toLocaleString() ?? '--' },
+              { icon: TrendingUp, label: 'Rows Added/sec', value: latestData?.rows_per_sec?.toLocaleString() ?? '--' },
+              { icon: Server, label: 'CPU Usage (Est)', value: latestData?.cpu_usage !== undefined ? `${latestData.cpu_usage.toFixed(1)}%` : '--' },
+              { icon: AlertTriangle, label: 'Error Rate', value: latestData?.error_rate !== undefined ? `${latestData.error_rate.toFixed(2)}%` : '--', isError: latestData && (latestData.error_rate ?? 0) > 1.5 }
+            ].map((kpi, i) => (
+              <div key={i} className={`${cardBg} border ${border} p-4 rounded-xl`}>
+                <div className={`text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2 ${textSecondary}`}>
+                  <kpi.icon className="w-4 h-4" /> {kpi.label}
+                </div>
+                <div className={`text-3xl font-bold font-mono ${kpi.isError ? 'text-red-500' : (i === 3 ? (isDark ? 'text-green-400' : 'text-green-600') : textPrimary)}`}>
+                  {kpi.value}
+                </div>
               </div>
-              <div className="text-3xl font-bold text-white font-mono">
-                {latestData && latestData.total_rows !== undefined ? latestData.total_rows.toLocaleString() : '--'}
-              </div>
-            </div>
-            
-            <div className="bg-dark-card border border-gray-800 p-4 rounded-xl">
-              <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" /> Rows Added/sec
-              </div>
-              <div className="text-3xl font-bold text-white font-mono">
-                {latestData && latestData.rows_per_sec !== undefined ? latestData.rows_per_sec.toLocaleString() : '--'}
-              </div>
-            </div>
-
-            <div className="bg-dark-card border border-gray-800 p-4 rounded-xl">
-              <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2">
-                <Server className="w-4 h-4" /> CPU Usage (Est)
-              </div>
-              <div className="text-3xl font-bold text-white font-mono">
-                {latestData && latestData.cpu_usage !== undefined ? `${latestData.cpu_usage.toFixed(1)}%` : '--'}
-              </div>
-            </div>
-
-            <div className="bg-dark-card border border-gray-800 p-4 rounded-xl">
-              <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4" /> Error Rate
-              </div>
-              <div className={`text-3xl font-bold font-mono ${latestData && (latestData.error_rate ?? 0) > 1.5 ? 'text-red-400' : 'text-green-400'}`}>
-                {latestData && latestData.error_rate !== undefined ? `${latestData.error_rate.toFixed(2)}%` : '--'}
-              </div>
-            </div>
+            ))}
           </div>
 
-          {/* Terminal / Log View */}
-          <div className="bg-black border border-gray-800 rounded-xl p-4 h-64 overflow-hidden flex flex-col">
-            <div className="text-xs text-gray-500 font-mono mb-2 uppercase border-b border-gray-800 pb-2">
+          {/* Terminal / Log View — always dark for terminal feel */}
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-4 h-64 overflow-hidden flex flex-col">
+            <div className="text-xs text-gray-500 font-mono mb-2 uppercase border-b border-gray-700 pb-2">
               Live Event Log (Agentic Feed)
             </div>
             <div className="flex-1 overflow-y-auto space-y-1 font-mono text-sm flex flex-col-reverse">

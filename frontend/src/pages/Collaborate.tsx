@@ -29,6 +29,7 @@ const Collaborate: React.FC = () => {
   const { isDark } = useUserStore();
   const { user } = useAuth();
   const toast = useToast();
+  const displayName = user?.full_name || (user?.email ? user.email.split('@')[0] : 'You');
 
   // Data
   const [channels, setChannels] = useState<any[]>([]);
@@ -108,7 +109,7 @@ const Collaborate: React.FC = () => {
     fetchThreads();
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/collaboration/ws/${activeChannel}?user_name=${user?.full_name || 'Anonymous'}&user_id=${user?.id || 'default'}`;
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/collaboration/ws/${activeChannel}?user_name=${displayName}&user_id=${user?.id || 'default'}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -159,7 +160,7 @@ const Collaborate: React.FC = () => {
     if (replyingTo) {
       try {
         const res = await api.post(`/api/v1/collaboration/threads/${replyingTo.id}/reply`, {
-          message: finalMessage, user: user?.full_name || 'Anonymous', is_encrypted: isEncrypted
+          message: finalMessage, user: displayName, is_encrypted: isEncrypted
         });
         if (res.data.success) {
           setReplies(prev => ({ ...prev, [replyingTo.id]: [...(prev[replyingTo.id] || []), res.data.reply] }));
@@ -168,7 +169,7 @@ const Collaborate: React.FC = () => {
       setReplyingTo(null);
     } else {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ message: finalMessage, user: user?.full_name || 'Anonymous', is_encrypted: isEncrypted }));
+        wsRef.current.send(JSON.stringify({ message: finalMessage, user: displayName, is_encrypted: isEncrypted }));
       }
     }
     setNewComment('');
@@ -177,7 +178,7 @@ const Collaborate: React.FC = () => {
 
   const handleReact = async (msgId: string, emoji: string) => {
     try {
-      const res = await api.post(`/api/v1/collaboration/threads/${msgId}/react`, { emoji, user: user?.full_name || 'Anonymous' });
+      const res = await api.post(`/api/v1/collaboration/threads/${msgId}/react`, { emoji, user: displayName });
       if (res.data.success) setReactions(prev => ({ ...prev, [msgId]: res.data.reactions }));
     } catch (e) { console.error('Reaction failed', e); }
     setShowEmojiPicker(null);
@@ -429,7 +430,7 @@ const Collaborate: React.FC = () => {
               value={newComment}
               onChange={e => setNewComment(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePostComment(); } }}
-              placeholder={replyingTo ? `Reply to ${replyingTo.user}...` : `Message #${activeChannelName}... (type @ai for insights)`}
+              placeholder={replyingTo ? `Reply to ${replyingTo.user}...` : `Message #${activeChannelName}...`}
               className={`flex-1 bg-transparent border-none outline-none text-sm ${textPrimary}`}
             />
             {isSecureMode && <Lock className="w-4 h-4 text-green-500 shrink-0" />}

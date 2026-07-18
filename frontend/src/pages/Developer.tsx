@@ -764,8 +764,8 @@ const Developer: React.FC = () => {
                   {snippetCopied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy Code</>}
                 </button>
               </div>
-              <pre className={`p-4 rounded-xl border font-mono text-sm overflow-x-auto ${isDark ? 'bg-[#0d1117] border-white/5' : 'bg-gray-900 border-gray-200'}`}>
-                <code className="text-gray-300">
+              <pre className={`p-4 rounded-xl border font-mono text-sm overflow-x-auto ${isDark ? 'bg-[#0d1117] border-white/5 text-gray-300' : 'bg-gray-100 border-gray-200 text-gray-800'}`}>
+                <code>
                   {getSnippetText(snippetLang)}
                 </code>
               </pre>
@@ -863,7 +863,7 @@ const Developer: React.FC = () => {
                 </button>
               </div>
               <pre className={`p-5 rounded-2xl border overflow-x-auto text-sm font-mono leading-relaxed transition-all ${
-                isDark ? 'bg-[#0d1117] border-white/5 text-gray-300' : 'bg-gray-900 border-gray-200 text-gray-300'
+                isDark ? 'bg-[#0d1117] border-white/5 text-gray-300' : 'bg-gray-100 border-gray-200 text-gray-800'
               }`}>
                 <code className="text-teal-400">{"<iframe"}</code>{'\n'}
                 <code className="text-indigo-300">  src=</code><code className="text-green-300">"{window.location.origin}/embed/{embedWidget}?theme={embedTheme}&token={apiKeys[0]?.key || 'dv_live_...'}"</code>{'\n'}
