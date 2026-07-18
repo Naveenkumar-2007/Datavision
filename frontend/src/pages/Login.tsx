@@ -41,28 +41,11 @@ export default function Login() {
     };
 
     const handleGoogleSignin = async () => {
-        setLoading(true);
-        setError('');
-        try {
-            const { error } = await signInWithGoogle();
-            if (error) throw error;
-            // Navigation handled by OAuth callback or listener
-        } catch (err: any) {
-            setError(typeof err === 'string' ? err : (err.message || 'Failed to sign in with Google'));
-            setLoading(false);
-        }
+        toast.error('Google login is not configured in this environment. Please use email and password.');
     };
 
     const handleGithubSignin = async () => {
-        setLoading(true);
-        setError('');
-        try {
-            const { error } = await signInWithGithub();
-            if (error) throw error;
-        } catch (err: any) {
-            setError(typeof err === 'string' ? err : (err.message || 'Failed to sign in with GitHub'));
-            setLoading(false);
-        }
+        toast.error('GitHub login is not configured in this environment. Please use email and password.');
     };
 
     return (

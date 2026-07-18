@@ -1259,14 +1259,20 @@ const DataHub: React.FC = () => {
                     <button
                       onClick={async () => {
                         try {
-                          // Handle guest deletion
-                          if (getUserIdSync()?.startsWith('guest_')) {
-                            const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
-                            const updated = stored.filter((c: any) => c.id !== conn.id);
-                            localStorage.setItem('guest_live_connections', JSON.stringify(updated));
+                          // Always try to remove from localStorage in case it's a legacy guest connection
+                          const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
+                          const updated = stored.filter((c: any) => c.id !== conn.id);
+                          localStorage.setItem('guest_live_connections', JSON.stringify(updated));
+                          
+                          try {
+                            await apiService.deleteLiveConnection(conn.id);
+                          } catch (apiErr: any) {
+                            // If it's a 404, it just means it wasn't in the DB (e.g. it was only in localStorage)
+                            if (!apiErr.response || apiErr.response.status !== 404) {
+                              throw apiErr;
+                            }
                           }
                           
-                          await apiService.deleteLiveConnection(conn.id);
                           toast.success('Pipeline disconnected successfully');
                           loadConnections();
                         } catch (err: any) {
