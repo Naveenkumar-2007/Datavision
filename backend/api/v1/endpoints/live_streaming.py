@@ -144,8 +144,20 @@ async def delete_connection(
         return {"status": "success"}
 
     from sqlalchemy import select
-    result = await db.execute(select(DataConnection).where(DataConnection.id == connection_id, DataConnection.user_id == user.id))
-    conn = result.scalar_one_or_none()
+    from sqlalchemy.exc import DataError
+    
+    clean_id = connection_id
+    if clean_id.startswith("push_"):
+        clean_id = clean_id[5:]
+    elif "_push_" in clean_id:
+        clean_id = clean_id.split("_push_")[1]
+        
+    try:
+        result = await db.execute(select(DataConnection).where(DataConnection.id == clean_id, DataConnection.user_id == user.id))
+        conn = result.scalar_one_or_none()
+    except DataError:
+        # If it's completely unparseable as UUID, it doesn't exist in DB
+        raise HTTPException(status_code=404, detail="Connection not found")
     
     if not conn:
         raise HTTPException(status_code=404, detail="Connection not found")

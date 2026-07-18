@@ -72,29 +72,11 @@ export default function Signup() {
     };
 
     const handleGoogleSignup = async () => {
-        setLoading(true);
-        setError('');
-        try {
-            const { error } = await signInWithGoogle();
-            if (error) throw error;
-        } catch (err: any) {
-            setError(typeof err === 'string' ? err : (err.message || 'An error occurred'));
-        } finally {
-            setLoading(false);
-        }
+        toast.error('Google signup is not configured in this environment. Please use email and password.');
     };
 
     const handleGithubSignup = async () => {
-        setLoading(true);
-        setError('');
-        try {
-            const { error } = await signInWithGithub();
-            if (error) throw error;
-        } catch (err: any) {
-            setError(typeof err === 'string' ? err : (err.message || 'An error occurred'));
-        } finally {
-            setLoading(false);
-        }
+        toast.error('GitHub signup is not configured in this environment. Please use email and password.');
     };
 
 
