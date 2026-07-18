@@ -522,6 +522,8 @@ async def add_member(
     name = target_user.full_name or target_user.email.split("@")[0]
     
     # Send invite email via existing email service
+    email_sent = False
+    email_error = None
     try:
         from services.email_service import send_insight_email
         inviter_name = "Your team"
@@ -539,14 +541,18 @@ async def add_member(
             title=f"You've been invited to DataVision",
             body=f"{inviter_name} invited you to collaborate on DataVision as a {req.role}. Log in to start analyzing data together with your team.",
         )
-        logger.info(f"Invite email sent to {req.email}")
+        email_sent = True
+        logger.info(f"✅ Invite email sent to {req.email}")
     except Exception as e:
-        logger.warning(f"Failed to send invite email to {req.email}: {e}")
+        email_error = str(e)
+        logger.warning(f"❌ Failed to send invite email to {req.email}: {e}")
     
+    msg = f"Invitation sent to {req.email}" if email_sent else f"Member added. Email failed: {email_error}"
     return {
         "success": True, 
-        "member": {"name": name, "email": target_user.email, "role": new_member.role, "status": "Invited", "avatar": name[0].upper()}, 
-        "message": f"Invitation sent to {req.email}"
+        "member": {"name": name, "email": target_user.email, "role": new_member.role, "status": "Invited" if email_sent else "Added (no email)", "avatar": name[0].upper()}, 
+        "message": msg,
+        "email_sent": email_sent
     }
 
 

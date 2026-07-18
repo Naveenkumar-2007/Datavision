@@ -236,6 +236,21 @@ const DataHub: React.FC = () => {
   };
 
   useEffect(() => {
+    // Clean stale/duplicate localStorage connections on mount
+    try {
+      const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
+      if (stored.length > 0) {
+        // Deduplicate by id, keep only unique entries
+        const seen = new Set();
+        const cleaned = stored.filter((c: any) => {
+          if (!c.id || seen.has(c.id)) return false;
+          seen.add(c.id);
+          return true;
+        });
+        localStorage.setItem('guest_live_connections', JSON.stringify(cleaned));
+      }
+    } catch { /* ignore */ }
+    
     loadFiles();
     loadConnections();
   }, []);
