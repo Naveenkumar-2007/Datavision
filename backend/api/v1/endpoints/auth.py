@@ -189,19 +189,17 @@ async def login_via_oauth(provider: str, request: Request):
     # Check if credentials are configured
     client_id = os.environ.get(f"{provider.upper()}_CLIENT_ID")
     if not client_id:
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5174"))
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
         return RedirectResponse(f"{frontend_url}/login?error={provider}_not_configured")
     
     try:
-        redirect_uri = request.url_for('auth_via_oauth_callback', provider=provider)
-        # Ensure redirect_uri uses https if running in production/HF Spaces
-        redirect_uri_str = str(redirect_uri).replace("http://", "https://") if "hf.space" in str(redirect_uri) else str(redirect_uri)
-        
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+        redirect_uri_str = f"{frontend_url}/api/v1/auth/oauth/{provider}/callback"
         client = oauth.create_client(provider)
         return await client.authorize_redirect(request, redirect_uri_str)
     except Exception as e:
         logger.error(f"OAuth redirect failed for {provider}: {e}")
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5174"))
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
         return RedirectResponse(f"{frontend_url}/login?error=oauth_failed")
 
 
@@ -250,7 +248,7 @@ async def auth_via_oauth_callback(provider: str, request: Request, db: AsyncSess
     
     if result.get("success"):
         access_token = result["session"]["access_token"]
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5174"))
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
         return RedirectResponse(f"{frontend_url}/auth/callback?token={access_token}")
         
     raise HTTPException(status_code=400, detail="Failed to process OAuth login")

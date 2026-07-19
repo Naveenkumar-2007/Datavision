@@ -4,7 +4,7 @@
  * Supports both light and dark mode
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -30,6 +30,15 @@ export default function Signup() {
 
     // Theme colors matching Landing page (using global vars)
     // Legacy theme logic removed - handled by App.tsx / userStore
+
+    // Check for invite token on mount
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const inviteToken = params.get('invite');
+        if (inviteToken) {
+            localStorage.setItem('pending_invite', inviteToken);
+        }
+    }, []);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({

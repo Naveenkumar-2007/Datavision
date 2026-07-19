@@ -45,7 +45,7 @@ export default function AuthCallback() {
                 if (data.success && isMounted) {
                     localStorage.setItem('auth_user', JSON.stringify(data.user));
                     localStorage.setItem('userId', data.user.id);
-                    navigate('/data-hub', { replace: true });
+                    window.location.href = '/data-hub';
                 } else if (isMounted) {
                     setError('Failed to fetch user profile');
                 }
@@ -70,10 +70,10 @@ export default function AuthCallback() {
 
                 // If email confirmation, show success briefly then redirect to data-hub
                 if (isEmailConfirm) {
-                    setTimeout(() => navigate('/data-hub', { replace: true }), 1500);
+                    setTimeout(() => window.location.href = '/data-hub', 1500);
                 } else {
                     // OAuth login - go directly to data-hub
-                    navigate('/data-hub', { replace: true });
+                    window.location.href = '/data-hub';
                 }
             } else if (attempts < 20) {
                 // Keep polling (10 seconds max)

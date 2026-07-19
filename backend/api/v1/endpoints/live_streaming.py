@@ -457,6 +457,14 @@ async def push_live_data(connection_id: str, payload: dict):
                     new_df.to_csv(csv_path, index=False)
             else:
                 new_df.to_csv(csv_path, index=False)
+                
+            # INVALIDATE CACHE SO AI ANALYST SEES NEW DATA
+            try:
+                from api.v1.endpoints.charts import clear_user_cache
+                clear_user_cache(owner_user_id)
+            except Exception as cache_e:
+                logger.warning(f"Could not clear cache for {owner_user_id}: {cache_e}")
+                
     except Exception as e:
         logger.warning(f"Failed to save push data as CSV: {e}")
     

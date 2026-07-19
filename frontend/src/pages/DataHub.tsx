@@ -269,6 +269,20 @@ const DataHub: React.FC = () => {
   };
 
   useEffect(() => {
+    // Process any pending workspace invite from auth redirect
+    const pendingInvite = localStorage.getItem('pending_invite');
+    if (pendingInvite && getUserIdSync() && !getUserIdSync().startsWith('guest_')) {
+      apiService.acceptInvite(pendingInvite)
+        .then(() => {
+          localStorage.removeItem('pending_invite');
+          toast.success('Successfully joined the workspace!');
+        })
+        .catch(err => {
+          localStorage.removeItem('pending_invite');
+          console.error('Failed to accept invite:', err);
+        });
+    }
+
     // Clean stale/duplicate localStorage connections on mount
     try {
       const stored = JSON.parse(localStorage.getItem('guest_live_connections') || '[]');
