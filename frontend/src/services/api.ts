@@ -133,6 +133,10 @@ export const apiService = {
     });
   },
 
+  acceptInvite: async (token: string) => {
+    return api.post('/api/v1/collaboration/invite/accept', { token });
+  },
+
   deleteAllFiles: async () => {
     const userId = getUserId();
     return api.delete(`/api/v1/files/${userId}/all`);

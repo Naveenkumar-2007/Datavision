@@ -612,8 +612,15 @@ async def list_files(
             import asyncio
             
             async def get_live_connections():
+                # Only query if user_id is a valid UUID (not a guest string)
+                import uuid
+                try:
+                    uuid_val = uuid.UUID(user_id)
+                except ValueError:
+                    return []
+                    
                 async with AsyncSessionLocal() as db:
-                    result = await db.execute(select(DataConnection).where(DataConnection.user_id == user_id))
+                    result = await db.execute(select(DataConnection).where(DataConnection.user_id == uuid_val))
                     return result.scalars().all()
                     
             connections = await get_live_connections()

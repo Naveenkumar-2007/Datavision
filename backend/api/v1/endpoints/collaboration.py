@@ -429,6 +429,44 @@ async def generate_invite(
     }
     return {"success": True, "token": token, "link": f"/collaborate?invite={token}"}
 
+class AcceptInviteRequest(BaseModel):
+    token: str
+
+@router.post("/invite/accept")
+async def accept_invite(
+    req: AcceptInviteRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Process an invite token and add the user to the workspace."""
+    token = req.token
+    if token not in _invites_db:
+        raise HTTPException(status_code=404, detail="Invalid or expired invite link.")
+        
+    invite_info = _invites_db[token]
+    
+    # Check if user is already a member
+    stmt = select(WorkspaceMember).where(WorkspaceMember.user_id == user_id)
+    result = await db.execute(stmt)
+    existing_member = result.scalar_one_or_none()
+    
+    if existing_member:
+        return {"success": True, "message": "You are already a member of this workspace."}
+        
+    # Add new member
+    new_member = WorkspaceMember(
+        workspace_id=invite_info["created_by"], # Use inviter's UUID
+        user_id=user_id,
+        role="Viewer" # Default role for invite links
+    )
+    db.add(new_member)
+    await db.commit()
+    
+    # Optional: Log activity
+    await _log_activity_db(db, user_id, "System", "join", "Joined workspace via invite link")
+    
+    return {"success": True, "message": "Successfully joined the workspace!"}
+
 
 # ── MEMBERS ──
 
@@ -502,7 +540,7 @@ async def add_member(
         db.add(target_user)
         await db.flush()
         
-    workspace_id = "default"
+    workspace_id = user_id # Use the inviter's UUID as the workspace ID
         
     # 3. Add WorkspaceMember
     member_stmt = select(WorkspaceMember).filter(

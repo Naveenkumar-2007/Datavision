@@ -42,6 +42,12 @@ export default function Login() {
         if (oauthError) {
             window.history.replaceState({}, '', '/login');
         }
+
+        // Check for invite token
+        const inviteToken = params.get('invite');
+        if (inviteToken) {
+            localStorage.setItem('pending_invite', inviteToken);
+        }
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {

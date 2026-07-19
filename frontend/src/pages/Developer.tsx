@@ -991,7 +991,7 @@ const Developer: React.FC = () => {
             
             <div className="space-y-3">
               <a 
-                href="http://localhost:8000/docs"
+                href={`${import.meta.env.VITE_API_URL || ''}/docs`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer group transition-colors ${isDark ? 'bg-black/40 border-white/10 hover:border-indigo-500/50' : 'bg-gray-50 border-gray-200 hover:border-indigo-300'}`}
@@ -1003,7 +1003,7 @@ const Developer: React.FC = () => {
                 <span className="text-xs text-gray-400 group-hover:text-indigo-400">View →</span>
               </a>
               <a 
-                href="http://localhost:8000/docs"
+                href={`${import.meta.env.VITE_API_URL || ''}/docs`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer group transition-colors ${isDark ? 'bg-black/40 border-white/10 hover:border-indigo-500/50' : 'bg-gray-50 border-gray-200 hover:border-indigo-300'}`}
@@ -1017,7 +1017,7 @@ const Developer: React.FC = () => {
             </div>
             
             <a 
-              href="http://localhost:8000/docs"
+              href={`${import.meta.env.VITE_API_URL || ''}/docs`}
               target="_blank"
               rel="noopener noreferrer"
               className="w-full mt-6 py-2.5 rounded-xl border border-indigo-500/30 text-indigo-400 text-xs font-semibold hover:bg-indigo-500/10 transition-colors flex items-center justify-center block text-center"
