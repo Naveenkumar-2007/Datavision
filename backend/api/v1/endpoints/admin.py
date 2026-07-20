@@ -35,11 +35,7 @@ router = APIRouter()
 security = HTTPBearer(auto_error=False)
 
 # ── Admin Password (bcrypt hash stored in env) ──
-ADMIN_PASSWORD_HASH = os.environ.get(
-    "ADMIN_PASSWORD_HASH",
-    "$2b$12$igNMKjsYUAQsbmJBjYsLPuz7bhJ8HoV9X86W.n3R48LogJ6qLuQ0y"  # DataVision@Admin2026
-)
-
+ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH")
 
 # ── Request/Response Models ──
 
