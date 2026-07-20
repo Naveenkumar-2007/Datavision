@@ -210,10 +210,13 @@ const Collaborate: React.FC = () => {
         if (res.data.email_sent) {
           toast.success(`Invitation email sent to ${inviteEmail}!`);
         } else {
-          toast.success(res.data.message || 'Member added');
+          toast.warning(`Member added, but email failed: ${res.data.message}`);
         }
       }
-    } catch (err) { console.error("Error adding member", err); }
+    } catch (err: any) {
+      console.error("Error adding member", err);
+      toast.error(err.response?.data?.detail || "Failed to add member");
+    }
   };
 
   const handleChangeRole = async (email: string, role: string) => {
@@ -243,7 +246,10 @@ const Collaborate: React.FC = () => {
         navigator.clipboard.writeText(`${window.location.origin}${res.data.link}`);
         toast.success('Invite link copied!');
       }
-    } catch (err) { console.error("Error generating link", err); }
+    } catch (err: any) {
+      console.error("Error generating link", err);
+      toast.error(err.response?.data?.detail || "Failed to generate invite link");
+    }
   };
 
   const activeChannelName = channels.find(c => c.id === activeChannel)?.name || 'general';
