@@ -447,7 +447,7 @@ class WorkspaceMember(Base):
     __tablename__ = 'workspace_members'
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    workspace_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    workspace_id = Column(String, nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
     role = Column(String, default='member')  # owner, admin, member, viewer
     created_at = Column(DateTime, default=datetime.utcnow)
