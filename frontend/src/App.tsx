@@ -19,6 +19,7 @@ const Reports = React.lazy(() => import('./pages/Reports'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const NotificationSettings = React.lazy(() => import('./pages/NotificationSettings'));
 const Signup = React.lazy(() => import('./pages/Signup'));
+const AcceptInvite = React.lazy(() => import('./pages/AcceptInvite'));
 const ForgotPassword = React.lazy(() => import('./pages/ForgotPassword'));
 const UpdatePassword = React.lazy(() => import('./pages/UpdatePassword'));
 const EmailConfirm = React.lazy(() => import('./pages/EmailConfirm'));
@@ -92,6 +93,7 @@ function App() {
                 <Route path="/" element={<Landing />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
+                <Route path="/accept-invite" element={<AcceptInvite />} />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
                 <Route path="/auth/update-password" element={<UpdatePassword />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />

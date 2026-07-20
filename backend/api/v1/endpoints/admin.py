@@ -374,3 +374,141 @@ async def broadcast_announcement(
     await db.commit()
     
     return {"success": True, "message": "Broadcast sent to activity feed"}
+
+
+# ══════════════════════════════════════════════════════
+# REAL-TIME ADMIN WEBSOCKET
+# ══════════════════════════════════════════════════════
+import asyncio
+import json
+from fastapi import WebSocket, WebSocketDisconnect, Query
+
+class AdminConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        if not self.active_connections:
+            return
+            
+        payload = json.dumps(message)
+        disconnected = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(payload)
+            except Exception:
+                disconnected.append(connection)
+        for d in disconnected:
+            self.disconnect(d)
+
+admin_ws_manager = AdminConnectionManager()
+
+async def get_live_admin_stats(db: AsyncSession) -> dict:
+    """Gather live statistics for broadcast."""
+    try:
+        total_users = await db.scalar(select(func.count()).select_from(UserProfile)) or 0
+        total_files = await db.scalar(select(func.count()).select_from(UserFile)) or 0
+        total_convs = await db.scalar(select(func.count()).select_from(Conversation)) or 0
+        total_msgs = await db.scalar(select(func.count()).select_from(Message)) or 0
+        total_queries = await db.scalar(select(func.count()).select_from(UserQuery)) or 0
+        total_dashboards = await db.scalar(select(func.count()).select_from(Dashboard)) or 0
+        total_connections = await db.scalar(select(func.count()).select_from(DataConnection)) or 0
+        
+        # System
+        try:
+            import psutil
+            cpu_percent = psutil.cpu_percent(interval=None)
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            sys_stats = {
+                "cpu": cpu_percent,
+                "ram": memory.percent,
+                "disk": disk.percent
+            }
+        except:
+            sys_stats = {"cpu": 0, "ram": 0, "disk": 0}
+            
+        return {
+            "type": "metrics_update",
+            "timestamp": datetime.utcnow().isoformat(),
+            "metrics": {
+                "users": total_users,
+                "files": total_files,
+                "conversations": total_convs,
+                "messages": total_msgs,
+                "queries": total_queries,
+                "dashboards": total_dashboards,
+                "data_connections": total_connections,
+                "system": sys_stats,
+                # Simulate developer/live metrics
+                "active_webhooks": 12, # Demo value
+                "api_requests_sec": 4.5 # Demo value
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching live admin stats: {e}")
+        return {}
+
+async def broadcast_admin_stats_loop():
+    """Background task to push stats to connected admins."""
+    while True:
+        await asyncio.sleep(2)
+        if admin_ws_manager.active_connections:
+            try:
+                async with AsyncSessionLocal() as db:
+                    stats = await get_live_admin_stats(db)
+                    if stats:
+                        await admin_ws_manager.broadcast(stats)
+            except Exception as e:
+                logger.error(f"Admin broadcast error: {e}")
+
+# Try to start background task if not already started
+_admin_task_started = False
+def start_admin_broadcast_task():
+    global _admin_task_started
+    if not _admin_task_started:
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(broadcast_admin_stats_loop())
+            _admin_task_started = True
+            logger.info("Admin WebSocket broadcast task started.")
+        except RuntimeError:
+            pass
+
+@router.websocket("/ws")
+async def admin_websocket(websocket: WebSocket, token: str = Query(...)):
+    """WebSocket endpoint for real-time admin metrics."""
+    # Verify token
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("role") != "super_admin":
+            await websocket.close(code=1008, reason="Unauthorized")
+            return
+    except JWTError:
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+
+    start_admin_broadcast_task()
+    await admin_ws_manager.connect(websocket)
+    
+    try:
+        # Send initial full state immediately
+        async with AsyncSessionLocal() as db:
+            initial_stats = await get_live_admin_stats(db)
+            if initial_stats:
+                await websocket.send_text(json.dumps(initial_stats))
+                
+        # Keep connection open
+        while True:
+            data = await websocket.receive_text()
+            # In real app, handle admin commands here
+    except WebSocketDisconnect:
+        admin_ws_manager.disconnect(websocket)

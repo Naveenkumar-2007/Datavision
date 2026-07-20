@@ -60,6 +60,11 @@ class LoginRequest(BaseModel):
 class MagicLinkRequest(BaseModel):
     email: str
 
+class AcceptInviteRequest(BaseModel):
+    token: str
+    email: str
+    password: str
+
 
 class RefreshRequest(BaseModel):
     refresh_token: str
@@ -134,6 +139,33 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
         "session": result.get("session")
     }
 
+
+@router.post("/accept-invite")
+async def accept_invite(request: AcceptInviteRequest, db: AsyncSession = Depends(get_db)):
+    """Accept an invitation by setting a password."""
+    try:
+        from core.auth import decode_jwt_token, get_password_hash
+        from sqlalchemy import select
+        from database.orm import UserProfile
+        
+        payload = decode_jwt_token(request.token)
+        if payload.get("type") != "invite" or payload.get("email") != request.email:
+            raise HTTPException(status_code=400, detail="Invalid or expired invite token")
+            
+        user_stmt = select(UserProfile).filter(UserProfile.email == request.email)
+        user_res = await db.execute(user_stmt)
+        target_user = user_res.scalars().first()
+        
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        target_user.hashed_password = get_password_hash(request.password)
+        await db.commit()
+        
+        return {"success": True, "message": "Password set successfully. You can now log in."}
+    except Exception as e:
+        logger.error(f"Failed to accept invite: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/logout")
 async def logout(current_user: AuthUser = Depends(get_current_user), db: AsyncSession = Depends(get_db)):

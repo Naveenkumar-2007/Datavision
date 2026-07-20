@@ -37,6 +37,7 @@ except ImportError as e:
 async def get_current_user_id(
     request: Request,
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    x_workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
     authorization: Optional[str] = Header(None, alias="Authorization")
 ) -> str:
     """
@@ -47,8 +48,9 @@ async def get_current_user_id(
     2. X-User-ID header (for compatibility)
     3. Generate guest ID (for anonymous users)
     
-    NEVER trust user_id from request body!
+    If X-Workspace-ID is provided, verifies membership and returns it.
     """
+    resolved_user_id = None
     
     # Try JWT authentication first
     if authorization and authorization.startswith("Bearer "):
@@ -69,7 +71,7 @@ async def get_current_user_id(
                             raise HTTPException(status_code=401, detail="API Key has been revoked")
                         key.total_calls += 1
                         await db.commit()
-                        return str(key.user_id)
+                        resolved_user_id = str(key.user_id)
             except Exception as e:
                 logger.debug(f"Developer token decode failed: {e}")
                 
@@ -80,21 +82,23 @@ async def get_current_user_id(
                     payload = decode_jwt_token(token)
                     user_id = payload.get("sub")
                     if user_id:
-                        return user_id
+                        resolved_user_id = user_id
             except Exception as e:
                 logger.debug(f"JWT decode failed: {e}")
     
     # Fallback to X-User-ID header
-    if x_user_id and x_user_id not in ["null", "undefined", "", "default"]:
-        return x_user_id
+    if not resolved_user_id and x_user_id and x_user_id not in ["null", "undefined", "", "default"]:
+        resolved_user_id = x_user_id
     
     # Generate guest ID based on request fingerprint
-    import hashlib
-    ip = request.client.host if request.client else "unknown"
-    ua = request.headers.get("User-Agent", "unknown")[:100]
-    fingerprint = hashlib.sha256(f"{ip}:{ua}".encode()).hexdigest()[:12]
-    return f"guest_{fingerprint}"
-
+    if not resolved_user_id:
+        import hashlib
+        ip = request.client.host if request.client else "unknown"
+        ua = request.headers.get("User-Agent", "unknown")[:100]
+        fingerprint = hashlib.sha256(f"{ip}:{ua}".encode()).hexdigest()[:12]
+        resolved_user_id = f"guest_{fingerprint}"
+            
+    return resolved_user_id
 
 def get_verified_user_id(
     body_user_id: Optional[str],
