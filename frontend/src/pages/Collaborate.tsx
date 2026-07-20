@@ -343,25 +343,47 @@ const Collaborate: React.FC = () => {
               <p className="text-xs mt-1">Start the conversation or type <span className="text-indigo-400 font-mono">@ai</span> for data insights</p>
             </div>
           ) : (
-            comments.map((msg) => (
+            comments.map((msg) => {
+              const senderMember = members.find(m => m.name === msg.user || m.email === msg.user);
+              const role = senderMember?.role || 'Viewer';
+              
+              let bubbleStyle = '';
+              let avatarStyle = '';
+              let nameStyle = textPrimary;
+              
+              if (msg.isAi) {
+                bubbleStyle = isDark ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-indigo-50 border-indigo-200';
+                avatarStyle = 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white';
+                nameStyle = 'text-indigo-500 font-bold';
+              } else if (role === 'Owner' || role === 'Admin') {
+                bubbleStyle = isDark ? 'bg-purple-500/10 border-purple-500/20' : 'bg-purple-50 border-purple-200';
+                avatarStyle = 'bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/20';
+                nameStyle = isDark ? 'text-purple-400 font-bold' : 'text-purple-700 font-bold';
+              } else if (role === 'Analyst') {
+                bubbleStyle = isDark ? 'bg-cyan-500/10 border-cyan-500/20' : 'bg-cyan-50 border-cyan-200';
+                avatarStyle = 'bg-gradient-to-br from-cyan-400 to-blue-500 text-white';
+                nameStyle = isDark ? 'text-cyan-400 font-semibold' : 'text-cyan-700 font-semibold';
+              } else {
+                bubbleStyle = isDark ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200';
+                avatarStyle = isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-600';
+                nameStyle = isDark ? 'text-gray-300' : 'text-gray-700';
+              }
+
+              return (
               <div 
                 key={msg.id} 
-                className={`group flex items-start gap-3 p-3 rounded-xl transition-colors ${bgHover} ${msg.isAi ? (isDark ? 'bg-indigo-500/5 border border-indigo-500/20' : 'bg-indigo-50/50 border border-indigo-100') : ''}`}
+                className={`group flex items-start gap-3 p-3 rounded-xl border transition-colors ${bgHover} ${bubbleStyle}`}
               >
                 {/* Avatar */}
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold ${
-                  msg.isAi 
-                    ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white' 
-                    : isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-600'
-                }`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold ${avatarStyle}`}>
                   {msg.isAi ? '🤖' : (msg.avatar || msg.user?.charAt(0)?.toUpperCase() || '?')}
                 </div>
 
                 {/* Message Content */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2">
-                    <span className={`font-semibold text-sm ${msg.isAi ? 'text-indigo-400' : textPrimary}`}>
-                      {msg.isAi ? 'DataVision AI' : msg.user}
+                    <span className={`text-sm ${nameStyle}`}>
+                      {msg.isAi ? 'DataVision AI' : msg.user} {role !== 'Viewer' && !msg.isAi && <span className="text-[10px] opacity-70 px-1.5 py-0.5 rounded bg-black/10">[{role}]</span>}
                     </span>
                     <span className={`text-[10px] ${textMuted}`}>{msg.time}</span>
                     {msg.is_encrypted && <Lock className="w-3 h-3 text-green-500" />}
@@ -414,7 +436,8 @@ const Collaborate: React.FC = () => {
                   </div>
                 )}
               </div>
-            ))
+            );
+          })
           )}
           <div ref={chatEndRef} />
         </div>

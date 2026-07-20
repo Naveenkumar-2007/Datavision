@@ -758,11 +758,31 @@ async def websocket_endpoint(
     actual_room_id = f"{workspace_id}_{room_id}"
     await manager.connect(websocket, actual_room_id)
     try:
+        from database.db import AsyncSessionLocal
+        from database.orm import ChannelMessage
+        
         while True:
             data = await websocket.receive_text()
             try:
                 payload = json.loads(data)
                 msg_text = payload.get("message", "").lower()
+                
+                # Save the user's message to the DB
+                if "message" in payload and payload.get("user") != "DataVision Agent":
+                    async with AsyncSessionLocal() as db:
+                        new_msg = ChannelMessage(
+                            channel_id=room_id,
+                            user_id=user_id if user_id != "default" else None,
+                            content=payload["message"],
+                            is_ai=False
+                        )
+                        db.add(new_msg)
+                        await db.commit()
+                        await db.refresh(new_msg)
+                        # Inject message ID so frontend can thread replies
+                        payload["id"] = str(new_msg.id)
+                        data = json.dumps(payload)
+                
                 is_question = msg_text.strip().endswith("?")
                 is_mention = "@ai" in msg_text
                 
@@ -776,6 +796,23 @@ async def websocket_endpoint(
                     ai_response = await collab_swarm.process_message(effective_id, question)
                     if ai_response:
                         ai_payload = json.dumps(ai_response)
+                        
+                        # Save AI response to DB
+                        async with AsyncSessionLocal() as db:
+                            ai_msg = ChannelMessage(
+                                channel_id=room_id,
+                                user_id=None,
+                                content=ai_response.get("message", ""),
+                                is_ai=True
+                            )
+                            db.add(ai_msg)
+                            await db.commit()
+                            await db.refresh(ai_msg)
+                            # Update payload with ID
+                            ai_dict = json.loads(ai_payload)
+                            ai_dict["id"] = str(ai_msg.id)
+                            ai_payload = json.dumps(ai_dict)
+                            
                         await asyncio.sleep(1.0)
                         await manager.broadcast(ai_payload, actual_room_id)
                         
@@ -786,7 +823,6 @@ async def websocket_endpoint(
             
     except WebSocketDisconnect:
         manager.disconnect(websocket, actual_room_id)
-
 
 # ═══════════════════════════════════════════════════════════════
 # ENTERPRISE COLLABORATION FEATURES

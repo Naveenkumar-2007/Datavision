@@ -19,7 +19,18 @@ export const api = axios.create({
  */
 api.interceptors.request.use(async (config) => {
   try {
-    // 1. Check for Developer API Token (for embedded widgets)
+    const isUrlAdminRoute = config.url && config.url.includes('/api/v1/admin');
+
+    // 1. Admin Token Bypass (highest priority for admin routes)
+    if (isUrlAdminRoute) {
+      const adminToken = sessionStorage.getItem('admin_token');
+      if (adminToken) {
+        config.headers['Authorization'] = `Bearer ${adminToken}`;
+        return config;
+      }
+    }
+
+    // 2. Check for Developer API Token (for embedded widgets)
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get('token');
     if (urlToken && urlToken.startsWith('dv_')) {
@@ -32,7 +43,7 @@ api.interceptors.request.use(async (config) => {
       return config;
     }
 
-    // 2. Get current session
+    // 3. Get current session
     const { data: { session } } = await supabase.auth.getSession();
 
     if (session?.access_token) {

@@ -287,15 +287,23 @@ class AgenticAutopilot:
     async def _trigger_webhooks(self, payload: dict):
         """Fire HTTP requests to the user's registered webhooks."""
         try:
-            from api.v1.endpoints.developer import _webhooks_db
+            from database.db import AsyncSessionLocal
+            from database.orm import Webhook
+            from sqlalchemy import select
             import httpx
             
-            # Find all active webhooks for this user that listen to autopilot.completed
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(Webhook).filter(
+                        Webhook.user_id == self.state.user_id,
+                        Webhook.status == "active"
+                    )
+                )
+                webhooks = result.scalars().all()
+                
             user_webhooks = [
-                w for w in _webhooks_db.values() 
-                if w["user_id"] == self.state.user_id 
-                and w["status"] == "active"
-                and "autopilot.completed" in w.get("events", [])
+                w for w in webhooks 
+                if "autopilot.completed" in (w.events or [])
             ]
             
             if not user_webhooks:
@@ -305,13 +313,13 @@ class AgenticAutopilot:
                 for wh in user_webhooks:
                     try:
                         await client.post(
-                            wh["url"],
+                            wh.url,
                             json={"event": "autopilot.completed", "data": payload},
                             timeout=10.0
                         )
-                        logger.info(f"Successfully fired webhook to {wh['url']}")
+                        logger.info(f"Successfully fired webhook to {wh.url}")
                     except Exception as e:
-                        logger.warning(f"Webhook {wh['url']} failed: {e}")
+                        logger.warning(f"Webhook {wh.url} failed: {e}")
         except Exception as e:
             logger.error(f"Failed to process webhooks: {e}")
 

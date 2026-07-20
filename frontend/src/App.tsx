@@ -120,6 +120,8 @@ function App() {
                     <AnalystChat />
                   </ProtectedRoute>
                 } />
+                {/* Embed Widgets - Standalone, unauthenticated (token-based) route */}
+                <Route path="/embed/:widgetId" element={<EmbedWidget />} />
 
                 {/* Protected routes wrapped in AppLayout */}
                 <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>

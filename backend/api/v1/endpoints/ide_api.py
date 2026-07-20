@@ -451,6 +451,8 @@ async def run_existing_project(user_id: str):
                 command = "npm install && npm run dev"
         elif os.path.exists(os.path.join(workspace_dir, "api_server.py")):
             command = "python api_server.py"
+            if os.path.exists(os.path.join(workspace_dir, "requirements.txt")):
+                command = "pip install -r requirements.txt && python api_server.py"
         elif os.path.exists(os.path.join(workspace_dir, "requirements.txt")):
             command = "pip install -r requirements.txt && python main.py"
             
