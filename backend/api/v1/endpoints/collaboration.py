@@ -66,23 +66,69 @@ class PinRequest(BaseModel):
     message_id: str
 
 
+@router.get("/workspaces")
+async def get_user_workspaces(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all workspaces the current user is a member of."""
+    workspaces = []
+    
+    # 1. Check if user exists to get name for their personal workspace
+    user_stmt = select(UserProfile).filter(UserProfile.id == user_id)
+    user_res = await db.execute(user_stmt)
+    user = user_res.scalars().first()
+    
+    personal_name = "Personal Workspace"
+    if user and user.full_name:
+        personal_name = f"{user.full_name}'s Workspace"
+    elif user and user.email:
+        personal_name = f"{user.email.split('@')[0]}'s Workspace"
+        
+    workspaces.append({
+        "id": user_id, # personal workspace ID is the user ID
+        "name": personal_name,
+        "role": "Owner"
+    })
+    
+    # 2. Get other workspaces they are a member of
+    stmt = select(WorkspaceMember, UserProfile).join(
+        UserProfile, WorkspaceMember.workspace_id == UserProfile.id
+    ).where(WorkspaceMember.user_id == user_id)
+    
+    res = await db.execute(stmt)
+    memberships = res.all()
+    
+    for member, owner in memberships:
+        ws_name = f"{owner.full_name or owner.email.split('@')[0]}'s Workspace"
+        workspaces.append({
+            "id": member.workspace_id,
+            "name": ws_name,
+            "role": member.role
+        })
+        
+    return {"workspaces": workspaces}
+
+
+
 # ── DB Helpers ──
 
-async def _get_or_create_default_channel(db: AsyncSession) -> ChatChannel:
-    stmt = select(ChatChannel).where(ChatChannel.name == "general")
+async def _get_or_create_workspace_channel(db: AsyncSession, workspace_id: str) -> ChatChannel:
+    name = f"general_{workspace_id}"
+    stmt = select(ChatChannel).where(ChatChannel.name == name)
     result = await db.execute(stmt)
     channel = result.scalar_one_or_none()
     if not channel:
-        channel = ChatChannel(name="general", description="General discussion")
+        channel = ChatChannel(name=name, description="General discussion")
         db.add(channel)
         await db.commit()
         await db.refresh(channel)
     return channel
 
-async def _resolve_channel_id(channel_id: str, db: AsyncSession) -> str:
-    """Resolve 'default' to the UUID of the 'general' channel."""
+async def _resolve_channel_id(channel_id: str, db: AsyncSession, workspace_id: str) -> str:
+    """Resolve 'default' to the UUID of the workspace's general channel."""
     if channel_id == "default":
-        channel = await _get_or_create_default_channel(db)
+        channel = await _get_or_create_workspace_channel(db, workspace_id)
         return str(channel.id)
     return channel_id
 
@@ -189,10 +235,12 @@ async def get_threads(
     limit: int = Query(50, ge=1, le=200, description="Max messages to return"),
     offset: int = Query(0, ge=0, description="Skip this many messages"),
     user_id: str = Depends(get_current_user_id),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
     db: AsyncSession = Depends(get_db)
 ):
     """Fetch messages for a channel with pagination."""
-    real_channel_id = await _resolve_channel_id(channel_id, db)
+    effective_workspace = workspace_id or user_id
+    real_channel_id = await _resolve_channel_id(channel_id, db, effective_workspace)
 
     # Count total messages for pagination metadata
     from sqlalchemy import func
@@ -261,11 +309,13 @@ async def post_message(
     request_obj: Request,
     req: PostMessageRequest,
     user_id: str = Depends(get_current_user_id),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
     db: AsyncSession = Depends(get_db)
 ):
     """Post a message. If @ai is mentioned, generate a real data insight."""
     await check_rate_limit(request_obj, "collab_message", user_id)
-    real_channel_id = await _resolve_channel_id(req.channel_id or "default", db)
+    effective_workspace = workspace_id or user_id
+    real_channel_id = await _resolve_channel_id(req.channel_id or "default", db, effective_workspace)
     
     # In DB we store user profile, but frontend sends 'user' string for display name. We'll store it in content for now, or use the DB user profile.
     # Wait, the DB model requires `user_id`.
@@ -310,7 +360,7 @@ async def post_message(
         if ai_insight:
             ai_msg = ChannelMessage(
                 channel_id=real_channel_id,
-                user_id=user_id, # Can attribute AI message to user who invoked it
+                user_id=effective_workspace, # Attribute AI message to workspace owner
                 content=ai_insight['message'],
                 is_ai=True
             )
@@ -328,38 +378,43 @@ async def post_message(
 @router.get("/channels")
 async def get_channels(
     user_id: str = Depends(get_current_user_id),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all channels."""
-    await _get_or_create_default_channel(db) # Ensure default exists
-    stmt = select(ChatChannel).order_by(ChatChannel.created_at.asc())
+    """List all channels for workspace."""
+    effective_workspace = workspace_id or user_id
+    await _get_or_create_workspace_channel(db, effective_workspace) # Ensure default exists
+    stmt = select(ChatChannel).where(ChatChannel.name.like(f"%_{effective_workspace}")).order_by(ChatChannel.created_at.asc())
     result = await db.execute(stmt)
     channels = result.scalars().all()
     
-    return {"channels": [{"id": "default" if c.name == "general" else str(c.id), "name": c.name, "created": c.created_at.isoformat()} for c in channels]}
+    return {"channels": [{"id": "default" if c.name == f"general_{effective_workspace}" else str(c.id), "name": c.name.replace(f"_{effective_workspace}", ""), "created": c.created_at.isoformat()} for c in channels]}
 
 
 @router.post("/channels")
 async def create_channel(
     req: CreateChannelRequest,
     user_id: str = Depends(get_current_user_id),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new channel."""
-    stmt = select(ChatChannel).where(ChatChannel.name == req.name)
+    """Create a new channel for workspace."""
+    effective_workspace = workspace_id or user_id
+    channel_name = f"{req.name.replace('#', '')}_{effective_workspace}"
+    stmt = select(ChatChannel).where(ChatChannel.name == channel_name)
     result = await db.execute(stmt)
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail=f"Channel '{req.name}' already exists")
 
     channel = ChatChannel(
-        name=req.name.replace("#", ""),
+        name=channel_name,
         description=""
     )
     db.add(channel)
     await db.commit()
     await db.refresh(channel)
 
-    return {"success": True, "channel": {"id": str(channel.id), "name": channel.name, "created": channel.created_at.isoformat()}}
+    return {"success": True, "channel": {"id": str(channel.id), "name": req.name.replace('#', ''), "created": channel.created_at.isoformat()}}
 
 
 
@@ -368,10 +423,12 @@ async def search_messages(
     q: str,
     channel_id: str = "default",
     user_id: str = Depends(get_current_user_id),
+    workspace_id: Optional[str] = Header(None, alias="X-Workspace-ID"),
     db: AsyncSession = Depends(get_db)
 ):
     """Search messages in a channel."""
-    real_channel_id = await _resolve_channel_id(channel_id, db)
+    effective_workspace = workspace_id or user_id
+    real_channel_id = await _resolve_channel_id(channel_id, db, effective_workspace)
     
     # Simple ILIKE search on content
     # Note: E2E encrypted messages won't be matched by plaintext queries!
@@ -564,6 +621,9 @@ async def add_member(
     email_error = None
     try:
         from services.email_service import send_insight_email
+        from core.auth import create_access_token
+        import os
+        
         inviter_name = "Your team"
         try:
             inviter_stmt = select(UserProfile).filter(UserProfile.id == user_id)
@@ -574,10 +634,20 @@ async def add_member(
         except:
             pass
             
+        # Generate a secure invite token valid for 7 days
+        from datetime import timedelta
+        invite_token = create_access_token(
+            {"email": req.email, "type": "invite"}, 
+            expires_delta=timedelta(days=7)
+        )
+        
+        frontend_url = os.environ.get("FRONTEND_URL", "https://datavision-ai-datavision.hf.space")
+        invite_link = f"{frontend_url}/accept-invite?token={invite_token}&email={req.email}"
+            
         await send_insight_email(
             to_email=req.email,
             title=f"You've been invited to DataVision",
-            body=f"{inviter_name} invited you to collaborate on DataVision as a {req.role}. Log in to start analyzing data together with your team.",
+            body=f"{inviter_name} invited you to collaborate on DataVision as a {req.role}.\n\nClick the link below to accept the invitation and set up your account:\n{invite_link}\n\nIf you already have an account, you can simply log in.",
         )
         email_sent = True
         logger.info(f"✅ Invite email sent to {req.email}")
@@ -678,8 +748,15 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 @router.websocket("/ws/{room_id}")
-async def websocket_endpoint(websocket: WebSocket, room_id: str, user_name: str = "Anonymous", user_id: str = "default"):
-    await manager.connect(websocket, room_id)
+async def websocket_endpoint(
+    websocket: WebSocket, 
+    room_id: str, 
+    workspace_id: str = "default",
+    user_name: str = "Anonymous", 
+    user_id: str = "default"
+):
+    actual_room_id = f"{workspace_id}_{room_id}"
+    await manager.connect(websocket, actual_room_id)
     try:
         while True:
             data = await websocket.receive_text()
@@ -694,20 +771,21 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, user_name: str 
                     if not question:
                         question = "give me a summary"
                     
-                    # Generate AI response (doesn't write to DB in WS, for real DB writing we rely on the POST endpoint)
-                    ai_response = await collab_swarm.process_message(user_id, question)
+                    # Generate AI response using workspace data context
+                    effective_id = workspace_id if workspace_id != "default" else user_id
+                    ai_response = await collab_swarm.process_message(effective_id, question)
                     if ai_response:
                         ai_payload = json.dumps(ai_response)
                         await asyncio.sleep(1.0)
-                        await manager.broadcast(ai_payload, room_id)
+                        await manager.broadcast(ai_payload, actual_room_id)
                         
             except json.JSONDecodeError:
                 pass
             
-            await manager.broadcast(data, room_id)
+            await manager.broadcast(data, actual_room_id)
             
     except WebSocketDisconnect:
-        manager.disconnect(websocket, room_id)
+        manager.disconnect(websocket, actual_room_id)
 
 
 # ═══════════════════════════════════════════════════════════════

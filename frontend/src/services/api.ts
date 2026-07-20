@@ -40,6 +40,18 @@ api.interceptors.request.use(async (config) => {
       config.headers['Authorization'] = `Bearer ${session.access_token}`;
       // Also send user ID header for backward compatibility during migration
       config.headers['X-User-ID'] = session.user.id;
+      
+      // Send active workspace if selected
+      const userStoreStr = localStorage.getItem('user-store');
+      if (userStoreStr) {
+        try {
+          const store = JSON.parse(userStoreStr);
+          const workspaceId = store?.state?.activeWorkspaceId;
+          if (workspaceId) {
+            config.headers['X-Workspace-ID'] = workspaceId;
+          }
+        } catch (e) {}
+      }
     } else {
       // Guest user - send guest ID in header (backend generates consistent guest ID)
       const guestId = localStorage.getItem('guestUserId');

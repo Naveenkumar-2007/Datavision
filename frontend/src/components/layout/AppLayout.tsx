@@ -56,6 +56,28 @@ const AppLayout: React.FC = () => {
   const [wsConnected, setWsConnected] = useState(false);
   const [liveMetrics, setLiveMetrics] = useState<any>(null);
 
+  // Workspace State
+  const { workspaces, setWorkspaces, activeWorkspaceId, setActiveWorkspace, activeWorkspaceRole } = useUserStore();
+
+  useEffect(() => {
+    // Fetch user workspaces
+    const fetchWorkspaces = async () => {
+      try {
+        const res = await apiService.get('/api/v1/collaboration/workspaces');
+        setWorkspaces(res.data.workspaces);
+        
+        // Auto-select personal workspace if none selected
+        if (!activeWorkspaceId && res.data.workspaces.length > 0) {
+          const personal = res.data.workspaces.find((w: any) => w.role === 'Owner');
+          if (personal) setActiveWorkspace(personal.id, personal.role);
+        }
+      } catch (err) {
+        console.error("Failed to fetch workspaces:", err);
+      }
+    };
+    fetchWorkspaces();
+  }, []);
+
   useEffect(() => {
     // Connect to WebSocket
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -165,8 +187,8 @@ const AppLayout: React.FC = () => {
       title: 'Data Foundation',
       items: [
         { path: '/', label: 'Home', icon: Home },
-        { path: '/data-hub', label: 'Data Hub', icon: Database },
-        { path: '/lineage', label: 'Data Lineage', icon: GitBranch },
+        { path: '/data-hub', label: 'Data Hub', icon: Database, roles: ['Owner', 'Admin', 'Analyst'] },
+        { path: '/lineage', label: 'Data Lineage', icon: GitBranch, roles: ['Owner', 'Admin'] },
       ]
     },
     {
@@ -179,8 +201,7 @@ const AppLayout: React.FC = () => {
       title: 'Advanced AI Lab',
       items: [
         { path: '/chat', label: 'AI Analyst', icon: MessageSquare },
-        { path: '/ml-predictions', label: 'AutoML & Predict', icon: Brain }, 
-
+        { path: '/ml-predictions', label: 'AutoML & Predict', icon: Brain, roles: ['Owner', 'Admin', 'Analyst'] }, 
       ]
     },
     {
@@ -188,13 +209,20 @@ const AppLayout: React.FC = () => {
       items: [
         { path: '/reports', label: 'Reports', icon: FileText },
         { path: '/collaborate', label: 'Collaborate', icon: Users },
-        { path: '/developer', label: 'Developer', icon: Terminal },
-        { path: '/settings', label: 'Settings', icon: Settings },
+        { path: '/developer', label: 'Developer', icon: Terminal, roles: ['Owner'] },
+        { path: '/settings', label: 'Settings', icon: Settings, roles: ['Owner', 'Admin'] },
       ]
     }
   ];
 
-  const navItems = navGroups.flatMap(group => group.items);
+  // Filter navigation items based on current role
+  const currentRole = activeWorkspaceRole || 'Owner';
+  const filteredNavGroups = navGroups.map(group => ({
+    ...group,
+    items: group.items.filter(item => !item.roles || item.roles.includes(currentRole))
+  })).filter(group => group.items.length > 0);
+
+  const navItems = filteredNavGroups.flatMap(group => group.items);
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
@@ -259,6 +287,36 @@ const AppLayout: React.FC = () => {
             <X className="w-5 h-5" style={{ color: isDark ? '#9ca3af' : '#64748b' }} />
           </button>
         </div>
+
+        {/* Workspace Switcher */}
+        {workspaces.length > 1 && (
+          <div className={`p-4 border-b transition-all duration-300 md:hidden ${isSidebarCollapsed ? 'lg:hidden' : 'lg:block'}`}
+            style={{ borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }}
+          >
+            <div className="text-[10px] font-bold tracking-wider uppercase mb-2" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
+              Workspace
+            </div>
+            <select
+              value={activeWorkspaceId || ''}
+              onChange={(e) => {
+                const ws = workspaces.find(w => w.id === e.target.value);
+                if (ws) {
+                   setActiveWorkspace(ws.id, ws.role);
+                   // Give time for state to update, then reload to fetch fresh data for the new workspace context
+                   setTimeout(() => window.location.reload(), 100);
+                }
+              }}
+              className="w-full bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 rounded-lg p-2 text-sm outline-none cursor-pointer focus:ring-2 focus:ring-emerald-500"
+              style={{ color: 'var(--text-primary)' }}
+            >
+              {workspaces.map(ws => (
+                <option key={ws.id} value={ws.id} className="bg-white dark:bg-slate-800">
+                  {ws.name} ({ws.role})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 p-4 space-y-4 overflow-y-auto overflow-x-hidden">

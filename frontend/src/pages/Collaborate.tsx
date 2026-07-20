@@ -109,7 +109,8 @@ const Collaborate: React.FC = () => {
     fetchThreads();
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/collaboration/ws/${activeChannel}?user_name=${displayName}&user_id=${user?.id || 'default'}`;
+    const activeWorkspaceId = useUserStore.getState().activeWorkspaceId;
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/collaboration/ws/${activeChannel}?user_name=${displayName}&user_id=${user?.id || 'default'}&workspace_id=${activeWorkspaceId || 'default'}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

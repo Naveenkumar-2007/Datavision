@@ -78,6 +78,13 @@ interface UserState {
   setTheme: (isDark: boolean) => void;
   accentTheme: string;
   setAccentTheme: (theme: string) => void;
+
+  // Workspaces / Collaboration
+  workspaces: Array<{ id: string; name: string; role: string }>;
+  activeWorkspaceId: string | null;
+  activeWorkspaceRole: string | null;
+  setWorkspaces: (workspaces: Array<{ id: string; name: string; role: string }>) => void;
+  setActiveWorkspace: (id: string | null, role: string | null) => void;
 }
 
 // NOTE: Removed createWelcomeMessage - WelcomeScreen in AnalystChat handles empty state
@@ -101,7 +108,18 @@ export const useUserStore = create<UserState>()(
       // Start with null - will be populated from AuthContext
       user: null,
       setUser: (user) => set({ user }),
-      logout: () => set({ user: null }),
+      logout: () => set({ 
+          user: null, 
+          workspaces: [], 
+          activeWorkspaceId: null, 
+          activeWorkspaceRole: null 
+      }),
+      
+      workspaces: [],
+      activeWorkspaceId: null,
+      activeWorkspaceRole: null,
+      setWorkspaces: (workspaces) => set({ workspaces }),
+      setActiveWorkspace: (id, role) => set({ activeWorkspaceId: id, activeWorkspaceRole: role }),
 
       // Initialize with one conversation
       conversations: [createNewConversation()],
