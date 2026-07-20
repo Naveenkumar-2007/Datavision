@@ -189,17 +189,26 @@ async def login_via_oauth(provider: str, request: Request):
     # Check if credentials are configured
     client_id = os.environ.get(f"{provider.upper()}_CLIENT_ID")
     if not client_id:
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "https://datavision-ai-datavision.hf.space"))
         return RedirectResponse(f"{frontend_url}/login?error={provider}_not_configured")
     
     try:
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+        # HARDCODE the production base URL to avoid any env var issues on HF Spaces
+        PRODUCTION_URL = "https://datavision-ai-datavision.hf.space"
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", PRODUCTION_URL))
+        
+        # Ensure we never use localhost in production
+        if "localhost" in frontend_url or "127.0.0.1" in frontend_url:
+            frontend_url = PRODUCTION_URL
+        
         redirect_uri_str = f"{frontend_url}/api/v1/auth/oauth/{provider}/callback"
+        logger.info(f"OAuth {provider} redirect_uri: {redirect_uri_str}")
+        
         client = oauth.create_client(provider)
         return await client.authorize_redirect(request, redirect_uri_str)
     except Exception as e:
         logger.error(f"OAuth redirect failed for {provider}: {e}")
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "https://datavision-ai-datavision.hf.space"))
         return RedirectResponse(f"{frontend_url}/login?error=oauth_failed")
 
 
@@ -248,7 +257,10 @@ async def auth_via_oauth_callback(provider: str, request: Request, db: AsyncSess
     
     if result.get("success"):
         access_token = result["session"]["access_token"]
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+        PRODUCTION_URL = "https://datavision-ai-datavision.hf.space"
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", PRODUCTION_URL))
+        if "localhost" in frontend_url or "127.0.0.1" in frontend_url:
+            frontend_url = PRODUCTION_URL
         return RedirectResponse(f"{frontend_url}/auth/callback?token={access_token}")
         
     raise HTTPException(status_code=400, detail="Failed to process OAuth login")
