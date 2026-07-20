@@ -184,7 +184,7 @@ const AppLayout: React.FC = () => {
       ]
     },
     {
-      title: 'Output & Admin',
+      title: 'Output & Tools',
       items: [
         { path: '/reports', label: 'Reports', icon: FileText },
         { path: '/collaborate', label: 'Collaborate', icon: Users },

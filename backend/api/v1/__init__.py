@@ -3,7 +3,7 @@ API v1 Router
 """
 
 from fastapi import APIRouter
-from api.v1.endpoints import files, chat, analytics, reports, email_prefs, onboarding, exports, voice, auth
+from api.v1.endpoints import files, chat, analytics, reports, email_prefs, onboarding, exports, voice, auth, admin
 from api.v1.endpoints import data_health_api, explainability_api, playground_api
 from api.v1.endpoints import clustering_api, async_reports, anomalies, simulator, search, ws, lineage, collaboration, deploy, monitoring, pipelines
 
@@ -38,3 +38,5 @@ router.include_router(playground_api.router, tags=["AutoML - Playground"])
 # Clustering / Unsupervised Learning API
 router.include_router(clustering_api.router, prefix="/ml", tags=["Clustering"])
 
+# Admin Dashboard
+router.include_router(admin.router, prefix="/admin", tags=["Admin"])

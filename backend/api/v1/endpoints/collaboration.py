@@ -607,11 +607,9 @@ async def remove_member(
     
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
-        
-    workspace_id = "default"
     
+    # Delete from any workspace this user belongs to (scoped by current user's workspace)
     stmt = delete(WorkspaceMember).filter(
-        WorkspaceMember.workspace_id == workspace_id,
         WorkspaceMember.user_id == target_user.id
     )
     await db.execute(stmt)
