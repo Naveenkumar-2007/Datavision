@@ -71,17 +71,21 @@ async def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends
 # ══════════════════════════════════════════════════════
 
 @router.post("/login")
-async def admin_login(req: AdminLoginRequest):
-    """Authenticate with the platform admin password."""
+async def login_admin(req: AdminLoginRequest):
+    """Authenticate admin and issue a token."""
+    if not ADMIN_PASSWORD_HASH:
+        raise HTTPException(status_code=401, detail="Admin access not configured")
+        
     try:
-        is_valid = bcrypt.checkpw(
-            req.password.encode("utf-8"),
-            ADMIN_PASSWORD_HASH.encode("utf-8")
-        )
-    except Exception:
-        is_valid = False
-    
-    if not is_valid:
+        # Check if they accidentally put the plain text password in the env instead of the hash
+        if not ADMIN_PASSWORD_HASH.startswith("$2b$"):
+            if req.password != ADMIN_PASSWORD_HASH:
+                raise HTTPException(status_code=401, detail="Invalid admin password")
+        else:
+            if not bcrypt.checkpw(req.password.encode("utf-8"), ADMIN_PASSWORD_HASH.encode("utf-8")):
+                raise HTTPException(status_code=401, detail="Invalid admin password")
+    except Exception as e:
+        logger.error(f"Admin login error: {e}")
         raise HTTPException(status_code=401, detail="Invalid admin password")
     
     # Issue a super_admin JWT (expires in 4 hours)

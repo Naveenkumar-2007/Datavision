@@ -74,8 +74,9 @@ api.interceptors.response.use(
     }
     
     if (error.response?.status === 401) {
-      // Redirect to login if not already there
-      if (window.location.pathname !== '/login' && window.location.pathname !== '/signup' && window.location.pathname !== '/') {
+      // Redirect to login if not already there, but ignore admin pages
+      const path = window.location.pathname;
+      if (path !== '/login' && path !== '/signup' && path !== '/' && !path.startsWith('/admin')) {
         window.location.href = '/login';
       }
     }
