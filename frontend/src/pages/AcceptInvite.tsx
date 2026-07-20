@@ -4,7 +4,7 @@ import { useToast } from '../contexts/ToastContext';
 import { motion } from 'framer-motion';
 import { useUserStore } from '../store/userStore';
 import { Sun, Moon } from 'lucide-react';
-import api from '../services/api';
+import { api } from '../services/api';
 
 export default function AcceptInvite() {
     const navigate = useNavigate();

@@ -36,7 +36,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useUserStore } from '@/store/userStore';
 import LogoImage from '@/components/LogoImage';
 import { ContextualHelp } from '../ContextualHelp';
-import apiService from '@/services/api';
+import apiService, { api } from '@/services/api';
 
 const AppLayout: React.FC = () => {
   const location = useLocation();
@@ -63,7 +63,7 @@ const AppLayout: React.FC = () => {
     // Fetch user workspaces
     const fetchWorkspaces = async () => {
       try {
-        const res = await apiService.get('/api/v1/collaboration/workspaces');
+        const res = await api.get('/api/v1/collaboration/workspaces');
         setWorkspaces(res.data.workspaces);
         
         // Auto-select personal workspace if none selected
