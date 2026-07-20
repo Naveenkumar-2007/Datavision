@@ -203,8 +203,9 @@ app.include_router(voice.router, prefix="/api/v1/voice", tags=["Voice"])
 app.include_router(ws.router, prefix="/api/v1/ws", tags=["WebSockets"])
 app.include_router(live_streaming.router, prefix="/api/v1", tags=["Live Streaming"])
 
-from api.v1.endpoints import auth
+from api.v1.endpoints import auth, admin
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 
 # 📤 Exports API (PDF, PPTX, Email)
 from api.v1.endpoints import exports
