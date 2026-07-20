@@ -37,6 +37,8 @@ const HelpCenter = React.lazy(() => import('./pages/HelpCenter'));
 const DataStories = React.lazy(() => import('./pages/DataStories'));
 const PipelineBuilder = React.lazy(() => import('./pages/PipelineBuilder'));
 const EmbedWidget = React.lazy(() => import('./pages/EmbedWidget'));
+const AdminLogin = React.lazy(() => import('./pages/AdminLogin'));
+const AdminDashboard = React.lazy(() => import('./pages/AdminDashboard'));
 
 
 function App() {
@@ -105,6 +107,10 @@ function App() {
 
                 {/* Standalone Embedded Widget */}
                 <Route path="/embed/:widgetId" element={<EmbedWidget />} />
+
+                {/* Admin Console — separate from normal user auth */}
+                <Route path="/admin" element={<AdminLogin />} />
+                <Route path="/admin/dashboard" element={<AdminDashboard />} />
 
                 {/* Chat - Full screen without main navigation */}
                 <Route path="/chat" element={

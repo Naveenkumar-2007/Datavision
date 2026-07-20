@@ -809,7 +809,6 @@ const Settings: React.FC = () => {
         <div className="flex items-center space-x-4 mb-2">
           <Shield className="w-6 h-6 text-red-500" />
           <h2 className="text-2xl font-semibold text-white">Enterprise Security & AI Guardrails</h2>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 uppercase tracking-wider font-bold">Admin Only</span>
         </div>
         <p className="text-sm text-gray-400 mb-6">Manage data privacy and configure output guardrails for the autonomous Agentic AI.</p>
 
