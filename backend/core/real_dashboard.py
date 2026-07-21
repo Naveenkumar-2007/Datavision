@@ -2448,7 +2448,7 @@ def create_step_line_chart(df, rel, colors):
 
 # ================= MAIN DASHBOARD GENERATOR =================
 
-def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
+def generate_real_dashboard(df: pd.DataFrame, user_id: str, refresh: bool = False) -> Dict:
     """
     Generate a TRULY AUTONOMOUS dashboard using Multi-Agent Architecture.
     
@@ -2465,12 +2465,12 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
         return {"error": "No data available. Please upload files first."}
     
     try:
-        # 🚀 CACHE CHECK - Return cached dashboard if still fresh
+        # 🚀 CACHE CHECK - Return cached dashboard if still fresh (unless refreshing)
         cache_key = f"{user_id}_{len(df)}_{len(df.columns)}_{list(df.columns)[:5]}"
         cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
         
         current_time = time_module.time()
-        if cache_hash in _dashboard_cache:
+        if not refresh and cache_hash in _dashboard_cache:
             cached_data, cached_time = _dashboard_cache[cache_hash]
             if current_time - cached_time < _CACHE_TTL:
                 logger.info(f"⚡ CACHE HIT - Returning cached dashboard (age: {current_time - cached_time:.1f}s)")
@@ -2493,6 +2493,14 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str) -> Dict:
         # ============================================================
         domain_info = analyze_domain_and_sections(df)
         domain = domain_info.get("domain", "general")
+        
+        if refresh:
+            # Inject randomness into domain/theme when refreshing to give users variety
+            available_domains = list(COLOR_PALETTES.keys())
+            if domain in available_domains and len(available_domains) > 1:
+                available_domains.remove(domain)
+            domain = random.choice(available_domains)
+            
         ai_title = domain_info.get("dashboard_title", f"{domain.title()} Analytics Dashboard")
         ai_sections = domain_info.get("sections", ["Overview", "Distribution Analysis", "Correlation Studio", "Performance Metrics"])
         

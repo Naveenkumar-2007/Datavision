@@ -318,6 +318,7 @@ def chat(
     
     # 2. Execute the Chain
     last_error = None
+    had_auth_error = False
     import time as time_module
     
     for i, p in enumerate(providers):
@@ -372,6 +373,9 @@ def chat(
             is_bad_request = 'badrequest' in error_str.replace(' ', '') or 'invalid_request' in error_str
             is_connection = 'connection' in error_str or 'timeout' in error_str
             
+            if is_auth_error:
+                had_auth_error = True
+            
             reason = 'Rate Limit' if is_rate_limit else ('Org Restricted' if is_org_restricted else ('Bad Request' if is_bad_request else ('Auth Error' if is_auth_error else ('Connection Error' if is_connection else 'Unknown Error'))))
             
             if i < len(providers) - 1:
@@ -390,6 +394,11 @@ def chat(
         return (
             "🚨 **API Key Missing:** I couldn't process your request because no AI Provider API Keys were found! "
             "Please go to your HuggingFace Space Settings -> **Variables and secrets**, and add your `GROQ_API_KEY` or `NVIDIA_API_KEY`."
+        )
+    elif had_auth_error:
+        return (
+            "🚨 **Invalid API Key:** Your AI Provider API Key appears to be invalid, expired, or improperly configured. "
+            "Please check your HuggingFace Space Settings -> **Variables and secrets** and ensure your keys are correct."
         )
     elif 'context' in error_str or 'too large' in error_str or 'token' in error_str:
         return (

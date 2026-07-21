@@ -8,7 +8,7 @@ Migrated to PostgreSQL DB Models.
 
 from fastapi import APIRouter, Header, HTTPException, Depends, Request, Query
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict
 from datetime import datetime
 import hashlib
 import json
@@ -646,7 +646,7 @@ async def add_member(
             
         await send_insight_email(
             to_email=req.email,
-            title=f"You've been invited to DataVision",
+            title="You've been invited to DataVision",
             body=f"{inviter_name} invited you to collaborate on DataVision as a {req.role}.\n\nClick the link below to accept the invitation and set up your account:\n{invite_link}\n\nIf you already have an account, you can simply log in.",
         )
         email_sent = True
@@ -721,7 +721,6 @@ async def update_member_role(
 
 # ── WEBSOCKET REAL-TIME CHAT ──
 from fastapi import WebSocket, WebSocketDisconnect
-import json
 import asyncio
 
 class ConnectionManager:
@@ -943,7 +942,7 @@ async def get_reactions(message_id: str, db: AsyncSession = Depends(get_db)):
             grouped[r.emoji].append(name)
             
         return {"reactions": grouped}
-    except Exception as e:
+    except Exception:
         return {"reactions": {}}
 
 
@@ -1036,7 +1035,7 @@ async def pin_message(
         await db.commit()
         
         if msg.is_pinned:
-            await _log_activity_db(db, user_id, "System", "pin", f"Message pinned in channel")
+            await _log_activity_db(db, user_id, "System", "pin", "Message pinned in channel")
             
         return {"success": True, "pinned": msg.is_pinned}
     except Exception as e:
