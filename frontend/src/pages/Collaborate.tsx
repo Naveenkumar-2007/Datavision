@@ -98,7 +98,7 @@ const Collaborate: React.FC = () => {
     const fetchThreads = async () => {
       setLoading(true);
       try {
-        const res = await api.get(`/api/v1/collaboration/threads?channel_id=${activeChannel}`);
+        const res = await api.get(`/api/v1/collaboration/threads?channel_id=${encodeURIComponent(activeChannel)}`);
         setComments(res.data?.threads || []);
       } catch (err) {
         console.error("Failed to load threads", err);
@@ -110,7 +110,7 @@ const Collaborate: React.FC = () => {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const activeWorkspaceId = useUserStore.getState().activeWorkspaceId;
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/collaboration/ws/${activeChannel}?user_name=${displayName}&user_id=${user?.id || 'default'}&workspace_id=${activeWorkspaceId || 'default'}`;
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/collaboration/ws/${encodeURIComponent(activeChannel)}?user_name=${encodeURIComponent(displayName)}&user_id=${user?.id || 'default'}&workspace_id=${activeWorkspaceId || 'default'}`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

@@ -64,7 +64,8 @@ async def generate_dashboard(
         
         # Generate REAL dashboard with pandas calculations - NOT LLM math!
         from core.real_dashboard import generate_real_dashboard
-        dashboard = generate_real_dashboard(df, user_id)
+        is_refresh = request.refresh if request else False
+        dashboard = generate_real_dashboard(df, user_id, refresh=is_refresh)
         
         if "error" in dashboard:
             return DashboardResponse(
