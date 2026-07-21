@@ -41,10 +41,6 @@ async def list_keys(x_user_id: Optional[str] = Header(None, alias="X-User-ID")):
                 uid = _uuid.UUID(user_id)
             except ValueError:
                 return []
-                        try:
-                uid = _uuid.UUID(user_id)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid user ID format")
             result = await db.execute(select(DeveloperAPIKey).filter(DeveloperAPIKey.user_id == uid))
             keys = result.scalars().all()
         return [
@@ -257,12 +253,13 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
 
             url = webhook.url
 
-            # Check for latest local file
-            file_            try:
+            try:
                 uid = _uuid.UUID(user_id)
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid user ID format")
-            result = await db.execute(
+                
+            # Check for latest local file
+            file_result = await db.execute(
                 select(UserFile).filter(UserFile.user_id == uid).order_by(UserFile.uploaded_at.desc())
             )
             latest_file = file_result.scalars().first()
@@ -855,7 +852,7 @@ async def get_webhook_deliveries(webhook_id: str, x_user_id: Optional[str] = Hea
         from sqlalchemy import select
         
         async with AsyncSessionLocal() as db:
-                        try:
+            try:
                 uid = _uuid.UUID(user_id)
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid user ID format")
