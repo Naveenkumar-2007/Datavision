@@ -225,7 +225,11 @@ async def login_via_oauth(provider: str, request: Request):
         return RedirectResponse(f"{frontend_url}/login?error={provider}_not_configured")
     
     try:
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+        space_host = os.environ.get("SPACE_HOST")
+        if space_host:
+            frontend_url = f"https://{space_host}"
+        else:
+            frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
         
         redirect_uri_str = f"{frontend_url}/api/v1/auth/oauth/{provider}/callback"
         logger.info(f"OAuth {provider} redirect_uri: {redirect_uri_str}")
@@ -283,7 +287,11 @@ async def auth_via_oauth_callback(provider: str, request: Request, db: AsyncSess
     
     if result.get("success"):
         access_token = result["session"]["access_token"]
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+        space_host = os.environ.get("SPACE_HOST")
+        if space_host:
+            frontend_url = f"https://{space_host}"
+        else:
+            frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
         return RedirectResponse(f"{frontend_url}/auth/callback?token={access_token}")
         
     raise HTTPException(status_code=400, detail="Failed to process OAuth login")
