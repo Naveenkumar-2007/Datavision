@@ -34,9 +34,18 @@ async def list_keys(x_user_id: Optional[str] = Header(None, alias="X-User-ID")):
         from database.db import AsyncSessionLocal
         from database.orm import DeveloperAPIKey
         from sqlalchemy import select
+        import uuid as _uuid
         
         async with AsyncSessionLocal() as db:
-            result = await db.execute(select(DeveloperAPIKey).filter(DeveloperAPIKey.user_id == user_id))
+            try:
+                uid = _uuid.UUID(user_id)
+            except ValueError:
+                return []
+                        try:
+                uid = _uuid.UUID(user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+            result = await db.execute(select(DeveloperAPIKey).filter(DeveloperAPIKey.user_id == uid))
             keys = result.scalars().all()
         return [
             APIKeyResponse(
@@ -63,10 +72,15 @@ async def generate_key(x_user_id: Optional[str] = Header(None, alias="X-User-ID"
     try:
         from database.db import AsyncSessionLocal
         from database.orm import DeveloperAPIKey
+        import uuid as _uuid
         
         async with AsyncSessionLocal() as db:
+            try:
+                uid = _uuid.UUID(user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
             new_db_key = DeveloperAPIKey(
-                user_id=user_id,
+                user_id=uid,
                 api_key=new_key,
                 name="New API Key"
             )
@@ -131,12 +145,17 @@ async def list_webhooks(x_user_id: Optional[str] = Header(None, alias="X-User-ID
     user_id = x_user_id or "default"
     try:
         from database.db import AsyncSessionLocal
-        from database.orm import Webhook
+        from database.orm import WebhookEndpoint
         from sqlalchemy import select
+        import uuid as _uuid
 
         async with AsyncSessionLocal() as db:
+            try:
+                uid = _uuid.UUID(user_id)
+            except ValueError:
+                return []
             result = await db.execute(
-                select(Webhook).filter(Webhook.user_id == user_id, Webhook.status != 'deleted')
+                select(WebhookEndpoint).filter(WebhookEndpoint.user_id == uid, WebhookEndpoint.status != 'deleted')
             )
             webhooks = result.scalars().all()
 
@@ -157,12 +176,17 @@ async def create_webhook(payload: WebhookRequest, x_user_id: Optional[str] = Hea
     user_id = x_user_id or "default"
     try:
         from database.db import AsyncSessionLocal
-        from database.orm import Webhook
+        from database.orm import WebhookEndpoint
         import secrets as _secrets
+        import uuid as _uuid
 
         async with AsyncSessionLocal() as db:
-            new_webhook = Webhook(
-                user_id=user_id,
+            try:
+                uid = _uuid.UUID(user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+            new_webhook = WebhookEndpoint(
+                user_id=uid,
                 url=payload.url,
                 status="active",
                 events=["autopilot.completed"],
@@ -187,13 +211,17 @@ async def delete_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None
     user_id = x_user_id or "default"
     try:
         from database.db import AsyncSessionLocal
-        from database.orm import Webhook
+        from database.orm import WebhookEndpoint
         from sqlalchemy import select
         import uuid as _uuid
 
         async with AsyncSessionLocal() as db:
+            try:
+                uid = _uuid.UUID(user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
             result = await db.execute(
-                select(Webhook).filter(Webhook.id == _uuid.UUID(webhook_id), Webhook.user_id == user_id)
+                select(WebhookEndpoint).filter(WebhookEndpoint.id == _uuid.UUID(webhook_id), WebhookEndpoint.user_id == uid)
             )
             webhook = result.scalars().first()
             if not webhook:
@@ -214,14 +242,14 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
     # Load webhook from DB
     try:
         from database.db import AsyncSessionLocal
-        from database.orm import Webhook, UserFile, AIInsight, DataConnection
+        from database.orm import WebhookEndpoint, UserFile, AIInsight, DataConnection
         from sqlalchemy import select
         import uuid as _uuid
         import httpx
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(
-                select(Webhook).filter(Webhook.id == _uuid.UUID(webhook_id), Webhook.user_id == user_id)
+                select(WebhookEndpoint).filter(WebhookEndpoint.id == _uuid.UUID(webhook_id), WebhookEndpoint.user_id == uid)
             )
             webhook = result.scalars().first()
             if not webhook:
@@ -230,14 +258,18 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
             url = webhook.url
 
             # Check for latest local file
-            file_result = await db.execute(
-                select(UserFile).filter(UserFile.user_id == user_id).order_by(UserFile.uploaded_at.desc())
+            file_            try:
+                uid = _uuid.UUID(user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
+            result = await db.execute(
+                select(UserFile).filter(UserFile.user_id == uid).order_by(UserFile.uploaded_at.desc())
             )
             latest_file = file_result.scalars().first()
 
             # Check for latest data connection (Snowflake, Kafka, etc)
             conn_result = await db.execute(
-                select(DataConnection).filter(DataConnection.user_id == user_id).order_by(DataConnection.created_at.desc())
+                select(DataConnection).filter(DataConnection.user_id == uid).order_by(DataConnection.created_at.desc())
             )
             latest_conn = conn_result.scalars().first()
 
@@ -256,7 +288,7 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
             # Try to find a recent insight
             try:
                 insight_result = await db.execute(
-                    select(AIInsight).filter(AIInsight.user_id == user_id).order_by(AIInsight.created_at.desc())
+                    select(AIInsight).filter(AIInsight.user_id == uid).order_by(AIInsight.created_at.desc())
                 )
                 latest_insight = insight_result.scalars().first()
                 insight_content = latest_insight.content if latest_insight else "Your latest DataVision analysis completed successfully!"
@@ -531,12 +563,12 @@ async def get_embed_data(token: Optional[str] = None):
             
             # Fetch real data for the user
             file_result = await db.execute(
-                select(UserFile).filter(UserFile.user_id == user_id).order_by(UserFile.uploaded_at.desc())
+                select(UserFile).filter(UserFile.user_id == uid).order_by(UserFile.uploaded_at.desc())
             )
             latest_file = file_result.scalars().first()
             
             conn_result = await db.execute(
-                select(DataConnection).filter(DataConnection.user_id == user_id).order_by(DataConnection.created_at.desc())
+                select(DataConnection).filter(DataConnection.user_id == uid).order_by(DataConnection.created_at.desc())
             )
             latest_conn = conn_result.scalars().first()
             
@@ -553,12 +585,12 @@ async def get_embed_data(token: Optional[str] = None):
                 dataset_name = latest_file.file_name
                 
             # Aggregate stats
-            files_count = (await db.execute(select(func.count()).select_from(UserFile).filter(UserFile.user_id == user_id))).scalar() or 0
-            conns_count = (await db.execute(select(func.count()).select_from(DataConnection).filter(DataConnection.user_id == user_id))).scalar() or 0
-            models_count = (await db.execute(select(func.count()).select_from(MLDeployment).filter(MLDeployment.user_id == user_id))).scalar() or 0
-            insights_count = (await db.execute(select(func.count()).select_from(AIInsight).filter(AIInsight.user_id == user_id))).scalar() or 0
+            files_count = (await db.execute(select(func.count()).select_from(UserFile).filter(UserFile.user_id == uid))).scalar() or 0
+            conns_count = (await db.execute(select(func.count()).select_from(DataConnection).filter(DataConnection.user_id == uid))).scalar() or 0
+            models_count = (await db.execute(select(func.count()).select_from(MLDeployment).filter(MLDeployment.user_id == uid))).scalar() or 0
+            insights_count = (await db.execute(select(func.count()).select_from(AIInsight).filter(AIInsight.user_id == uid))).scalar() or 0
             
-            total_rows = (await db.execute(select(func.sum(UserFile.row_count)).filter(UserFile.user_id == user_id))).scalar() or 0
+            total_rows = (await db.execute(select(func.sum(UserFile.row_count)).filter(UserFile.user_id == uid))).scalar() or 0
             
             return {
                 "success": True,
@@ -601,7 +633,7 @@ async def get_usage_analytics(x_user_id: Optional[str] = Header(None, alias="X-U
     async with AsyncSessionLocal() as db:
         # Get real total_calls from DB keys
         result_total = await db.execute(
-            select(func.sum(DeveloperAPIKey.total_calls)).filter(DeveloperAPIKey.user_id == user_id)
+            select(func.sum(DeveloperAPIKey.total_calls)).filter(DeveloperAPIKey.user_id == uid)
         )
         real_total = result_total.scalar() or 0
 
@@ -718,7 +750,7 @@ async def get_key_usage(key_id: str, x_user_id: Optional[str] = Header(None, ali
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(DeveloperAPIKey).filter(
                 DeveloperAPIKey.id == uuid.UUID(key_id),
-                DeveloperAPIKey.user_id == user_id
+                DeveloperAPIKey.user_id == uid
             ))
             key = result.scalars().first()
             if not key:
@@ -756,7 +788,7 @@ async def update_key_scopes(key_id: str, request: KeyScopesRequest, x_user_id: O
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(DeveloperAPIKey).filter(
                 DeveloperAPIKey.id == uuid.UUID(key_id),
-                DeveloperAPIKey.user_id == user_id
+                DeveloperAPIKey.user_id == uid
             ))
             key = result.scalars().first()
             if not key:
@@ -796,7 +828,7 @@ async def update_webhook_events(webhook_id: str, request: WebhookEventsRequest, 
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(WebhookEndpoint).filter(
                 WebhookEndpoint.id == uuid.UUID(webhook_id),
-                WebhookEndpoint.user_id == user_id
+                WebhookEndpoint.user_id == uid
             ))
             webhook = result.scalars().first()
             if not webhook:
@@ -823,9 +855,13 @@ async def get_webhook_deliveries(webhook_id: str, x_user_id: Optional[str] = Hea
         from sqlalchemy import select
         
         async with AsyncSessionLocal() as db:
+                        try:
+                uid = _uuid.UUID(user_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid user ID format")
             result = await db.execute(select(WebhookEndpoint).filter(
                 WebhookEndpoint.id == uuid.UUID(webhook_id),
-                WebhookEndpoint.user_id == user_id
+                WebhookEndpoint.user_id == uid
             ))
             webhook = result.scalars().first()
             if not webhook:

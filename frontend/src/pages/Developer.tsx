@@ -832,7 +832,6 @@ const Developer: React.FC = () => {
                  >
                    <option value="full-dashboard">Full Dashboard</option>
                    <option value="ml-predictions">ML Predictions Chart</option>
-                   <option value="anomaly-monitor">Live Anomaly Monitor</option>
                    <option value="data-hub">Data Hub Browser</option>
                  </select>
                </div>
