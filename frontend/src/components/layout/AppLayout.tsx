@@ -35,7 +35,6 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserStore } from '@/store/userStore';
 import LogoImage from '@/components/LogoImage';
-import { ContextualHelp } from '../ContextualHelp';
 import apiService, { api } from '@/services/api';
 
 const AppLayout: React.FC = () => {
@@ -691,7 +690,6 @@ const AppLayout: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
-      <ContextualHelp />
     </div>
   );
 };

@@ -534,7 +534,7 @@ async def get_members(
 ):
     """List team members."""
     # We fetch members from WorkspaceMember and their UserProfile
-    stmt = select(WorkspaceMember).options(selectinload(WorkspaceMember.user))
+    stmt = select(WorkspaceMember).filter(WorkspaceMember.workspace_id == user_id).options(selectinload(WorkspaceMember.user))
     result = await db.execute(stmt)
     members_db = result.scalars().all()
     
@@ -680,6 +680,7 @@ async def remove_member(
     
     # Delete from any workspace this user belongs to (scoped by current user's workspace)
     stmt = delete(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == user_id,
         WorkspaceMember.user_id == target_user.id
     )
     await db.execute(stmt)
@@ -702,7 +703,10 @@ async def update_member_role(
     if not target_user:
         raise HTTPException(status_code=404, detail="User not found")
         
-    member_stmt = select(WorkspaceMember).filter(WorkspaceMember.user_id == target_user.id)
+    member_stmt = select(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == user_id,
+        WorkspaceMember.user_id == target_user.id
+    )
     member_res = await db.execute(member_stmt)
     member = member_res.scalars().first()
     
@@ -770,8 +774,11 @@ async def websocket_endpoint(
                 # Save the user's message to the DB
                 if "message" in payload and payload.get("user") != "DataVision Agent":
                     async with AsyncSessionLocal() as db:
+                        effective_workspace = workspace_id if workspace_id != "default" else user_id
+                        real_channel_id = await _resolve_channel_id(room_id, db, effective_workspace)
+                        
                         new_msg = ChannelMessage(
-                            channel_id=room_id,
+                            channel_id=real_channel_id,
                             user_id=user_id if user_id != "default" else None,
                             content=payload["message"],
                             is_ai=False
@@ -799,8 +806,9 @@ async def websocket_endpoint(
                         
                         # Save AI response to DB
                         async with AsyncSessionLocal() as db:
+                            real_channel_id = await _resolve_channel_id(room_id, db, effective_id)
                             ai_msg = ChannelMessage(
-                                channel_id=room_id,
+                                channel_id=real_channel_id,
                                 user_id=None,
                                 content=ai_response.get("message", ""),
                                 is_ai=True
