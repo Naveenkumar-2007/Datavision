@@ -10,6 +10,8 @@ Includes:
 SECURED: Uses JWT authentication for user isolation
 """
 
+import os
+import json
 import logging
 from typing import Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header, Depends, Query
