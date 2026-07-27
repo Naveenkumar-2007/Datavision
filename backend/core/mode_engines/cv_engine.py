@@ -2,7 +2,10 @@ import logging
 from typing import Dict, Any, List, Optional
 import base64
 import numpy as np
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 import os
 from pathlib import Path
 
