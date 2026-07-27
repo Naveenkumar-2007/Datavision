@@ -28,14 +28,17 @@ jobs:
       - name: Lint with Ruff
         run: |
           ruff check backend/ --select=E9,F63,F7,F82
-          ruff check backend/ --exit-zero
           
-  frontend-build:
-    name: Frontend Build Check
+  frontend-build-and-deploy:
+    name: Build & Deploy to HuggingFace
+    needs: backend-lint
     runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
     
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -50,9 +53,23 @@ jobs:
         working-directory: ./frontend
         run: npm run build
         
-      - name: Upload dist artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist/
-          retention-days: 1
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+          HF_SPACE: ${{ secrets.HF_SPACE }}
+        run: |
+          TOKEN="${HF_TOKEN:-$HUGGINGFACE_TOKEN}"
+          SPACE_NAME="${HF_SPACE:-datavision-ai/Datavision}"
+          
+          if [ -n "$TOKEN" ]; then
+            echo "🚀 Syncing to Hugging Face Space: $SPACE_NAME"
+            git config --global user.email "ci@datavision.ai"
+            git config --global user.name "DataVision CI/CD Bot"
+            git remote remove hf 2>/dev/null || true
+            git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
+            git push -f hf HEAD:main
+            echo "✅ Successfully pushed to Hugging Face Space: $SPACE_NAME"
+          else
+            echo "⚠️ Secret HF_TOKEN not set. Set HF_TOKEN in GitHub Settings -> Secrets -> Actions to auto-deploy."
+          fi
