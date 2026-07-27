@@ -298,7 +298,7 @@ app.include_router(cv_router.router, prefix="/api/v1/cv", tags=["Computer Vision
 from fastapi.responses import FileResponse
 
 # Frontend static directory (pre-built React app)
-frontend_static_dir = "/app/static"
+frontend_static_dir = "/app/static" if os.path.exists("/app/static") else os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
 
 @app.get("/api/config")
 async def get_frontend_config():
