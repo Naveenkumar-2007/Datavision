@@ -31,7 +31,7 @@ async def send_insight_email(
     if not RESEND_API_KEY:
         error_msg = "Email service not configured. Please add RESEND_API_KEY to your .env file to enable email functionality."
         logger.warning(error_msg)
-        raise Exception(error_msg)
+        return False
     
     # Log configuration for debugging
     logger.info(f"📧 Sending email from {FROM_EMAIL} to {to_email}")
@@ -62,19 +62,22 @@ async def send_insight_email(
             if response.status_code != 200:
                 error_detail = response.text
                 logger.error(f"📧 Resend API error: {error_detail}")
-                raise Exception(f"Resend API error ({response.status_code}): {error_detail}")
-            
-            result = response.json()
-            logger.info(f"✅ Email sent successfully! ID: {result.get('id', 'unknown')}")
-            return result
-            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"✅ Email sent successfully! ID: {result.get('id', 'unknown')}")
+                return result
+            else:
+                error_msg = f"Failed to send email. Status code: {response.status_code}. Response: {response.text}"
+                logger.error(error_msg)
+                return False
+                
     except httpx.TimeoutException:
         error_msg = "Email request timed out"
         logger.error(error_msg)
-        raise Exception(error_msg)
+        return False
     except Exception as e:
-        logger.error(f"❌ Failed to send email: {str(e)}")
-        raise
+        logger.error(f"Error sending email via Resend API: {e}")
+        return False
 
 
 def render_insight_email_template(

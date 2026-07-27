@@ -89,3 +89,12 @@ faiss/
 
 # Qdrant data
 qdrant_data/
+
+# Computer Vision model weights & dataset caches
+temp_hf_space/
+backend/cv_datasets/
+backend/cv_models/
+backend/sample_cv_test_datasets/
+backend/runs/
+backend/*.pt
+*.pt

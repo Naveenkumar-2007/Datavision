@@ -602,15 +602,27 @@ const Autopilot: React.FC = () => {
                             </motion.div>
                         )}
 
-                        {/* Restart Button */}
+                        {/* Restart & Export Buttons */}
                         {isComplete && (
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-center pt-4">
-                                <button
-                                    onClick={() => { setIsComplete(false); setFile(null); setSteps([]); setInsights([]); setFinalSummary(''); }}
-                                    className="flex items-center gap-2 px-6 py-3 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 font-semibold transition-colors"
-                                >
-                                    <RefreshCw className="w-4 h-4" /> Analyze Another Dataset
-                                </button>
+                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center pt-8 gap-4">
+                                <div className="text-sm text-gray-400 max-w-lg text-center mb-2 bg-white/5 p-4 rounded-xl border border-white/10">
+                                    <strong className="text-white block mb-1">Agentic Execution Complete.</strong>
+                                    Autopilot is the live engine that generates this intelligence. To view, share, or download this as a static PDF, export it to your Reports Hub.
+                                </div>
+                                <div className="flex gap-4">
+                                    <button
+                                        onClick={() => window.location.href = '/reports'}
+                                        className="flex items-center gap-2 px-8 py-4 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold transition-all transform hover:scale-105 shadow-[0_0_20px_rgba(99,102,241,0.4)]"
+                                    >
+                                        <FileText className="w-5 h-5" /> Export to Reports Hub
+                                    </button>
+                                    <button
+                                        onClick={() => { setIsComplete(false); setFile(null); setSteps([]); setInsights([]); setFinalSummary(''); }}
+                                        className="flex items-center gap-2 px-6 py-4 rounded-xl border border-purple-500/30 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 font-semibold transition-colors"
+                                    >
+                                        <RefreshCw className="w-5 h-5" /> Analyze Another
+                                    </button>
+                                </div>
                             </motion.div>
                         )}
 

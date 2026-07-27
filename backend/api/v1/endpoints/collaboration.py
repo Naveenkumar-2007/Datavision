@@ -72,11 +72,10 @@ async def get_user_workspaces(
     db: AsyncSession = Depends(get_db)
 ):
     """Get all workspaces the current user is a member of."""
+    # 1. Get their personal workspace
     workspaces = []
-    
-    # 1. Check if user exists to get name for their personal workspace
-    user_stmt = select(UserProfile).filter(UserProfile.id == user_id)
-    user_res = await db.execute(user_stmt)
+    stmt = select(UserProfile).where(UserProfile.id == user_id)
+    user_res = await db.execute(stmt)
     user = user_res.scalars().first()
     
     personal_name = "Personal Workspace"
@@ -92,8 +91,9 @@ async def get_user_workspaces(
     })
     
     # 2. Get other workspaces they are a member of
+    from sqlalchemy import cast, String
     stmt = select(WorkspaceMember, UserProfile).join(
-        UserProfile, WorkspaceMember.workspace_id == UserProfile.id
+        UserProfile, WorkspaceMember.workspace_id == cast(UserProfile.id, String)
     ).where(WorkspaceMember.user_id == user_id)
     
     res = await db.execute(stmt)
@@ -108,7 +108,6 @@ async def get_user_workspaces(
         })
         
     return {"workspaces": workspaces}
-
 
 
 # ── DB Helpers ──
@@ -788,45 +787,52 @@ async def websocket_endpoint(
                         # Inject message ID so frontend can thread replies
                         payload["id"] = str(new_msg.id)
                         data = json.dumps(payload)
+            except Exception as e:
+                logger.error(f"Error saving message: {e}")
                 
+            # Broadcast user message immediately
+            await manager.broadcast(data, actual_room_id)
+            
+            try:
+                payload = json.loads(data)
+                msg_text = payload.get("message", "").lower()
                 is_question = msg_text.strip().endswith("?")
                 is_mention = "@ai" in msg_text
                 
-                if is_mention or is_question:
+                if (is_mention or is_question) and payload.get("user") != "DataVision Agent":
                     question = msg_text.replace("@ai", "").strip()
                     if not question:
                         question = "give me a summary"
+                        
+                    async def _handle_ai(q_text, eff_id, r_id, a_r_id):
+                        try:
+                            ai_response = await collab_swarm.process_message(eff_id, q_text)
+                            if ai_response:
+                                ai_payload = json.dumps(ai_response)
+                                async with AsyncSessionLocal() as session:
+                                    real_ch_id = await _resolve_channel_id(r_id, session, eff_id)
+                                    ai_msg = ChannelMessage(
+                                        channel_id=real_ch_id,
+                                        user_id=None,
+                                        content=ai_response.get("message", ""),
+                                        is_ai=True
+                                    )
+                                    session.add(ai_msg)
+                                    await session.commit()
+                                    await session.refresh(ai_msg)
+                                    ai_dict = json.loads(ai_payload)
+                                    ai_dict["id"] = str(ai_msg.id)
+                                    ai_payload = json.dumps(ai_dict)
+                                await asyncio.sleep(0.5)
+                                await manager.broadcast(ai_payload, a_r_id)
+                        except Exception as e:
+                            logger.error(f"AI response error: {e}")
                     
-                    # Generate AI response using workspace data context
                     effective_id = workspace_id if workspace_id != "default" else user_id
-                    ai_response = await collab_swarm.process_message(effective_id, question)
-                    if ai_response:
-                        ai_payload = json.dumps(ai_response)
-                        
-                        # Save AI response to DB
-                        async with AsyncSessionLocal() as db:
-                            real_channel_id = await _resolve_channel_id(room_id, db, effective_id)
-                            ai_msg = ChannelMessage(
-                                channel_id=real_channel_id,
-                                user_id=None,
-                                content=ai_response.get("message", ""),
-                                is_ai=True
-                            )
-                            db.add(ai_msg)
-                            await db.commit()
-                            await db.refresh(ai_msg)
-                            # Update payload with ID
-                            ai_dict = json.loads(ai_payload)
-                            ai_dict["id"] = str(ai_msg.id)
-                            ai_payload = json.dumps(ai_dict)
-                            
-                        await asyncio.sleep(1.0)
-                        await manager.broadcast(ai_payload, actual_room_id)
-                        
+                    asyncio.create_task(_handle_ai(question, effective_id, room_id, actual_room_id))
+                    
             except json.JSONDecodeError:
                 pass
-            
-            await manager.broadcast(data, actual_room_id)
             
     except WebSocketDisconnect:
         manager.disconnect(websocket, actual_room_id)

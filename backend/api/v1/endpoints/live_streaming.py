@@ -115,6 +115,9 @@ async def get_connections(
     db: AsyncSession = Depends(get_db)
 ):
     """Fetch all active live connections for the user."""
+    if str(user.id).startswith('guest_'):
+        return {"connections": []}
+        
     from sqlalchemy import select
     result = await db.execute(select(DataConnection).where(DataConnection.user_id == user.id).order_by(DataConnection.created_at.desc()))
     connections = result.scalars().all()

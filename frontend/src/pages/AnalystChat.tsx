@@ -1281,6 +1281,37 @@ const AnalystChat: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [mode, setMode] = useState<string>('analyst');
   const [llm, setLlm] = useState<string>('llama');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Advanced Progressive Loading States
+  const [loadingMessage, setLoadingMessage] = useState("Initializing DataVision intelligence...");
+  const loadingMessages = [
+    "Initializing DataVision intelligence...",
+    "Scanning dataset structure...",
+    "Identifying patterns and correlations...",
+    "Applying predictive models...",
+    "Synthesizing insights...",
+    "Finalizing response...",
+    "Almost there..."
+  ];
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isLoading) {
+      let currentIndex = 0;
+      setLoadingMessage(loadingMessages[0]);
+      interval = setInterval(() => {
+        currentIndex = (currentIndex + 1) % loadingMessages.length;
+        // Stop at the last message to avoid looping back to "Initializing..." after a long time
+        if (currentIndex === loadingMessages.length - 1) {
+          clearInterval(interval);
+        }
+        setLoadingMessage(loadingMessages[currentIndex]);
+      }, 2500);
+    }
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
   const [isRecording, setIsRecording] = useState(false);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
@@ -1853,6 +1884,7 @@ const AnalystChat: React.FC = () => {
         await apiService.streamMessage(
           messageText,
           model,
+          'rag',
           // onChunk - update message word by word
           (chunk: string) => {
             fullContent += chunk;

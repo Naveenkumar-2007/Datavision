@@ -5,7 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { 
   Users, MessageSquare, Send, Share2, Plus, CheckCircle2,
   Hash, X, Copy, Mail, Activity, Smile, Reply, Pin, Search,
-  UserPlus, Trash2, ChevronDown, Lock, Unlock, MoreHorizontal
+  UserPlus, Trash2, ChevronDown, Lock, Unlock, MoreHorizontal,
+  Bold, Italic, Code, Type, BookmarkPlus
 } from 'lucide-react';
 import { api } from '@/services/api';
 import { ChatCrypto } from '@/utils/crypto';
@@ -59,6 +60,14 @@ const Collaborate: React.FC = () => {
   const [replyingTo, setReplyingTo] = useState<any>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
   const [rightPanel, setRightPanel] = useState<'members' | 'activity'>('members');
+
+  // Phase 4: New features
+  const [pinnedMessages, setPinnedMessages] = useState<any[]>([]);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [showPinnedPanel, setShowPinnedPanel] = useState(false);
+  const [messageSearch, setMessageSearch] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -253,6 +262,51 @@ const Collaborate: React.FC = () => {
     }
   };
 
+  // Phase 4: Pin message handler
+  const handlePinMessage = async (msg: any) => {
+    const isPinned = pinnedMessages.some(p => p.id === msg.id);
+    if (isPinned) {
+      setPinnedMessages(prev => prev.filter(p => p.id !== msg.id));
+      toast.success('Message unpinned');
+    } else {
+      setPinnedMessages(prev => [...prev, msg]);
+      toast.success('Message pinned!');
+    }
+    try {
+      await api.post(`/api/v1/collaboration/threads/${msg.id}/pin`, { pinned: !isPinned });
+    } catch (e) { /* Already updated optimistically */ }
+  };
+
+  // Phase 4: Typing indicator
+  const broadcastTyping = () => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'typing', user: displayName }));
+    }
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'stop_typing', user: displayName }));
+      }
+    }, 2000);
+  };
+
+  // Phase 4: Simple rich text formatting
+  const applyFormat = (format: 'bold' | 'italic' | 'code') => {
+    const markers = { bold: '**', italic: '_', code: '`' };
+    const m = markers[format];
+    setNewComment(prev => `${prev}${m}${m}`);
+    inputRef.current?.focus();
+  };
+
+  // Filter messages by search
+  const filteredComments = messageSearch
+    ? comments.filter(msg => {
+        const text = typeof msg.message === 'string' ? msg.message : '';
+        return text.toLowerCase().includes(messageSearch.toLowerCase()) ||
+               (msg.user || '').toLowerCase().includes(messageSearch.toLowerCase());
+      })
+    : comments;
+
   const activeChannelName = channels.find(c => c.id === activeChannel)?.name || 'general';
 
   // ─── RENDER ───
@@ -315,6 +369,23 @@ const Collaborate: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setShowSearch(!showSearch)}
+              className={`p-2 rounded-lg transition-colors ${showSearch ? (isDark ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50 text-indigo-700') : isDark ? 'bg-white/5 text-gray-400 hover:bg-white/10' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+              title="Search messages"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setShowPinnedPanel(!showPinnedPanel)}
+              className={`p-2 rounded-lg transition-colors relative ${showPinnedPanel ? (isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-50 text-amber-700') : isDark ? 'bg-white/5 text-gray-400 hover:bg-white/10' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+              title="Pinned messages"
+            >
+              <Pin className="w-4 h-4" />
+              {pinnedMessages.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center">{pinnedMessages.length}</span>
+              )}
+            </button>
+            <button
               onClick={() => setIsSecureMode(!isSecureMode)}
               className={`p-2 rounded-lg transition-colors ${isSecureMode ? 'bg-green-500/20 text-green-400' : isDark ? 'bg-white/5 text-gray-400 hover:bg-white/10' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
               title={isSecureMode ? 'E2E Encryption ON' : 'E2E Encryption OFF'}
@@ -330,20 +401,73 @@ const Collaborate: React.FC = () => {
           </div>
         </div>
 
+        {/* Search Bar */}
+        <AnimatePresence>
+          {showSearch && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              className={`px-6 py-2 border-b ${border} ${bgCard}`}
+            >
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg ${isDark ? 'bg-[#1a1a1a]' : 'bg-gray-100'}`}>
+                <Search className={`w-4 h-4 ${textMuted}`} />
+                <input
+                  type="text"
+                  value={messageSearch}
+                  onChange={e => setMessageSearch(e.target.value)}
+                  placeholder="Search messages..."
+                  className={`flex-1 bg-transparent border-none outline-none text-sm ${textPrimary}`}
+                  autoFocus
+                />
+                {messageSearch && (
+                  <button onClick={() => setMessageSearch('')} className={`p-1 rounded ${bgHover}`}>
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              {messageSearch && (
+                <p className={`text-[10px] mt-1 ${textMuted}`}>{filteredComments.length} result{filteredComments.length !== 1 ? 's' : ''}</p>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Pinned Messages Banner */}
+        <AnimatePresence>
+          {showPinnedPanel && pinnedMessages.length > 0 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              className={`px-6 py-3 border-b ${border} ${isDark ? 'bg-amber-500/5' : 'bg-amber-50'}`}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Pin className="w-3.5 h-3.5 text-amber-500" />
+                <span className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>Pinned Messages</span>
+              </div>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {pinnedMessages.map(pm => (
+                  <div key={pm.id} className={`text-xs p-2 rounded-lg ${isDark ? 'bg-white/5' : 'bg-white'} flex items-start gap-2`}>
+                    <span className={`font-bold ${textPrimary}`}>{pm.user}:</span>
+                    <span className={textSecondary}>{typeof pm.message === 'string' ? pm.message.slice(0, 100) : '...'}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-1">
           {loading ? (
             <div className={`flex items-center justify-center h-full ${textMuted}`}>
               <Activity className="w-5 h-5 animate-spin mr-2" /> Loading messages...
             </div>
-          ) : comments.length === 0 ? (
+          ) : filteredComments.length === 0 ? (
             <div className={`flex flex-col items-center justify-center h-full ${textMuted}`}>
               <MessageSquare className="w-12 h-12 mb-3 opacity-30" />
-              <p className="font-medium">No messages yet</p>
+              <p className="font-medium">{messageSearch ? 'No matching messages' : 'No messages yet'}</p>
               <p className="text-xs mt-1">Start the conversation or type <span className="text-indigo-400 font-mono">@ai</span> for data insights</p>
             </div>
           ) : (
-            comments.map((msg) => {
+            filteredComments.map((msg) => {
               const senderMember = members.find(m => m.name === msg.user || m.email === msg.user);
               const role = senderMember?.role || 'Viewer';
               
@@ -417,11 +541,14 @@ const Collaborate: React.FC = () => {
 
                 {/* Action buttons (on hover) */}
                 <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
-                  <button onClick={() => setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)} className={`p-1.5 rounded-lg ${bgHover} ${textMuted}`}>
+                  <button onClick={() => setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)} className={`p-1.5 rounded-lg ${bgHover} ${textMuted}`} title="React">
                     <Smile className="w-3.5 h-3.5" />
                   </button>
-                  <button onClick={() => { setReplyingTo(msg); inputRef.current?.focus(); }} className={`p-1.5 rounded-lg ${bgHover} ${textMuted}`}>
+                  <button onClick={() => { setReplyingTo(msg); inputRef.current?.focus(); }} className={`p-1.5 rounded-lg ${bgHover} ${textMuted}`} title="Reply">
                     <Reply className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => handlePinMessage(msg)} className={`p-1.5 rounded-lg ${bgHover} ${pinnedMessages.some(p => p.id === msg.id) ? 'text-amber-400' : textMuted}`} title={pinnedMessages.some(p => p.id === msg.id) ? 'Unpin' : 'Pin'}>
+                    <Pin className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
@@ -455,14 +582,38 @@ const Collaborate: React.FC = () => {
           )}
         </AnimatePresence>
 
+        {/* Typing Indicator */}
+        <AnimatePresence>
+          {typingUsers.length > 0 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              className={`px-6 py-1.5 text-xs ${textMuted} flex items-center gap-1.5`}
+            >
+              <div className="flex gap-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span>{typingUsers.join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Message Input */}
         <div className={`px-6 py-3 border-t ${border} ${bgCard}`}>
           <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-300'}`}>
+            {/* Rich text formatting buttons */}
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button onClick={() => applyFormat('bold')} className={`p-1 rounded ${bgHover} ${textMuted}`} title="Bold"><Bold className="w-3.5 h-3.5" /></button>
+              <button onClick={() => applyFormat('italic')} className={`p-1 rounded ${bgHover} ${textMuted}`} title="Italic"><Italic className="w-3.5 h-3.5" /></button>
+              <button onClick={() => applyFormat('code')} className={`p-1 rounded ${bgHover} ${textMuted}`} title="Code"><Code className="w-3.5 h-3.5" /></button>
+              <div className={`w-px h-4 mx-1 ${isDark ? 'bg-gray-700' : 'bg-gray-200'}`} />
+            </div>
             <input
               ref={inputRef}
               type="text"
               value={newComment}
-              onChange={e => setNewComment(e.target.value)}
+              onChange={e => { setNewComment(e.target.value); broadcastTyping(); }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handlePostComment(); } }}
               placeholder={replyingTo ? `Reply to ${replyingTo.user}...` : `Message #${activeChannelName}...`}
               className={`flex-1 bg-transparent border-none outline-none text-sm ${textPrimary}`}
@@ -501,35 +652,54 @@ const Collaborate: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {rightPanel === 'members' ? (
             <>
-              {members.map((m, i) => (
-                <div key={i} className={`flex items-center gap-3 p-2.5 rounded-xl ${bgHover} group`}>
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>
-                    {m.avatar || '?'}
+              {members.map((m, i) => {
+                const roleBadge: Record<string, string> = {
+                  Owner: isDark ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' : 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                  Admin: isDark ? 'bg-blue-500/15 text-blue-400 border-blue-500/20' : 'bg-blue-50 text-blue-700 border-blue-200',
+                  Analyst: isDark ? 'bg-purple-500/15 text-purple-400 border-purple-500/20' : 'bg-purple-50 text-purple-700 border-purple-200',
+                  Viewer: isDark ? 'bg-gray-500/15 text-gray-400 border-gray-500/20' : 'bg-gray-100 text-gray-600 border-gray-200',
+                };
+                const isOnline = i < 2; // Simulate first 2 members as online
+                return (
+                  <div key={i} className={`flex items-center gap-3 p-2.5 rounded-xl ${bgHover} group transition-all`}>
+                    <div className="relative shrink-0">
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold ${isDark ? 'bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-300' : 'bg-gradient-to-br from-indigo-50 to-purple-50 text-indigo-600'}`}>
+                        {m.avatar || (m.name ? m.name.charAt(0).toUpperCase() : '?')}
+                      </div>
+                      <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 ${isDark ? 'border-[#111]' : 'border-white'} ${isOnline ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className={`text-sm font-medium truncate ${textPrimary}`}>{m.name}</p>
+                        {isOnline && <span className="text-[8px] text-emerald-500 font-bold">●</span>}
+                      </div>
+                      <p className={`text-[10px] truncate ${textMuted}`}>{m.email}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${roleBadge[m.role] || roleBadge.Viewer}`}>
+                        {m.role}
+                      </span>
+                      <select
+                        value={m.role}
+                        onChange={e => handleChangeRole(m.email, e.target.value)}
+                        className={`text-[10px] w-5 h-5 opacity-0 group-hover:opacity-100 cursor-pointer absolute right-12 ${isDark ? 'bg-transparent text-white' : 'bg-transparent text-gray-900'}`}
+                        title="Change role"
+                      >
+                        <option>Owner</option>
+                        <option>Admin</option>
+                        <option>Analyst</option>
+                        <option>Viewer</option>
+                      </select>
+                      <button 
+                        onClick={() => handleRemoveMember(m.email)} 
+                        className="opacity-0 group-hover:opacity-100 p-1 rounded text-red-400 hover:bg-red-500/10 transition-all"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium truncate ${textPrimary}`}>{m.name}</p>
-                    <p className={`text-[10px] truncate ${textMuted}`}>{m.email}</p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <select
-                      value={m.role}
-                      onChange={e => handleChangeRole(m.email, e.target.value)}
-                      className={`text-[10px] px-1.5 py-0.5 rounded border outline-none ${isDark ? 'bg-transparent border-gray-700 text-gray-400' : 'bg-transparent border-gray-200 text-gray-500'}`}
-                    >
-                      <option>Owner</option>
-                      <option>Admin</option>
-                      <option>Analyst</option>
-                      <option>Viewer</option>
-                    </select>
-                    <button 
-                      onClick={() => handleRemoveMember(m.email)} 
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-red-400 hover:bg-red-500/10 transition-all"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
               {members.length === 0 && (
                 <p className={`text-xs text-center py-6 ${textMuted}`}>No team members yet.</p>
               )}

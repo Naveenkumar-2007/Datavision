@@ -565,3 +565,112 @@ class MLOpsPredictionLog(Base):
     memory_mb = Column(Float)
     is_shadow = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+# =============================================================================
+# SCENARIO SIMULATOR MODULE
+# =============================================================================
+
+class Simulation(Base):
+    """Each simulation run with inputs, outputs, model reference"""
+    __tablename__ = 'simulations'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String, default='Untitled Simulation')
+    model_name = Column(String)
+    task_type = Column(String)  # regression, classification, time_series
+    target_column = Column(String)
+    input_values = Column(JSONB, default={})
+    baseline_values = Column(JSONB, default={})
+    prediction = Column(Float)
+    baseline_prediction = Column(Float)
+    confidence = Column(Float)
+    impact_percentage = Column(Float)
+    metrics = Column(JSONB, default={})  # All computed metrics
+    chart_data = Column(JSONB, default={})
+    insights = Column(JSONB, default={})
+    status = Column(String, default='completed')  # completed, failed, running
+    duration_ms = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    versions = relationship("SimulationVersion", back_populates="simulation", cascade="all, delete-orphan")
+
+
+class SimulationVersion(Base):
+    """Version tracking for simulation iterations"""
+    __tablename__ = 'simulation_versions'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    simulation_id = Column(UUID(as_uuid=True), ForeignKey('simulations.id', ondelete='CASCADE'), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+    input_values = Column(JSONB, default={})
+    prediction = Column(Float)
+    confidence = Column(Float)
+    metrics = Column(JSONB, default={})
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    simulation = relationship("Simulation", back_populates="versions")
+
+
+class SavedScenario(Base):
+    """Named scenarios users can save, clone, share"""
+    __tablename__ = 'saved_scenarios'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    variables = Column(JSONB, default={})  # Feature name -> value mapping
+    prediction = Column(Float)
+    confidence = Column(Float)
+    metrics = Column(JSONB, default={})
+    tags = Column(JSONB, default=[])
+    is_baseline = Column(Boolean, default=False)
+    is_pinned = Column(Boolean, default=False)
+    source = Column(String, default='manual')  # manual, ai_suggested, optimization, imported
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class OptimizationJob(Base):
+    """Optimization requests with objectives, constraints, results"""
+    __tablename__ = 'optimization_jobs'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
+    objective = Column(String, nullable=False)  # maximize_revenue, minimize_cost, etc.
+    objective_type = Column(String, default='maximize')  # maximize, minimize
+    constraints = Column(JSONB, default={})
+    best_values = Column(JSONB, default={})
+    best_prediction = Column(Float)
+    improvement_pct = Column(Float)
+    iterations = Column(Integer, default=0)
+    status = Column(String, default='running')  # running, completed, failed
+    result = Column(JSONB, default={})
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    completed_at = Column(DateTime)
+
+
+class SimulatorReport(Base):
+    """Generated reports metadata"""
+    __tablename__ = 'simulator_reports'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
+    title = Column(String, nullable=False)
+    report_type = Column(String, nullable=False)  # executive_summary, detailed, comparison
+    format = Column(String, default='pdf')  # pdf, excel, csv, pptx, json
+    file_path = Column(String)
+    file_size = Column(BigInteger)
+    content = Column(JSONB, default={})  # Report data for regeneration
+    status = Column(String, default='completed')
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SimulatorAuditLog(Base):
+    """Audit trail for all simulator actions"""
+    __tablename__ = 'simulator_audit_logs'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey('profiles.id', ondelete='CASCADE'), nullable=False, index=True)
+    action = Column(String, nullable=False)  # run_simulation, save_scenario, optimize, export, etc.
+    entity_type = Column(String)  # simulation, scenario, optimization, report
+    entity_id = Column(UUID(as_uuid=True))
+    details = Column(JSONB, default={})
+    ip_address = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

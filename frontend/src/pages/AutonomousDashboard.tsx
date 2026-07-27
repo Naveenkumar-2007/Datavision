@@ -13,8 +13,10 @@ import { useUserStore } from '../store/userStore';
 import { useLiveStore } from '../store/liveStore';
 import { api, apiService } from '../services/api';
 import { getUserIdSync, getAuthHeadersSync } from '../utils/userId';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { BackgroundPattern } from '../components/BackgroundPattern';
+import { ThemeSelector, DASHBOARD_THEMES, DashboardTheme } from '../components/dashboard/ThemeSelector';
+import { DrillDownBreadcrumb, DrillDownLevel } from '../components/dashboard/DrillDownBreadcrumb';
 import html2pdf from 'html2pdf.js';
 // @ts-ignore
 import { Responsive } from 'react-grid-layout';
@@ -169,35 +171,73 @@ const VisualIntelligenceDashboard: React.FC = () => {
     const [chartOverrides, setChartOverrides] = useState<Record<string, string>>({});
     const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
 
-    const isDark = globalIsDark;
-    
-    const aiTheme = dashboard?.theme || null;
-    // Check if the theme has either the new bg_gradient or the old background_color
-    const hasAiTheme = aiTheme && (aiTheme.bg_gradient || aiTheme.background_color);
+    // Phase 2: Theme Engine
+    const [selectedThemeId, setSelectedThemeId] = useState<string>(() => {
+        return localStorage.getItem('dv_dashboard_theme') || 'midnight';
+    });
+    const selectedTheme = DASHBOARD_THEMES.find(t => t.id === selectedThemeId) || DASHBOARD_THEMES[0];
 
-    // Theme configuration (Dynamic Generative AI Theme + Premium Defaults)
-    const t = {
-        bg: hasAiTheme ? 'ai-theme-bg' : (isDark ? 'bg-[#0b1120]' : 'bg-[#f8fafc]'),
-        bgSecondary: hasAiTheme ? 'ai-theme-bg' : (isDark ? 'bg-[#0f172a]' : 'bg-[#f1f5f9]'),
-        card: hasAiTheme ? 'ai-theme-card shadow-2xl backdrop-blur-xl' : (isDark ? 'bg-[#151e32] border-[#2a3441] shadow-2xl' : 'bg-[#ffffff] border-[#e2e8f0] shadow-xl'),
-        cardHover: hasAiTheme ? 'hover:-translate-y-1 hover:shadow-2xl transition-all duration-300' : (isDark ? 'hover:bg-[#1e293b] transition-all duration-300' : 'hover:shadow-2xl hover:-translate-y-1 transition-all duration-300'),
-        border: hasAiTheme ? 'ai-theme-border' : (isDark ? 'border-[#2a3441]' : 'border-[#e2e8f0]'),
-        text: hasAiTheme ? 'ai-theme-text' : (isDark ? 'text-[#f8fafc]' : 'text-[#0f172a]'),
-        textSecondary: hasAiTheme ? 'ai-theme-text-secondary' : (isDark ? 'text-[#e2e8f0]' : 'text-[#334155]'),
-        textMuted: hasAiTheme ? 'ai-theme-text-secondary opacity-70' : (isDark ? 'text-[#94a3b8]' : 'text-[#64748b]'),
-        accent: isDark ? '#38bdf8' : '#0ea5e9',
-        accentSecondary: isDark ? '#818cf8' : '#6366f1',
-        cardHeader: hasAiTheme ? 'ai-theme-card-header backdrop-blur-md' : (isDark ? 'bg-[#1a233a]' : 'bg-slate-50')
+    const handleThemeChange = (theme: DashboardTheme) => {
+        setSelectedThemeId(theme.id);
+        localStorage.setItem('dv_dashboard_theme', theme.id);
     };
 
-    // Prepare dynamic style object based on new or legacy theme variables
-    const dynamicStyles = hasAiTheme ? {
-        '--ai-bg': aiTheme.bg_gradient || aiTheme.background_color,
-        '--ai-card-bg': aiTheme.card_bg || aiTheme.card_background,
-        '--ai-border': aiTheme.border_color,
-        '--ai-text-primary': aiTheme.text_primary || aiTheme.text_color,
-        '--ai-text-secondary': aiTheme.text_secondary
-    } as React.CSSProperties : {};
+    // Phase 2: Drill-Down Engine
+    const [drillDownLevels, setDrillDownLevels] = useState<DrillDownLevel[]>([]);
+
+    const handleDrillDown = (chartTitle: string, filterValue: string, column?: string) => {
+        const newLevel: DrillDownLevel = {
+            id: `drill_${Date.now()}`,
+            label: filterValue,
+            value: filterValue,
+            chartTitle: chartTitle,
+            column: column
+        };
+        setDrillDownLevels(prev => [...prev, newLevel]);
+    };
+
+    const handleDrillDownNavigate = (index: number) => {
+        setDrillDownLevels(prev => prev.slice(0, index + 1));
+    };
+
+    const handleDrillDownClear = () => {
+        setDrillDownLevels([]);
+    };
+
+    const isDark = globalIsDark;
+    
+    // Phase 2: Theme Engine - ALWAYS respect user's manual selection
+    const selectedThemeColors = selectedTheme.colors;
+
+    // Theme configuration based ENTIRELY on selectedTheme
+    const t = {
+        bg: 'bg-[var(--bg-primary)]', 
+        bgSecondary: 'bg-[var(--sidebar-bg)]', 
+        card: 'bg-[var(--card-bg)] border-[var(--card-border)] shadow-2xl transition-all duration-300',
+        cardHover: 'hover:-translate-y-1 hover:shadow-2xl transition-all duration-300',
+        border: 'border-[var(--card-border)]',
+        text: 'text-inherit',
+        textSecondary: 'text-[var(--text-secondary)]',
+        textMuted: 'text-[var(--text-muted)]',
+        accent: selectedThemeColors.accent,
+        accentSecondary: selectedThemeColors.accentSecondary,
+        cardHeader: 'bg-[var(--header-bg)]'
+    };
+
+    // Apply exact hex codes from the selected theme
+    const dynamicStyles = {
+        '--bg-primary': selectedThemeColors.bg,
+        backgroundColor: selectedThemeColors.bg,
+        color: selectedThemeColors.textPrimary,
+        '--card-bg': selectedThemeColors.cardBg,
+        '--card-border': selectedThemeColors.cardBorder,
+        '--text-secondary': selectedThemeColors.textSecondary,
+        '--text-muted': selectedThemeColors.textMuted,
+        '--header-bg': selectedThemeColors.headerBg,
+        '--sidebar-bg': selectedThemeColors.sidebarBg,
+        '--kpi-bg': selectedThemeColors.kpiBg,
+        '--kpi-border': selectedThemeColors.kpiBorder
+    } as React.CSSProperties;
     
     const { setDashboardCache, getDashboardCache, lastRowCount, setLastRowCount } = useLiveStore();
 
@@ -412,12 +452,32 @@ const VisualIntelligenceDashboard: React.FC = () => {
             showTips: false
         };
 
-        // Apply dynamic type override
+        // Apply dynamic type override + theme chartColors to traces
         const overrideType = chartOverrides[chart.chart_id];
-        const chartData = chart.plotly_config.data.map(trace => ({
-            ...trace,
-            type: overrideType || trace.type
-        }));
+        const themeChartColors = selectedThemeColors.chartColors;
+        const chartData = chart.plotly_config.data.map((trace: any, traceIdx: number) => {
+            const themed: any = { ...trace, type: overrideType || trace.type };
+            // Apply theme color to each trace
+            if (themeChartColors && themeChartColors.length > 0) {
+                const traceColor = themeChartColors[traceIdx % themeChartColors.length];
+                if (themed.type === 'pie' || themed.type === 'sunburst' || themed.type === 'treemap') {
+                    themed.marker = { ...themed.marker, colors: themeChartColors };
+                } else if (themed.type === 'bar' || themed.type === 'histogram') {
+                    themed.marker = { ...themed.marker, color: themed.marker?.color || traceColor };
+                } else if (themed.type === 'scatter' || themed.type === 'scattergl') {
+                    themed.marker = { ...themed.marker, color: themed.marker?.color || traceColor };
+                    themed.line = { ...themed.line, color: themed.line?.color || traceColor };
+                } else {
+                    themed.marker = { ...themed.marker, color: themed.marker?.color || traceColor };
+                }
+            }
+            return themed;
+        });
+
+        // Theme-aware layout colors
+        const fontColor = selectedThemeColors.textSecondary;
+        const axisColor = selectedThemeColors.textMuted;
+        const gridColor = selectedTheme.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.06)';
 
         const layout = {
             ...(chart.plotly_config.layout || {}),
@@ -426,30 +486,30 @@ const VisualIntelligenceDashboard: React.FC = () => {
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
             font: {
-                color: '#e2e8f0', // Always dark mode text
+                color: fontColor,
                 size: 9,
                 family: 'Inter, sans-serif'
             },
             margin: { l: 30, r: 15, t: 30, b: 25 },
             xaxis: {
                 ...(chart.plotly_config.layout?.xaxis || {}),
-                gridcolor: 'rgba(255,255,255,0.03)',
-                color: '#94a3b8',
-                zerolinecolor: 'rgba(255,255,255,0.03)',
+                gridcolor: gridColor,
+                color: axisColor,
+                zerolinecolor: gridColor,
                 fixedrange: true,
                 tickangle: 0
             },
             yaxis: {
                 ...(chart.plotly_config.layout?.yaxis || {}),
-                gridcolor: 'rgba(255,255,255,0.03)',
-                color: '#94a3b8',
-                zerolinecolor: 'rgba(255,255,255,0.03)',
+                gridcolor: gridColor,
+                color: axisColor,
+                zerolinecolor: gridColor,
                 fixedrange: true
             },
             legend: {
                 orientation: 'h' as const,
                 y: -0.2,
-                font: { size: 9, color: '#cbd5e1' }
+                font: { size: 9, color: axisColor }
             },
             dragmode: false as const,
             hovermode: 'closest' as const
@@ -474,6 +534,10 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                 const filterVal = pt.label || pt.x;
                                 if (filterVal) {
                                     const valStr = String(filterVal);
+                                    
+                                    // Phase 2: Trigger Drill-Down Engine
+                                    handleDrillDown(chart.title, valStr);
+                                    
                                     if (dashboard?.filters) {
                                         for (const filter of dashboard.filters) {
                                             if (filter.options.includes(valStr)) {
@@ -495,7 +559,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                 </ChartErrorBoundary>
             </Suspense>
         );
-    }, [isDark, t.accent, dashboard?.filters, setActiveFilters, chartOverrides]);
+    }, [isDark, t.accent, dashboard?.filters, setActiveFilters, chartOverrides, selectedThemeColors, selectedTheme.isDark]);
 
     /* -----------------------------------------------------------
        AI EXPLAIN HANDLER
@@ -727,6 +791,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
             await apiService.streamMessage(
                 userMsg,
                 'llama',
+                'rag',
                 (chunk: string) => {
                     fullText += chunk;
                     setChatMessages(prev => {
@@ -736,7 +801,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                     });
                 },
                 () => { setChatLoading(false); },
-                (err) => { throw new Error(err); }
+                (err: string) => { throw new Error(err); }
             );
         } catch (err) {
             console.error('Chat error:', err);
@@ -816,11 +881,11 @@ const VisualIntelligenceDashboard: React.FC = () => {
        ================================================================ */
     return (
         <>
-        <div className={`min-h-screen ${t.bg} ${t.text} transition-colors duration-500`} style={hasAiTheme ? dynamicStyles : { backgroundColor: 'var(--bg-primary)' }}>
+        <div className={`min-h-screen ${t.bg} ${t.text} transition-colors duration-500`} style={dynamicStyles}>
             <BackgroundPattern 
                 pattern={dashboard?.theme?.bg_pattern || 'none'} 
-                accentColor={dashboard?.theme?.chart_palette?.[0] || '#3b82f6'} 
-                isDark={isDark} 
+                accentColor={selectedThemeColors.accent} 
+                isDark={selectedTheme.isDark} 
             />
             {/* ====================== HEADER ====================== */}
             <header className={`sticky top-0 z-40 border-b ${t.border} ${t.cardHeader}`}>
@@ -846,6 +911,12 @@ const VisualIntelligenceDashboard: React.FC = () => {
 
                         {/* Right: Controls */}
                         <div className="flex items-center gap-1.5">
+                            {/* Theme Selector */}
+                            <ThemeSelector
+                                currentThemeId={selectedThemeId}
+                                onThemeChange={handleThemeChange}
+                                isDark={isDark}
+                            />
                             {/* View Toggle */}
                             <div className={`hidden sm:flex items-center gap-0.5 p-0.5 rounded-md ${isDark ? 'bg-gray-800/80' : 'bg-gray-100'}`}>
                                 <button onClick={() => setViewMode('grid')} className={`p-1 rounded transition-all ${viewMode === 'grid' ? (isDark ? 'bg-gray-700 text-white' : 'bg-white text-gray-900 shadow-sm') : t.textMuted}`}>
@@ -964,7 +1035,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                                                             return { ...prev, [filter.column]: newFilters };
                                                                         });
                                                                     }}
-                                                                    className={`mt-0.5 rounded ${t.border} ${isDark || hasAiTheme ? 'bg-black/20' : 'bg-white'} text-blue-500 focus:ring-blue-500`}
+                                                                    className={`mt-0.5 rounded ${t.border} ${isDark ? 'bg-black/20' : 'bg-white'} text-blue-500 focus:ring-blue-500`}
                                                                 />
                                                                 <span className="truncate group-hover:opacity-80">{opt}</span>
                                                             </label>
@@ -1062,6 +1133,19 @@ const VisualIntelligenceDashboard: React.FC = () => {
                     className="flex-1 min-w-0 p-3 lg:p-4 space-y-4 overflow-x-hidden"
                     onClick={() => setActiveDropdown(null)}
                 >
+                    {/* ─────── DRILL-DOWN BREADCRUMB ─────── */}
+                    <AnimatePresence>
+                        {drillDownLevels.length > 0 && (
+                            <DrillDownBreadcrumb
+                                levels={drillDownLevels}
+                                onNavigate={handleDrillDownNavigate}
+                                onClear={handleDrillDownClear}
+                                isDark={isDark}
+                                accentColor={selectedTheme.colors.accent}
+                            />
+                        )}
+                    </AnimatePresence>
+
                     {/* ─────── EXECUTIVE SUMMARY TICKER ─────── */}
                     {dashboard.executive_summary && (
                         <div className={`w-full overflow-hidden flex items-center px-3 py-1.5 rounded-lg mb-2 glass-card border-l-4 border-l-indigo-500`}>

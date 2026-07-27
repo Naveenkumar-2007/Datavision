@@ -1,54 +1,59 @@
-name: Deploy to HuggingFace Spaces
+name: Deploy to Hugging Face Spaces & GitHub CI/CD
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
-  deploy:
-    name: Deploy to HF Spaces
+  build-and-test:
     runs-on: ubuntu-latest
-    # Wait for CI to pass before deploying
-    # (If we uncomment this, it requires the CI job to exist and pass)
-    # needs: [backend-lint, frontend-build] 
-    
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          fetch-depth: 0
-          lfs: true
-          
-      - name: Setup Node.js
+          python-version: '3.10'
+
+      - name: Install Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f backend/requirements.txt ]; then pip install -r backend/requirements.txt; fi
+
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          
-      - name: Build Frontend
-        working-directory: ./frontend
+          node-version: '20'
+
+      - name: Install Frontend Dependencies & Build
         run: |
-          npm install
+          cd frontend
+          npm ci || npm install
           npm run build
-          
-      - name: Push to HuggingFace Space
+
+  deploy-huggingface:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ secrets.HF_SPACE }}
         run: |
-          # Configure git
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions"
-          
-          # We need to install huggingface_hub to push directly
-          pip install huggingface_hub
-          
-          # Ensure frontend/dist is tracked before pushing
-          # Delete source maps because they exceed HF 10MB limit
-          find frontend/dist/ -name "*.map" -type f -delete
-          git add -f frontend/dist/
-          git commit -m "Auto-build frontend for deployment" || echo "No changes to commit"
-          
-          # Add HuggingFace remote and push
-          git remote add huggingface https://oauth2:${HF_TOKEN}@huggingface.co/spaces/datavision-ai/Datavision
-          
-          # Force push to HuggingFace main branch
-          # Using --force to ensure HF always matches GitHub's main branch exactly
-          git push --force huggingface main
+          if [ -n "$HF_TOKEN" ] && [ -n "$HF_SPACE" ]; then
+            git config --global user.email "ci@datavision.ai"
+            git config --global user.name "DataVision CI/CD Bot"
+            git remote add hf https://user:$HF_TOKEN@huggingface.co/spaces/$HF_SPACE
+            git push -f hf HEAD:main
+            echo "Successfully pushed to Hugging Face Space: $HF_SPACE"
+          else
+            echo "HF_TOKEN or HF_SPACE secret not configured. Skipping HF push."
+          fi

@@ -209,6 +209,7 @@ export const apiService = {
   streamMessage: async (
     message: string,
     model: string = 'deepseek',
+    mode: string = 'rag',
     onChunk: (chunk: string) => void,
     onDone: () => void,
     onError: (error: string) => void
@@ -226,6 +227,7 @@ export const apiService = {
         body: JSON.stringify({
           message,
           model,
+          mode,
           userId,
         }),
       });
@@ -483,14 +485,104 @@ export const apiService = {
     return api.get('/api/v1/simulator/variables');
   },
 
-  runSimulation: async (variables: Record<string, number>) => {
-    return api.post('/api/v1/simulator/run', { variables });
+  runSimulation: async (variables: Record<string, any>, scenarioName?: string) => {
+    return api.post('/api/v1/simulator/run', { variables, scenario_name: scenarioName });
+  },
+
+  getSimulatorOverview: async () => {
+    return api.get('/api/v1/simulator/overview');
+  },
+
+  // Scenarios
+  saveScenario: async (data: { name: string; description?: string; variables: Record<string, any>; prediction?: number; confidence?: number; metrics?: any; tags?: string[] }) => {
+    return api.post('/api/v1/simulator/scenarios/save', data);
+  },
+
+  listScenarios: async () => {
+    return api.get('/api/v1/simulator/scenarios');
+  },
+
+  deleteScenario: async (id: string) => {
+    return api.delete(`/api/v1/simulator/scenarios/${id}`);
+  },
+
+  cloneScenario: async (id: string) => {
+    return api.post(`/api/v1/simulator/scenarios/${id}/clone`);
+  },
+
+  importScenario: async (data: any) => {
+    return api.post('/api/v1/simulator/scenarios/import', data);
+  },
+
+  // Forecast
+  getSimulatorForecast: async (variables: Record<string, any>, periods: number = 12, interval: string = 'monthly') => {
+    return api.post('/api/v1/simulator/forecast', { variables, periods, interval });
+  },
+
+  // AI Insights
+  getSimulatorInsights: async (variables: Record<string, any>) => {
+    return api.post('/api/v1/simulator/insights', { variables });
+  },
+
+  // Variable Importance
+  getFeatureImportance: async () => {
+    return api.post('/api/v1/simulator/importance');
+  },
+
+  getPartialDependence: async (feature: string) => {
+    return api.post(`/api/v1/simulator/partial-dependence?feature=${encodeURIComponent(feature)}`);
+  },
+
+  // AI Suggested Scenarios
+  getSuggestedScenarios: async () => {
+    return api.post('/api/v1/simulator/suggest-scenarios');
+  },
+
+  // Comparison
+  compareScenarios: async (scenarioIds: string[] = [], scenarioValues?: Record<string, any>[]) => {
+    return api.post('/api/v1/simulator/compare', { scenario_ids: scenarioIds, scenario_values: scenarioValues });
+  },
+
+  // Optimization
+  runOptimization: async (data: { objective?: string; objective_type?: string; constraints?: any; max_iterations?: number }) => {
+    return api.post('/api/v1/simulator/optimize', data);
+  },
+
+  getOptimizationHistory: async () => {
+    return api.get('/api/v1/simulator/optimize/history');
+  },
+
+  // History
+  getSimulationHistory: async (page: number = 1, limit: number = 20, search: string = '') => {
+    return api.get('/api/v1/simulator/history', { params: { page, limit, search } });
+  },
+
+  getSimulationDetail: async (id: string) => {
+    return api.get(`/api/v1/simulator/history/${id}`);
+  },
+
+  restoreSimulation: async (id: string) => {
+    return api.post(`/api/v1/simulator/history/${id}/restore`);
+  },
+
+  // Reports
+  generateSimulatorReport: async (data: { title?: string; report_type?: string; format?: string; include_scenarios?: string[]; include_charts?: boolean }) => {
+    return api.post('/api/v1/simulator/reports/generate', data);
+  },
+
+  listSimulatorReports: async () => {
+    return api.get('/api/v1/simulator/reports');
+  },
+
+  downloadSimulatorReport: async (id: string) => {
+    return api.get(`/api/v1/simulator/reports/${id}/download`);
   },
 
   // Global Search API
   globalSearch: async (query: string) => {
     return api.get('/api/v1/search', { params: { q: query } });
   },
+
 
   // Multi-Dataset Join API
   getJoinSuggestions: async (file1: string, file2: string) => {

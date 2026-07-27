@@ -37,7 +37,17 @@ class VectorStoreService:
         # This creates a 'qdrant_data' directory locally (no Docker required!)
         qdrant_path = os.path.join(os.getcwd(), "qdrant_data")
         os.makedirs(qdrant_path, exist_ok=True)
-        self.client = QdrantClient(path=qdrant_path)
+        import time
+        for _ in range(5):
+            try:
+                self.client = QdrantClient(path=qdrant_path)
+                break
+            except Exception as e:
+                logger.warning(f"Qdrant locked, waiting 1s... ({e})")
+                time.sleep(1)
+        else:
+            logger.error("Failed to acquire Qdrant lock after 5 seconds. Falling back to memory mode.")
+            self.client = QdrantClient(":memory:")
         
         # Initialize lightweight local embedding model
         # all-MiniLM-L6-v2 is extremely fast and great for general semantic search

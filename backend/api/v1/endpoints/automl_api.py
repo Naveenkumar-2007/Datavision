@@ -386,6 +386,26 @@ async def god_level_train(
                 detail=result.warnings[0] if result.warnings else "GOD-Level training failed"
             )
         
+        # Persist model metadata for Scenario Simulator and enterprise integration
+        try:
+            meta_data = {
+                "user_id": str(user_id),
+                "model_name": result.best_model_name,
+                "task_type": result.problem_type,
+                "target_column": result.target_column,
+                "feature_columns": result.feature_columns,
+                "feature_importance": result.feature_importance or {},
+                "metrics": result.best_model_metrics or {},
+                "training_date": datetime.utcnow().isoformat(),
+                "is_active": True
+            }
+            for d in [os.path.join("storage", "models", str(user_id)), os.path.join("storage", str(user_id))]:
+                os.makedirs(d, exist_ok=True)
+                with open(os.path.join(d, "active_metadata.json"), "w") as f:
+                    json.dump(meta_data, f, indent=2)
+        except Exception as e:
+            logger.debug(f"Failed persisting active_metadata: {e}")
+
         # Build response
         response = {
             "success": True,

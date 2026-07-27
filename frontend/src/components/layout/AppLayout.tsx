@@ -16,6 +16,7 @@ import {
   Sparkles,
   LogOut,
   Brain,
+  Shield,
   PanelLeftClose,
   PanelLeftOpen,
   Activity,
@@ -23,7 +24,9 @@ import {
   Users,
   Terminal,
   Command,
+  Camera,
   Rocket,
+  Sliders,
   Lightbulb,
   ChevronRight,
   TrendingDown,
@@ -201,6 +204,8 @@ const AppLayout: React.FC = () => {
       items: [
         { path: '/chat', label: 'AI Analyst', icon: MessageSquare },
         { path: '/ml-predictions', label: 'AutoML & Predict', icon: Brain, roles: ['Owner', 'Admin', 'Analyst'] }, 
+        { path: '/computer-vision', label: 'Computer Vision', icon: Camera, roles: ['Owner', 'Admin', 'Analyst'] },
+        { path: '/simulator', label: 'Scenario Simulator', icon: Sliders, roles: ['Owner', 'Admin', 'Analyst'] },
       ]
     },
     {
@@ -209,6 +214,7 @@ const AppLayout: React.FC = () => {
         { path: '/reports', label: 'Reports', icon: FileText },
         { path: '/collaborate', label: 'Collaborate', icon: Users },
         { path: '/developer', label: 'Developer', icon: Terminal, roles: ['Owner'] },
+        { path: '/admin-dashboard', label: 'Admin Control', icon: Shield, roles: ['Owner', 'Admin'] },
         { path: '/settings', label: 'Settings', icon: Settings, roles: ['Owner', 'Admin'] },
       ]
     }

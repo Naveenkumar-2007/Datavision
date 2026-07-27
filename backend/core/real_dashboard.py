@@ -538,6 +538,9 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
     used_chart_types = set()
     palette = COLOR_PALETTES.get(domain, COLOR_PALETTES['general'])
     
+    # Shuffle relationships so every dataset generation feels unique and dynamic!
+    random.shuffle(relationships)
+    
     # Chart complexity tiers - prioritize complex charts for variety
     COMPLEX_CHARTS = [
         '3d_surface', 'polar_bar', 'density_contour', 'sankey', 'radar', 'sunburst', 'multi_sunburst', 'parcoords', 'bubble', 'violin', 'waterfall', 'candlestick',
@@ -558,6 +561,7 @@ def autonomous_chart_selection(df: pd.DataFrame, domain: str, relationships: Lis
         'combo_bar_line', 'pareto', 'lollipop', 'diverging_bar',
         'sankey', 'choropleth', 'sunburst'
     ]
+    random.shuffle(must_have_advanced)
     
     for adv_chart in must_have_advanced:
         if adv_chart in used_chart_types:

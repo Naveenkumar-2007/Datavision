@@ -287,6 +287,10 @@ app.include_router(deploy.router, prefix="/api/v1", tags=["Deploy"])
 from api.v1.endpoints import anomalies
 app.include_router(anomalies.router, prefix="/api/v1/anomalies", tags=["Anomalies"])
 
+# 👁️ Computer Vision
+from api.v1.endpoints import cv_router
+app.include_router(cv_router.router, prefix="/api/v1/cv", tags=["Computer Vision"])
+
 # ==========================================
 # 🚀 V2 APIs (Agentic + RAG)
 # ==========================================

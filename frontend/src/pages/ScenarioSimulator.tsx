@@ -1,238 +1,194 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useUserStore } from '@/store/userStore';
-import { Play, TrendingUp, TrendingDown, RefreshCcw, Sliders } from 'lucide-react';
-import Plot from 'react-plotly.js';
-import apiService from '@/services/api';
+import { useLiveStore } from '@/store/liveStore';
+import OverviewTab from '@/components/simulator/OverviewTab';
+import ScenarioBuilderTab from '@/components/simulator/ScenarioBuilderTab';
+import ForecastTab from '@/components/simulator/ForecastTab';
+import AIInsightsTab from '@/components/simulator/AIInsightsTab';
+import VariableImportanceTab from '@/components/simulator/VariableImportanceTab';
+import AISuggestedScenariosTab from '@/components/simulator/AISuggestedScenariosTab';
+import ComparisonTab from '@/components/simulator/ComparisonTab';
+import OptimizationTab from '@/components/simulator/OptimizationTab';
+import HistoryTab from '@/components/simulator/HistoryTab';
+import ReportsTab from '@/components/simulator/ReportsTab';
+import {
+  Sliders, Play, Save, Share2, Sparkles, LayoutDashboard,
+  TrendingUp, Lightbulb, BarChart2, Brain, GitCompare,
+  Zap, History, FileText, Rocket, RefreshCcw
+} from 'lucide-react';
+
+const tabs = [
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { id: 'builder', label: 'Scenario Builder', icon: Sliders },
+  { id: 'forecast', label: 'Forecast', icon: TrendingUp },
+  { id: 'ai-insights', label: 'AI Insights', icon: Lightbulb },
+  { id: 'importance', label: 'Variable Importance', icon: BarChart2 },
+  { id: 'ai-suggested', label: 'AI Suggested Scenarios', icon: Brain },
+  { id: 'comparison', label: 'Comparison', icon: GitCompare },
+  { id: 'optimization', label: 'Optimization', icon: Zap },
+  { id: 'history', label: 'Simulation History', icon: History },
+  { id: 'reports', label: 'Reports', icon: FileText },
+];
 
 const ScenarioSimulator: React.FC = () => {
+  const navigate = useNavigate();
   const { isDark } = useUserStore();
-  const [variables, setVariables] = useState<any[]>([]);
-  const [values, setValues] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
-  const [simulating, setSimulating] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const { clearSimulatorCache } = useLiveStore();
+  const [activeTab, setActiveTab] = useState('overview');
+  const [refreshKey, setRefreshKey] = useState(0);
 
+  const textPrimary = isDark ? '#f8fafc' : '#0f172a';
+  const textMuted = isDark ? '#94a3b8' : '#64748b';
+  const borderSubtle = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+
+  const handleManualRefresh = () => {
+    clearSimulatorCache();
+    setRefreshKey(prev => prev + 1);
+  };
+
+  // Auto refresh when returning to this page if a new model was trained
   useEffect(() => {
-    const fetchVariables = async () => {
-      try {
-        const response = await apiService.getSimulatorVariables();
-        if (response.data) {
-          setVariables(response.data);
-          
-          // Set initial values
-          const initialVals: Record<string, number> = {};
-          response.data.forEach((v: any) => {
-            initialVals[v.name] = v.current_value;
-          });
-          setValues(initialVals);
-        }
-      } catch (error) {
-        console.error("Failed to load variables", error);
-      } finally {
-        setLoading(false);
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'last_trained_timestamp' || e.key === 'hasMLResults') {
+        clearSimulatorCache();
+        setRefreshKey(prev => prev + 1);
       }
     };
-    fetchVariables();
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
   }, []);
 
-  const handleSimulate = async () => {
-    setSimulating(true);
-    try {
-      const response = await apiService.runSimulation(values);
-      setResult(response.data);
-    } catch (error) {
-      console.error("Simulation failed", error);
-    } finally {
-      setSimulating(false);
-    }
-  };
-
-  // Run initial simulation when variables are loaded
-  useEffect(() => {
-    if (Object.keys(values).length > 0 && !result && !simulating) {
-      handleSimulate();
-    }
-  }, [values, result, simulating]);
-
-  const handleSliderChange = (name: string, value: number) => {
-    setValues(prev => ({ ...prev, [name]: value }));
-  };
-
-  const getChartData = () => {
-    if (!result) return [];
-
-    const x = result.chart_data.map((d: any) => d.month);
-    const yBase = result.chart_data.map((d: any) => d['Baseline Revenue']);
-    const ySim = result.chart_data.map((d: any) => d['Simulated Revenue']);
-
-    return [
-      {
-        x,
-        y: yBase,
-        type: 'scatter',
-        mode: 'lines+markers',
-        name: 'Baseline Revenue',
-        line: { color: isDark ? '#64748b' : '#94a3b8', width: 2, dash: 'dot' },
-      },
-      {
-        x,
-        y: ySim,
-        type: 'scatter',
-        mode: 'lines+markers',
-        name: 'Simulated Revenue',
-        line: { color: '#6366f1', width: 3 }, // Indigo
-        fill: 'tonexty',
-        fillcolor: isDark ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)',
-      }
-    ];
-  };
-
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto pb-24">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-5 pb-10">
+      {/* Top Bar Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
-            <Sliders className="w-6 h-6 text-indigo-500" /> What-If Scenario Simulator
-          </h2>
-          <p className="text-sm mt-1" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-            Adjust key business drivers to forecast outcomes and optimize your strategy.
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight" style={{ color: textPrimary }}>
+              Scenario Simulator
+            </h1>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-500 flex items-center gap-1 border border-indigo-500/20">
+              <Sparkles className="w-3 h-3 text-indigo-400" /> Enterprise v3.0
+            </span>
+          </div>
+          <p className="text-xs mt-0.5" style={{ color: textMuted }}>
+            Real-time ML scenario simulation, multi-variable forecasting, AI insights, and trade-off optimization.
           </p>
         </div>
-        <div className="flex gap-2">
-          <button 
-            onClick={() => {
-              const resetVals: Record<string, number> = {};
-              variables.forEach((v: any) => {
-                resetVals[v.name] = v.current_value;
-              });
-              setValues(resetVals);
-            }}
-            className={`p-2.5 rounded-xl border flex items-center justify-center gap-2 text-sm font-medium transition-all ${
-              isDark ? 'border-white/10 hover:bg-white/5 text-gray-200' : 'border-gray-200 hover:bg-gray-50 text-gray-700'
-            }`}
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Train New Model */}
+          <button
+            onClick={() => navigate('/ml-predictions')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-sm shadow-emerald-500/20 hover:opacity-95 transition-all"
+            title="Train a new AutoML model or select another dataset"
           >
-            <RefreshCcw className="w-4 h-4" /> Reset
+            <Rocket className="w-3.5 h-3.5" /> Train New Model
           </button>
-          <button 
-            onClick={handleSimulate}
-            disabled={simulating}
-            className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm flex items-center gap-2 shadow-lg shadow-indigo-600/20 disabled:opacity-70"
+
+          {/* Refresh / Reload active model */}
+          <button
+            onClick={handleManualRefresh}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border hover:bg-white/5 transition-all"
+            style={{ borderColor: borderSubtle, color: textMuted }}
+            title="Reload active model metadata and clear cache"
           >
-            <Play className="w-4 h-4 fill-white" /> {simulating ? 'Simulating...' : 'Run Simulation'}
+            <RefreshCcw className="w-3.5 h-3.5" /> Reload Data
+          </button>
+
+          <button
+            onClick={() => setActiveTab('builder')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border hover:bg-white/5 transition-all"
+            style={{ borderColor: borderSubtle, color: textMuted }}
+          >
+            <Save className="w-3.5 h-3.5" /> Save Scenario
+          </button>
+
+          <button
+            onClick={() => {
+              if (navigator.share) {
+                navigator.share({ title: 'DataVision Scenario Simulator', url: window.location.href });
+              } else {
+                navigator.clipboard.writeText(window.location.href);
+                alert('Link copied to clipboard!');
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold border hover:bg-white/5 transition-all"
+            style={{ borderColor: borderSubtle, color: textMuted }}
+          >
+            <Share2 className="w-3.5 h-3.5" /> Share
+          </button>
+
+          <button
+            onClick={() => setActiveTab('builder')}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all"
+          >
+            <Play className="w-3.5 h-3.5 fill-white" /> Run Simulation
           </button>
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500"></div>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Controls Panel */}
-          <div className={`lg:col-span-4 p-6 rounded-2xl border ${isDark ? 'bg-white/5 border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
-            <h3 className="text-lg font-semibold mb-6" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-              Variables
-            </h3>
-            
-            <div className="space-y-6">
-              {variables.map((v) => (
-                <div key={v.name} className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-medium" style={{ color: isDark ? '#cbd5e1' : '#475569' }}>
-                      {v.name}
-                    </label>
-                    <span className="text-xs font-bold px-2 py-1 rounded-md bg-indigo-500/10 text-indigo-500">
-                      {v.unit === '$' ? '$' : ''}{values[v.name]?.toLocaleString()}{v.unit === '%' ? '%' : ''}
-                    </span>
-                  </div>
-                  <input 
-                    type="range"
-                    min={v.min_value}
-                    max={v.max_value}
-                    step={v.step}
-                    value={values[v.name] || v.current_value}
-                    onChange={(e) => handleSliderChange(v.name, parseFloat(e.target.value))}
-                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700 accent-indigo-500"
-                  />
-                  <div className="flex justify-between text-xs" style={{ color: isDark ? '#64748b' : '#94a3b8' }}>
-                    <span>{v.unit === '$' ? '$' : ''}{v.min_value.toLocaleString()}{v.unit === '%' ? '%' : ''}</span>
-                    <span>{v.unit === '$' ? '$' : ''}{v.max_value.toLocaleString()}{v.unit === '%' ? '%' : ''}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* 10-Tab Navigation Bar */}
+      <div
+        className="flex items-center gap-1 overflow-x-auto p-1.5 rounded-2xl border"
+        style={{
+          background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)',
+          borderColor: borderSubtle,
+        }}
+      >
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all relative ${
+                active ? 'text-indigo-500 shadow-sm' : ''
+              }`}
+              style={{
+                color: active ? '#6366f1' : textMuted,
+                background: active ? (isDark ? 'rgba(99,102,241,0.12)' : '#ffffff') : 'transparent',
+              }}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{tab.label}</span>
+              {active && (
+                <motion.div
+                  layoutId="activeTabGlow"
+                  className="absolute inset-0 rounded-xl border border-indigo-500/30"
+                  transition={{ type: 'spring', bounce: 0.2, duration: 0.4 }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
 
-          {/* Results Panel */}
-          <div className="lg:col-span-8 space-y-6">
-            {result && (
-              <>
-                {/* Impact Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {Object.keys(result.impact_percentage).map((metric) => {
-                    const impact = result.impact_percentage[metric];
-                    const isPositive = impact >= 0;
-                    // For CAC, positive impact is bad (increase in cost). Let's color accordingly
-                    const isGood = metric === 'CAC' ? !isPositive : isPositive;
-                    
-                    return (
-                      <div key={metric} className={`p-5 rounded-2xl border ${isDark ? 'bg-white/5 border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
-                        <div className="text-sm font-medium mb-1" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-                          {metric} Impact
-                        </div>
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold" style={{ color: isDark ? '#f8fafc' : '#0f172a' }}>
-                            {result.simulated_metrics[metric]}
-                          </span>
-                        </div>
-                        <div className={`mt-2 text-xs font-semibold flex items-center gap-1 ${
-                          isGood ? 'text-emerald-500' : 'text-red-500'
-                        }`}>
-                          {isPositive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                          {Math.abs(impact)}% vs Baseline
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Chart */}
-                <div className={`p-5 rounded-2xl border overflow-hidden ${isDark ? 'bg-white/5 border-white/5' : 'bg-white border-gray-100 shadow-sm'}`}>
-                  <h3 className="text-sm font-medium mb-4" style={{ color: isDark ? '#f1f5f9' : '#1e293b' }}>
-                    Revenue Forecast (6 Months)
-                  </h3>
-                  <div className="w-full h-[300px]">
-                    <Plot
-                      data={getChartData() as any}
-                      layout={{
-                        autosize: true,
-                        margin: { l: 40, r: 20, t: 10, b: 30 },
-                        paper_bgcolor: 'transparent',
-                        plot_bgcolor: 'transparent',
-                        font: { color: isDark ? '#94a3b8' : '#64748b' },
-                        xaxis: {
-                          gridcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                          zerolinecolor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
-                        },
-                        yaxis: {
-                          gridcolor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                          zerolinecolor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
-                        },
-                        legend: { orientation: 'h', y: 1.1, font: { color: isDark ? '#f1f5f9' : '#1e293b' } }
-                      }}
-                      useResizeHandler={true}
-                      style={{ width: '100%', height: '100%' }}
-                      config={{ displayModeBar: false }}
-                    />
-                  </div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Tab Content Display */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={`${activeTab}-${refreshKey}`}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.2 }}
+        >
+          {activeTab === 'overview' && <OverviewTab onTabChange={setActiveTab} />}
+          {activeTab === 'builder' && <ScenarioBuilderTab />}
+          {activeTab === 'forecast' && <ForecastTab />}
+          {activeTab === 'ai-insights' && <AIInsightsTab />}
+          {activeTab === 'importance' && <VariableImportanceTab />}
+          {activeTab === 'ai-suggested' && <AISuggestedScenariosTab />}
+          {activeTab === 'comparison' && <ComparisonTab />}
+          {activeTab === 'optimization' && <OptimizationTab />}
+          {activeTab === 'history' && <HistoryTab />}
+          {activeTab === 'reports' && <ReportsTab />}
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 };
