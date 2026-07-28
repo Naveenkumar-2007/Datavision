@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { api } from '@/services/api';
 
+import { VectorInspectorModal } from '@/components/vector/VectorInspectorModal';
+
 const iconMap: Record<string, React.ReactNode> = {
   database: <Database className="w-6 h-6 text-blue-500" />,
   cpu: <Cpu className="w-6 h-6 text-indigo-500" />,
@@ -21,6 +23,7 @@ const DataLineage: React.FC = () => {
   const [lineageData, setLineageData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [rescanning, setRescanning] = useState(false);
+  const [isVectorModalOpen, setIsVectorModalOpen] = useState(false);
 
   // Theme classes
   const bgCard = isDark ? 'bg-white/[0.03]' : 'bg-white';
@@ -124,11 +127,24 @@ const DataLineage: React.FC = () => {
             <Brain className={`w-5 h-5 ${isDark ? 'text-amber-400' : 'text-amber-600'}`} />
           </div>
           <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1.5">
-              <h3 className={`text-sm font-bold ${textH}`}>Semantic Search & RAG (Qdrant + MiniLM-L6)</h3>
-              <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${isDark ? 'bg-amber-500/10 text-amber-400' : 'bg-amber-50 text-amber-600'} tracking-wider`}>
-                VECTOR AI
-              </span>
+            <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+              <div className="flex items-center gap-2">
+                <h3 className={`text-sm font-bold ${textH}`}>Semantic Search & RAG (Qdrant + MiniLM-L6)</h3>
+                <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${isDark ? 'bg-amber-500/10 text-amber-400' : 'bg-amber-50 text-amber-600'} tracking-wider`}>
+                  VECTOR AI
+                </span>
+              </div>
+              <button 
+                onClick={() => setIsVectorModalOpen(true)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm transition-all ${
+                  isDark 
+                    ? 'bg-gradient-to-r from-amber-500/20 to-indigo-500/20 text-amber-300 border border-amber-500/30 hover:border-amber-400' 
+                    : 'bg-amber-500 text-white hover:bg-amber-600'
+                }`}
+              >
+                <Server className="w-3.5 h-3.5" />
+                Inspect Vector DB & Test Queries
+              </button>
             </div>
             <p className={`text-xs leading-relaxed ${textM} mb-3`}>
               When you upload datasets, DataVision automatically creates <strong className={textH}>vector embeddings</strong> of 
@@ -157,6 +173,8 @@ const DataLineage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <VectorInspectorModal isOpen={isVectorModalOpen} onClose={() => setIsVectorModalOpen(false)} />
 
       {/* Data Flow Diagram */}
       <div className={`p-6 rounded-2xl border min-h-[400px] flex flex-col ${bgCard} ${border}`}>

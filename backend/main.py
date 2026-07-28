@@ -291,6 +291,10 @@ app.include_router(anomalies.router, prefix="/api/v1/anomalies", tags=["Anomalie
 from api.v1.endpoints import cv_router
 app.include_router(cv_router.router, prefix="/api/v1/cv", tags=["Computer Vision"])
 
+# 🧠 Vector AI & RAG Inspector
+from api.v1.endpoints import vector_router
+app.include_router(vector_router.router, prefix="/api/v1/vector", tags=["Vector AI"])
+
 # ==========================================
 # 🚀 V2 APIs (Agentic + RAG)
 # ==========================================

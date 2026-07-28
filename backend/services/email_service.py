@@ -25,59 +25,73 @@ async def send_insight_email(
     chart_payload: Optional[dict] = None,
     workspace_id: str = None
 ):
-    """Send insight notification email"""
+    """Send insight notification email via Resend API or SMTP fallback"""
     html_content = render_insight_email_template(title, body, chart_payload, workspace_id)
     
-    if not RESEND_API_KEY:
-        error_msg = "Email service not configured. Please add RESEND_API_KEY to your .env file to enable email functionality."
-        logger.warning(error_msg)
-        return False
-    
-    # Log configuration for debugging
-    logger.info(f"📧 Sending email from {FROM_EMAIL} to {to_email}")
-    logger.info(f"📧 RESEND_API_KEY present: {bool(RESEND_API_KEY)}")
-    
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            payload = {
-                "from": f"DataVision <{FROM_EMAIL}>",
-                "to": [to_email],
-                "subject": f"📊 DataVision: {title}",
-                "html": html_content,
-                "text": render_plain_text_email(title, body),
-            }
-            
-            response = await client.post(
-                "https://api.resend.com/emails",
-                headers={
-                    "Authorization": f"Bearer {RESEND_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                json=payload
-            )
-            
-            # Log response for debugging
-            logger.info(f"📧 Resend response status: {response.status_code}")
-            
-            if response.status_code != 200:
-                error_detail = response.text
-                logger.error(f"📧 Resend API error: {error_detail}")
-            if response.status_code == 200:
-                result = response.json()
-                logger.info(f"✅ Email sent successfully! ID: {result.get('id', 'unknown')}")
-                return result
-            else:
-                error_msg = f"Failed to send email. Status code: {response.status_code}. Response: {response.text}"
-                logger.error(error_msg)
-                return False
-                
-    except httpx.TimeoutException:
-        error_msg = "Email request timed out"
-        logger.error(error_msg)
-        return False
-    except Exception as e:
-        logger.error(f"Error sending email via Resend API: {e}")
-        return False
+    # 1. Try Resend API first if RESEND_API_KEY is configured
+    if RESEND_API_KEY:
+        logger.info(f"📧 Sending email via Resend API from {FROM_EMAIL} to {to_email}")
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                payload = {
+                    "from": f"DataVision <{FROM_EMAIL}>",
+                    "to": [to_email],
+                    "subject": f"📊 DataVision: {title}",
+                    "html": html_content,
+                    "text": render_plain_text_email(title, body),
+                }
+                response = await client.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {RESEND_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json=payload
+                )
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(f"✅ Email sent via Resend API! ID: {result.get('id', 'unknown')}")
+                    return result
+                else:
+                    logger.warning(f"📧 Resend API status {response.status_code}: {response.text}")
+        except Exception as e:
+            logger.warning(f"📧 Resend API attempt failed: {e}")
+
+    # 2. Try SMTP fallback if SMTP env vars are present
+    smtp_host = os.getenv("SMTP_HOST")
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASSWORD")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+
+    if smtp_host and smtp_user and smtp_pass:
+        logger.info(f"📧 Attempting SMTP send via {smtp_host}:{smtp_port} to {to_email}")
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"📊 DataVision: {title}"
+            msg["From"] = f"DataVision <{smtp_user}>"
+            msg["To"] = to_email
+
+            part1 = MIMEText(render_plain_text_email(title, body), "plain")
+            part2 = MIMEText(html_content, "html")
+            msg.attach(part1)
+            msg.attach(part2)
+
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_user, [to_email], msg.as_string())
+
+            logger.info(f"✅ Email sent via SMTP to {to_email}!")
+            return {"status": "sent", "provider": "smtp"}
+        except Exception as smtp_err:
+            logger.error(f"❌ SMTP send failed: {smtp_err}")
+
+    logger.warning("📧 No active email provider (Resend API key or SMTP config) succeeded.")
+    return False
 
 
 def render_insight_email_template(

@@ -643,23 +643,27 @@ async def add_member(
         frontend_url = os.environ.get("FRONTEND_URL", "https://datavision-ai-datavision.hf.space")
         invite_link = f"{frontend_url}/accept-invite?token={invite_token}&email={req.email}"
             
-        await send_insight_email(
+        send_res = await send_insight_email(
             to_email=req.email,
             title="You've been invited to DataVision",
             body=f"{inviter_name} invited you to collaborate on DataVision as a {req.role}.\n\nClick the link below to accept the invitation and set up your account:\n{invite_link}\n\nIf you already have an account, you can simply log in.",
         )
-        email_sent = True
-        logger.info(f"✅ Invite email sent to {req.email}")
+        if send_res:
+            email_sent = True
+            logger.info(f"✅ Invite email sent to {req.email}")
+        else:
+            email_error = "Email provider unconfigured or failed"
     except Exception as e:
         email_error = str(e)
         logger.warning(f"❌ Failed to send invite email to {req.email}: {e}")
     
-    msg = f"Invitation sent to {req.email}" if email_sent else f"Member added. Email failed: {email_error}"
+    msg = f"Invitation sent to {req.email}" if email_sent else f"Member added. Copy link: {invite_link}"
     return {
         "success": True, 
-        "member": {"name": name, "email": target_user.email, "role": new_member.role, "status": "Invited" if email_sent else "Added (no email)", "avatar": name[0].upper()}, 
+        "member": {"name": name, "email": target_user.email, "role": new_member.role, "status": "Invited" if email_sent else "Added (Pending)", "avatar": name[0].upper()}, 
         "message": msg,
-        "email_sent": email_sent
+        "email_sent": email_sent,
+        "invite_link": invite_link
     }
 
 

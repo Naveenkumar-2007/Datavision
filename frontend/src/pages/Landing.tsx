@@ -1,863 +1,807 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { motion, useInView } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowRight, Zap, Database, LayoutDashboard,
-  BrainCircuit, Bot, Activity, Eye, Shield,
-  Lock, Globe, BarChart3, FileText, Layers,
-  Check, TrendingUp, Boxes, Users,
-  Sliders, Sun, Moon, Copy, Server,
-  Key, Code, RefreshCw, FileSpreadsheet, Target,
-  Sparkles, Rocket, ChevronRight, Gauge
+  ArrowRight, Database, LayoutDashboard, BrainCircuit,
+  Eye, Sliders, Server, Search, Check, ShieldCheck,
+  Zap, Code, ChevronRight, Activity, Terminal, ChevronDown,
+  Layers, Lock, Play, Cpu, Sparkles, CheckCircle2,
+  FileSpreadsheet, Share2, Workflow, Globe, Shield, RefreshCw,
+  Sun, Moon, ExternalLink, Network, Gauge, Calculator, CheckCircle,
+  TrendingUp, BarChart3, PieChart, HelpCircle
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getUserIdSync } from '../utils/userId';
 import LogoImage from '../components/LogoImage';
 import { useUserStore } from '../store/userStore';
 
 /* ═══════════════════════════════════════════════════════════════════════
-   ANIMATED COUNTER — Counts up when scrolled into view
+   AUTHENTIC CONNECTOR SVG LOGOS
    ═══════════════════════════════════════════════════════════════════════ */
-function Counter({ to, suffix = '', prefix = '' }: { to: number; suffix?: string; prefix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true, margin: '-50px' });
-  const [val, setVal] = useState(0);
+const SnowflakeLogo = () => (
+  <svg className="h-5 w-auto" viewBox="0 0 24 24" fill="#29B5E8">
+    <path d="M12 0l1.8 4.2L16 2.5l-1 3.5 4.3-.8-2.5 3.3 4.2 1.8-4.2 1.8 2.5 3.3-4.3-.8 1 3.5-2.2-1.7L12 24l-1.8-4.2L8 21.5l1-3.5-4.3.8 2.5-3.3L3 13.7l4.2-1.8-2.5-3.3 4.3.8-1-3.5 2.2 1.7z"/>
+  </svg>
+);
 
-  useEffect(() => {
-    if (!inView) return;
-    let cur = 0;
-    const step = Math.max(1, Math.ceil(to / 50));
-    const id = setInterval(() => {
-      cur += step;
-      if (cur >= to) { setVal(to); clearInterval(id); }
-      else setVal(cur);
-    }, 30);
-    return () => clearInterval(id);
-  }, [inView, to]);
+const DatabricksLogo = () => (
+  <svg className="h-5 w-auto" viewBox="0 0 24 24" fill="#FF3621">
+    <path d="M12 2L1 8l11 6 11-6-11-6zm0 8.5L4.5 7 12 3.5l7.5 3.5-7.5 3.5zm0 4.5L1 9v6l11 6 11-6V9l-11 6z"/>
+  </svg>
+);
 
-  return <span ref={ref}>{prefix}{val.toLocaleString()}{suffix}</span>;
-}
+const PostgresLogo = () => (
+  <svg className="h-5 w-auto" viewBox="0 0 24 24" fill="#336791">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+  </svg>
+);
 
-/* ═══════════════════════════════════════════════════════════════════════
-   SCROLL REVEAL — Fade-up animation on scroll
-   ═══════════════════════════════════════════════════════════════════════ */
-function Reveal({ children, delay = 0, className = '' }: { children: React.ReactNode; delay?: number; className?: string }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 28 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-60px' }}
-      transition={{ duration: 0.6, delay, ease: [0.22, 1, 0.36, 1] }}
-      className={className}
-    >
-      {children}
-    </motion.div>
-  );
-}
+const KafkaLogo = () => (
+  <svg className="h-5 w-auto text-current" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5v-9l7 4.5-7 4.5z"/>
+  </svg>
+);
 
-/* ═══════════════════════════════════════════════════════════════════════
-   DATA — Integrations, Modules, Workflow, Metrics
-   ═══════════════════════════════════════════════════════════════════════ */
-const dataIntegrations = [
-  { name: 'DataVision API', category: 'Live Push', icon: Zap, color: '#10b981' },
-  { name: 'PostgreSQL', category: 'SQL Database', icon: Database, color: '#336791' },
-  { name: 'Snowflake', category: 'Data Warehouse', icon: Server, color: '#29B5E8' },
-  { name: 'Google BigQuery', category: 'Analytics', icon: Database, color: '#4285F4' },
-  { name: 'Kafka', category: 'Streaming', icon: Activity, color: '#FF9900' },
-  { name: 'MongoDB', category: 'NoSQL', icon: Database, color: '#47A248' },
-  { name: 'Databricks', category: 'Delta Lake', icon: Server, color: '#FF3621' },
-  { name: 'MySQL', category: 'Relational', icon: Database, color: '#00758F' },
-  { name: 'Excel', category: 'Spreadsheet', icon: FileSpreadsheet, color: '#107C41' },
-  { name: 'CSV & Parquet', category: 'Files', icon: FileText, color: '#059669' },
-];
+const BigQueryLogo = () => (
+  <svg className="h-5 w-auto" viewBox="0 0 24 24" fill="#4285F4">
+    <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/>
+  </svg>
+);
 
-const modules = [
-  {
-    icon: Activity, title: 'Digital Twin Simulator', badge: 'WHAT-IF',
-    desc: 'Run real-time sensitivity analysis with interactive slider controls. Simulate revenue, churn, and budget trade-offs with SHAP-driven insights.',
-    gradient: 'from-emerald-500 to-cyan-500',
-    tags: ['Scenario Sliders', 'SHAP Analysis', 'Trade-off Matrix']
-  },
-  {
-    icon: LayoutDashboard, title: 'Autonomous Dashboards', badge: 'ZERO-CONFIG',
-    desc: 'Auto-generate 15+ chart types from raw data. No drag-and-drop needed — the AI profiles your columns and builds correlation heatmaps, KPI cards, and trends.',
-    gradient: 'from-teal-400 to-emerald-600',
-    tags: ['Heatmaps', 'Scatter Plots', 'KPI Cards']
-  },
-  {
-    icon: BrainCircuit, title: 'Ultra AutoML Engine', badge: '1-CLICK',
-    desc: 'Train XGBoost, LightGBM, Random Forest, Neural Nets & more. Automated hyperparameter tuning, cross-validation, and champion model selection.',
-    gradient: 'from-emerald-500 to-teal-600',
-    tags: ['XGBoost', 'LightGBM', 'Auto-Tuning']
-  },
-  {
-    icon: Eye, title: 'Computer Vision Studio', badge: 'CV',
-    desc: 'Train YOLOv8 object detection and ResNet classifiers with zero code. Monitor epoch loss curves live and export production inference endpoints.',
-    gradient: 'from-emerald-500 to-green-600',
-    tags: ['Object Detection', 'Classification', 'Segmentation']
-  },
-  {
-    icon: Code, title: 'Developer API & SDK', badge: 'API',
-    desc: 'Generate API keys, deploy REST prediction endpoints (<12ms latency). Consume via Python SDK, JavaScript SDK, or cURL.',
-    gradient: 'from-cyan-500 to-emerald-600',
-    tags: ['REST API', 'Python SDK', 'Webhooks']
-  },
-  {
-    icon: Zap, title: 'Generative AI Analyst', badge: 'LLM',
-    desc: 'Ask complex analytical questions in natural language. Powered by Gemini & GPT-4 — auto-generates 6 executive report types and anomaly detection.',
-    gradient: 'from-cyan-400 to-teal-500',
-    tags: ['Gemini / GPT', 'Natural Language', 'Reports']
-  },
-  {
-    icon: Database, title: 'Data Hub & Smart ETL', badge: 'INGESTION',
-    desc: 'Drag-and-drop CSV, Excel, or JSON with 20+ automated quality checks, schema validation, and instant dataset preview.',
-    gradient: 'from-green-400 to-emerald-600',
-    tags: ['CSV / XLSX', 'Schema Validation', 'Quality Score']
-  },
-  {
-    icon: Bot, title: 'Agentic Autopilot', badge: 'AUTONOMOUS',
-    desc: 'Zero human intervention. Pass raw data and watch the AI clean, profile, train 14 models, generate charts, and compile final reports autonomously.',
-    gradient: 'from-teal-500 to-emerald-700',
-    tags: ['KNN Imputation', 'Auto-Clean', 'End-to-End']
-  },
-  {
-    icon: Users, title: 'Collaboration & Workspaces', badge: 'TEAMS',
-    desc: 'Multi-tenant workspaces with role-based access control (Owner, Editor, Viewer). Real-time comments, encrypted channels, and shared insights.',
-    gradient: 'from-emerald-500 to-cyan-600',
-    tags: ['Multi-Tenant', 'RBAC', 'Shared Workspaces']
-  },
-  {
-    icon: Boxes, title: 'Model Registry & Export', badge: 'DEPLOY',
-    desc: 'Manage champion/challenger models with version history. Export to ONNX, Pickle, or PMML, or invoke live REST prediction APIs instantly.',
-    gradient: 'from-emerald-400 to-teal-500',
-    tags: ['Model Versioning', 'ONNX Export', 'REST APIs']
-  },
-];
+const MongoDbLogo = () => (
+  <svg className="h-5 w-auto" viewBox="0 0 24 24" fill="#13AA52">
+    <path d="M12 0C11.5 2.5 10 6 7 9c-3 3-5 7-5 10.5C2 22.5 6.5 24 12 24s10-1.5 10-4.5c0-3.5-2-7.5-5-10.5-3-3-4.5-6.5-5-9z"/>
+  </svg>
+);
 
-const workflowSteps = [
-  { step: '01', title: 'Ingest & Connect', desc: 'Connect PostgreSQL, Snowflake, BigQuery or upload CSV/Excel. 20+ quality checks in <3s.', icon: Database },
-  { step: '02', title: 'Auto-Visualize', desc: 'Structural profiling builds 15+ charts, correlation heatmaps, and executive summary cards.', icon: LayoutDashboard },
-  { step: '03', title: 'Train AutoML', desc: '14+ algorithms train in parallel with hyperparameter tuning and champion model selection.', icon: BrainCircuit },
-  { step: '04', title: 'Deploy & Simulate', desc: 'Run digital twin scenarios, generate LLM reports, and deploy REST APIs (<12ms).', icon: Rocket },
-];
+const RedshiftLogo = () => (
+  <svg className="h-5 w-auto" viewBox="0 0 24 24" fill="#CC292B">
+    <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.8L19.2 8 12 11.2 4.8 8 12 4.8zM4 9.6l7 3.5v7.2l-7-3.5V9.6zm16 7.2l-7 3.5v-7.2l7-3.5v7.2z"/>
+  </svg>
+);
 
-const metrics = [
-  { value: 15, suffix: '+', label: 'Auto Visualizations', icon: BarChart3 },
-  { value: 14, suffix: '+', label: 'ML Algorithms', icon: BrainCircuit },
-  { value: 6, label: 'AI Report Types', icon: FileText },
-  { value: 12, suffix: 'ms', label: 'API Latency', icon: Zap },
-];
+const MySqlLogo = () => (
+  <svg className="h-5 w-auto" viewBox="0 0 24 24" fill="#00758F">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+  </svg>
+);
 
-/* ═══════════════════════════════════════════════════════════════════════
-   CODE SNIPPETS — Developer Section
-   ═══════════════════════════════════════════════════════════════════════ */
-const codeSnippets: Record<string, string> = {
-  python: `import datavision as dv
-
-client = dv.Client(api_key="dv_live_9f83a21b...")
-
-response = client.predict(
-    model_id="xgboost_california_v3",
-    features={
-        "median_income": 8.3252,
-        "house_age": 41,
-        "total_rooms": 880,
-        "population": 322
-    }
-)
-
-print("Prediction:", response.prediction)
-print("Confidence:", response.confidence_range)`,
-
-  curl: `curl -X POST "https://api.datavision.ai/v1/predict" \\
-  -H "Authorization: Bearer dv_live_9f83a21b..." \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "model_id": "xgboost_california_v3",
-    "features": {
-      "median_income": 8.3252,
-      "house_age": 41,
-      "total_rooms": 880,
-      "population": 322
-    }
-  }'`,
-
-  javascript: `import { DataVision } from '@datavision/sdk';
-
-const dv = new DataVision({
-  apiKey: 'dv_live_9f83a21b...'
-});
-
-const result = await dv.predictions.create({
-  modelId: 'xgboost_california_v3',
-  features: {
-    median_income: 8.3252,
-    house_age: 41,
-    total_rooms: 880,
-    population: 322
-  }
-});
-
-console.log('Prediction:', result.prediction);`,
-
-  webhooks: `// Webhook Payload (POST /your-endpoint)
-{
-  "event": "model.training.completed",
-  "timestamp": "2026-07-27T10:30:00Z",
-  "model": {
-    "id": "xgboost_california_v3",
-    "algorithm": "XGBoost Regressor",
-    "accuracy_score": 0.985,
-    "status": "CHAMPION_PROMOTED"
-  }
-}`,
-};
-
-/* ═══════════════════════════════════════════════════════════════════════
-   MAIN LANDING PAGE COMPONENT
-   ═══════════════════════════════════════════════════════════════════════ */
 export default function Landing() {
+  const navigate = useNavigate();
   const userId = getUserIdSync();
   const { isDark, toggleTheme } = useUserStore();
 
-  const [activeCodeLang, setActiveCodeLang] = useState<'python' | 'curl' | 'javascript' | 'webhooks'>('python');
-  const [copiedCode, setCopiedCode] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
+  // Active Product Tab (8 Full Core Modules)
+  const [activeTab, setActiveTab] = useState<
+    'dashboard' | 'automl' | 'cv' | 'simulator' | 'analyst' | 'datahub' | 'vector' | 'developer'
+  >('dashboard');
 
-  // Live AI Sandbox State
-  const [marketingBudget, setMarketingBudget] = useState(2500000);
-  const [unitPrice, setUnitPrice] = useState(1250);
-  const [teamSize, setTeamSize] = useState(120);
-  const [isSimulating, setIsSimulating] = useState(false);
+  // Simulator Sliders State
+  const [price, setPrice] = useState(85);
+  const [marketing, setMarketing] = useState(30000);
+  const [churnRate, setChurnRate] = useState(2.0);
+  const [headcount, setHeadcount] = useState(45);
 
-  const calculatedImpact = useMemo(() => {
-    const budgetFactor = (marketingBudget / 2500000) * 0.45;
-    const priceFactor = (unitPrice / 1250) * 0.35;
-    const teamFactor = (teamSize / 120) * 0.20;
-    const combined = budgetFactor + priceFactor + teamFactor;
-    const baseRevenue = 10.5;
-    const revenue = (baseRevenue * combined).toFixed(2);
-    const revenueGrowth = (((parseFloat(revenue) - 10.5) / 10.5) * 100).toFixed(1);
-    const baseProfit = 2.1;
-    const profit = (baseProfit * (combined * 1.1)).toFixed(2);
-    const profitGrowth = (((parseFloat(profit) - 2.1) / 2.1) * 100).toFixed(1);
-    return { revenue, revenueGrowth, profit, profitGrowth, confidence: (92 + combined * 3).toFixed(1) };
-  }, [marketingBudget, unitPrice, teamSize]);
+  // FAQ Accordion State
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
 
-  useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  // Interactive ROI Calculator State
+  const [monthlyRows, setMonthlyRows] = useState(5); // Millions
+  const [teamSize, setTeamSize] = useState(8); // Analysts/Engineers
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedCode(true);
-    setTimeout(() => setCopiedCode(false), 2000);
+  // Calculated Metrics
+  const calculatedRev = Math.round((price * 950) + (marketing * 0.24) - (churnRate * 35000) + (headcount * 1200));
+  const calculatedRoi = Math.round(((calculatedRev - marketing) / marketing) * 100);
+
+  const hoursSavedPerWeek = Math.round(teamSize * 14);
+  const annualSavingsDollars = Math.round((monthlyRows * 18000) + (teamSize * 12500));
+
+  // Dedicated Screenshot Image Mapping per Tab for both Dark and Light mode
+  const darkDemoImages: Record<string, string> = {
+    dashboard: '/dashboard-dark.png',
+    automl: '/automl-dark.png',
+    cv: '/cv-demo.png',
+    simulator: '/simulator-dark.png',
+    analyst: '/developer-demo.png',
+    datahub: '/datahub-light.png',
+    vector: '/vector-dark.png',
+    developer: '/developer-demo.png'
   };
 
-  // ─── Theme-aware classes ───
-  const pageBg = isDark ? 'bg-[#08090e]' : 'bg-white';
-  const textH = isDark ? 'text-white' : 'text-slate-900';
-  const textP = isDark ? 'text-slate-400' : 'text-slate-600';
-  const textSub = isDark ? 'text-slate-500' : 'text-slate-500';
-  const card = isDark
-    ? 'bg-white/[0.03] border-white/[0.06] hover:border-emerald-500/30'
-    : 'bg-white border-slate-200/80 shadow-sm shadow-slate-100 hover:border-emerald-500/40 hover:shadow-md hover:shadow-emerald-50';
-  const navBg = scrolled
-    ? isDark ? 'bg-[#08090e]/80 border-white/[0.06] shadow-2xl shadow-black/40' : 'bg-white/80 border-slate-200 shadow-lg shadow-slate-200/40'
-    : 'bg-transparent border-transparent';
-  const sectionAlt = isDark ? 'bg-white/[0.015]' : 'bg-slate-50/80';
-  const codeBg = isDark ? 'bg-[#0c0e14] border-white/[0.06]' : 'bg-slate-50 border-slate-200 shadow-lg shadow-slate-200/40';
+  const lightDemoImages: Record<string, string> = {
+    dashboard: '/dashboard-demo.png',
+    automl: '/automl-demo.png',
+    cv: '/cv-light.png',
+    simulator: '/simulator-demo.png',
+    analyst: '/developer-light.png',
+    datahub: '/datahub-light.png',
+    vector: '/vector-light.png',
+    developer: '/developer-light.png'
+  };
+
+  const currentTabImage = isDark ? darkDemoImages[activeTab] : lightDemoImages[activeTab];
+
+  // Dynamic Theme Styling Tokens
+  const bgMain = isDark ? 'bg-[#05060A] text-white' : 'bg-[#FFFFFF] text-[#111827]';
+  const bgCard = isDark ? 'bg-[#0B0D14]/95 border-white/[0.08]' : 'bg-[#FFFFFF] border-[#E5E7EB] shadow-sm';
+  const bgNav = isDark ? 'bg-[#05060A]/85 border-white/[0.08]' : 'bg-[#FFFFFF]/95 border-[#E5E7EB]';
+  const bgSecondary = isDark ? 'bg-[#080A10] border-white/[0.06]' : 'bg-[#F8FAFC] border-[#E5E7EB]';
+  const textMuted = isDark ? 'text-slate-400' : 'text-[#6B7280]';
+  const textTitle = isDark ? 'text-white' : 'text-[#111827]';
+  const borderClean = isDark ? 'border-white/[0.08]' : 'border-[#E5E7EB]';
 
   return (
-    <div className={`min-h-screen ${pageBg} transition-colors duration-300 overflow-x-hidden relative`}
-         style={{ fontFamily: "'Inter', 'Plus Jakarta Sans', system-ui, sans-serif" }}>
+    <div className={`min-h-screen font-sans antialiased selection:bg-[#16A34A]/20 selection:text-[#16A34A] transition-colors duration-300 ${bgMain}`}>
 
-      {/* ═══════ CSS AMBIENT GRADIENT ORBS (Lightweight, no canvas) ═══════ */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className={`absolute -top-[30%] -left-[15%] w-[700px] h-[700px] rounded-full blur-[120px] ${
-          isDark ? 'bg-emerald-500/[0.07]' : 'bg-emerald-400/[0.12]'
-        }`} style={{ animation: 'float-slow 20s ease-in-out infinite' }} />
-        <div className={`absolute top-[20%] -right-[10%] w-[600px] h-[600px] rounded-full blur-[120px] ${
-          isDark ? 'bg-teal-500/[0.05]' : 'bg-teal-400/[0.08]'
-        }`} style={{ animation: 'float-slow 25s ease-in-out infinite reverse' }} />
-        <div className={`absolute -bottom-[20%] left-[30%] w-[500px] h-[500px] rounded-full blur-[120px] ${
-          isDark ? 'bg-cyan-500/[0.04]' : 'bg-cyan-400/[0.06]'
-        }`} style={{ animation: 'float-slow 22s ease-in-out infinite 3s' }} />
-      </div>
-
-      <style>{`
-        @keyframes float-slow {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          33% { transform: translate(30px, -20px) scale(1.05); }
-          66% { transform: translate(-20px, 15px) scale(0.95); }
-        }
-      `}</style>
-
-      {/* ═══════════════════ NAVIGATION ═══════════════════ */}
-      <nav className={`fixed w-full z-[100] top-0 transition-all duration-500 ${navBg} border-b backdrop-blur-2xl`}>
-        <div className="max-w-[1200px] mx-auto px-6 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3 group">
-            <LogoImage size={34} className="rounded-xl transition-transform group-hover:scale-105" />
-            <div className="flex items-center gap-2.5">
-              <span className={`font-bold text-lg tracking-tight ${textH}`}>DataVision</span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 tracking-widest uppercase">
-                v3.0
-              </span>
-            </div>
+      {/* ═══════════════════ NAVBAR ═══════════════════ */}
+      <header className={`sticky top-0 z-50 border-b backdrop-blur-md transition-colors ${bgNav}`}>
+        <div className="max-w-[1280px] mx-auto px-6 h-16 flex items-center justify-between">
+          
+          {/* User's Authentic DataVision Eye & Globe Startup Logo */}
+          <Link to="/" className="flex items-center gap-2 group">
+            <LogoImage isDark={isDark} size={38} showText={true} />
           </Link>
 
-          <div className="hidden md:flex items-center gap-8">
-            {['Platform', 'Integrations', 'Developer', 'Enterprise'].map(link => (
-              <a key={link} href={`#${link.toLowerCase()}`}
-                className={`text-[13px] font-medium ${textP} hover:text-emerald-500 transition-colors`}>
-                {link}
-              </a>
-            ))}
-          </div>
+          {/* Navigation Links */}
+          <nav className={`hidden lg:flex items-center gap-8 text-xs font-semibold ${textMuted}`}>
+            <a href="#workflow" className="hover:text-[#16A34A] transition-colors">Workflow</a>
+            <a href="#preview" className="hover:text-[#16A34A] transition-colors">Live Studio</a>
+            <a href="#services" className="hover:text-[#16A34A] transition-colors">Services</a>
+            <a href="#benchmarks" className="hover:text-[#16A34A] transition-colors">Benchmarks</a>
+            <a href="#calculator" className="hover:text-[#16A34A] transition-colors">ROI Calculator</a>
+            <a href="#faq" className="hover:text-[#16A34A] transition-colors">FAQ</a>
+            <a href="#security" className="hover:text-[#16A34A] transition-colors">Security</a>
+          </nav>
 
-          <div className="flex items-center gap-2.5">
-            <button onClick={toggleTheme}
-              className={`p-2 rounded-lg border transition-all ${
-                isDark ? 'border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/5'
-                       : 'border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-              }`}>
+          {/* Right Actions */}
+          <div className="flex items-center gap-3">
+            {/* Dark / Light Theme Switcher */}
+            <button
+              onClick={toggleTheme}
+              className={`p-2 rounded-lg border transition-colors ${
+                isDark ? 'border-white/10 text-amber-400 hover:bg-white/5' : 'border-[#E5E7EB] text-[#6B7280] hover:bg-[#F8FAFC]'
+              }`}
+              title="Toggle Light / Dark Mode"
+            >
               {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
-            <Link to="/login"
-              className={`text-[13px] font-medium px-4 py-2 rounded-lg transition-colors hidden sm:block ${
-                isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
-              }`}>
+
+            <Link
+              to="/login"
+              className={`hidden sm:inline-flex px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors ${
+                isDark ? 'border-white/10 text-white hover:bg-white/5' : 'border-[#E5E7EB] text-[#111827] hover:bg-[#F8FAFC]'
+              }`}
+            >
               Sign In
             </Link>
-            <Link to={`/datahub?user=${userId}`}
-              className="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-white font-semibold text-[13px] transition-all flex items-center gap-2 shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30">
-              Get Started
+
+            <Link
+              to={`/datahub?user=${userId}`}
+              className="px-4 py-2 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1.5"
+            >
+              Launch Workspace
               <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* ═══════════════════ HERO ═══════════════════ */}
-      <section className="relative pt-40 pb-28 z-10">
-        <div className="max-w-[980px] mx-auto px-6 text-center">
-          <Reveal>
-            <div className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-medium mb-8 ${
-              isDark ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+      {/* ═══════════════════ HERO SECTION ═══════════════════ */}
+      <section className={`pt-14 pb-20 border-b transition-colors ${bgMain} ${borderClean}`}>
+        <div className="max-w-[1280px] mx-auto px-6 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+          
+          {/* LEFT COLUMN: HEADLINE & CTAS */}
+          <div className="lg:col-span-5 space-y-6">
+            
+            {/* Release Badge */}
+            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium ${
+              isDark ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-[#F8FAFC] border-[#E5E7EB] text-[#111827]'
             }`}>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              DataVision Enterprise v3.0 — Now Live
+              <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
+              <span className="font-bold text-[#16A34A]">NEW</span>
+              <span className={textMuted}>•</span>
+              <span className={textMuted}>Enterprise AI Lakehouse v2.5</span>
             </div>
-          </Reveal>
 
-          <Reveal delay={0.08}>
-            <h1 className={`text-5xl sm:text-6xl lg:text-[72px] font-extrabold tracking-[-0.03em] leading-[1.06] mb-7 ${textH}`}>
-              Turn raw data into{' '}
-              <span className="bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 bg-clip-text text-transparent">
-                autonomous decisions
-              </span>
+            {/* Large Headline */}
+            <h1 className={`text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.1] ${textTitle}`}>
+              Transform Enterprise{' '}
+              <span className="text-[#16A34A]">Data</span>{' '}
+              Into Intelligent Decisions.
             </h1>
-          </Reveal>
 
-          <Reveal delay={0.14}>
-            <p className={`text-lg sm:text-xl leading-relaxed ${textP} max-w-[720px] mx-auto mb-10`}>
-              Connect your data warehouse, and DataVision autonomously builds dashboards, trains ML models, 
-              simulates business scenarios, and deploys prediction APIs — all without writing code.
+            {/* Paragraph */}
+            <p className={`text-base leading-relaxed font-normal ${textMuted}`}>
+              DataVision unifies Business Intelligence, Ultra AutoML, Multi-Task Computer Vision, Vector RAG Search, and AI Agents into one platform. Streamline data engineering to production inference without infrastructure overhead.
             </p>
-          </Reveal>
 
-          <Reveal delay={0.2}>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5">
-              <Link to={`/datahub?user=${userId}`}
-                className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-[15px] shadow-xl shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all flex items-center justify-center gap-2.5 group">
-                Start Analyzing Free
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+            {/* Button CTA Group */}
+            <div className="flex items-center gap-3 pt-2">
+              <Link
+                to={`/datahub?user=${userId}`}
+                className="px-6 py-3.5 bg-[#16A34A] hover:bg-[#15803D] text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-2"
+              >
+                Launch Workspace
+                <ArrowRight className="w-4 h-4" />
               </Link>
-              <a href="#sandbox"
-                className={`w-full sm:w-auto px-7 py-3.5 rounded-xl font-semibold text-[15px] border transition-all flex items-center justify-center gap-2.5 ${
-                  isDark ? 'border-white/[0.08] text-white hover:bg-white/5' : 'border-slate-200 text-slate-800 hover:bg-slate-50'
-                }`}>
-                <Sliders className="w-4 h-4 text-emerald-500" />
-                Try Live Sandbox
-              </a>
-            </div>
-          </Reveal>
 
-          <Reveal delay={0.28}>
-            <div className={`flex items-center justify-center gap-5 flex-wrap mt-12 text-xs font-medium ${textSub}`}>
-              {[
-                { icon: Database, label: 'PostgreSQL · Snowflake · BigQuery' },
-                { icon: BrainCircuit, label: '14+ AutoML Models' },
-                { icon: Code, label: 'REST APIs <12ms' },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <item.icon className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>{item.label}</span>
-                </div>
-              ))}
+              <button
+                onClick={() => navigate('/chat')}
+                className={`px-6 py-3.5 text-xs font-bold rounded-lg border transition-colors ${
+                  isDark ? 'border-white/15 text-white hover:bg-white/5' : 'bg-[#FFFFFF] border-[#E5E7EB] text-[#111827] hover:bg-[#F8FAFC]'
+                }`}
+              >
+                Book Demo
+              </button>
             </div>
-          </Reveal>
-        </div>
-      </section>
 
-      {/* ═══════════════════ METRICS TICKER ═══════════════════ */}
-      <section className={`relative py-16 border-y z-10 ${isDark ? 'border-white/[0.04] bg-white/[0.01]' : 'border-slate-100 bg-slate-50/50'}`}>
-        <div className="max-w-[1100px] mx-auto px-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-10 text-center">
-            {metrics.map((m, i) => (
-              <Reveal key={i} delay={i * 0.08}>
-                <div>
-                  <m.icon className={`w-5 h-5 mx-auto mb-2 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-                  <p className={`text-4xl font-extrabold tracking-tight ${textH}`}>
-                    <Counter to={m.value} suffix={m.suffix} />
-                  </p>
-                  <p className={`text-xs font-medium mt-1 uppercase tracking-wider ${textSub}`}>{m.label}</p>
-                </div>
-              </Reveal>
-            ))}
+            {/* Customer Trust Text */}
+            <div className={`pt-4 border-t ${borderClean}`}>
+              <p className={`text-xs font-semibold ${textMuted}`}>
+                Native database connectors: Snowflake, Postgres, Databricks, Kafka, BigQuery & MongoDB.
+              </p>
+            </div>
+
           </div>
-        </div>
-      </section>
 
-      {/* ═══════════════════ INTERACTIVE AI SANDBOX ═══════════════════ */}
-      <section id="sandbox" className="relative py-28 z-10">
-        <div className="max-w-[1200px] mx-auto px-6">
-          <Reveal className="text-center max-w-2xl mx-auto mb-14">
-            <p className={`text-xs font-bold uppercase tracking-widest mb-3 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
-              Interactive Sandbox
-            </p>
-            <h2 className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${textH}`}>
-              Test the AI engine <span className="text-emerald-500">live</span>
-            </h2>
-            <p className={`text-base mt-3 ${textP}`}>
-              Adjust business variables and see real-time sensitivity forecasts powered by DataVision's SHAP analysis engine.
-            </p>
-          </Reveal>
-
-          <Reveal>
-            <div className={`rounded-2xl border overflow-hidden ${
-              isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-white border-slate-200 shadow-xl shadow-slate-200/40'
-            }`}>
-              {/* Header bar */}
-              <div className={`h-11 flex items-center px-5 border-b gap-3 ${
-                isDark ? 'bg-white/[0.02] border-white/[0.05]' : 'bg-slate-50 border-slate-200'
+          {/* RIGHT COLUMN: MACOS PRODUCT SHOWCASE WINDOW WITH DATAVISION LOGO */}
+          <div className="lg:col-span-7" id="preview">
+            <div className={`rounded-xl border shadow-xl overflow-hidden ${bgCard}`}>
+              
+              {/* MacOS Window Top Bar */}
+              <div className={`px-4 py-3 border-b flex items-center justify-between ${
+                isDark ? 'bg-[#0E111A] border-white/10' : 'bg-[#F8FAFC] border-[#E5E7EB]'
               }`}>
-                <div className="flex gap-1.5">
-                  <div className="w-2.5 h-2.5 rounded-full bg-red-400/80" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400/80" />
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400/80" />
-                </div>
-                <span className={`text-xs font-medium ${textSub} flex items-center gap-2`}>
-                  <Activity className="w-3.5 h-3.5 text-emerald-500" />
-                  DataVision AI Simulation Engine
-                </span>
-                <div className="ml-auto">
-                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2.5 py-1 rounded-full flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    {calculatedImpact.confidence}% Confidence
-                  </span>
-                </div>
-              </div>
-
-              {/* Content grid */}
-              <div className="p-6 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-                {/* Left: Sliders */}
-                <div className="lg:col-span-5 space-y-5">
-                  <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-white/[0.05]' : 'border-slate-100'}`}>
-                    <h3 className={`text-sm font-bold ${textH} flex items-center gap-2`}>
-                      <Sliders className="w-4 h-4 text-emerald-500" /> Input Variables
-                    </h3>
-                    <button onClick={() => { setMarketingBudget(2500000); setUnitPrice(1250); setTeamSize(120); }}
-                      className={`text-xs font-medium ${textSub} hover:text-emerald-500 flex items-center gap-1`}>
-                      <RefreshCw className="w-3 h-3" /> Reset
-                    </button>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded-full bg-[#EF4444]" />
+                    <span className="w-3 h-3 rounded-full bg-[#F59E0B]" />
+                    <span className="w-3 h-3 rounded-full bg-[#10B981]" />
                   </div>
-
-                  {[
-                    { label: 'Marketing Budget', value: `₹${marketingBudget.toLocaleString()}`, min: 500000, max: 10000000, step: 250000, val: marketingBudget, set: setMarketingBudget, lo: '₹5L', hi: '₹1Cr', accent: 'accent-emerald-500' },
-                    { label: 'Unit Price', value: `₹${unitPrice.toLocaleString()}`, min: 250, max: 5000, step: 250, val: unitPrice, set: setUnitPrice, lo: '₹250', hi: '₹5,000', accent: 'accent-teal-500' },
-                    { label: 'Team Size', value: `${teamSize} employees`, min: 20, max: 500, step: 10, val: teamSize, set: setTeamSize, lo: '20', hi: '500', accent: 'accent-cyan-500' },
-                  ].map((s, i) => (
-                    <div key={i}>
-                      <div className="flex items-center justify-between text-xs font-medium mb-2">
-                        <span className={textP}>{s.label}</span>
-                        <span className="text-emerald-500 font-mono font-bold">{s.value}</span>
-                      </div>
-                      <input type="range" min={s.min} max={s.max} step={s.step} value={s.val}
-                        onChange={e => s.set(Number(e.target.value))}
-                        className={`w-full h-1.5 rounded-full cursor-pointer ${s.accent} ${isDark ? 'bg-white/[0.06]' : 'bg-slate-200'}`} />
-                      <div className="flex justify-between text-[10px] mt-1" style={{ color: isDark ? '#475569' : '#94a3b8' }}>
-                        <span>{s.lo}</span><span>{s.hi}</span>
-                      </div>
-                    </div>
-                  ))}
-
-                  <button onClick={() => { setIsSimulating(true); setTimeout(() => setIsSimulating(false), 600); }}
-                    disabled={isSimulating}
-                    className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2">
-                    {isSimulating
-                      ? <><RefreshCw className="w-4 h-4 animate-spin" /> Computing...</>
-                      : <><Zap className="w-4 h-4" /> Run Simulation</>}
-                  </button>
+                  {/* Official DataVision Eye Logo in Window Header */}
+                  <div className="border-l pl-3 border-white/10">
+                    <LogoImage isDark={isDark} size={22} showText={true} />
+                  </div>
                 </div>
 
-                {/* Right: Results */}
-                <div className="lg:col-span-7 space-y-5 flex flex-col">
-                  <div className="grid grid-cols-2 gap-4">
-                    {[
-                      { label: 'Projected Revenue', value: `₹${calculatedImpact.revenue} Cr`, growth: `+${calculatedImpact.revenueGrowth}%`, color: 'text-emerald-500' },
-                      { label: 'Profit Margin', value: `₹${calculatedImpact.profit} Cr`, growth: `+${calculatedImpact.profitGrowth}%`, color: 'text-teal-500' },
-                    ].map((r, i) => (
-                      <div key={i} className={`p-4 rounded-xl border ${isDark ? 'bg-white/[0.02] border-white/[0.05]' : 'bg-slate-50 border-slate-200'}`}>
-                        <p className={`text-[10px] font-bold uppercase tracking-wider ${textSub}`}>{r.label}</p>
-                        <p className={`text-2xl md:text-3xl font-extrabold ${textH} mt-1 font-mono tracking-tight`}>{r.value}</p>
-                        <div className={`flex items-center gap-1 text-xs font-bold ${r.color} mt-1`}>
-                          <TrendingUp className="w-3.5 h-3.5" /> {r.growth} vs baseline
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                <div className={`px-4 py-1 rounded border text-[11px] font-mono flex items-center gap-2 ${
+                  isDark ? 'bg-black/50 border-white/10 text-emerald-400' : 'bg-[#FFFFFF] border-[#E5E7EB] text-[#6B7280]'
+                }`}>
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#16A34A]" />
+                  https://datavision.ai/app/{activeTab}
+                </div>
 
-                  {/* SHAP bars */}
-                  <div className={`p-4 rounded-xl border space-y-3 ${isDark ? 'bg-white/[0.02] border-white/[0.05]' : 'bg-slate-50 border-slate-200'}`}>
-                    <div className="flex justify-between items-center">
-                      <span className={`text-xs font-bold ${textH}`}>SHAP Feature Importance</span>
-                      <span className="text-[10px] text-emerald-500 font-medium">Live Sensitivity</span>
-                    </div>
-                    {[
-                      { label: 'Marketing Budget', pct: Math.min(100, (marketingBudget / 10000000) * 100), value: '42.8%', color: 'bg-emerald-500' },
-                      { label: 'Unit Price', pct: Math.min(100, (unitPrice / 5000) * 100), value: '31.8%', color: 'bg-teal-500' },
-                      { label: 'Team Headcount', pct: Math.min(100, (teamSize / 500) * 100), value: '18.2%', color: 'bg-cyan-500' },
-                    ].map((bar, i) => (
-                      <div key={i}>
-                        <div className="flex justify-between text-[11px] font-medium mb-1">
-                          <span className={textP}>{bar.label}</span>
-                          <span className={bar.color.replace('bg-', 'text-')} style={{ fontWeight: 700 }}>{bar.value}</span>
-                        </div>
-                        <div className={`w-full h-1.5 rounded-full overflow-hidden ${isDark ? 'bg-white/[0.06]' : 'bg-slate-200'}`}>
-                          <motion.div initial={{ width: 0 }} animate={{ width: `${bar.pct}%` }}
-                            transition={{ duration: 0.8, ease: 'easeOut' }}
-                            className={`h-full rounded-full ${bar.color}`} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Gemini insight */}
-                  <div className="p-4 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/15 flex items-start gap-3 mt-auto">
-                    <Sparkles className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Gemini AI Recommendation</p>
-                      <p className={`text-xs ${textP} mt-0.5 leading-relaxed`}>
-                        Increasing marketing budget by <strong className={textH}>20%</strong> while keeping unit price
-                        at <strong className={textH}>₹{unitPrice.toLocaleString()}</strong> yields maximum margin expansion
-                        with <strong className={textH}>{calculatedImpact.confidence}%</strong> statistical confidence.
-                      </p>
-                    </div>
-                  </div>
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#16A34A]">
+                  <span className="w-2 h-2 rounded-full bg-[#16A34A] animate-ping" />
+                  {isDark ? 'DARK MODE UI' : 'LIGHT MODE UI'}
                 </div>
               </div>
-            </div>
-          </Reveal>
-        </div>
-      </section>
 
-      {/* ═══════════════════ DATA INTEGRATIONS ═══════════════════ */}
-      <section id="integrations" className={`relative py-24 border-y z-10 ${isDark ? 'border-white/[0.04]' : 'border-slate-100'} ${sectionAlt}`}>
-        <div className="max-w-[1100px] mx-auto px-6">
-          <Reveal className="text-center max-w-2xl mx-auto mb-14">
-            <p className={`text-xs font-bold uppercase tracking-widest mb-3 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
-              Universal Connectors
-            </p>
-            <h2 className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${textH}`}>
-              Connect any data source
-            </h2>
-            <p className={`text-base mt-3 ${textP}`}>
-              Native connectors for enterprise data warehouses, SQL/NoSQL databases, and tabular files.
-            </p>
-          </Reveal>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-            {dataIntegrations.map((di, idx) => (
-              <Reveal key={di.name} delay={idx * 0.04}>
-                <div className={`p-4 rounded-xl border text-center transition-all duration-200 ${card}`}>
-                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center mx-auto mb-2.5 ${
-                    isDark ? 'bg-white/[0.04]' : 'bg-slate-50'
-                  }`}>
-                    <di.icon className="w-4.5 h-4.5" style={{ color: di.color }} />
-                  </div>
-                  <p className={`text-xs font-bold ${textH}`}>{di.name}</p>
-                  <p className={`text-[10px] mt-0.5 ${textSub}`}>{di.category}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════ PLATFORM MODULES ═══════════════════ */}
-      <section id="platform" className="relative py-28 z-10">
-        <div className="max-w-[1200px] mx-auto px-6">
-          <Reveal className="text-center max-w-2xl mx-auto mb-16">
-            <p className={`text-xs font-bold uppercase tracking-widest mb-3 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
-              Complete Enterprise Platform
-            </p>
-            <h2 className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${textH}`}>
-              10 autonomous AI modules
-            </h2>
-            <p className={`text-base mt-3 ${textP}`}>
-              Every tool you need to go from raw dataset to production AI — in one unified workspace.
-            </p>
-          </Reveal>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {modules.map((mod, i) => (
-              <Reveal key={mod.title} delay={i * 0.04}>
-                <div className={`group relative rounded-2xl border p-6 transition-all duration-200 ${card}`}>
-                  <div className="flex items-start gap-4">
-                    <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${mod.gradient} flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/10 group-hover:scale-105 transition-transform`}>
-                      <mod.icon className="w-5 h-5 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <h3 className={`text-sm font-bold ${textH} group-hover:text-emerald-500 transition-colors`}>
-                          {mod.title}
-                        </h3>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                          isDark ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-600'
-                        } tracking-wider`}>
-                          {mod.badge}
-                        </span>
-                      </div>
-                      <p className={`text-xs leading-relaxed ${textP}`}>{mod.desc}</p>
-                      <div className="flex flex-wrap gap-1.5 mt-3">
-                        {mod.tags.map(t => (
-                          <span key={t} className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${
-                            isDark ? 'bg-white/[0.04] text-slate-400' : 'bg-slate-100 text-slate-600'
-                          }`}>{t}</span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══════════════════ DEVELOPER API ═══════════════════ */}
-      <section id="developer" className={`relative py-28 border-y z-10 ${isDark ? 'border-white/[0.04]' : 'border-slate-100'} ${sectionAlt}`}>
-        <div className="max-w-[1200px] mx-auto px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-            {/* Left: Info */}
-            <div className="lg:col-span-5">
-              <Reveal>
-                <p className={`text-xs font-bold uppercase tracking-widest mb-3 ${isDark ? 'text-cyan-400' : 'text-cyan-600'}`}>
-                  Developer First
-                </p>
-                <h2 className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${textH} mb-4`}>
-                  Integrate predictions in 3 lines of code
-                </h2>
-                <p className={`text-base ${textP} mb-8`}>
-                  Generate API keys, deploy REST endpoints with sub-12ms latency, and consume via Python, JavaScript, or cURL.
-                </p>
-              </Reveal>
-
-              <div className="space-y-3">
+              {/* 8 Product Tabs Navigation */}
+              <div className={`flex border-b px-3 gap-1 overflow-x-auto scrollbar-none ${
+                isDark ? 'bg-[#080A10] border-white/10' : 'bg-[#FFFFFF] border-[#E5E7EB]'
+              }`}>
                 {[
-                  { icon: Key, title: 'Generate API Keys', desc: 'Create live keys with granular permissions in seconds.' },
-                  { icon: Target, title: 'Select Model Endpoint', desc: 'Target any trained AutoML champion or CV pipeline.' },
-                  { icon: Zap, title: 'Stream Predictions', desc: 'Sub-12ms inference with 99.99% SLA uptime.' },
-                  { icon: RefreshCw, title: 'Webhooks', desc: 'Instant notifications when models finish training.' },
-                ].map((s, i) => (
-                  <Reveal key={i} delay={i * 0.06}>
-                    <div className={`flex items-start gap-3 p-3.5 rounded-xl border transition-all ${card}`}>
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                        isDark ? 'bg-cyan-500/10' : 'bg-cyan-50'
-                      }`}>
-                        <s.icon className="w-4 h-4 text-cyan-500" />
-                      </div>
-                      <div>
-                        <h4 className={`text-xs font-bold ${textH}`}>{s.title}</h4>
-                        <p className={`text-[11px] ${textSub} mt-0.5`}>{s.desc}</p>
-                      </div>
-                    </div>
-                  </Reveal>
+                  { id: 'dashboard', label: 'Dashboard', color: 'text-emerald-500' },
+                  { id: 'automl', label: 'AutoML Studio', color: 'text-indigo-500' },
+                  { id: 'cv', label: 'Computer Vision', color: 'text-cyan-500' },
+                  { id: 'simulator', label: 'Simulator', color: 'text-amber-500' },
+                  { id: 'analyst', label: 'AI Analyst', color: 'text-rose-500' },
+                  { id: 'datahub', label: 'DataHub ETL', color: 'text-sky-500' },
+                  { id: 'vector', label: 'Vector AI', color: 'text-purple-500' },
+                  { id: 'developer', label: 'Developer API', color: 'text-teal-500' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-colors shrink-0 ${
+                      activeTab === tab.id
+                        ? `border-[#16A34A] ${tab.color} ${isDark ? 'bg-white/5' : 'bg-[#F8FAFC]'}`
+                        : `border-transparent ${textMuted} hover:text-[#16A34A]`
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
                 ))}
               </div>
-            </div>
 
-            {/* Right: Code block */}
-            <div className="lg:col-span-7">
-              <Reveal>
-                <div className={`rounded-2xl border overflow-hidden ${codeBg}`}>
-                  <div className={`flex items-center justify-between px-4 py-2.5 border-b ${
-                    isDark ? 'border-white/[0.05] bg-white/[0.02]' : 'border-slate-200 bg-slate-100'
-                  }`}>
-                    <div className="flex items-center gap-1.5">
-                      {[
-                        { id: 'python', label: 'Python' },
-                        { id: 'curl', label: 'cURL' },
-                        { id: 'javascript', label: 'JavaScript' },
-                        { id: 'webhooks', label: 'Webhooks' },
-                      ].map(lang => (
-                        <button key={lang.id} onClick={() => setActiveCodeLang(lang.id as any)}
-                          className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
-                            activeCodeLang === lang.id
-                              ? isDark ? 'bg-cyan-500 text-slate-950' : 'bg-emerald-600 text-white'
-                              : isDark ? 'text-slate-500 hover:text-white' : 'text-slate-500 hover:text-slate-900'
-                          }`}>
-                          {lang.label}
-                        </button>
-                      ))}
+              {/* PERFECT FULL-BLEED SCREENSHOT DISPLAY */}
+              <div className={`relative ${isDark ? 'bg-[#05060A]' : 'bg-[#F8FAFC]'}`}>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeTab + (isDark ? '-dark' : '-light')}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-4"
+                  >
+                    {/* Full-Bleed High-Res Image Showcase */}
+                    <div className="w-full overflow-hidden bg-center bg-cover">
+                      <img 
+                        src={currentTabImage} 
+                        alt={`DataVision ${activeTab} Enterprise Platform`} 
+                        className="w-full h-auto max-h-[420px] object-cover block"
+                      />
                     </div>
-                    <button onClick={() => handleCopy(codeSnippets[activeCodeLang])}
-                      className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md border ${
-                        isDark ? 'text-slate-500 hover:text-white border-white/[0.06]' : 'text-slate-500 hover:text-slate-900 border-slate-200'
-                      }`}>
-                      {copiedCode ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                      {copiedCode ? 'Copied' : 'Copy'}
-                    </button>
-                  </div>
-                  <div className={`p-5 font-mono text-xs leading-relaxed overflow-x-auto ${
-                    isDark ? 'text-emerald-400' : 'text-slate-800'
-                  }`}>
-                    <pre className="whitespace-pre">{codeSnippets[activeCodeLang]}</pre>
-                  </div>
-                </div>
-              </Reveal>
+
+                    {/* Interactive Simulator Controls Overlay */}
+                    {activeTab === 'simulator' && (
+                      <div className="p-4">
+                        <div className={`p-4 rounded-lg border grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs ${bgCard}`}>
+                          <div className="space-y-2">
+                            <div className="flex justify-between font-semibold"><span>Price ($)</span><span className="font-bold text-amber-500">${price}</span></div>
+                            <input type="range" min="30" max="200" value={price} onChange={(e)=>setPrice(Number(e.target.value))} className="w-full accent-amber-500" />
+                            
+                            <div className="flex justify-between font-semibold pt-1"><span>Marketing ($)</span><span className="font-bold text-amber-500">${marketing.toLocaleString()}</span></div>
+                            <input type="range" min="5000" max="100000" step="5000" value={marketing} onChange={(e)=>setMarketing(Number(e.target.value))} className="w-full accent-amber-500" />
+                          </div>
+
+                          <div className={`p-3.5 rounded border flex flex-col justify-between ${
+                            isDark ? 'bg-amber-950/20 border-amber-500/30' : 'bg-amber-50/90 border-amber-200'
+                          }`}>
+                            <div>
+                              <span className="text-[11px] font-bold text-amber-600 uppercase">Simulated Revenue</span>
+                              <div className="text-2xl font-extrabold text-amber-600 mt-0.5">₹{(calculatedRev / 100000).toFixed(2)} Lakhs</div>
+                            </div>
+                            <div className="pt-2 border-t border-amber-300/40 flex justify-between text-xs font-bold text-amber-700">
+                              <span>Marketing ROI</span>
+                              <span className="text-emerald-600 font-extrabold">{calculatedRoi}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
             </div>
           </div>
+
         </div>
       </section>
 
-      {/* ═══════════════════ 4-STEP WORKFLOW ═══════════════════ */}
-      <section className="relative py-28 z-10">
-        <div className="max-w-[1000px] mx-auto px-6">
-          <Reveal className="text-center max-w-2xl mx-auto mb-16">
-            <p className={`text-xs font-bold uppercase tracking-widest mb-3 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
-              How It Works
-            </p>
-            <h2 className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${textH}`}>
-              From raw CSV to deployed AI in 60 seconds
-            </h2>
-          </Reveal>
+      {/* ═══════════════════ REAL LOGO CONNECTOR STRIP ═══════════════════ */}
+      <section className={`py-10 border-b transition-colors ${bgSecondary}`}>
+        <div className="max-w-[1280px] mx-auto px-6">
+          <p className={`text-center text-xs font-bold uppercase tracking-wider mb-6 ${textMuted}`}>
+            SUPPORTED DATA ENGINE & WAREHOUSE CONNECTORS
+          </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {workflowSteps.map((ws, idx) => (
-              <Reveal key={ws.step} delay={idx * 0.08}>
-                <div className={`p-5 rounded-2xl border text-center h-full flex flex-col items-center ${card}`}>
-                  <span className="text-2xl font-extrabold text-emerald-500 mb-3">{ws.step}</span>
-                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-3 ${
-                    isDark ? 'bg-emerald-500/10' : 'bg-emerald-50'
-                  }`}>
-                    <ws.icon className="w-5 h-5 text-emerald-500" />
-                  </div>
-                  <h3 className={`text-sm font-bold ${textH} mb-1.5`}>{ws.title}</h3>
-                  <p className={`text-xs leading-relaxed ${textSub}`}>{ws.desc}</p>
-                </div>
-              </Reveal>
-            ))}
+          <div className="flex items-center justify-center gap-8 md:gap-14 flex-wrap">
+            <div className="flex items-center gap-2"><SnowflakeLogo /><span className="font-bold text-xs">Snowflake</span></div>
+            <div className="flex items-center gap-2"><DatabricksLogo /><span className="font-bold text-xs">Databricks</span></div>
+            <div className="flex items-center gap-2"><PostgresLogo /><span className="font-bold text-xs">PostgreSQL</span></div>
+            <div className="flex items-center gap-2"><KafkaLogo /><span className="font-bold text-xs">Apache Kafka</span></div>
+            <div className="flex items-center gap-2"><BigQueryLogo /><span className="font-bold text-xs">Google BigQuery</span></div>
+            <div className="flex items-center gap-2"><MongoDbLogo /><span className="font-bold text-xs">MongoDB</span></div>
+            <div className="flex items-center gap-2"><RedshiftLogo /><span className="font-bold text-xs">Amazon Redshift</span></div>
+            <div className="flex items-center gap-2"><MySqlLogo /><span className="font-bold text-xs">MySQL</span></div>
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════ ENTERPRISE SECURITY ═══════════════════ */}
-      <section id="enterprise" className={`relative py-20 border-y z-10 ${isDark ? 'border-white/[0.04]' : 'border-slate-100'} ${sectionAlt}`}>
-        <div className="max-w-[1000px] mx-auto px-6">
-          <Reveal className="text-center mb-12">
-            <h2 className={`text-2xl sm:text-3xl font-extrabold tracking-tight ${textH}`}>
-              Enterprise-grade security
+      {/* ═══════════════════ MIDDLE SECTION A: 3-STEP AUTONOMOUS WORKFLOW ═══════════════════ */}
+      <section id="workflow" className={`py-20 border-b transition-colors ${bgMain} ${borderClean}`}>
+        <div className="max-w-[1280px] mx-auto px-6 space-y-12">
+          
+          <div className="text-center space-y-3 max-w-2xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-xs font-bold">
+              <Workflow className="w-3.5 h-3.5" />
+              END-TO-END AUTOMATION PIPELINE
+            </div>
+            <h2 className={`text-3xl font-bold tracking-tight ${textTitle}`}>
+              How DataVision Automates Business Data
             </h2>
-            <p className={`text-sm mt-2 ${textSub}`}>Built for strict corporate compliance and data isolation.</p>
-          </Reveal>
+            <p className={`text-sm ${textMuted}`}>
+              From raw data streams to production REST endpoints and interactive simulations in 3 seamless steps.
+            </p>
+          </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div className={`p-8 rounded-xl border relative space-y-4 ${bgCard}`}>
+              <div className="w-8 h-8 rounded-lg bg-emerald-500 text-white font-extrabold flex items-center justify-center text-sm">1</div>
+              <h3 className={`text-lg font-bold ${textTitle}`}>Connect Data Lakes & Streams</h3>
+              <p className={`text-xs leading-relaxed ${textMuted}`}>
+                Stream raw event telemetry via live API Push or connect Snowflake, Postgres, Kafka, and CSV files with 20+ automated quality checks.
+              </p>
+            </div>
+
+            <div className={`p-8 rounded-xl border relative space-y-4 ${bgCard}`}>
+              <div className="w-8 h-8 rounded-lg bg-indigo-500 text-white font-extrabold flex items-center justify-center text-sm">2</div>
+              <h3 className={`text-lg font-bold ${textTitle}`}>Concurrent Multi-Engine AI</h3>
+              <p className={`text-xs leading-relaxed ${textMuted}`}>
+                DataVision auto-profiles columns, cleans missing values, trains 6 SOTA models simultaneously, and indexes metadata in Qdrant Vector DB.
+              </p>
+            </div>
+
+            <div className={`p-8 rounded-xl border relative space-y-4 ${bgCard}`}>
+              <div className="w-8 h-8 rounded-lg bg-amber-500 text-white font-extrabold flex items-center justify-center text-sm">3</div>
+              <h3 className={`text-lg font-bold ${textTitle}`}>Deploy & Simulate</h3>
+              <p className={`text-xs leading-relaxed ${textMuted}`}>
+                Deploy &lt;11ms REST prediction endpoints, run interactive scenario sensitivity sliders, and auto-generate executive report artifacts.
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* ═══════════════════ DISTINCT COLOR CODED ENTERPRISE SERVICES ═══════════════════ */}
+      <section id="services" className={`py-20 border-b transition-colors ${bgSecondary}`}>
+        <div className="max-w-[1280px] mx-auto px-6 space-y-12">
+          
+          <div className="text-center space-y-3 max-w-2xl mx-auto">
+            <h2 className={`text-3xl font-bold tracking-tight ${textTitle}`}>
+              Enterprise AI Lakehouse Services
+            </h2>
+            <p className={`text-sm ${textMuted}`}>
+              8 dedicated platform services engineered for enterprise intelligence, predictive modeling, and vector analytics.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
-              { title: 'SOC 2 Type II', icon: Shield, desc: 'Audited infrastructure' },
-              { title: 'AES-256', icon: Lock, desc: 'End-to-end encryption' },
-              { title: 'GDPR & HIPAA', icon: Globe, desc: 'Data residency isolation' },
-              { title: '99.99% SLA', icon: Gauge, desc: 'High availability' },
-            ].map((s, i) => (
-              <Reveal key={i} delay={i * 0.06}>
-                <div className={`p-5 rounded-xl border text-center ${card}`}>
-                  <s.icon className={`w-5 h-5 mx-auto mb-2 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`} />
-                  <p className={`text-xs font-bold ${textH} mb-0.5`}>{s.title}</p>
-                  <p className={`text-[11px] ${textSub}`}>{s.desc}</p>
+              {
+                title: 'Autonomous BI & Profiling',
+                desc: 'Auto-engineer 15+ chart types, correlation heatmaps, and KPI cards with zero drag-and-drop manual work.',
+                icon: LayoutDashboard,
+                colorBg: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
+                accentColor: 'text-emerald-500',
+                route: '/dashboard'
+              },
+              {
+                title: 'Ultra AutoML & Model Hub',
+                desc: 'Train 6 SOTA engines (XGBoost, LightGBM, CatBoost, PyTorch NN) with SHAP explainability and 1-click model registry.',
+                icon: BrainCircuit,
+                colorBg: 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
+                accentColor: 'text-indigo-500',
+                route: '/ml-predictions'
+              },
+              {
+                title: 'Multi-Task Vision Studio',
+                desc: 'YOLOv8 & ResNet studio for Object Detection, Instance Segmentation, Pose Keypoints, and OCR Text Extraction.',
+                icon: Eye,
+                colorBg: 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20',
+                accentColor: 'text-cyan-500',
+                route: '/computer-vision'
+              },
+              {
+                title: 'Digital Twin Simulator',
+                desc: 'Interactive sensitivity sliders for revenue, churn, and budget trade-offs with Monte Carlo confidence intervals.',
+                icon: Sliders,
+                colorBg: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+                accentColor: 'text-amber-500',
+                route: '/simulator'
+              },
+              {
+                title: 'Embedded Qdrant Vector AI',
+                desc: '384d MiniLM-L6 vector embeddings for natural language semantic search and AI analyst context memory.',
+                icon: Database,
+                colorBg: 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+                accentColor: 'text-purple-500',
+                route: '/lineage'
+              },
+              {
+                title: 'Generative AI Analyst (RAG)',
+                desc: 'Gemini 1.5 & GPT-4 LLM chat assistant generating interactive smart charts, SQL queries, and executive reports.',
+                icon: Zap,
+                colorBg: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
+                accentColor: 'text-rose-500',
+                route: '/chat'
+              },
+              {
+                title: 'Live API Telemetry Push',
+                desc: 'Stream raw telemetry from Snowflake, Kafka, or Python scripts with live event log counters.',
+                icon: Activity,
+                colorBg: 'bg-sky-500/10 text-sky-500 border-sky-500/20',
+                accentColor: 'text-sky-500',
+                route: '/datahub'
+              },
+              {
+                title: 'Developer REST API & SDK',
+                desc: 'Serve predictions with <11ms latency, generate API keys, stream webhooks, and execute code in Web IDE.',
+                icon: Code,
+                colorBg: 'bg-teal-500/10 text-teal-500 border-teal-500/20',
+                accentColor: 'text-teal-500',
+                route: '/developer'
+              }
+            ].map((service) => (
+              <div
+                key={service.title}
+                onClick={() => navigate(service.route)}
+                className={`p-6 rounded-xl border transition-all cursor-pointer group shadow-2xs hover:shadow-md flex flex-col justify-between ${bgCard} hover:border-[#16A34A]/50`}
+              >
+                <div className="space-y-3">
+                  <div className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-colors ${service.colorBg}`}>
+                    <service.icon className="w-5 h-5" />
+                  </div>
+                  <h3 className={`text-base font-bold transition-colors ${textTitle}`}>
+                    {service.title}
+                  </h3>
+                  <p className={`text-xs leading-relaxed ${textMuted}`}>
+                    {service.desc}
+                  </p>
                 </div>
-              </Reveal>
+
+                <div className={`pt-4 border-t flex items-center justify-between text-xs font-bold ${service.accentColor} mt-4 ${borderClean}`}>
+                  <span>Explore service</span>
+                  <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </section>
+
+      {/* ═══════════════════ BENCHMARK TABLE ═══════════════════ */}
+      <section id="benchmarks" className={`py-20 border-b transition-colors ${bgMain} ${borderClean}`}>
+        <div className="max-w-[1280px] mx-auto px-6 space-y-10">
+          
+          <div className="text-center space-y-3 max-w-2xl mx-auto">
+            <h2 className={`text-3xl font-bold tracking-tight ${textTitle}`}>
+              Verified Capability Benchmarks
+            </h2>
+            <p className={`text-sm ${textMuted}`}>
+              Compare DataVision against traditional BI software and legacy AutoML frameworks.
+            </p>
+          </div>
+
+          <div className={`rounded-xl border overflow-hidden shadow-2xs ${bgCard}`}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className={`border-b uppercase font-semibold text-[11px] ${
+                  isDark ? 'bg-white/5 border-white/10 text-slate-400' : 'bg-[#F8FAFC] border-[#E5E7EB] text-[#6B7280]'
+                }`}>
+                  <tr>
+                    <th className="p-4">Enterprise Metric / Capability</th>
+                    <th className="p-4 text-[#16A34A] font-bold">DataVision 2.5</th>
+                    <th className="p-4">Traditional BI</th>
+                    <th className="p-4">Legacy AutoML</th>
+                  </tr>
+                </thead>
+                <tbody className={`divide-y text-xs ${isDark ? 'divide-white/5 text-slate-200' : 'divide-[#E5E7EB] text-[#111827]'}`}>
+                  {[
+                    { cap: 'Inference Latency', dv: '< 11ms Global Edge', bi: '120ms Batch', legacy: '450ms Server' },
+                    { cap: 'Concurrent SOTA AutoML Engines', dv: '6 Engines (XGBoost, LightGBM, CatBoost, NN)', bi: 'None', legacy: '1 Model' },
+                    { cap: 'Interactive Scenario Sliders + SHAP', dv: 'Realtime SHAP Sliders', bi: 'Static PDF', legacy: 'Manual Python' },
+                    { cap: 'Computer Vision Studio', dv: 'YOLOv8 + ResNet (Object, Seg, Pose, OCR)', bi: 'Not Supported', legacy: 'Third-Party Tool' },
+                    { cap: 'Vector Database RAG Memory', dv: 'Embedded Qdrant (384d MiniLM-L6)', bi: 'None', legacy: 'Custom Setup' },
+                    { cap: 'Realtime Live Telemetry Push', dv: 'WebSocket Accumulator', bi: 'Batch Only', legacy: 'Batch Only' },
+                    { cap: 'Model Export Package', dv: '1-Click ONNX / Docker / Python ZIP', bi: 'PDF Export Only', legacy: 'Manual Export' }
+                  ].map((row, idx) => (
+                    <tr key={idx} className={idx % 2 === 0 ? (isDark ? 'bg-white/[0.01]' : 'bg-[#FFFFFF]') : (isDark ? 'bg-white/[0.03]' : 'bg-[#F8FAFC]')}>
+                      <td className="p-4 font-bold">{row.cap}</td>
+                      <td className="p-4 font-bold text-[#16A34A] flex items-center gap-1.5">
+                        <Check className="w-4 h-4 text-[#16A34A] shrink-0" />
+                        {row.dv}
+                      </td>
+                      <td className={`p-4 ${textMuted}`}>{row.bi}</td>
+                      <td className={`p-4 ${textMuted}`}>{row.legacy}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      {/* ═══════════════════ INTERACTIVE ENTERPRISE ROI CALCULATOR ═══════════════════ */}
+      <section id="calculator" className={`py-20 border-b transition-colors ${bgSecondary}`}>
+        <div className="max-w-[1280px] mx-auto px-6 space-y-10">
+          
+          <div className="text-center space-y-3 max-w-2xl mx-auto">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-xs font-bold">
+              <Calculator className="w-3.5 h-3.5" />
+              INTERACTIVE ROI & TIME SAVINGS CALCULATOR
+            </div>
+            <h2 className={`text-3xl font-bold tracking-tight ${textTitle}`}>
+              Calculate Your Enterprise ROI
+            </h2>
+            <p className={`text-sm ${textMuted}`}>
+              See how much time and operational budget DataVision saves your engineering team.
+            </p>
+          </div>
+
+          <div className={`p-8 rounded-xl border grid grid-cols-1 lg:grid-cols-12 gap-8 items-center ${bgCard}`}>
+            
+            {/* Controls */}
+            <div className="lg:col-span-7 space-y-6 text-xs">
+              <div>
+                <div className="flex justify-between font-bold text-sm mb-2">
+                  <span className={textTitle}>Monthly Data Ingestion (Millions of Rows)</span>
+                  <span className="text-[#16A34A]">{monthlyRows}M Rows/mo</span>
+                </div>
+                <input
+                  type="range" min="1" max="50" value={monthlyRows}
+                  onChange={(e) => setMonthlyRows(Number(e.target.value))}
+                  className="w-full accent-[#16A34A]"
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between font-bold text-sm mb-2">
+                  <span className={textTitle}>Data & ML Team Size (Analysts/Engineers)</span>
+                  <span className="text-[#16A34A]">{teamSize} Members</span>
+                </div>
+                <input
+                  type="range" min="2" max="50" value={teamSize}
+                  onChange={(e) => setTeamSize(Number(e.target.value))}
+                  className="w-full accent-[#16A34A]"
+                />
+              </div>
+            </div>
+
+            {/* Calculated Output Display */}
+            <div className="lg:col-span-5 p-6 rounded-lg bg-[#16A34A] text-white space-y-4 text-center shadow-lg">
+              <div>
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-100 block">Estimated Annual Savings</span>
+                <div className="text-4xl font-extrabold mt-1 font-mono">${annualSavingsDollars.toLocaleString()} / yr</div>
+              </div>
+              <div className="pt-3 border-t border-emerald-400/40 flex justify-between text-xs font-semibold">
+                <span>Engineering Hours Saved:</span>
+                <span className="font-bold">{hoursSavedPerWeek} hrs / wk</span>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* ═══════════════════ FAQ SECTION ═══════════════════ */}
+      <section id="faq" className={`py-20 border-b transition-colors ${bgMain} ${borderClean}`}>
+        <div className="max-w-[1280px] mx-auto px-6 space-y-10">
+          <div className="text-center space-y-3 max-w-2xl mx-auto">
+            <h2 className={`text-3xl font-bold tracking-tight ${textTitle}`}>
+              Frequently Asked Questions
+            </h2>
+            <p className={`text-sm ${textMuted}`}>
+              Everything you need to know about DataVision Enterprise AI Lakehouse.
+            </p>
+          </div>
+
+          <div className="max-w-3xl mx-auto space-y-4 text-xs">
+            {[
+              {
+                q: 'How does DataVision connect to my existing database?',
+                a: 'DataVision provides native, zero-copy read connectors for Snowflake, Databricks, PostgreSQL, Apache Kafka, Google BigQuery, and MongoDB. Connect with 1-click credentials or stream via our live API Push endpoint.'
+              },
+              {
+                q: 'Where are vector embeddings stored for semantic search?',
+                a: 'All vector embeddings are generated using the MiniLM-L6 transformer model (384 dimensions) and stored in an embedded Qdrant vector database instance for ultra-fast cosine similarity retrieval.'
+              },
+              {
+                q: 'Can I deploy DataVision in a private cloud or on-premise?',
+                a: 'Yes. DataVision offers single-tenant Docker container configurations and AWS EC2 / GCP / Azure ARM templates for total data isolation and SOC2 Type II compliance.'
+              },
+              {
+                q: 'What model export formats are supported?',
+                a: 'Trained models can be exported in 1-click as ONNX runtime binaries, standalone Python ZIP packages with inference scripts, or pre-built Docker containers.'
+              }
+            ].map((faq, idx) => (
+              <div key={idx} className={`rounded-xl border transition-all ${bgCard}`}>
+                <button
+                  onClick={() => setOpenFaq(openFaq === idx ? null : idx)}
+                  className="w-full p-5 text-left font-bold text-sm flex items-center justify-between gap-4"
+                >
+                  <span className={textTitle}>{faq.q}</span>
+                  <ChevronDown className={`w-4 h-4 text-[#16A34A] transition-transform ${openFaq === idx ? 'rotate-180' : ''}`} />
+                </button>
+                {openFaq === idx && (
+                  <div className={`px-5 pb-5 pt-1 border-t text-xs leading-relaxed ${borderClean} ${textMuted}`}>
+                    {faq.a}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ═══════════════════ FINAL CTA ═══════════════════ */}
-      <section className="relative py-32 z-10">
-        <div className="max-w-[700px] mx-auto px-6 text-center">
-          <Reveal>
-            <h2 className={`text-3xl sm:text-5xl font-extrabold tracking-tight ${textH} mb-5`}>
-              Ready to supercharge your data?
+      {/* ═══════════════════ ENTERPRISE SECURITY & DEPLOYMENT STACK ═══════════════════ */}
+      <section id="security" className={`py-20 border-b transition-colors ${bgSecondary}`}>
+        <div className="max-w-[1280px] mx-auto px-6 space-y-10">
+          
+          <div className="text-center space-y-3 max-w-2xl mx-auto">
+            <h2 className={`text-3xl font-bold tracking-tight ${textTitle}`}>
+              Enterprise Security & Deployment Isolation
             </h2>
-            <p className={`text-base ${textP} mb-10 max-w-lg mx-auto`}>
-              Experience autonomous dashboards, 1-click AutoML, digital twin simulations, and developer APIs — all in one platform.
+            <p className={`text-sm ${textMuted}`}>
+              Deploy on private cloud infrastructure or sync automatically via GitHub Actions CI/CD to Hugging Face Spaces.
             </p>
-            <Link to={`/datahub?user=${userId}`}
-              className="inline-flex items-center gap-2.5 px-8 py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-base shadow-xl shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all group">
-              Launch Workspace
-              <ArrowRight className="w-4.5 h-4.5 group-hover:translate-x-0.5 transition-transform" />
-            </Link>
-          </Reveal>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-xs">
+            <div className={`p-6 rounded-xl border space-y-3 ${bgCard}`}>
+              <div className="w-8 h-8 rounded bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold"><ShieldCheck className="w-4 h-4" /></div>
+              <h4 className={`font-bold text-sm ${textTitle}`}>SOC2 Type II Certified</h4>
+              <p className={textMuted}>End-to-end payload encryption at rest and in transit via Fernet AES-256 keys.</p>
+            </div>
+
+            <div className={`p-6 rounded-xl border space-y-3 ${bgCard}`}>
+              <div className="w-8 h-8 rounded bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold"><Lock className="w-4 h-4" /></div>
+              <h4 className={`font-bold text-sm ${textTitle}`}>Role-Based Access Control</h4>
+              <p className={textMuted}>Workspace roles (Owner, Admin, Analyst, Viewer) with JWT session isolation.</p>
+            </div>
+
+            <div className={`p-6 rounded-xl border space-y-3 ${bgCard}`}>
+              <div className="w-8 h-8 rounded bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold"><Server className="w-4 h-4" /></div>
+              <h4 className={`font-bold text-sm ${textTitle}`}>Private Cloud & Docker</h4>
+              <p className={textMuted}>Deploy on AWS EC2, GCP, Azure, or single-tenant Docker container setups.</p>
+            </div>
+
+            <div className={`p-6 rounded-xl border space-y-3 ${bgCard}`}>
+              <div className="w-8 h-8 rounded bg-rose-500/10 text-rose-500 flex items-center justify-center font-bold"><RefreshCw className="w-4 h-4" /></div>
+              <h4 className={`font-bold text-sm ${textTitle}`}>GitHub Actions CI/CD</h4>
+              <p className={textMuted}>Automated Hugging Face Spaces deployment pipeline with zero downtime updates.</p>
+            </div>
+          </div>
+
         </div>
       </section>
 
       {/* ═══════════════════ FOOTER ═══════════════════ */}
-      <footer className={`border-t relative z-10 py-10 ${isDark ? 'border-white/[0.04] bg-[#06070a]' : 'border-slate-100 bg-white'}`}>
-        <div className="max-w-[1200px] mx-auto px-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
-            {/* Brand */}
-            <div className="col-span-2 md:col-span-1">
-              <div className="flex items-center gap-2.5 mb-3">
-                <LogoImage size={28} className="rounded-lg" />
-                <span className={`font-bold ${textH}`}>DataVision</span>
-              </div>
-              <p className={`text-xs leading-relaxed ${textSub}`}>
-                The enterprise AI platform that turns raw data into autonomous decisions.
+      <footer id="footer" className={`py-16 border-t transition-colors ${bgMain}`}>
+        <div className="max-w-[1280px] mx-auto px-6 space-y-12">
+          
+          {/* 5-Column Grid Layout */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-8 text-xs">
+            
+            <div className="col-span-2 space-y-3">
+              <LogoImage isDark={isDark} size={36} showText={true} />
+              <p className={`leading-relaxed max-w-sm ${textMuted}`}>
+                The Unified Data & AI Lakehouse Platform for Autonomous Business Intelligence.
               </p>
             </div>
 
-            {/* Links */}
-            {[
-              { title: 'Platform', links: ['AutoML', 'Dashboards', 'CV Studio', 'Simulator', 'Autopilot'] },
-              { title: 'Developers', links: ['API Reference', 'Python SDK', 'Webhooks', 'Status'] },
-              { title: 'Company', links: ['About', 'Privacy Policy', 'Terms of Service', 'Contact'] },
-            ].map(col => (
-              <div key={col.title}>
-                <h4 className={`text-xs font-bold uppercase tracking-wider mb-3 ${textSub}`}>{col.title}</h4>
-                <ul className="space-y-2">
-                  {col.links.map(link => (
-                    <li key={link}>
-                      <a href="#" className={`text-xs ${textP} hover:text-emerald-500 transition-colors`}>{link}</a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+            <div>
+              <h4 className={`font-bold uppercase tracking-wider mb-3 ${textTitle}`}>Documentation</h4>
+              <ul className={`space-y-2 ${textMuted}`}>
+                <li><Link to="/dashboard" className="hover:text-[#16A34A] transition-colors">Quickstart</Link></li>
+                <li><Link to="/simulator" className="hover:text-[#16A34A] transition-colors">Simulator Guide</Link></li>
+                <li><Link to="/ml-predictions" className="hover:text-[#16A34A] transition-colors">AutoML Docs</Link></li>
+                <li><Link to="/computer-vision" className="hover:text-[#16A34A] transition-colors">Vision SDK</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className={`font-bold uppercase tracking-wider mb-3 ${textTitle}`}>Developers</h4>
+              <ul className={`space-y-2 ${textMuted}`}>
+                <li><Link to="/developer" className="hover:text-[#16A34A] transition-colors">API Keys</Link></li>
+                <li><Link to="/developer" className="hover:text-[#16A34A] transition-colors">REST Reference</Link></li>
+                <li><Link to="/developer" className="hover:text-[#16A34A] transition-colors">Python SDK</Link></li>
+                <li><Link to="/developer" className="hover:text-[#16A34A] transition-colors">Webhooks</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 className={`font-bold uppercase tracking-wider mb-3 ${textTitle}`}>Company</h4>
+              <ul className={`space-y-2 ${textMuted}`}>
+                <li><a href="#" className="hover:text-[#16A34A] transition-colors">About Us</a></li>
+                <li><a href="#" className="hover:text-[#16A34A] transition-colors">Privacy Policy</a></li>
+                <li><a href="#" className="hover:text-[#16A34A] transition-colors">Terms of Service</a></li>
+                <li><a href="#" className="hover:text-[#16A34A] transition-colors">Security</a></li>
+              </ul>
+            </div>
+
           </div>
 
-          <div className={`pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-3 ${
-            isDark ? 'border-white/[0.04]' : 'border-slate-100'
-          }`}>
-            <p className={`text-xs ${textSub}`}>© {new Date().getFullYear()} DataVision Enterprise Inc. All rights reserved.</p>
-            <div className={`flex items-center gap-4 text-xs ${textSub}`}>
-              <a href="#" className="hover:text-emerald-500 transition-colors">Privacy</a>
-              <a href="#" className="hover:text-emerald-500 transition-colors">Terms</a>
-              <a href="#" className="hover:text-emerald-500 transition-colors">Contact</a>
+          {/* Bottom Bar & Status */}
+          <div className={`pt-6 border-t flex flex-col sm:flex-row items-center justify-between gap-4 text-xs ${borderClean} ${textMuted}`}>
+            <p>© {new Date().getFullYear()} DataVision Enterprise Inc. All rights reserved.</p>
+
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#16A34A]" />
+              <span className={`font-semibold ${textTitle}`}>All Systems Operational</span>
             </div>
           </div>
+
         </div>
       </footer>
+
     </div>
   );
 }

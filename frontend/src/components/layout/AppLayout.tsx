@@ -214,7 +214,6 @@ const AppLayout: React.FC = () => {
         { path: '/reports', label: 'Reports', icon: FileText },
         { path: '/collaborate', label: 'Collaborate', icon: Users },
         { path: '/developer', label: 'Developer', icon: Terminal, roles: ['Owner'] },
-        { path: '/admin', label: 'Admin Control', icon: Shield, roles: ['Owner', 'Admin'] },
         { path: '/settings', label: 'Settings', icon: Settings, roles: ['Owner', 'Admin'] },
       ]
     }
