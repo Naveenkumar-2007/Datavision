@@ -178,8 +178,19 @@ const HelpCenter: React.FC = () => {
                         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 mb-4">
                             <HelpCircle className="w-8 h-8 text-white" />
                         </div>
-                        <h1 className="text-3xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Help Center</h1>
-                        <p style={{ color: 'var(--text-muted)' }}>Find answers to common questions about DataVision</p>
+                        <h1 className="text-3xl font-bold text-white mb-2">Help Center & Documentation</h1>
+                        <p style={{ color: 'var(--text-muted)' }}>Everything you need to know about DataVision AI platform</p>
+                        <div className="mt-6 flex justify-center">
+                            <a
+                                href="/DataVision_AI_Product_User_Guide.pdf"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#16A34A] hover:bg-[#15803D] text-white font-bold text-sm rounded-xl shadow-md transition-all transform hover:scale-105"
+                            >
+                                <FileText className="w-4 h-4" />
+                                Download Official Product User Guide (PDF)
+                            </a>
+                        </div>
                     </div>
 
                     {/* Quick Links */}

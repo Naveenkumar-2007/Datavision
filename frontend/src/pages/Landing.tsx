@@ -142,14 +142,14 @@ export default function Landing() {
           </Link>
 
           {/* Navigation Links */}
-          <nav className={`hidden lg:flex items-center gap-8 text-xs font-semibold ${textMuted}`}>
+          <nav className={`hidden lg:flex items-center gap-7 text-xs font-semibold ${textMuted}`}>
             <a href="#workflow" className="hover:text-[#16A34A] transition-colors">Workflow</a>
             <a href="#preview" className="hover:text-[#16A34A] transition-colors">Live Studio</a>
             <a href="#services" className="hover:text-[#16A34A] transition-colors">Services</a>
             <a href="#benchmarks" className="hover:text-[#16A34A] transition-colors">Benchmarks</a>
             <a href="#calculator" className="hover:text-[#16A34A] transition-colors">ROI Calculator</a>
             <a href="#faq" className="hover:text-[#16A34A] transition-colors">FAQ</a>
-            <a href="#security" className="hover:text-[#16A34A] transition-colors">Security</a>
+            <a href="/DataVision_AI_Product_User_Guide.pdf" target="_blank" rel="noopener noreferrer" className="text-[#16A34A] hover:underline transition-colors font-bold flex items-center gap-1">User Guide (PDF)</a>
           </nav>
 
           {/* Right Actions */}
