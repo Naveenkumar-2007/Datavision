@@ -56,6 +56,10 @@ jobs:
             # Install Git LFS
             git lfs install
 
+            # Force add pre-built frontend dist directory so Docker find /frontend/dist
+            git add -f frontend/dist
+            git commit -m "build: bundle pre-built frontend distribution for HuggingFace Space Docker build" || true
+
             # Setup HF remote
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
@@ -65,7 +69,7 @@ jobs:
             git lfs push --all hf || true
 
             # Push git commit ref to Hugging Face Space main
-            echo "🚀 Force pushing LFS-migrated codebase to Hugging Face..."
+            echo "🚀 Force pushing codebase with frontend dist to Hugging Face..."
             git push -f hf HEAD:main
             echo "✅ Successfully deployed to Hugging Face Space: $SPACE_NAME"
           else
