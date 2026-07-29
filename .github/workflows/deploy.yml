@@ -48,30 +48,34 @@ jobs:
           SPACE_NAME="${HF_SPACE:-datavision-ai/Datavision}"
           
           if [ -n "$TOKEN" ]; then
-            echo "🚀 Pushing codebase to Hugging Face Space: $SPACE_NAME"
+            echo "🚀 Pushing clean release to Hugging Face Space: $SPACE_NAME"
             git config --global user.email "ci@datavision.ai"
             git config --global user.name "DataVision CI/CD Bot"
             git config --global lfs.allowincompletepush true
-            git config lfs.allowincompletepush true
 
             # Install Git LFS
             git lfs install
 
-            # Force add pre-built frontend dist directory so Docker finds /frontend/dist
+            # Create clean orphan release branch without historical broken LFS pointers
+            git checkout --orphan hf-release
+            git reset
+
+            # Stage all current active files and frontend dist
+            git add -A
             git add -f frontend/dist
-            git commit -m "build: bundle pre-built frontend distribution for HuggingFace Space Docker build" || true
+            git commit -m "release: clean production build for HuggingFace Space" || true
 
             # Setup HF remote
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
 
-            # Upload all active LFS objects to HF LFS storage
-            echo "📦 Uploading Git LFS objects to Hugging Face..."
-            git lfs push --ignore-missing --all hf || true
+            # Upload active LFS objects to HF LFS storage
+            echo "📦 Uploading active Git LFS objects to Hugging Face..."
+            git lfs push --all hf || true
 
-            # Push git commit ref to Hugging Face Space main
-            echo "🚀 Force pushing codebase with frontend dist to Hugging Face..."
-            git push -f hf HEAD:main
+            # Push clean orphan release branch to Hugging Face Space main
+            echo "🚀 Force pushing clean release to Hugging Face..."
+            git push -f hf hf-release:main
             echo "✅ Successfully deployed to Hugging Face Space: $SPACE_NAME"
           else
             echo "⚠️ HF_TOKEN or HUGGINGFACE_TOKEN secret is required in GitHub repository settings!"
