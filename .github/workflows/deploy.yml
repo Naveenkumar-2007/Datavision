@@ -51,23 +51,26 @@ jobs:
             echo "🚀 Pushing codebase to Hugging Face Space: $SPACE_NAME"
             git config --global user.email "ci@datavision.ai"
             git config --global user.name "DataVision CI/CD Bot"
+            git config --global lfs.allowincompletepush true
 
-            # Install Git LFS and track binary image assets
+            # Install Git LFS and enforce tracking for all image binary extensions
             git lfs install
             git lfs track "*.png" "*.jpg" "*.jpeg" "*.gif" "*.ico"
 
-            # Add built frontend assets to git index with LFS pointers
+            # Renormalize dist directory so git forces LFS pointer filter on images
+            git add -f .gitattributes
             git add -f frontend/dist
-            git add .gitattributes
+            git add --renormalize frontend/dist
             git commit -m "build: bundle frontend distribution for HF Space" || true
 
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
 
-            # Upload LFS binary objects first to HF, then push git commit refs
+            # Upload all LFS binary objects to HF LFS storage first
             echo "📦 Uploading Git LFS objects to Hugging Face..."
             git lfs push --all hf || true
             
+            # Push git commit refs
             echo "🚀 Pushing git ref HEAD:main to Hugging Face..."
             git push -f hf HEAD:main
             echo "✅ Successfully deployed to Hugging Face Space: $SPACE_NAME"
