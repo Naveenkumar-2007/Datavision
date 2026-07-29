@@ -231,6 +231,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
         color: selectedThemeColors.textPrimary,
         '--card-bg': selectedThemeColors.cardBg,
         '--card-border': selectedThemeColors.cardBorder,
+        '--text-primary': selectedThemeColors.textPrimary,
         '--text-secondary': selectedThemeColors.textSecondary,
         '--text-muted': selectedThemeColors.textMuted,
         '--header-bg': selectedThemeColors.headerBg,

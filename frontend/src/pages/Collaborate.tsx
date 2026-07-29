@@ -59,6 +59,7 @@ const Collaborate: React.FC = () => {
   const [replies, setReplies] = useState<Record<string, any[]>>({});
   const [replyingTo, setReplyingTo] = useState<any>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
+  const [showInputEmojiPicker, setShowInputEmojiPicker] = useState(false);
   const [rightPanel, setRightPanel] = useState<'members' | 'activity'>('members');
 
   // Phase 4: New features
@@ -619,10 +620,45 @@ const Collaborate: React.FC = () => {
               className={`flex-1 bg-transparent border-none outline-none text-sm ${textPrimary}`}
             />
             {isSecureMode && <Lock className="w-4 h-4 text-green-500 shrink-0" />}
+            
+            {/* Input Emoji Picker Button */}
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowInputEmojiPicker(!showInputEmojiPicker)}
+                className={`p-2 rounded-lg transition-colors ${showInputEmojiPicker ? (isDark ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50 text-indigo-700') : textMuted} ${bgHover}`}
+                title="Add Emoji"
+              >
+                <Smile className="w-4 h-4" />
+              </button>
+
+              {showInputEmojiPicker && (
+                <div className={`absolute bottom-11 right-0 z-50 p-2.5 rounded-xl border shadow-2xl ${isDark ? 'bg-[#1a1a1a] border-gray-700' : 'bg-white border-gray-200'}`}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider mb-1.5 px-1 opacity-70">Insert Emoji</div>
+                  <div className="grid grid-cols-7 gap-1 w-52">
+                    {['👍', '❤️', '🚀', '🔥', '🎉', '💡', '📊', '✅', '😂', '🤔', '👀', '💯', '👏', '⭐'].map(emoji => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => {
+                          setNewComment(prev => prev + emoji);
+                          setShowInputEmojiPicker(false);
+                          inputRef.current?.focus();
+                        }}
+                        className={`p-1.5 rounded-lg text-base text-center transition-transform hover:scale-125 ${bgHover}`}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button 
               onClick={handlePostComment} 
               disabled={!newComment.trim() || posting}
-              className="p-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 transition-colors"
+              className="p-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-40 transition-colors shrink-0"
             >
               <Send className="w-4 h-4" />
             </button>
