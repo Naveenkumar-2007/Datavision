@@ -49,8 +49,8 @@ catboost_info/
 .mypy_cache/
 .ruff_cache/
 
-# Build output (built automatically in CI/CD pipeline)
-frontend/dist/
+# Build output (tracked for Hugging Face Space Docker build)
+frontend/dist/**/*.map
 
 # Temporary
 *.tmp
