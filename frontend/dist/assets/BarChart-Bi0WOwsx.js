@@ -1,1 +1,0 @@
-import{P as a,a4 as i,X as s,Y as t,R as e}from"./generateCategoricalChart-CgN9tTma.js";var x=a({chartName:"BarChart",GraphicalChild:i,defaultTooltipEventType:"axis",validateTooltipEventTypes:["axis","item"],axisComponents:[{axisType:"xAxis",AxisComp:s},{axisType:"yAxis",AxisComp:t}],formatAxisMap:e});export{x as B};

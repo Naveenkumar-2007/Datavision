@@ -49,9 +49,8 @@ catboost_info/
 .mypy_cache/
 .ruff_cache/
 
-# Build (frontend/dist/ now tracked for HuggingFace deployment)
-# But ignore source maps (too large for HuggingFace)
-frontend/dist/assets/*.map
+# Build output (built automatically in CI/CD pipeline)
+frontend/dist/
 
 # Temporary
 *.tmp
