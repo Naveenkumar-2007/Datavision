@@ -14,6 +14,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          lfs: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -52,25 +53,22 @@ jobs:
             git config --global user.name "DataVision CI/CD Bot"
             git config --global lfs.allowincompletepush true
 
-            # Create a clean orphan branch to purge legacy commit history containing raw dist binaries
-            git checkout --orphan hf-deploy
-            git rm -rf --cached frontend/dist 2>/dev/null || true
+            # Install Git LFS
+            git lfs install
 
-            # Delete dist binary image files (served dynamically from frontend/public)
-            find frontend/dist -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.gif" \) -delete 2>/dev/null || true
-
-            # Stage clean deployment tree
-            git add -A
-            git commit -m "deploy: clean Hugging Face Space release"
-
+            # Setup HF remote
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
 
-            echo "🚀 Force pushing clean orphan deployment branch to Hugging Face Space..."
-            git push -f hf hf-deploy:main
+            # Upload all LFS objects to HF LFS storage
+            echo "📦 Uploading Git LFS objects to Hugging Face..."
+            git lfs push --all hf || true
+
+            # Push git commit ref to Hugging Face Space main
+            echo "🚀 Force pushing LFS-migrated codebase to Hugging Face..."
+            git push -f hf HEAD:main
             echo "✅ Successfully deployed to Hugging Face Space: $SPACE_NAME"
           else
             echo "⚠️ HF_TOKEN or HUGGINGFACE_TOKEN secret is required in GitHub repository settings!"
-            echo "Please go to GitHub Repo -> Settings -> Secrets and variables -> Actions -> New repository secret: HF_TOKEN"
             exit 1
           fi
