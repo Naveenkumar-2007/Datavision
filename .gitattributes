@@ -8,15 +8,7 @@
 *.css text
 *.html text
 
-# Explicitly exclude frontend build dist folder from Git LFS tracking
-frontend/dist/** -filter -diff -merge
-# Git LFS tracking for original source assets only
-frontend/public/*.ico filter=lfs diff=lfs merge=lfs -text
-frontend/public/*.jpg filter=lfs diff=lfs merge=lfs -text
-frontend/public/*.png filter=lfs diff=lfs merge=lfs -text
-frontend/public/*.gif filter=lfs diff=lfs merge=lfs -text
-backend/static/*.jpg filter=lfs diff=lfs merge=lfs -text
-backend/static/*.png filter=lfs diff=lfs merge=lfs -text
+# Image & Binary files tracked by Git LFS for Hugging Face Spaces
 *.png filter=lfs diff=lfs merge=lfs -text
 *.jpg filter=lfs diff=lfs merge=lfs -text
 *.jpeg filter=lfs diff=lfs merge=lfs -text

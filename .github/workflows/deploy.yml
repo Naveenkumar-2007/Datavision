@@ -14,6 +14,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          lfs: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -50,15 +51,24 @@ jobs:
             echo "🚀 Pushing codebase to Hugging Face Space: $SPACE_NAME"
             git config --global user.email "ci@datavision.ai"
             git config --global user.name "DataVision CI/CD Bot"
-            git config --global lfs.allowincompletepush true
 
-            # Remove LFS pointers from dist and force add dist files
-            git rm --cached -r --ignore-unmatch frontend/dist 2>/dev/null || true
+            # Install Git LFS and track binary image assets
+            git lfs install
+            git lfs track "*.png" "*.jpg" "*.jpeg" "*.gif" "*.ico"
+
+            # Add built frontend assets to git index with LFS pointers
             git add -f frontend/dist
-            git commit -m "build: bundle frontend distribution" || true
+            git add .gitattributes
+            git commit -m "build: bundle frontend distribution for HF Space" || true
 
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
+
+            # Upload LFS binary objects first to HF, then push git commit refs
+            echo "📦 Uploading Git LFS objects to Hugging Face..."
+            git lfs push --all hf || true
+            
+            echo "🚀 Pushing git ref HEAD:main to Hugging Face..."
             git push -f hf HEAD:main
             echo "✅ Successfully deployed to Hugging Face Space: $SPACE_NAME"
           else
