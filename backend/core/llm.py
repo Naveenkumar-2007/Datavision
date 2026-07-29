@@ -274,8 +274,14 @@ def chat(
     # Add all available Groq keys to the fallback chain
     for i, g_key in enumerate(Settings.GROQ_API_KEYS):
         providers.append({
-            "name": f"Groq-Llama3 (Key {i})",
-            "model": "groq/llama-3.1-70b-versatile",
+            "name": f"Groq-Llama3.3 (Key {i})",
+            "model": "groq/llama-3.3-70b-versatile",
+            "api_key": g_key,
+            "api_base": None
+        })
+        providers.append({
+            "name": f"Groq-Llama3.1-Fast (Key {i})",
+            "model": "groq/llama-3.1-8b-instant",
             "api_key": g_key,
             "api_base": None
         })
@@ -283,8 +289,14 @@ def chat(
     # If no keys in settings (fallback), try direct env
     if not Settings.GROQ_API_KEYS and groq_key:
         providers.append({
-            "name": "Groq-Llama3",
-            "model": "groq/llama-3.1-70b-versatile",
+            "name": "Groq-Llama3.3",
+            "model": "groq/llama-3.3-70b-versatile",
+            "api_key": groq_key,
+            "api_base": None
+        })
+        providers.append({
+            "name": "Groq-Llama3.1-Fast",
+            "model": "groq/llama-3.1-8b-instant",
             "api_key": groq_key,
             "api_base": None
         })
@@ -346,8 +358,6 @@ def chat(
                 call_kwargs["timeout"] = 15
             
             # 🩹 FIX: Disable OpenAI client's internal retries - let our cascade handle failover
-            # Without this, the OpenAI client retries internally (the "Retrying request..." logs)
-            # which can cause requests to hang for 5+ minutes before our cascade kicks in
             if "num_retries" not in call_kwargs:
                 call_kwargs["num_retries"] = 0
                 
@@ -385,35 +395,11 @@ def chat(
                 logger.error(f"All providers in the cascade chain exhausted. Last error: {e}")
                 break
 
-    # 3. Handle Complete Failure
-    e = last_error
-    error_str = str(e).lower() if e else ''
-    
-    # Generic friendly message - don't expose technical details to users
-    if not has_remote_keys and ('timeout' in error_str or 'connection' in error_str):
-        return (
-            "🚨 **API Key Missing:** I couldn't process your request because no AI Provider API Keys were found! "
-            "Please go to your HuggingFace Space Settings -> **Variables and secrets**, and add your `GROQ_API_KEY` or `NVIDIA_API_KEY`."
-        )
-    elif had_auth_error:
-        return (
-            "🚨 **Invalid API Key:** Your AI Provider API Key appears to be invalid, expired, or improperly configured. "
-            "Please check your HuggingFace Space Settings -> **Variables and secrets** and ensure your keys are correct."
-        )
-    elif 'context' in error_str or 'too large' in error_str or 'token' in error_str:
-        return (
-            "Your question is quite detailed! Could you try asking something more specific? "
-            "This will help me give you a better answer."
-        )
-    elif 'timeout' in error_str or 'connection' in error_str:
-        return (
-            "I'm having trouble connecting right now. Please check your internet connection and try again."
-        )
-    else:
-        return (
-            f"I'm temporarily unable to process your request. Please try again in a moment. "
-            f"If this continues, the system administrator has been notified. (Error: {reason if 'reason' in locals() else 'Unknown'})"
-        )
+    # 3. Handle Complete Failure - Clean user-facing maintenance message
+    return (
+        "⚙️ **Service Under Maintenance:** The DataVision AI engine is currently performing routine model synchronization. "
+        "Please re-send your question in a moment or switch to Analyst mode."
+    )
 
 
 def embed_text(text: str) -> List[float]:

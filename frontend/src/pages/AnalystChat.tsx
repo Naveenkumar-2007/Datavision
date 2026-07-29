@@ -1029,56 +1029,19 @@ const getModeThinkingText = (modeId: string): string => {
   return thinkingTexts[modeId] || 'Processing...';
 };
 
-// Agent Swarm Loading Indicator
+// Sleek, minimal Thinking Animation Indicator
 const TypingIndicator: React.FC<{ mode?: string; isDark?: boolean }> = ({ mode = 'rag', isDark = true }) => {
-  const [stepIndex, setStepIndex] = useState(0);
-  
-  const agentSteps = [
-    { icon: '🧠', text: 'Agent Swarm Intialized...' },
-    { icon: '🌐', text: 'Agent 1: Fetching Market Context...' },
-    { icon: '🗄️', text: 'Agent 2: Generating SQL/Vector Search...' },
-    { icon: '📈', text: 'Agent 3: Causal Inference Checking...' },
-    { icon: '✨', text: 'Synthesizing Final Insights...' }
-  ];
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setStepIndex((prev) => (prev < agentSteps.length - 1 ? prev + 1 : prev));
-    }, 1500);
-    return () => clearInterval(interval);
-  }, []);
+  const thinkingText = getModeThinkingText(mode);
 
   return (
-    <div className="flex items-start gap-3 max-w-3xl message-slide-up">
-      <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-        <AnimatedBotIcon size={24} isDark={isDark} />
-      </div>
-      <div className="flex flex-col gap-2 py-1">
-        <div className="flex items-center gap-2">
-          <div className="streaming-indicator flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-green-400"></span>
-            <span className="w-2 h-2 rounded-full bg-green-400"></span>
-            <span className="w-2 h-2 rounded-full bg-green-400"></span>
-          </div>
-          <span className="text-sm font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
-            Autonomous Swarm Processing
-          </span>
-        </div>
-        <div className="flex flex-col gap-1 mt-1">
-          {agentSteps.slice(0, stepIndex + 1).map((step, idx) => (
-            <motion.div 
-              key={idx}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-2 text-xs"
-            >
-              <span className={idx === stepIndex ? "animate-pulse" : "opacity-50"}>{step.icon}</span>
-              <span className={idx === stepIndex ? "text-indigo-400" : "text-gray-500 line-through decoration-gray-700"}>
-                {step.text}
-              </span>
-              {idx < stepIndex && <Check className="w-3 h-3 text-green-500" />}
-            </motion.div>
-          ))}
+    <div className="flex items-center gap-3 py-2 px-3 rounded-xl bg-white/5 border border-white/10 w-fit backdrop-blur-sm animate-pulse">
+      <AnimatedBotIcon size={22} isDark={isDark} />
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-semibold text-[#16A34A]">{thinkingText}</span>
+        <div className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#16A34A] animate-ping" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[#16A34A] animate-ping delay-150" />
+          <span className="w-1.5 h-1.5 rounded-full bg-[#16A34A] animate-ping delay-300" />
         </div>
       </div>
     </div>
