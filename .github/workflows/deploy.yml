@@ -36,8 +36,6 @@ jobs:
           cd frontend
           npm install
           npm run build
-          # Remove duplicate binary images from dist/ (served dynamically from frontend/public to pass HF pre-receive hook)
-          find dist -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.gif" \) -delete
 
       - name: Push to Hugging Face Space
         env:
@@ -54,15 +52,22 @@ jobs:
             git config --global user.name "DataVision CI/CD Bot"
             git config --global lfs.allowincompletepush true
 
-            # Force add clean JS/CSS/HTML dist bundle
-            git add -f frontend/dist
-            git commit -m "build: bundle frontend distribution for HF Space" || true
+            # Create a clean orphan branch to purge legacy commit history containing raw dist binaries
+            git checkout --orphan hf-deploy
+            git rm -rf --cached frontend/dist 2>/dev/null || true
+
+            # Delete dist binary image files (served dynamically from frontend/public)
+            find frontend/dist -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.gif" \) -delete 2>/dev/null || true
+
+            # Stage clean deployment tree
+            git add -A
+            git commit -m "deploy: clean Hugging Face Space release"
 
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
-            
-            echo "🚀 Pushing codebase to Hugging Face Space..."
-            git push -f hf HEAD:main
+
+            echo "🚀 Force pushing clean orphan deployment branch to Hugging Face Space..."
+            git push -f hf hf-deploy:main
             echo "✅ Successfully deployed to Hugging Face Space: $SPACE_NAME"
           else
             echo "⚠️ HF_TOKEN or HUGGINGFACE_TOKEN secret is required in GitHub repository settings!"
