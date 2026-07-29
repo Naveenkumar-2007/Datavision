@@ -152,7 +152,7 @@ async def query_vector_store(
     Run semantic similarity search against vector store.
     Returns matched documents, cosine similarity score, and metadata payload.
     """
-    if not req.query.trim():
+    if not req.query.strip():
         raise HTTPException(status_code=400, detail="Query string cannot be empty")
         
     vec_service = VectorStoreService()

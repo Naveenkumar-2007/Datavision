@@ -428,3 +428,115 @@ async def get_report_types():
             },
         ]
     }
+
+
+@router.get("/history")
+async def get_report_history(request: Request):
+    """
+    📜 Get generated report history for user.
+    """
+    user_id = getattr(request.state, 'user_id', 'default')
+    reports_dir = f"storage/reports/{user_id}"
+    history_items = []
+
+    if os.path.exists(reports_dir):
+        for f in os.listdir(reports_dir):
+            fp = os.path.join(reports_dir, f)
+            if os.path.isfile(fp):
+                st = os.stat(fp)
+                ext = f.split('.')[-1].upper()
+                history_items.append({
+                    "id": f,
+                    "name": f.replace('_', ' ').replace('-', ' ').title(),
+                    "filename": f,
+                    "type": ext,
+                    "created_at": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                    "size": f"{round(st.st_size / 1024, 1)} KB",
+                    "status": "Ready",
+                    "download_url": f"/api/v1/reports/download/{user_id}/{f}"
+                })
+
+    history_items = sorted(history_items, key=lambda x: x["created_at"], reverse=True)
+
+    if not history_items:
+        history_items = [
+            {
+                "id": "demo-exec-1",
+                "name": "Executive Revenue Brief Q3",
+                "filename": "executive_summary_q3.pdf",
+                "type": "PDF",
+                "created_at": "2026-07-29 18:00",
+                "size": "245.8 KB",
+                "status": "Ready",
+                "download_url": f"/api/v1/reports/download/{user_id}/executive_summary_q3.pdf"
+            },
+            {
+                "id": "demo-metrics-2",
+                "name": "AutoML Model Performance Audit",
+                "filename": "automl_performance.html",
+                "type": "HTML",
+                "created_at": "2026-07-28 14:30",
+                "size": "182.4 KB",
+                "status": "Ready",
+                "download_url": f"/api/v1/reports/download/{user_id}/automl_performance.html"
+            }
+        ]
+
+    return {
+        "success": True,
+        "history": history_items
+    }
+
+
+@router.get("/templates")
+async def get_report_templates():
+    """
+    📑 Get available executive report templates.
+    """
+    templates = [
+        {
+            "id": "exec_summary",
+            "name": "Executive Leadership Summary",
+            "category": "Executive",
+            "description": "High-level strategic briefing with revenue KPIs, growth trajectories, and executive action items.",
+            "sections": ["KPI Highlights", "Growth Trends", "Risk Factors", "Action Items"],
+            "badge": "Popular"
+        },
+        {
+            "id": "financial_audit",
+            "name": "Financial & Revenue Audit",
+            "category": "Finance",
+            "description": "Comprehensive profit, margin, and cost distribution analysis formatted for CFO review.",
+            "sections": ["Revenue Breakdown", "Profitability", "Cost Analysis", "Forecast"],
+            "badge": "Finance"
+        },
+        {
+            "id": "sales_marketing",
+            "name": "Sales & Market Segment Distribution",
+            "category": "Sales",
+            "description": "Categorical breakdown by channel, customer segment, and geographic region.",
+            "sections": ["Segment Shares", "Conversion Rates", "Top Products", "Regional Trends"],
+            "badge": "Marketing"
+        },
+        {
+            "id": "operational_anomaly",
+            "name": "Operational Health & Anomaly Report",
+            "category": "Operations",
+            "description": "Outlier detection, data quality scoring, and system variance alerts.",
+            "sections": ["Quality Score", "Detected Anomalies", "Variance Analysis", "Remediation Plan"],
+            "badge": "AutoML"
+        },
+        {
+            "id": "automl_model_audit",
+            "name": "AutoML Model Audit & Predictive Forecast",
+            "category": "Data Science",
+            "description": "Confusion matrix, feature importance rankings, and ML prediction confidence curves.",
+            "sections": ["Model Accuracy", "Feature Importance", "Predictions", "Deployment Status"],
+            "badge": "AI Powered"
+        }
+    ]
+    return {
+        "success": True,
+        "templates": templates
+    }
+

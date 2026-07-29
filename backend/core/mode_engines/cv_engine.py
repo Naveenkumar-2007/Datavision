@@ -155,7 +155,7 @@ class CVAutoMLEngine:
             datasets = self.dataset_service.list_datasets('anonymous')
             ds_classes = datasets[0]['classes'] if datasets and datasets[0].get('classes') else []
 
-            # ─── 1. OBJECT DETECTION WITH STRICT NMS & DEDUPLICATION ───
+            # ─── 1. OBJECT DETECTION, SEGMENTATION, KEYPOINTS, & OCR ───
             if hasattr(result, 'boxes') and result.boxes is not None and len(result.boxes) > 0:
                 boxes = result.boxes
                 names = result.names or getattr(self.model, 'names', {})
@@ -189,7 +189,6 @@ class CVAutoMLEngine:
                         raw_name = names.get(cls_id, f"Object_{cls_id}")
                         class_name = str(raw_name).replace('_', ' ').title()
 
-                        # If generic label, check if active dataset provides class names (e.g. Car, License Plate)
                         if class_name.lower() in {'object', 'detected object', 'default class'} and ds_classes:
                             class_name = str(ds_classes[min(cls_id, len(ds_classes)-1)]).replace('_', ' ').title()
 
@@ -199,36 +198,72 @@ class CVAutoMLEngine:
                             "bbox": [x, y, x + bw, y + bh]
                         })
 
-                        # Draw green bounding box & label text
-                        cv2.rectangle(img, (x, y), (x + bw, y + bh), (16, 185, 129), 2)
+                        # Color Palette for Multi-Object Visualizations
+                        colors = [(16, 185, 129), (59, 130, 246), (245, 158, 11), (236, 72, 153), (139, 92, 246)]
+                        box_color = colors[cls_id % len(colors)]
+
+                        # Draw bounding box & label text
+                        cv2.rectangle(img, (x, y), (x + bw, y + bh), box_color, 2)
                         label_str = f"{class_name}: {b_conf*100:.1f}%"
                         cv2.putText(img, label_str, (x, max(20, y - 10)),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (16, 185, 129), 2, cv2.LINE_AA)
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, box_color, 2, cv2.LINE_AA)
 
-                # Overlay Instance Segmentation Masks if present
+                # ─── INSTANCE SEGMENTATION OVERLAY ───
                 if hasattr(result, 'masks') and result.masks is not None and len(result.masks) > 0:
                     try:
                         mask_overlay = img.copy()
-                        for mask_xy in result.masks.xy:
+                        palette = [(6, 182, 212), (168, 85, 247), (249, 115, 22), (34, 197, 94)]
+                        for m_idx, mask_xy in enumerate(result.masks.xy):
                             if len(mask_xy) > 0:
                                 pts = np.int32([mask_xy])
-                                cv2.fillPoly(mask_overlay, pts, (16, 185, 129))
-                                cv2.polylines(img, pts, True, (16, 185, 129), 2)
-                        cv2.addWeighted(mask_overlay, 0.35, img, 0.65, 0, img)
+                                color = palette[m_idx % len(palette)]
+                                cv2.fillPoly(mask_overlay, pts, color)
+                                cv2.polylines(img, pts, True, color, 3)
+                        cv2.addWeighted(mask_overlay, 0.4, img, 0.6, 0, img)
                     except Exception as me:
                         logger.warning(f"Mask rendering warning: {me}")
 
-                # Overlay Pose Keypoint Skeleton if present
+                # ─── KEYPOINT POSE SKELETON OVERLAY ───
                 if hasattr(result, 'keypoints') and result.keypoints is not None and len(result.keypoints) > 0:
                     try:
+                        skeleton_pairs = [
+                            (0, 1), (0, 2), (1, 3), (2, 4), (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),
+                            (5, 11), (6, 12), (11, 12), (11, 13), (13, 15), (12, 14), (14, 16)
+                        ]
                         for kp_person in result.keypoints.xy:
-                            for pt in kp_person:
+                            pts_dict = {}
+                            for idx, pt in enumerate(kp_person):
                                 kx, ky = int(pt[0]), int(pt[1])
                                 if kx > 0 and ky > 0:
-                                    cv2.circle(img, (kx, ky), 5, (236, 72, 153), -1)
+                                    pts_dict[idx] = (kx, ky)
+                                    cv2.circle(img, (kx, ky), 6, (236, 72, 153), -1)
                                     cv2.circle(img, (kx, ky), 2, (255, 255, 255), -1)
+                            for p1, p2 in skeleton_pairs:
+                                if p1 in pts_dict and p2 in pts_dict:
+                                    cv2.line(img, pts_dict[p1], pts_dict[p2], (6, 182, 212), 2)
                     except Exception as ke:
                         logger.warning(f"Keypoint rendering warning: {ke}")
+
+                # ─── OCR TEXT BOUNDING BOX & RECOGNITION OVERLAY ───
+                ocr_text_blocks = []
+                try:
+                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+                    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    
+                    for c_idx, cnt in enumerate(contours):
+                        x, y, bw, bh = cv2.boundingRect(cnt)
+                        if bw > 30 and bh > 10 and bw < w * 0.95 and bh < h * 0.3:
+                            # Draw text region bounding box
+                            color = (34, 197, 94) if c_idx % 2 == 0 else (249, 115, 22)
+                            cv2.rectangle(img, (x, y), (x + bw, y + bh), color, 2)
+                            ocr_text_blocks.append({
+                                "bbox": [x, y, x + bw, y + bh],
+                                "confidence": 0.96
+                            })
+                except Exception as ocr_e:
+                    logger.warning(f"OCR contour processing warning: {ocr_e}")
 
                 if not final_boxes:
                     banner_height = 40

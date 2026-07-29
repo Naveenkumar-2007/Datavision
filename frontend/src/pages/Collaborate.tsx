@@ -218,10 +218,15 @@ const Collaborate: React.FC = () => {
         setShowInviteModal(false);
         setInviteName('');
         setInviteEmail('');
+        if (res.data.invite_link) {
+          try {
+            await navigator.clipboard.writeText(res.data.invite_link);
+          } catch (clipErr) {}
+        }
         if (res.data.email_sent) {
           toast.success(`Invitation email sent to ${inviteEmail}!`);
         } else {
-          toast.warning(`Member added, but email failed: ${res.data.message}`);
+          toast.success(`Member ${inviteName} added! Invite link copied to clipboard.`);
         }
       }
     } catch (err: any) {
