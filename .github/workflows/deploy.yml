@@ -51,6 +51,12 @@ jobs:
             git config --global user.email "ci@datavision.ai"
             git config --global user.name "DataVision CI/CD Bot"
             git config --global lfs.allowincompletepush true
+
+            # Remove LFS pointers from dist and force add dist files
+            git rm --cached -r --ignore-unmatch frontend/dist 2>/dev/null || true
+            git add -f frontend/dist
+            git commit -m "build: bundle frontend distribution" || true
+
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
             git push -f hf HEAD:main
