@@ -700,7 +700,7 @@ async def generate_ai_powered_daily_report(user_id: str) -> str:
         data_context = await gather_comprehensive_data_context(user_id)
         
         if not data_context["has_data"]:
-            return None
+            return _generate_platform_welcome_report_html(user_id)
         
         # Build context string for AI
         context_text = f"""
@@ -812,6 +812,52 @@ Write the email body in clean HTML. Make it professional, data-driven, and actio
         return None
 
 
+def _generate_platform_welcome_report_html(user_id: str) -> str:
+    """Generates a clean HTML Daily Briefing email report when user has not yet uploaded a dataset."""
+    app_url = os.getenv("APP_URL", "https://huggingface.co/spaces/datavision-ai/Datavision")
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {{ font-family: 'Segoe UI', Arial, sans-serif; background-color: #05060A; color: #E2E8F0; margin: 0; padding: 20px; }}
+    .container {{ max-width: 600px; margin: 0 auto; background-color: #0B0D14; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 30px; }}
+    .header {{ text-align: center; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); }}
+    .title {{ color: #16A34A; font-size: 22px; font-weight: bold; margin-top: 10px; }}
+    .subtitle {{ color: #94A3B8; font-size: 14px; margin-top: 5px; }}
+    .card {{ background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; margin: 20px 0; }}
+    .btn {{ display: inline-block; background-color: #16A34A; color: #FFFFFF; font-weight: bold; padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 15px; }}
+    .footer {{ text-align: center; font-size: 12px; color: #64748B; margin-top: 30px; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title">DataVision AI — Daily Intelligence Digest</div>
+      <div class="subtitle">Autonomous Business Intelligence Platform v3.0</div>
+    </div>
+    <div class="card">
+      <h3 style="color: #FFFFFF; margin-top:0;">Welcome to DataVision AI</h3>
+      <p style="color: #94A3B8; font-size: 14px; line-height: 1.6;">
+        Your daily automated report scheduler is active. Upload your first dataset to start receiving AI-powered predictive metrics, anomaly alerts, and automated chart summaries directly in your inbox.
+      </p>
+      <ul style="color: #CBD5E1; font-size: 13px; line-height: 1.8;">
+        <li>⚡ <strong>AutoML:</strong> 3-pipeline training across tabular ML, NLP, and Deep Learning.</li>
+        <li>📊 <strong>Autonomous Dashboard:</strong> 10+ auto-generated KPI cards and Plotly charts.</li>
+        <li>👁️ <strong>Computer Vision:</strong> YOLOv8 object detection, classification & segmentation.</li>
+        <li>🔮 <strong>Scenario Simulator:</strong> Interactive business parameter forecasting.</li>
+      </ul>
+      <div style="text-align: center; margin-top: 20px;">
+        <a href="{app_url}" class="btn">Open DataVision AI Studio</a>
+      </div>
+    </div>
+    <div class="footer">
+      © 2026 DataVision AI. All rights reserved. | <a href="{app_url}/settings" style="color:#16A34A;">Manage Email Preferences</a>
+    </div>
+  </div>
+</body>
+</html>"""
+
 async def generate_daily_report_html(user_id: str) -> str:
     """Generate daily summary report HTML - works with ANY data type"""
     try:
@@ -822,7 +868,7 @@ async def generate_daily_report_html(user_id: str) -> str:
         files_dir = paths.get("files")
         
         if not files_dir or not files_dir.exists():
-            return None
+            return _generate_platform_welcome_report_html(user_id)
         
         # Load all CSV/Excel files and combine
         all_data = []
@@ -838,7 +884,7 @@ async def generate_daily_report_html(user_id: str) -> str:
                     continue
         
         if not all_data:
-            return None
+            return _generate_platform_welcome_report_html(user_id)
         
         # Combine all dataframes
         df = pd.concat(all_data, ignore_index=True) if len(all_data) > 1 else all_data[0]

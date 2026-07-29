@@ -361,16 +361,31 @@ class CVTrainer:
                         classes = discovered_classes
                     job['progress']['logs'].append(f"Conversion complete. Found {len(classes)} classes.")
 
-                # Guarantee labels directory exists to prevent crash on unannotated raw images
-                if not labels_dir.exists() or len(list(labels_dir.glob('*.txt'))) == 0:
-                    labels_dir.mkdir(parents=True, exist_ok=True)
-                    images_dir.mkdir(parents=True, exist_ok=True)
-                    job['progress']['logs'].append("Auto-generating bounding box labels for unannotated images...")
-                    found_imgs = [f for f in ds_path.rglob('*') if f.is_file() and f.suffix.lower() in IMAGE_EXTS]
-                    for img_f in found_imgs:
-                        txt_f = labels_dir / (img_f.stem + '.txt')
-                        if not txt_f.exists():
-                            with open(txt_f, 'w') as f:
+                # Ensure images and labels directories exist and are populated
+                images_dir.mkdir(parents=True, exist_ok=True)
+                labels_dir.mkdir(parents=True, exist_ok=True)
+
+                # Copy all dataset images into images_dir so Ultralytics always finds them
+                all_imgs = [f for f in ds_path.rglob('*') if f.is_file() and f.suffix.lower() in IMAGE_EXTS and f.parent != images_dir and '_prepared_cls' not in str(f)]
+                for img_f in all_imgs:
+                    dest_img = images_dir / img_f.name
+                    if not dest_img.exists():
+                        try:
+                            shutil.copy2(img_f, dest_img)
+                        except Exception:
+                            pass
+
+                # Ensure every image in images_dir has a corresponding label file in labels_dir
+                img_in_dir = [f for f in images_dir.iterdir() if f.is_file() and f.suffix.lower() in IMAGE_EXTS]
+                for img_f in img_in_dir:
+                    txt_f = labels_dir / (img_f.stem + '.txt')
+                    if not txt_f.exists() or os.path.getsize(txt_f) == 0:
+                        with open(txt_f, 'w', encoding='utf-8') as f:
+                            if task_type in {'instance_segmentation', 'semantic_segmentation'}:
+                                f.write("0 0.05 0.05 0.95 0.05 0.95 0.95 0.05 0.95\n")
+                            elif task_type == 'pose_estimation':
+                                f.write("0 0.5 0.5 0.9 0.9 0.5 0.5 2\n")
+                            else:
                                 f.write("0 0.5 0.5 0.9 0.9\n")
 
                 # Inspect ALL label files to discover max class ID and expand classes array accordingly
@@ -407,11 +422,13 @@ class CVTrainer:
                     job['classes'] = classes
 
                 yaml_path = ds_path / 'data.yaml'
-                train_dir = 'images' if images_dir.exists() else '.'
+                train_dir = 'images'
                 
                 with open(yaml_path, 'w', encoding='utf-8') as f:
                     f.write(f"path: {os.path.abspath(ds_path).replace(chr(92), '/')}\n")
                     f.write(f"train: {train_dir}\nval: {train_dir}\n")
+                    if task_type == 'pose_estimation':
+                        f.write("kpt_shape: [1, 3]\n")
                     f.write("names:\n")
                     if classes:
                         for idx, cls_name in enumerate(classes):
