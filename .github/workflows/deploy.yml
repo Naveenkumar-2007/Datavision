@@ -50,6 +50,7 @@ jobs:
             echo "🚀 Pushing codebase to Hugging Face Space: $SPACE_NAME"
             git config --global user.email "ci@datavision.ai"
             git config --global user.name "DataVision CI/CD Bot"
+            git config --global lfs.allowincompletepush true
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
             git push -f hf HEAD:main
