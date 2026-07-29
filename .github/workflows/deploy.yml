@@ -52,11 +52,12 @@ jobs:
             git config --global user.email "ci@datavision.ai"
             git config --global user.name "DataVision CI/CD Bot"
             git config --global lfs.allowincompletepush true
+            git config lfs.allowincompletepush true
 
             # Install Git LFS
             git lfs install
 
-            # Force add pre-built frontend dist directory so Docker find /frontend/dist
+            # Force add pre-built frontend dist directory so Docker finds /frontend/dist
             git add -f frontend/dist
             git commit -m "build: bundle pre-built frontend distribution for HuggingFace Space Docker build" || true
 
@@ -64,9 +65,9 @@ jobs:
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
 
-            # Upload all LFS objects to HF LFS storage
+            # Upload all active LFS objects to HF LFS storage
             echo "📦 Uploading Git LFS objects to Hugging Face..."
-            git lfs push --all hf || true
+            git lfs push --ignore-missing --all hf || true
 
             # Push git commit ref to Hugging Face Space main
             echo "🚀 Force pushing codebase with frontend dist to Hugging Face..."
