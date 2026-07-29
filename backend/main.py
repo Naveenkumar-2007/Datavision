@@ -420,13 +420,27 @@ if os.path.exists(frontend_static_dir):
     if os.path.exists(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="frontend-assets")
 
-# Catch-all route for SPA (React Router) - must be LAST
+frontend_public_dir = os.path.join(os.path.dirname(__file__), "..", "frontend", "public")
+
+# Catch-all route for SPA (React Router) & static files - must be LAST
 @app.get("/{full_path:path}")
 async def spa_fallback(full_path: str):
-    """Fallback for client-side routing"""
+    """Fallback for client-side routing and static images"""
     # Don't catch API routes or FastAPI built-in docs
     if full_path.startswith("api/") or full_path.startswith("docs") or full_path.startswith("redoc") or full_path.startswith("openapi.json"):
         return {"error": "Not found"}
+
+    # 1. Check if direct file exists in frontend static dir (dist)
+    dist_file = os.path.join(frontend_static_dir, full_path)
+    if os.path.isfile(dist_file):
+        return FileResponse(dist_file)
+
+    # 2. Check if file exists in frontend public dir
+    public_file = os.path.join(frontend_public_dir, full_path)
+    if os.path.isfile(public_file):
+        return FileResponse(public_file)
+
+    # 3. Otherwise serve index.html for SPA client-side routing
     index_path = os.path.join(frontend_static_dir, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)

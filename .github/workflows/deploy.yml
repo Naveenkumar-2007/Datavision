@@ -14,7 +14,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          lfs: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -37,6 +36,8 @@ jobs:
           cd frontend
           npm install
           npm run build
+          # Remove duplicate binary images from dist/ (served dynamically from frontend/public to pass HF pre-receive hook)
+          find dist -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.gif" \) -delete
 
       - name: Push to Hugging Face Space
         env:
@@ -53,25 +54,14 @@ jobs:
             git config --global user.name "DataVision CI/CD Bot"
             git config --global lfs.allowincompletepush true
 
-            # Install Git LFS and enforce tracking for all image binary extensions
-            git lfs install
-            git lfs track "*.png" "*.jpg" "*.jpeg" "*.gif" "*.ico"
-
-            # Renormalize dist directory so git forces LFS pointer filter on images
-            git add -f .gitattributes
+            # Force add clean JS/CSS/HTML dist bundle
             git add -f frontend/dist
-            git add --renormalize frontend/dist
             git commit -m "build: bundle frontend distribution for HF Space" || true
 
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
-
-            # Upload all LFS binary objects to HF LFS storage first
-            echo "📦 Uploading Git LFS objects to Hugging Face..."
-            git lfs push --all hf || true
             
-            # Push git commit refs
-            echo "🚀 Pushing git ref HEAD:main to Hugging Face..."
+            echo "🚀 Pushing codebase to Hugging Face Space..."
             git push -f hf HEAD:main
             echo "✅ Successfully deployed to Hugging Face Space: $SPACE_NAME"
           else

@@ -23,7 +23,8 @@ RUN groupadd -r appuser && useradd -r -g appuser appuser
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy pre-built frontend (built locally, committed to repo or built in CI)
+# Copy frontend public assets and pre-built dist
+COPY frontend/public /app/frontend/public
 COPY frontend/dist /app/static
 
 # Copy backend source files
