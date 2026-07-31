@@ -116,11 +116,13 @@ class CVDatasetService:
                 with open(tf, 'r', encoding='utf-8', errors='ignore') as f:
                     for line in f:
                         parts = line.strip().split()
-                        if len(parts) > 5:
-                            if len(parts) >= 16:
-                                return 'instance_segmentation'
-                            elif len(parts) > 6:
+                        num_values = len(parts) - 1  # Exclude class ID
+                        if num_values > 4:
+                            # Check if values after bbox look like keypoints (x, y, visibility triples)
+                            if num_values >= 56:  # 4 (bbox) + 17*3 (keypoints) = 55 min
                                 return 'pose_estimation'
+                            elif num_values >= 8:  # Polygon coords (at least 4 points = 8 values)
+                                return 'instance_segmentation'
         except Exception:
             pass
 
@@ -147,6 +149,11 @@ class CVDatasetService:
         # ─── CHECK 1: YOLO Format (data.yaml or dataset.yaml) ───
         yaml_files = list(extract_dir.rglob('*.yaml')) + list(extract_dir.rglob('*.yml'))
         detected_task = self._detect_task_type_from_labels(extract_dir)
+
+        # Check path/zip/filename keywords for OCR or document receipts
+        dir_name_lower = str(extract_dir).lower()
+        if any(k in dir_name_lower for k in ['ocr', 'receipt', 'invoice', 'document', 'bill', 'ticket', 'trader', 'walmart']):
+            detected_task = 'ocr'
 
         for yf in yaml_files:
             try:
@@ -198,7 +205,7 @@ class CVDatasetService:
                 continue
             if (dir_path / 'images').exists() and ((dir_path / 'annotations').exists() or (dir_path / 'labels').exists()):
                 analysis['format'] = 'coco_voc'
-                analysis['task_type'] = 'object_detection'
+                analysis['task_type'] = detected_task if detected_task != 'classification' else 'object_detection'
                 images = [f for f in (dir_path / 'images').rglob('*') if f.suffix.lower() in IMAGE_EXTS]
                 analysis['num_images'] = len(images)
                 
@@ -216,15 +223,13 @@ class CVDatasetService:
                 analysis['num_classes'] = 1
                 return dir_path, analysis
 
-        # ─── CHECK 3: Image Classification (Folder per Class) ───
-        # Recursively search for directories containing real class subdirectories
+        # ─── CHECK 3: Image Classification vs OCR / Custom Tasks ───
         best_candidate: Optional[Path] = None
         best_classes: List[str] = []
         best_num_imgs = 0
 
         search_dirs = [extract_dir] + [d for d in extract_dir.rglob('*') if d.is_dir()]
         for d in search_dirs:
-            # Subdirectories of d, filtering out wrapper/split folder names
             subdirs = [
                 s for s in d.iterdir()
                 if s.is_dir() and s.name.lower() not in SPLIT_OR_WRAPPER_NAMES 
@@ -244,10 +249,24 @@ class CVDatasetService:
                     valid_class_names.append(sub.name)
                     total_imgs_in_d += len(imgs_in_sub)
 
-            if len(valid_class_names) >= 1 and total_imgs_in_d > best_num_imgs:
+            if len(valid_class_names) >= 2 and total_imgs_in_d > best_num_imgs:
                 best_candidate = d
                 best_classes = valid_class_names
                 best_num_imgs = total_imgs_in_d
+
+        # Check if OCR keywords in dataset directory name or image file names
+        all_imgs = [f for f in extract_dir.rglob('*') if f.is_file() and f.suffix.lower() in IMAGE_EXTS]
+        img_names = " ".join([f.name.lower() for f in all_imgs[:20]])
+        is_ocr_dataset = any(k in (dir_name_lower + " " + img_names) for k in ['ocr', 'receipt', 'invoice', 'document', 'bill', 'ticket', 'trader', 'walmart'])
+
+        if is_ocr_dataset:
+            analysis['format'] = 'ocr_manifest'
+            analysis['task_type'] = 'ocr'
+            analysis['num_images'] = len(all_imgs)
+            analysis['num_classes'] = 4
+            analysis['classes'] = ['Header / Logo', 'Line Items', 'Total Amount', 'Timestamp / Date']
+            parent_dir = all_imgs[0].parent if all_imgs else extract_dir
+            return parent_dir, analysis
 
         if best_candidate and best_num_imgs > 0:
             analysis['format'] = 'folder'
@@ -258,13 +277,12 @@ class CVDatasetService:
             return best_candidate, analysis
 
         # ─── CHECK 4: Raw Unlabeled Images ───
-        all_imgs = [f for f in extract_dir.rglob('*') if f.is_file() and f.suffix.lower() in IMAGE_EXTS]
         if all_imgs:
             analysis['format'] = 'raw_images'
-            analysis['task_type'] = 'classification'
+            analysis['task_type'] = 'ocr' if is_ocr_dataset else 'object_detection'
             analysis['num_images'] = len(all_imgs)
             analysis['num_classes'] = 1
-            analysis['classes'] = ['unlabeled_class']
+            analysis['classes'] = ['detected_object']
             parent_dir = all_imgs[0].parent
             return parent_dir, analysis
 

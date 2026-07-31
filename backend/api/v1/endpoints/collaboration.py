@@ -879,15 +879,9 @@ async def get_roles():
     }
 
 
-@router.put("/members/role")
-async def update_member_role(
-    req: UpdateRoleRequest,
-    user_id: str = Depends(get_current_user_id)
-):
-    """Change a member's role (Mocked for now as members are mocked above)."""
-    if req.role not in VALID_ROLES:
-        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {VALID_ROLES}")
-    return {"success": True, "message": f"Role updated to {req.role}"}
+
+# NOTE: update_member_role is already defined above at line ~695 with full DB support.
+# Removed duplicate mocked endpoint that was here.
 
 
 @router.post("/threads/{message_id}/react")
@@ -919,8 +913,8 @@ async def react_to_message(
             db.add(new_reaction)
             await db.commit()
             
-        # Refetch all reactions for message
-        stmt2 = select(MessageReaction).where(MessageReaction.message_id == message_id)
+        # Refetch all reactions for message with user names
+        stmt2 = select(MessageReaction).where(MessageReaction.message_id == message_id).options(selectinload(MessageReaction.user))
         result2 = await db.execute(stmt2)
         reactions = result2.scalars().all()
         
@@ -928,7 +922,9 @@ async def react_to_message(
         for r in reactions:
             if r.emoji not in grouped:
                 grouped[r.emoji] = []
-            grouped[r.emoji].append(req.user) # UI expects array of user names
+            # Use actual DB user name instead of always using request user
+            name = r.user.full_name if r.user and r.user.full_name else (r.user.email.split("@")[0] if r.user and r.user.email else "Unknown")
+            grouped[r.emoji].append(name)
             
         return {"success": True, "reactions": grouped}
     except Exception as e:
@@ -1113,3 +1109,20 @@ async def get_activity_feed(
             })
             
     return {"activities": formatted}
+
+
+@router.get("/email-config-status")
+async def email_config_status():
+    """Check if email sending is configured (for frontend feedback)."""
+    import os
+    resend_key = os.getenv("RESEND_API_KEY", "")
+    smtp_host = os.getenv("SMTP_HOST", "")
+    
+    configured = bool(resend_key) or bool(smtp_host)
+    provider = "Resend API" if resend_key else ("SMTP" if smtp_host else "None")
+    
+    return {
+        "configured": configured,
+        "provider": provider,
+        "message": "Email sending is active" if configured else "No email provider configured. Set RESEND_API_KEY or SMTP_HOST in environment variables."
+    }

@@ -109,7 +109,24 @@ const Collaborate: React.FC = () => {
       setLoading(true);
       try {
         const res = await api.get(`/api/v1/collaboration/threads?channel_id=${encodeURIComponent(activeChannel)}`);
-        setComments(res.data?.threads || []);
+        const threads = res.data?.threads || [];
+        setComments(threads);
+        
+        // Load reactions for each message so they persist across page loads
+        const reactionMap: Record<string, Record<string, string[]>> = {};
+        for (const msg of threads) {
+          if (msg.id) {
+            try {
+              const rRes = await api.get(`/api/v1/collaboration/threads/${msg.id}/reactions`);
+              if (rRes.data?.reactions && Object.keys(rRes.data.reactions).length > 0) {
+                reactionMap[msg.id] = rRes.data.reactions;
+              }
+            } catch { /* skip individual reaction fetch errors */ }
+          }
+        }
+        if (Object.keys(reactionMap).length > 0) {
+          setReactions(prev => ({ ...prev, ...reactionMap }));
+        }
       } catch (err) {
         console.error("Failed to load threads", err);
       } finally {
@@ -226,7 +243,9 @@ const Collaborate: React.FC = () => {
         if (res.data.email_sent) {
           toast.success(`Invitation email sent to ${inviteEmail}!`);
         } else {
-          toast.success(`Member ${inviteName} added! Invite link copied to clipboard.`);
+          // Show specific reason why email wasn't sent
+          toast.success(`Member ${inviteName} added!`);
+          toast.error(`Email not sent: Email provider not configured. Invite link copied to clipboard instead.`);
         }
       }
     } catch (err: any) {
@@ -301,6 +320,13 @@ const Collaborate: React.FC = () => {
     const markers = { bold: '**', italic: '_', code: '`' };
     const m = markers[format];
     setNewComment(prev => `${prev}${m}${m}`);
+    inputRef.current?.focus();
+  };
+
+  // Insert emoji into the message input field
+  const insertInputEmoji = (emoji: string) => {
+    setNewComment(prev => prev + emoji);
+    setShowInputEmojiPicker(false);
     inputRef.current?.focus();
   };
 

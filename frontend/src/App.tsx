@@ -31,6 +31,7 @@ const DataLineage = React.lazy(() => import('./pages/DataLineage'));
 const Collaborate = React.lazy(() => import('./pages/Collaborate'));
 const Developer = React.lazy(() => import('./pages/Developer'));
 const ComputerVision = React.lazy(() => import('./pages/ComputerVision'));
+const VectorStore = React.lazy(() => import('./pages/VectorStore'));
 const Autopilot = React.lazy(() => import('./pages/Autopilot'));
 
 const PrivacyPolicy = React.lazy(() => import('./pages/PrivacyPolicy'));
@@ -141,8 +142,8 @@ function App() {
                   <Route path="/collaborate" element={<Collaborate />} />
                   <Route path="/developer" element={<Developer />} />
                   <Route path="/computer-vision" element={<ComputerVision />} />
-                  
-                  {/* MLOps Enterprise Platform Routes */}
+                  <Route path="/vector" element={<VectorStore />} />
+                  <Route path="/vector-store" element={<VectorStore />} />
 
 
                   <Route path="/reports" element={<Reports />} />

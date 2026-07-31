@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useUserStore } from '@/store/userStore';
 import { motion } from 'framer-motion';
 import { 
@@ -9,8 +10,6 @@ import {
 } from 'lucide-react';
 import { api } from '@/services/api';
 
-import { VectorInspectorModal } from '@/components/vector/VectorInspectorModal';
-
 const iconMap: Record<string, React.ReactNode> = {
   database: <Database className="w-6 h-6 text-blue-500" />,
   cpu: <Cpu className="w-6 h-6 text-indigo-500" />,
@@ -19,11 +18,11 @@ const iconMap: Record<string, React.ReactNode> = {
 };
 
 const DataLineage: React.FC = () => {
+  const navigate = useNavigate();
   const { isDark } = useUserStore();
   const [lineageData, setLineageData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [rescanning, setRescanning] = useState(false);
-  const [isVectorModalOpen, setIsVectorModalOpen] = useState(false);
 
   // Theme classes
   const bgCard = isDark ? 'bg-white/[0.03]' : 'bg-white';
@@ -135,7 +134,7 @@ const DataLineage: React.FC = () => {
                 </span>
               </div>
               <button 
-                onClick={() => setIsVectorModalOpen(true)}
+                onClick={() => navigate('/vector')}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-sm transition-all ${
                   isDark 
                     ? 'bg-gradient-to-r from-amber-500/20 to-indigo-500/20 text-amber-300 border border-amber-500/30 hover:border-amber-400' 
@@ -173,8 +172,6 @@ const DataLineage: React.FC = () => {
           </div>
         </div>
       </div>
-
-      <VectorInspectorModal isOpen={isVectorModalOpen} onClose={() => setIsVectorModalOpen(false)} />
 
       {/* Data Flow Diagram */}
       <div className={`p-6 rounded-2xl border min-h-[400px] flex flex-col ${bgCard} ${border}`}>

@@ -312,15 +312,28 @@ const CVPredictionPanel: React.FC = () => {
                 </div>
               ) : (
                 /* Primary Top Prediction Card */
-                <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
+                <div className={`p-3.5 rounded-xl border flex items-center justify-between ${
+                  predictionResult.task_type === 'ocr' ? 'bg-orange-500/10 border-orange-500/30' : 'bg-emerald-500/10 border-emerald-500/30'
+                }`}>
                   <div>
-                    <div className="text-[10px] font-bold text-emerald-500 uppercase tracking-wider">Top Prediction</div>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                        predictionResult.task_type === 'ocr' ? 'text-orange-500' : 'text-emerald-500'
+                      }`}>
+                        {predictionResult.task_type === 'ocr' ? 'OCR Text Extraction' : 'Top Prediction'}
+                      </span>
+                      {predictionResult.task_type === 'ocr' && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-orange-500/20 text-orange-400">OCR PIPELINE</span>
+                      )}
+                    </div>
                     <div className="text-base font-extrabold capitalize" style={{ color: 'var(--text-primary)' }}>
                       {predictionResult.class ? predictionResult.class.replace(/_/g, ' ') : 'Predicted Class'}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl font-black text-emerald-500 font-mono">
+                    <div className={`text-2xl font-black font-mono ${
+                      predictionResult.task_type === 'ocr' ? 'text-orange-500' : 'text-emerald-500'
+                    }`}>
                       {((predictionResult.confidence || 0.95) * 100).toFixed(1)}%
                     </div>
                     <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Confidence Score</div>
@@ -328,24 +341,26 @@ const CVPredictionPanel: React.FC = () => {
                 </div>
               )}
 
-              {/* Class Probabilities Breakdown */}
+              {/* Class / OCR Text Breakdown */}
               {predictionResult.predictions && predictionResult.predictions.length > 0 && (
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
-                    {predictionResult.is_out_of_domain ? 'Domain Relevance Analysis' : 'Class Probabilities Breakdown'}
+                    {predictionResult.task_type === 'ocr' ? 'Extracted Text Lines & Bounding Boxes' : 'Class Probabilities Breakdown'}
                   </h4>
-                  <div className="space-y-2">
-                    {predictionResult.predictions.slice(0, 5).map((pred: any, i: number) => (
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {predictionResult.predictions.slice(0, 8).map((pred: any, i: number) => (
                       <div key={i} className="p-2.5 rounded-xl border bg-black/5 dark:bg-white/5 flex items-center justify-between" style={{ borderColor: 'var(--border-color)' }}>
                         <div className="flex-1 mr-4">
                           <div className="flex justify-between text-xs font-medium mb-1">
-                            <span className="capitalize font-bold" style={{ color: 'var(--text-primary)' }}>{pred.class ? pred.class.replace(/_/g, ' ') : `Class ${i+1}`}</span>
-                            <span className={`font-mono font-bold ${predictionResult.is_out_of_domain ? 'text-amber-500' : 'text-emerald-500'}`}>
+                            <span className="capitalize font-bold truncate max-w-[220px]" style={{ color: 'var(--text-primary)' }}>
+                              {pred.class ? pred.class : `Line ${i+1}`}
+                            </span>
+                            <span className={`font-mono font-bold ${predictionResult.task_type === 'ocr' ? 'text-orange-400' : 'text-emerald-500'}`}>
                               {(pred.confidence * 100).toFixed(1)}%
                             </span>
                           </div>
                           <div className="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${predictionResult.is_out_of_domain ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(pred.confidence * 100, 100)}%` }} />
+                            <div className={`h-full rounded-full ${predictionResult.task_type === 'ocr' ? 'bg-orange-500' : 'bg-emerald-500'}`} style={{ width: `${Math.min(pred.confidence * 100, 100)}%` }} />
                           </div>
                         </div>
                       </div>

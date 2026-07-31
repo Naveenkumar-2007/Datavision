@@ -15,10 +15,16 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Environment
+# Environment (CRITICAL: never commit secrets)
 .env
 .env.local
 .env.*.local
+backend/.env
+**/.env
+
+# SQLite databases (user data)
+*.db
+*.sqlite3
 
 # IDE
 .vscode/
@@ -35,12 +41,19 @@ Thumbs.db
 storage/
 backend/storage/
 
+# Debug artifacts
+response.json
+search_out*.txt
+backend/response.json
+backend/search_out*.txt
+
 # Logs
 *.log
 logs/
 
 # CatBoost
 catboost_info/
+backend/catboost_info/
 
 # Cache
 .cache/
