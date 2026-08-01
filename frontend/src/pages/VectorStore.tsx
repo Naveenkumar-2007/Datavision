@@ -17,6 +17,11 @@ const VectorStore: React.FC = () => {
   const [collections, setCollections] = useState<any[]>([]);
   const [ragLogs, setRagLogs] = useState<any[]>([]);
 
+  // Vector Points Inspector state
+  const [selectedColName, setSelectedColName] = useState<string | null>(null);
+  const [selectedColPoints, setSelectedColPoints] = useState<any[]>([]);
+  const [loadingPoints, setLoadingPoints] = useState(false);
+
   // Query search state
   const [queryInput, setQueryInput] = useState('');
   const [targetCollection, setTargetCollection] = useState('document_chunks');
@@ -29,6 +34,19 @@ const VectorStore: React.FC = () => {
   const [apiKey, setApiKey] = useState('');
   const [embeddingModel, setEmbeddingModel] = useState('all-MiniLM-L6-v2');
   const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  const handleInspectPoints = async (colName: string) => {
+    setSelectedColName(colName);
+    setLoadingPoints(true);
+    try {
+      const res = await api.get(`/api/v1/vector/collections/${colName}/points`);
+      setSelectedColPoints(res.data?.points || []);
+    } catch (e) {
+      toast.error(`Failed to load vector points for ${colName}`);
+    } finally {
+      setLoadingPoints(false);
+    }
+  };
 
   // Theme tokens
   const bg = isDark ? 'bg-[#0a0b10]' : 'bg-slate-50';
@@ -305,32 +323,92 @@ const VectorStore: React.FC = () => {
 
         {/* TAB 2: VECTOR COLLECTIONS */}
         {activeTab === 'collections' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {collections.map((col, idx) => (
-              <div key={idx} className={`p-5 rounded-2xl border ${bgCard} ${border} space-y-3`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Database className="w-4 h-4 text-purple-400" />
-                    <h4 className={`text-sm font-bold ${textH}`}>{col.name}</h4>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {collections.map((col, idx) => (
+                <div key={idx} className={`p-5 rounded-2xl border ${bgCard} ${border} space-y-3 flex flex-col justify-between`}>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Database className="w-4 h-4 text-purple-400" />
+                        <h4 className={`text-sm font-bold ${textH}`}>{col.name}</h4>
+                      </div>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                    </div>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between">
+                        <span className={textM}>Vector Count</span>
+                        <span className={`font-mono font-bold ${textH}`}>{col.vectors_count}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className={textM}>Dimensions</span>
+                        <span className={`font-mono font-bold ${textH}`}>{col.vector_size || 384}d</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className={textM}>Distance Metric</span>
+                        <span className={`font-mono font-bold ${textH}`}>{col.distance || 'Cosine'}</span>
+                      </div>
+                    </div>
                   </div>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+
+                  <button
+                    onClick={() => handleInspectPoints(col.name)}
+                    className="w-full py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 border border-purple-500/20 text-xs font-bold transition-all flex items-center justify-center gap-2"
+                  >
+                    <Terminal className="w-3.5 h-3.5" />
+                    Inspect Points & Vectors
+                  </button>
                 </div>
-                <div className="space-y-1 text-xs">
-                  <div className="flex justify-between">
-                    <span className={textM}>Vector Count</span>
-                    <span className={`font-mono font-bold ${textH}`}>{col.vectors_count}</span>
+              ))}
+            </div>
+
+            {/* Selected Collection Vector Points Drawer */}
+            {selectedColName && (
+              <div className={`p-6 rounded-2xl border ${bgCard} ${border} space-y-4`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className={`text-sm font-bold ${textH}`}>Vector Points Explorer: {selectedColName}</h3>
+                    <p className={`text-xs ${textM}`}>Showing raw float embedding vectors, point IDs, and RAG context payloads</p>
                   </div>
-                  <div className="flex justify-between">
-                    <span className={textM}>Dimensions</span>
-                    <span className={`font-mono font-bold ${textH}`}>{col.vector_size || 384}d</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className={textM}>Distance Metric</span>
-                    <span className={`font-mono font-bold ${textH}`}>{col.distance || 'Cosine'}</span>
-                  </div>
+                  <span className="text-xs font-mono font-bold text-purple-400 bg-purple-500/10 px-3 py-1 rounded-lg border border-purple-500/20">
+                    {loadingPoints ? 'Fetching vectors...' : `${selectedColPoints.length} Sample Points`}
+                  </span>
+                </div>
+
+                <div className="space-y-3">
+                  {selectedColPoints.map((pt, i) => (
+                    <div key={pt.id || i} className={`p-4 rounded-xl border ${isDark ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-200'} space-y-2`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-mono font-bold text-emerald-400">Point ID: {pt.id}</span>
+                        <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                          Dim: {pt.vector_dim || 384}d
+                        </span>
+                      </div>
+
+                      <p className={`text-xs font-medium ${textH}`}>{pt.content}</p>
+
+                      {/* Raw Vector Float Array Preview */}
+                      <div className="space-y-1">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider ${textS}`}>Raw Embedding Vector Preview (First 8 dims)</span>
+                        <div className="p-2 rounded-lg bg-black/50 text-[11px] font-mono text-emerald-300 overflow-x-auto border border-emerald-500/20">
+                          [{pt.vector_preview?.map((v: number) => v.toFixed(4)).join(', ')}, ...]
+                        </div>
+                      </div>
+
+                      {/* Payload Metadata JSON */}
+                      {pt.payload && (
+                        <div className="space-y-1">
+                          <span className={`text-[10px] font-bold uppercase tracking-wider ${textS}`}>Metadata Payload</span>
+                          <pre className="p-2.5 rounded-lg bg-black/40 text-[11px] font-mono text-purple-300 overflow-x-auto">
+                            {JSON.stringify(pt.payload, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
           </div>
         )}
 
