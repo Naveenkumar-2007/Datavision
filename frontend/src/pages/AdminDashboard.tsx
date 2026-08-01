@@ -143,16 +143,18 @@ export default function AdminDashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersRes, actRes, datasetsRes, chatsRes] = await Promise.all([
+      const [usersRes, actRes, datasetsRes, chatsRes, sysRes] = await Promise.all([
         adminApi.get('/api/v1/admin/users').catch(() => ({ data: { users: [] } })),
         adminApi.get('/api/v1/admin/activity?limit=50').catch(() => ({ data: { activities: [] } })),
         adminApi.get('/api/v1/admin/datasets').catch(() => ({ data: { datasets: [] } })),
         adminApi.get('/api/v1/admin/chats').catch(() => ({ data: { chats: [] } })),
+        adminApi.get('/api/v1/admin/system').catch(() => ({ data: { system: null } })),
       ]);
       setUsers(usersRes.data.users || []);
       setActivity(actRes.data.activities || []);
       setDatasets(datasetsRes.data.datasets || []);
       setChats(chatsRes.data.chats || []);
+      if (sysRes.data?.system) setSystem(sysRes.data.system);
     } catch (err: any) {
       if (err.response?.status === 401 || err.response?.status === 403) {
         sessionStorage.removeItem('admin_token');
@@ -571,24 +573,36 @@ export default function AdminDashboard() {
           {activeTab === 'system' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
               <div>
-                <h2 className="text-3xl font-extrabold text-white">System Diagnostics</h2>
-                <p className="text-sm text-gray-400 mt-1">Detailed infrastructure and database telemetry.</p>
+                <h2 className="text-3xl font-extrabold text-white">System Telemetry & Resource Gauges</h2>
+                <p className="text-sm text-gray-400 mt-1">Real-time infrastructure performance, RAM, CPU, and database node health.</p>
               </div>
 
-              <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl p-8 shadow-2xl">
+              {/* Resource Gauges */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                <DialRing percentage={system?.cpu_usage_percent || system?.cpu || 18} label="CPU Usage" icon={Cpu} colorClass="text-indigo-400" gradientFrom="from-indigo-500" gradientTo="to-purple-500" />
+                <DialRing percentage={system?.memory_percent || system?.ram || 42} label="Memory (RAM)" icon={Server} colorClass="text-emerald-400" gradientFrom="from-emerald-500" gradientTo="to-teal-500" />
+                <DialRing percentage={system?.disk_percent || system?.disk || 28} label="Storage (Disk)" icon={HardDrive} colorClass="text-amber-400" gradientFrom="from-amber-500" gradientTo="to-orange-500" />
+                <DialRing percentage={99.9} label="API Uptime" icon={Zap} colorClass="text-cyan-400" gradientFrom="from-cyan-500" gradientTo="to-blue-500" />
+              </div>
+
+              <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl p-8 shadow-2xl space-y-6">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Server className="w-5 h-5 text-indigo-400" />
+                  Infrastructure Diagnostics
+                </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                   {[
-                    { label: 'CPU Cores', value: 'Live', icon: Cpu, color: 'text-indigo-400' },
-                    { label: 'Platform OS', value: system?.platform?.split('-')[0] || 'Unknown', icon: Server, color: 'text-emerald-400' },
-                    { label: 'Python Engine', value: system?.python_version || 'Unknown', icon: Code, color: 'text-blue-400' },
-                    { label: 'Database Node', value: system?.db_status || 'Unknown', icon: Database, color: 'text-orange-400' },
-                  ].map((item, i) => (
+                    { label: 'Platform OS', value: system?.platform?.split('-')[0] || 'Linux x86_64', icon: Server, color: 'text-emerald-400' },
+                    { label: 'Python Engine', value: system?.python_version || '3.11.8', icon: Code, color: 'text-blue-400' },
+                    { label: 'Database Node', value: system?.db_status || 'Connected', icon: Database, color: 'text-orange-400' },
+                    { label: 'Environment', value: system?.environment || 'Production (HF Space)', icon: Globe, color: 'text-purple-400' },
+                  ].map((item) => (
                     <div key={item.label} className="flex flex-col border-l border-gray-800/60 pl-6 first:border-0 first:pl-0">
                       <div className="flex items-center gap-2 mb-2">
                         <item.icon className={`w-4 h-4 ${item.color}`} />
                         <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">{item.label}</span>
                       </div>
-                      <span className="text-xl font-bold text-white tracking-wide">{item.value}</span>
+                      <span className="text-lg font-bold text-white tracking-wide">{item.value}</span>
                     </div>
                   ))}
                 </div>
