@@ -130,5 +130,55 @@ class VectorStoreService:
             logger.error(f"Failed to search chat history: {e}")
             return []
 
+    def connect_custom_qdrant(self, url: str, api_key: Optional[str] = None, collection_name: str = "dataset_metadata") -> Dict[str, Any]:
+        """Connect to Qdrant Cloud or custom Qdrant instance with robust URL normalization and failover."""
+        if not QDRANT_AVAILABLE:
+            raise Exception("qdrant_client package is not installed.")
+
+        url_clean = url.strip().rstrip('/')
+        api_key_clean = api_key.strip() if api_key else None
+
+        candidate_urls = []
+        if not url_clean.startswith('http://') and not url_clean.startswith('https://'):
+            candidate_urls.append(f"https://{url_clean}")
+            candidate_urls.append(f"http://{url_clean}")
+        else:
+            candidate_urls.append(url_clean)
+            if ':6333' in url_clean:
+                candidate_urls.append(url_clean.replace(':6333', ''))
+            else:
+                candidate_urls.append(f"{url_clean}:6333")
+
+        last_error = None
+        new_client = None
+        successful_url = ""
+
+        for cand in candidate_urls:
+            try:
+                test_c = QdrantClient(url=cand, api_key=api_key_clean, timeout=8)
+                cols = test_c.get_collections().collections
+                new_client = test_c
+                successful_url = cand
+                break
+            except Exception as ex:
+                last_error = ex
+
+        if not new_client:
+            raise Exception(f"Failed to connect to Qdrant at {url}: {str(last_error)}")
+
+        self.client = new_client
+        self.is_ready = True
+        if collection_name:
+            self.doc_collection = collection_name
+        self._ensure_collections()
+
+        cols = self.client.get_collections().collections
+        return {
+            "status": "connected",
+            "active_url": successful_url,
+            "collections_count": len(cols),
+            "collections": [c.name for c in cols]
+        }
+
 # Singleton instance
 vector_store = VectorStoreService()

@@ -69,7 +69,7 @@ const DialRing = ({ percentage, label, icon: Icon, colorClass, gradientFrom, gra
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'system' | 'activity'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'datasets' | 'chats' | 'system' | 'activity'>('overview');
   
   // Real-time State
   const [stats, setStats] = useState<any>(null);
@@ -79,6 +79,8 @@ export default function AdminDashboard() {
 
   // Normal State
   const [users, setUsers] = useState<any[]>([]);
+  const [datasets, setDatasets] = useState<any[]>([]);
+  const [chats, setChats] = useState<any[]>([]);
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -141,12 +143,16 @@ export default function AdminDashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersRes, actRes] = await Promise.all([
-        adminApi.get('/api/v1/admin/users'),
-        adminApi.get('/api/v1/admin/activity?limit=50'),
+      const [usersRes, actRes, datasetsRes, chatsRes] = await Promise.all([
+        adminApi.get('/api/v1/admin/users').catch(() => ({ data: { users: [] } })),
+        adminApi.get('/api/v1/admin/activity?limit=50').catch(() => ({ data: { activities: [] } })),
+        adminApi.get('/api/v1/admin/datasets').catch(() => ({ data: { datasets: [] } })),
+        adminApi.get('/api/v1/admin/chats').catch(() => ({ data: { chats: [] } })),
       ]);
       setUsers(usersRes.data.users || []);
       setActivity(actRes.data.activities || []);
+      setDatasets(datasetsRes.data.datasets || []);
+      setChats(chatsRes.data.chats || []);
     } catch (err: any) {
       if (err.response?.status === 401 || err.response?.status === 403) {
         sessionStorage.removeItem('admin_token');
@@ -199,6 +205,8 @@ export default function AdminDashboard() {
   const tabs = [
     { id: 'overview' as const, label: 'Overview', icon: BarChart3 },
     { id: 'users' as const, label: 'Users', icon: Users },
+    { id: 'datasets' as const, label: 'User Datasets', icon: Database },
+    { id: 'chats' as const, label: 'AI Chat Logs', icon: MessageSquare },
     { id: 'system' as const, label: 'System', icon: Server },
     { id: 'activity' as const, label: 'Activity', icon: Activity },
   ];
@@ -463,6 +471,98 @@ export default function AdminDashboard() {
                     <p className="text-gray-500 font-medium">No users found matching your search.</p>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          )}
+
+          {/* ═══ DATASETS ═══ */}
+          {activeTab === 'datasets' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              <div>
+                <h2 className="text-3xl font-extrabold text-white">Platform Uploaded Datasets</h2>
+                <p className="text-sm text-gray-400 mt-1">{datasets.length} datasets uploaded across all workspace users.</p>
+              </div>
+
+              <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
+                <div className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_140px] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                  <span>Filename</span><span>Owner Email</span><span>Size</span><span className="text-center">Rows</span><span className="text-center">Status</span><span>Uploaded</span>
+                </div>
+                <div className="divide-y divide-gray-800/40 max-h-[600px] overflow-y-auto custom-scrollbar">
+                  {datasets.map((d, i) => (
+                    <motion.div 
+                      key={d.id || i} 
+                      initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
+                      className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_140px] gap-4 px-6 py-4 items-center hover:bg-white/[0.03] transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 font-bold text-xs">
+                          📁 {d.file_type}
+                        </div>
+                        <span className="text-sm text-white font-semibold truncate">{d.filename}</span>
+                      </div>
+                      <span className="text-sm text-gray-400 truncate">{d.user_email}</span>
+                      <span className="text-xs text-gray-300 font-mono">{d.file_size_mb} MB</span>
+                      <span className="text-xs text-emerald-400 font-mono text-center">{d.rows_count || '—'}</span>
+                      <div className="text-center">
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {d.status}
+                        </span>
+                      </div>
+                      <span className="text-xs text-gray-500">{d.uploaded_at ? new Date(d.uploaded_at).toLocaleDateString() : '—'}</span>
+                    </motion.div>
+                  ))}
+                  {datasets.length === 0 && (
+                    <div className="p-16 text-center">
+                      <Database className="w-12 h-12 mx-auto mb-4 text-gray-700" />
+                      <p className="text-gray-500 font-medium">No datasets uploaded yet.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ═══ CHATS ═══ */}
+          {activeTab === 'chats' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              <div>
+                <h2 className="text-3xl font-extrabold text-white">AI Analyst Chat Sessions</h2>
+                <p className="text-sm text-gray-400 mt-1">{chats.length} active AI conversation logs across users.</p>
+              </div>
+
+              <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl p-6 shadow-2xl">
+                <div className="space-y-3">
+                  {chats.map((c, i) => (
+                    <motion.div
+                      key={c.id || i}
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-5 rounded-2xl bg-black/30 border border-gray-800/60 hover:border-indigo-500/40 transition-all space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <MessageSquare className="w-4 h-4 text-indigo-400" />
+                          <h4 className="text-sm font-bold text-white">{c.title}</h4>
+                          <span className="px-2 py-0.5 rounded text-[10px] bg-purple-500/10 text-purple-400 border border-purple-500/20 font-mono">
+                            {c.mode}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-500 font-mono">{c.user_email}</span>
+                      </div>
+                      <p className="text-xs text-gray-400 leading-relaxed italic">"{c.last_message}"</p>
+                      <div className="flex items-center justify-between text-[11px] text-gray-500 pt-1 border-t border-gray-800/40">
+                        <span>{c.message_count} messages in thread</span>
+                        <span>{c.updated_at ? new Date(c.updated_at).toLocaleString() : '—'}</span>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {chats.length === 0 && (
+                    <div className="p-16 text-center">
+                      <MessageSquare className="w-12 h-12 mx-auto mb-4 text-gray-700" />
+                      <p className="text-gray-500 font-medium">No chat sessions found.</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </motion.div>
           )}

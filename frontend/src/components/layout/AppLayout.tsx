@@ -47,6 +47,14 @@ const AppLayout: React.FC = () => {
   const { signOut } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  useEffect(() => {
+    // Dispatch resize event when sidebar collapses or expands so all charts resize smoothly
+    const timer = setTimeout(() => {
+      window.dispatchEvent(new Event('resize'));
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [isSidebarCollapsed]);
   const { isDark, toggleTheme } = useUserStore();
 
   // V3: Command Palette State

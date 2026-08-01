@@ -29,7 +29,12 @@ const GridWrapper = ({ children, layouts, breakpoints, cols, rowHeight, isDragga
     useEffect(() => {
         if (!ref.current) return;
         const observer = new ResizeObserver(entries => {
-            if (entries[0]) setWidth(entries[0].contentRect.width);
+            if (entries[0] && entries[0].contentRect.width > 0) {
+                const w = entries[0].contentRect.width;
+                setWidth(w);
+                // Dispatch window resize event so Plotly useResizeHandler recalculates responsiveness immediately
+                window.dispatchEvent(new Event('resize'));
+            }
         });
         observer.observe(ref.current);
         return () => observer.disconnect();
@@ -47,7 +52,7 @@ const GridWrapper = ({ children, layouts, breakpoints, cols, rowHeight, isDragga
     };
 
     return (
-        <div ref={ref} className="w-full overflow-hidden">
+        <div ref={ref} className="w-full min-w-0 overflow-hidden">
             <Responsive {...rglProps}>
                 {children}
             </Responsive>
@@ -483,7 +488,6 @@ const VisualIntelligenceDashboard: React.FC = () => {
         const layout = {
             ...(chart.plotly_config.layout || {}),
             autosize: true,
-            height,
             paper_bgcolor: 'rgba(0,0,0,0)',
             plot_bgcolor: 'rgba(0,0,0,0)',
             font: {

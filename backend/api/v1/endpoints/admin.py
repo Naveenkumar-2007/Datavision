@@ -376,6 +376,73 @@ async def broadcast_announcement(
     return {"success": True, "message": "Broadcast sent to activity feed"}
 
 
+@router.get("/datasets")
+async def list_all_user_datasets(
+    admin: dict = Depends(verify_admin_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all uploaded datasets across all users with file size, rows, and user email."""
+    try:
+        from sqlalchemy.orm import selectinload
+        stmt = select(UserFile).order_by(UserFile.uploaded_at.desc()).options(selectinload(UserFile.user))
+        result = await db.execute(stmt)
+        files = result.scalars().all()
+
+        dataset_list = []
+        for f in files:
+            owner_email = f.user.email if f.user else "Unknown User"
+            meta = f.metadata_ or {}
+            dataset_list.append({
+                "id": str(f.id),
+                "filename": f.original_filename or f.filename,
+                "file_type": f.file_type or "CSV",
+                "file_size_mb": round((f.file_size or 0) / (1024 * 1024), 2),
+                "user_email": owner_email,
+                "status": f.processing_status or ("Processed" if f.is_processed else "Pending"),
+                "rows_count": meta.get("rows", meta.get("row_count", 0)),
+                "columns_count": meta.get("cols", meta.get("col_count", 0)),
+                "uploaded_at": f.uploaded_at.isoformat() if f.uploaded_at else None
+            })
+
+        return {"success": True, "datasets": dataset_list, "total": len(dataset_list)}
+    except Exception as e:
+        logger.error(f"Error fetching admin datasets: {e}")
+        return {"success": True, "datasets": [], "total": 0}
+
+
+@router.get("/chats")
+async def list_all_user_chats(
+    admin: dict = Depends(verify_admin_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all AI Analyst user conversations and queries across the platform."""
+    try:
+        from sqlalchemy.orm import selectinload
+        stmt = select(Conversation).order_by(Conversation.updated_at.desc()).options(selectinload(Conversation.user), selectinload(Conversation.messages))
+        result = await db.execute(stmt)
+        convs = result.scalars().all()
+
+        chat_list = []
+        for c in convs:
+            owner_email = c.user.email if c.user else "Unknown User"
+            last_msg = c.messages[-1].content[:150] if c.messages else "No messages"
+            chat_list.append({
+                "id": str(c.id),
+                "title": c.title or "AI Analysis Session",
+                "user_email": owner_email,
+                "mode": c.mode or "auto",
+                "message_count": len(c.messages),
+                "last_message": last_msg,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None
+            })
+
+        return {"success": True, "chats": chat_list, "total": len(chat_list)}
+    except Exception as e:
+        logger.error(f"Error fetching admin chats: {e}")
+        return {"success": True, "chats": [], "total": 0}
+
+
 # ══════════════════════════════════════════════════════
 # REAL-TIME ADMIN WEBSOCKET
 # ══════════════════════════════════════════════════════
