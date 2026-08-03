@@ -245,7 +245,7 @@ export default function AdminDashboard() {
 
   if (loading && !stats) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#05050A]">
+      <div className="min-h-screen flex items-center justify-center bg-primary">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-400 text-sm font-medium tracking-wide">Initializing Enterprise Hub...</p>
@@ -255,12 +255,12 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen flex bg-[#05050A] text-white selection:bg-red-500/30 font-sans">
+    <div className="min-h-screen flex bg-primary text-white selection:bg-red-500/30 font-sans">
       
       {/* Dynamic Background */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-red-900/10 blur-[150px] rounded-full mix-blend-screen" />
-        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-indigo-900/10 blur-[150px] rounded-full mix-blend-screen" />
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-emerald-500/20 blur-[150px] rounded-full mix-blend-screen" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-green-500/20 blur-[150px] rounded-full mix-blend-screen" />
       </div>
 
       {/* Toast */}
@@ -270,7 +270,7 @@ export default function AdminDashboard() {
             className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 rounded-2xl border backdrop-blur-xl shadow-2xl font-medium ${
               toast.type === 'success' 
                 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' 
-                : 'bg-red-500/10 border-red-500/20 text-red-300'
+                : 'bg-red-500/10 border-emerald-500/20 text-red-300'
             }`}
           >
             {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
@@ -280,10 +280,10 @@ export default function AdminDashboard() {
       </AnimatePresence>
 
       {/* Sidebar */}
-      <div className="w-64 border-r border-gray-800/40 flex flex-col bg-[#0A0A10]/80 backdrop-blur-3xl relative z-10">
+      <div className="w-64 border-r border-gray-800/40 flex flex-col bg-[#11111a]/80 backdrop-blur-3xl relative z-10">
         <div className="p-6 border-b border-gray-800/40">
           <div className="flex items-center gap-4">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-br from-red-600 to-orange-600 shadow-[0_0_20px_rgba(220,38,38,0.3)]">
+            <div className="p-2.5 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-[0_0_20px_rgba(220,38,38,0.3)]">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
@@ -300,11 +300,11 @@ export default function AdminDashboard() {
               onClick={() => setActiveTab(tab.id)}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all ${
                 activeTab === tab.id
-                  ? 'bg-gradient-to-r from-red-500/10 to-transparent text-red-400 border border-red-500/20 shadow-[inset_0_0_20px_rgba(239,68,68,0.05)]'
+                  ? 'bg-gradient-to-r from-emerald-500/10 to-transparent text-emerald-400 border border-emerald-500/20 shadow-[inset_0_0_20px_rgba(16,185,129,0.05)]'
                   : 'text-gray-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'text-red-400' : 'text-gray-500'}`} />
+              <tab.icon className={`w-5 h-5 ${activeTab === tab.id ? 'text-emerald-400' : 'text-gray-500'}`} />
               {tab.label}
             </button>
           ))}
@@ -312,7 +312,7 @@ export default function AdminDashboard() {
 
         <div className="p-4 border-t border-gray-800/40 space-y-2 bg-black/20">
           <div className="flex items-center gap-2 px-4 mb-4">
-            <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]'}`} />
+            <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-red-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]'}`} />
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
               {wsConnected ? 'Live Connection' : 'Disconnected'}
             </span>
@@ -322,8 +322,8 @@ export default function AdminDashboard() {
             <div className="flex items-center gap-3"><Megaphone className="w-4 h-4" /> Broadcast</div>
           </button>
           <button onClick={handleLogout}
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium text-gray-400 hover:text-white hover:bg-red-500/10 hover:border-red-500/20 transition-all border border-transparent">
-            <div className="flex items-center gap-3"><LogOut className="w-4 h-4 text-red-400" /> Logout</div>
+            className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium text-gray-400 hover:text-white hover:bg-red-500/10 hover:border-emerald-500/20 transition-all border border-transparent">
+            <div className="flex items-center gap-3"><LogOut className="w-4 h-4 text-emerald-400" /> Logout</div>
           </button>
         </div>
       </div>
@@ -481,7 +481,7 @@ export default function AdminDashboard() {
                       <span className="text-xs text-gray-500 font-medium">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</span>
                       <button
                         onClick={() => handleDeleteUser(u.id, u.email)}
-                        className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all ml-auto"
+                        className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-gray-500 hover:text-emerald-400 hover:bg-red-500/10 transition-all ml-auto"
                         title="Delete user"
                       >
                         <Trash2 className="w-4 h-4" />

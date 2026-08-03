@@ -34,7 +34,7 @@ class AuthService:
             await self.db.rollback()
             return {"success": False, "message": str(e)}
 
-        access_token = create_access_token(data={"sub": str(new_user.id), "email": new_user.email, "role": new_user.role})
+        access_token = create_access_token(data={"sub": str(new_user.id), "email": new_user.email, "role": "authenticated"})
         
         return {
             "success": True,
@@ -51,7 +51,7 @@ class AuthService:
         if not user or not verify_password(password, user.hashed_password):
             return {"success": False, "message": "Invalid credentials"}
         
-        access_token = create_access_token(data={"sub": str(user.id), "email": user.email, "role": user.role})
+        access_token = create_access_token(data={"sub": str(user.id), "email": user.email, "role": "authenticated"})
         
         return {
             "success": True,
@@ -72,7 +72,7 @@ class AuthService:
                     "full_name": user.full_name,
                     "company_name": user.company_name,
                     "avatar_url": user.avatar_url,
-                    "role": user.role
+                    "role": "authenticated"
                 }
             }
         return {"success": False, "message": "User not found"}
@@ -99,7 +99,7 @@ class AuthService:
                     "full_name": user.full_name,
                     "company_name": user.company_name,
                     "avatar_url": user.avatar_url,
-                    "role": user.role
+                    "role": "authenticated"
                 }
             }
         except Exception as e:
@@ -137,7 +137,7 @@ class AuthService:
                 await self.db.rollback()
                 return {"success": False, "message": str(e)}
         
-        access_token = create_access_token(data={"sub": str(user.id), "email": user.email, "role": user.role})
+        access_token = create_access_token(data={"sub": str(user.id), "email": user.email, "role": "authenticated"})
         
         return {
             "success": True,
