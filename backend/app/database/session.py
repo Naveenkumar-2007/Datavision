@@ -9,8 +9,14 @@ from app.core.config import get_settings
 def _create_engine():
     """Create the async SQLAlchemy engine from settings."""
     settings = get_settings()
+    url = settings.DATABASE_URL
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
     return create_async_engine(
-        settings.DATABASE_URL,
+        url,
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
         pool_pre_ping=settings.DB_POOL_PRE_PING,

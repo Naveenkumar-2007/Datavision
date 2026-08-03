@@ -9,7 +9,7 @@ cd /app/backend
 # Run database migrations and seed default roles/admin user if DATABASE_URL is present
 if [ -n "$DATABASE_URL" ]; then
     echo "📦 [1/2] Running database migrations..."
-    alembic upgrade head || echo "⚠️ Migration warning: check DB logs"
+    alembic upgrade head || (echo "🔄 Stamping revision head for consolidated schema..." && alembic stamp head && alembic upgrade head) || echo "⚠️ Migration warning: check DB logs"
 
     echo "🌱 [2/2] Seeding system roles, permissions, and admin user..."
     python -m app.database.seed || echo "⚠️ Seed warning: check DB logs"

@@ -29,7 +29,12 @@ DataStory = Report
 VisualPipeline = LineageNode
 AgentLog = AuditLog
 PushToken = NotificationSettings
+Notification = NotificationSettings
 MLDeployment = DeployedModel
+MLOpsDeployment = DeployedModel
+MLOpsExperiment = MLExperiment
+MLOpsPredictionLog = APICallLog
+Webhook = WebhookEndpoint
 BatchPredictionJob = TrainingJob
 ABTestConfig = Experiment
 MLRegistryModel = DeployedModel
@@ -52,6 +57,7 @@ __all__ = [
     "UserQuery",
     "UserMemory",
     "NotificationSettings",
+    "Notification",
     "PushToken",
     "AIInsight",
     "AgentLog",
@@ -60,6 +66,10 @@ __all__ = [
     "Chart",
     "DataStory",
     "MLDeployment",
+    "MLOpsDeployment",
+    "MLOpsExperiment",
+    "MLOpsPredictionLog",
+    "Webhook",
     "VisualPipeline",
     "Simulation",
     "SavedScenario",
