@@ -58,6 +58,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
           HF_SPACE: ${{ secrets.HF_SPACE }}
+          GIT_LFS_SKIP_SMUDGE: "1"
         run: |
           TOKEN="${HF_TOKEN:-$HUGGINGFACE_TOKEN}"
           SPACE_NAME="${HF_SPACE:-datavision-ai/Datavision}"
@@ -66,6 +67,9 @@ jobs:
             echo "🚀 Syncing to Hugging Face Space: $SPACE_NAME"
             git config --global user.email "ci@datavision.ai"
             git config --global user.name "DataVision CI/CD Bot"
+            git config --global lfs.allowincompletepush true
+            
+            git lfs install --skip-smudge 2>/dev/null || true
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
             git push -f hf HEAD:main
