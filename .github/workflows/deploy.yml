@@ -37,7 +37,7 @@ jobs:
           npm install
           npm run build
 
-      - name: Push to Hugging Face Space
+      - name: Push Clean Release to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
@@ -62,7 +62,7 @@ jobs:
 
             # Stage all current active files and frontend dist
             git add -A
-            git add -f frontend/dist
+            git add -f frontend/dist 2>/dev/null || true
             git commit -m "release: clean production build for HuggingFace Space" || true
 
             # Setup HF remote

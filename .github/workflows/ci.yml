@@ -53,7 +53,7 @@ jobs:
         working-directory: ./frontend
         run: npm run build
         
-      - name: Push to Hugging Face Space
+      - name: Push Clean Release to Hugging Face Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
@@ -64,16 +64,27 @@ jobs:
           SPACE_NAME="${HF_SPACE:-datavision-ai/Datavision}"
           
           if [ -n "$TOKEN" ]; then
-            echo "🚀 Syncing to Hugging Face Space: $SPACE_NAME"
+            echo "🚀 Syncing clean release to Hugging Face Space: $SPACE_NAME"
             git config --global user.email "ci@datavision.ai"
             git config --global user.name "DataVision CI/CD Bot"
             git config --global lfs.allowincompletepush true
             
             git lfs install --skip-smudge 2>/dev/null || true
+
+            # Create clean orphan release branch without historical broken LFS pointers
+            git checkout --orphan hf-release
+            git reset
+
+            # Stage current active files and built frontend assets
+            git add -A
+            git add -f frontend/dist 2>/dev/null || true
+            git commit -m "release: clean production build for HuggingFace Space" || true
+
+            # Setup HF remote and force push clean orphan branch to main
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
-            git push -f hf HEAD:main
-            echo "✅ Successfully pushed to Hugging Face Space: $SPACE_NAME"
+            git push -f hf hf-release:main
+            echo "✅ Successfully pushed clean release to Hugging Face Space: $SPACE_NAME"
           else
             echo "⚠️ Secret HF_TOKEN not set. Set HF_TOKEN in GitHub Settings -> Secrets -> Actions to auto-deploy."
           fi
