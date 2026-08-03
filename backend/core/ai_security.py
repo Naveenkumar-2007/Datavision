@@ -207,7 +207,7 @@ class AISecurityFilter:
         
         # Patterns that should never appear in output
         sensitive_patterns = [
-            r"(?:SUPABASE|DATABASE|JWT)_[A-Z_]+\s*[=:]\s*\S+",
+            r"(?:DATABASE|JWT|REDIS)_[A-Z_]+\s*[=:]\s*\S+",
             r"GROQ_API_KEY\s*[=:]\s*\S+",
             r"sk-[a-zA-Z0-9]+",  # OpenAI-style API keys
             r"gsk_[a-zA-Z0-9]+",  # Groq API keys

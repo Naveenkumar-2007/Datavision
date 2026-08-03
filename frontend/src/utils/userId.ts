@@ -5,7 +5,7 @@
  * This ID is used to isolate all user data (files, models, chats, etc.)
  */
 
-import { supabase } from '../lib/auth-client';
+import { auth } from '../lib/auth-client';
 
 const GUEST_ID_KEY = 'guestUserId';
 const USER_ID_KEY = 'userId';
@@ -42,7 +42,7 @@ function getOrCreateGuestId(): string {
 export async function getUserId(): Promise<string> {
   try {
     // First check auth session
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await auth.getSession();
     
     if (session?.user?.id) {
       // Authenticated user - use their user ID
@@ -108,7 +108,7 @@ export function clearUserData(): void {
  */
 export async function isAuthenticated(): Promise<boolean> {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await auth.getSession();
     return !!session?.user;
   } catch {
     return false;
@@ -125,7 +125,7 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
   };
   
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await auth.getSession();
     
     if (session?.access_token) {
       headers['Authorization'] = `Bearer ${session.access_token}`;

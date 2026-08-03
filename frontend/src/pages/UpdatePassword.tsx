@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { supabase } from '../lib/auth-client';
+import { auth } from '../lib/auth-client';
 import { motion } from 'framer-motion';
 import { useUserStore } from '../store/userStore';
 import { Sun, Moon, Lock, CheckCircle, AlertTriangle, Eye, EyeOff } from 'lucide-react';
@@ -53,7 +53,7 @@ export default function UpdatePassword() {
             }
             
             try {
-                const { data: { session }, error } = await supabase.auth.getSession();
+                const { data: { session }, error } = await auth.getSession();
                 
                 if (error) {
                     console.error('Session error:', error);
@@ -72,7 +72,7 @@ export default function UpdatePassword() {
                     
                     if (accessToken && type === 'recovery') {
                         // Set session from recovery token
-                        const { error: setSessionError } = await supabase.auth.setSession({
+                        const { error: setSessionError } = await auth.setSession({
                             access_token: accessToken,
                             refresh_token: hashParams.get('refresh_token') || ''
                         });
@@ -96,7 +96,7 @@ export default function UpdatePassword() {
         checkSession();
 
         // Listen for auth state changes (handles recovery flow)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        const { data: { subscription } } = auth.onAuthStateChange((event, session) => {
             if (event === 'PASSWORD_RECOVERY') {
                 setValidSession(true);
             }
@@ -142,7 +142,7 @@ export default function UpdatePassword() {
                 }
             } else {
                 // Use native auth flow
-                const { error } = await supabase.auth.updateUser({
+                const { error } = await auth.updateUser({
                     password: password
                 });
 

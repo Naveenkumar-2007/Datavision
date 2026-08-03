@@ -1,8 +1,6 @@
 """
 Notification Service - Core delivery engine
 Handles email and push notifications with retry logic and rate limiting.
-
-Migrated from Supabase to PostgreSQL/SQLAlchemy.
 """
 
 import asyncio
@@ -246,7 +244,7 @@ async def check_rate_limit(workspace_id: str, user_id: str) -> bool:
     """
     Check if user has exceeded notification rate limit.
     Returns True if rate limit exceeded, False otherwise.
-    Uses PostgreSQL notifications table instead of Supabase.
+    Uses PostgreSQL notifications table.
     """
     one_hour_ago = datetime.now() - timedelta(hours=1)
     

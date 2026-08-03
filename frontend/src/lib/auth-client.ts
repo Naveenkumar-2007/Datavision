@@ -134,15 +134,15 @@ export const auth = {
 
     onAuthStateChange: (callback: (event: string, session: any) => void) => {
         return _authState.onAuthStateChange(callback);
-    }
-};
+    },
 
-/**
- * @deprecated Use `auth` instead. This is a backward-compatible shim.
- * Provides the old `supabase.auth.*` interface for files not yet migrated.
- */
-export const supabase = {
-    auth: _authState
+    updateUser: async (attributes: any) => {
+        return _authState.updateUser(attributes);
+    },
+
+    setSession: async (tokens: { access_token: string; refresh_token?: string }) => {
+        return _authState.setSession(tokens);
+    }
 };
 
 export default auth;

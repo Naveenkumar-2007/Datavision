@@ -1,9 +1,7 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-# Pre-built frontend - no build needed (avoids OOM on HuggingFace)
-# Frontend built locally and dist/ folder committed to repo
-# 2026-01-04 - Fixed libgomp dependency for LightGBM
-# 2026-02-09 - Rebuild trigger after factory reboot
+# DataVision AI — Production Container
+# Pre-built frontend committed as static/ — no Node.js build needed.
 
 WORKDIR /app
 
@@ -27,16 +25,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY frontend/public /app/frontend/public
 COPY frontend/dist /app/static
 
-# Copy backend source files
+# Copy backend source files (includes both legacy and new app/)
 COPY backend/ backend/
 
 # Copy start script
 COPY start.sh /app/
 RUN chmod +x /app/start.sh
 
-# Create ALL storage directories with proper ownership
-# SECURITY: Use 755 (rwxr-xr-x) instead of 777
-# 2026-02-08 - Added exports, audit, users dirs for ML training persistenc
+# Create storage directories with proper ownership
 RUN mkdir -p /app/storage/users \
              /app/backend/storage/users \
              /app/backend/storage/automl \
@@ -54,7 +50,7 @@ RUN mkdir -p /app/storage/users \
 # Set ownership of entire app directory to non-root user
 RUN chown -R appuser:appuser /app
 
-# Set Python path - backend folder contains all imports
+# Python path includes both backend/ (legacy) and backend/ for app.* imports
 ENV PYTHONPATH=/app/backend
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -70,12 +66,13 @@ USER appuser
 # Set working directory to backend for correct imports
 WORKDIR /app/backend
 
-# Expose HuggingFace default port
+# Expose port
 EXPOSE 7860
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:7860/api || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:7860/health || exit 1
 
 # Start using the start script (handles migrations)
 CMD ["/app/start.sh"]
+

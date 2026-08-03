@@ -92,8 +92,6 @@ def decode_jwt_token(token: str) -> dict:
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-# Backward-compatible aliases
-decode_supabase_jwt = decode_jwt_token  # Deprecated: use decode_jwt_token
 
 def decode_jwt(token: str) -> dict:
     return decode_jwt_token(token)

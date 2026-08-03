@@ -18,13 +18,26 @@ if config.config_file_name is not None:
 
 import os
 import sys
+from dotenv import load_dotenv
+
+# Load .env from workspace root if present
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env"))
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from database.orm import Base
+# Import unified production model registry
+from app.models import Base
 target_metadata = Base.metadata
 
-from database.db import DATABASE_URL
-config.set_main_option("sqlalchemy.url", DATABASE_URL.replace('%', '%%'))
+# Load DATABASE_URL from environment or legacy config
+database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    try:
+        from database.db import DATABASE_URL
+        database_url = DATABASE_URL
+    except ImportError:
+        database_url = "postgresql+asyncpg://datavision:datavision_dev@localhost:5433/datavision"
+
+config.set_main_option("sqlalchemy.url", database_url.replace('%', '%%'))
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

@@ -4,7 +4,7 @@
  */
 
 import { createContext, useContext, useEffect, useState, ReactNode, useMemo } from 'react';
-import { supabase, auth } from '../lib/auth-client';
+import { auth } from '../lib/auth-client';
 
 export interface User {
     id: string;
@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let isMounted = true;
 
         // Get initial session
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        auth.getSession().then(({ data: { session } }) => {
             if (!isMounted) return;
 
             if (session) {
@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = auth.onAuthStateChange((_event, session) => {
             if (!isMounted) return;
 
             if (session) {
@@ -106,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, []);
 
     const updateAuthState = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await auth.getSession();
         if (session) {
             setState({
                 user: session.user,

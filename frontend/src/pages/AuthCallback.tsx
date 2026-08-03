@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/auth-client';
+import { auth } from '../lib/auth-client';
 
 export default function AuthCallback() {
     const navigate = useNavigate();
@@ -60,7 +60,7 @@ export default function AuthCallback() {
         const checkSession = async () => {
             attempts++;
 
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session } } = await auth.getSession();
 
             if (!isMounted) return;
 

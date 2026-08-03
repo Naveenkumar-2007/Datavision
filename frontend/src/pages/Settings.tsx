@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useUserStore } from '@/store/userStore';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/auth-client';
+import { auth } from '@/lib/auth-client';
 import { useConfirmModal } from '@/components/ui/ConfirmModal';
 import { useToast } from '@/contexts/ToastContext';
 import { api } from '@/services/api';
@@ -600,7 +600,7 @@ const Settings: React.FC = () => {
 
     try {
       // Update password
-      const { error } = await supabase.auth.updateUser({
+      const { error } = await auth.updateUser({
         password: newPassword
       });
 

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { supabase } from '../lib/auth-client';
+import { auth } from '../lib/auth-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 
@@ -44,7 +44,7 @@ api.interceptors.request.use(async (config) => {
     }
 
     // 3. Get current session
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await auth.getSession();
 
     if (session?.access_token) {
       // 🔐 Send JWT token - Backend validates this cryptographically

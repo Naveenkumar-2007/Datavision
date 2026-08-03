@@ -154,7 +154,7 @@ class CompanyProfile:
 
 
 # ============================================================================
-# LOCAL FILE STORAGE (replaces Supabase)
+# LOCAL FILE STORAGE
 # ============================================================================
 
 _PROFILES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "company_profiles")

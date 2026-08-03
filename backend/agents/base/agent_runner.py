@@ -1,8 +1,6 @@
 """
 Base Agent Runner - Abstract class for all AI agents
 Provides common functionality for insight detection and notification dispatch.
-
-Migrated from Supabase to PostgreSQL/SQLAlchemy.
 """
 
 from abc import ABC, abstractmethod
@@ -175,8 +173,7 @@ class AgentRunner(ABC):
             for member in members:
                 user_id = member['user_id']
                 
-                # For now, use default notification settings since we're migrating
-                # from Supabase notification_settings table
+                # Use default notification settings
                 # Default: email enabled, push disabled, medium threshold
                 default_settings = {
                     'ai_insights': True,

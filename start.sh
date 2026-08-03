@@ -1,22 +1,21 @@
 #!/bin/bash
 
-# Start script for Hugging Face Spaces
-# Serves both the FastAPI backend and React frontend
+# DataVision AI — Startup script for Hugging Face Spaces & Production Containers
 
-echo "🚀 Starting DataVision AI..."
+echo "🚀 Starting DataVision AI Platform..."
 
 cd /app/backend
 
-# Run database migrations if DATABASE_URL is set
+# Run database migrations and seed default roles/admin user if DATABASE_URL is present
 if [ -n "$DATABASE_URL" ]; then
-    echo "📦 Running database migrations..."
-    # We must use the synchronous connection string for alembic if it uses asyncpg
-    # But usually Alembic handles async pg if configured correctly in env.py
+    echo "📦 [1/2] Running database migrations..."
     alembic upgrade head
+
+    echo "🌱 [2/2] Seeding system roles, permissions, and admin user..."
+    python -m app.database.seed
 else
-    echo "⚠️ DATABASE_URL not set! Skipping database migrations."
+    echo "⚠️ DATABASE_URL not set! Skipping migrations and seeding."
 fi
 
-echo "🟢 Starting Uvicorn server..."
-# Use uvicorn to serve the application
-exec uvicorn main:app --host 0.0.0.0 --port 7860
+echo "🟢 Starting FastAPI Uvicorn server on port 7860..."
+exec uvicorn app.main:app --host 0.0.0.0 --port 7860

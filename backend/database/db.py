@@ -6,7 +6,7 @@ from sqlalchemy.orm import declarative_base
 # Requires format: postgresql+asyncpg://user:password@localhost/dbname
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", 
-    "postgresql+asyncpg://postgres:Naveen%402007@127.0.0.1:5432/datavision"
+    "postgresql+asyncpg://datavision:datavision_dev@localhost:5433/datavision"
 )
 
 if DATABASE_URL.startswith("postgres://"):
@@ -32,8 +32,7 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession
 )
 
-# Declarative Base for ORM Models
-Base = declarative_base()
+from app.models.base import Base
 
 # Dependency to get DB session
 async def get_db():

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useUserStore } from '../store/userStore';
-import { supabase } from '../lib/auth-client';
+import { auth } from '../lib/auth-client';
 import { Bell, Mail, MessageSquare, TrendingUp, Moon } from 'lucide-react';
 import { useToast } from '@/contexts/ToastContext';
 
@@ -51,7 +51,7 @@ export default function NotificationSettings() {
 
             // SECOND: Try to load from API
             const workspaceId = user.id;
-            const session = await supabase.auth.getSession();
+            const session = await auth.getSession();
             const token = session.data.session?.access_token;
 
             if (!token) {
@@ -106,7 +106,7 @@ export default function NotificationSettings() {
         try {
             // Also try to save to API (best effort)
             const workspaceId = user.id;
-            const session = await supabase.auth.getSession();
+            const session = await auth.getSession();
             const token = session.data.session?.access_token;
 
             if (!token) {
@@ -165,7 +165,7 @@ export default function NotificationSettings() {
             });
 
             // Send subscription to backend
-            const session = await supabase.auth.getSession();
+            const session = await auth.getSession();
             const token = session.data.session?.access_token;
 
             await fetch('/api/push/subscribe', {

@@ -1,7 +1,6 @@
 """
-Workspace Operations Module - PostgreSQL replacements for Supabase admin functions.
+Workspace Operations Module — PostgreSQL workspace membership queries.
 
-Replaces: utils/supabase_admin.py
 Provides: get_workspace_members, get_user_email, is_workspace_member
 """
 import uuid
@@ -16,7 +15,6 @@ from database.orm import WorkspaceMember, UserProfile
 async def get_workspace_members(db: AsyncSession, workspace_id: str) -> List[Dict]:
     """
     Get all members of a workspace with their roles.
-    Replaces: supabase_admin.get_workspace_members()
     """
     try:
         ws_id = uuid.UUID(workspace_id)
@@ -35,7 +33,6 @@ async def get_workspace_members(db: AsyncSession, workspace_id: str) -> List[Dic
 async def get_user_email(db: AsyncSession, user_id: str) -> Optional[str]:
     """
     Get a user's email address by their ID.
-    Replaces: supabase_admin.get_user_email()
     """
     try:
         uid = uuid.UUID(user_id)
@@ -51,7 +48,6 @@ async def get_user_email(db: AsyncSession, user_id: str) -> Optional[str]:
 async def is_workspace_member(db: AsyncSession, workspace_id: str, user_id: str) -> bool:
     """
     Check if a user is a member of a workspace.
-    Replaces: supabase_admin.is_workspace_member()
     """
     try:
         ws_id = uuid.UUID(workspace_id)
