@@ -94,9 +94,17 @@ def create_app() -> FastAPI:
         }
 
     # ── Static Files ────────────────────────────────────────────
-    static_dir = os.path.join(BACKEND_DIR, "static")
-    if os.path.isdir(static_dir):
-        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    possible_static_dirs = [
+        os.path.join(BACKEND_DIR, "static"),
+        os.path.join(os.path.dirname(BACKEND_DIR), "static"),
+        os.path.join(os.path.dirname(BACKEND_DIR), "frontend", "dist"),
+    ]
+
+    for static_dir in possible_static_dirs:
+        if os.path.isdir(static_dir) and os.path.exists(os.path.join(static_dir, "index.html")):
+            logger.info(f"✅ Serving static frontend from: {static_dir}")
+            app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+            break
 
     return app
 

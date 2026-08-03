@@ -24,6 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy frontend public assets and pre-built dist
 COPY frontend/public /app/frontend/public
 COPY frontend/dist /app/static
+COPY frontend/dist /app/backend/static
 
 # Copy backend source files (includes both legacy and new app/)
 COPY backend/ backend/
