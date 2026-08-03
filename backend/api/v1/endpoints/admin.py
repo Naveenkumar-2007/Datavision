@@ -25,6 +25,10 @@ from database.orm import (
     UserProfile, Conversation, Message, UserFile, UserQuery,
     ActivityLog, WorkspaceMember, DataConnection, Dashboard
 )
+from app.models.dashboard import ComputerVisionTask
+from app.models.ml import MLModel as DeployedModel, Experiment as MLExperiment
+from app.models.developer import APICallLog, WebhookEndpoint
+from app.models.platform import APIKey as DeveloperAPIKey
 from core.auth import create_access_token, SECRET_KEY, ALGORITHM
 from jose import jwt, JWTError
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -626,3 +630,173 @@ async def admin_websocket(websocket: WebSocket, token: str = Query(...)):
             # In real app, handle admin commands here
     except WebSocketDisconnect:
         admin_ws_manager.disconnect(websocket)
+
+# ══════════════════════════════════════════════════════
+# NEW ADMIN ENDPOINTS
+# ══════════════════════════════════════════════════════
+
+@router.get("/dashboards")
+async def list_all_dashboards(
+    admin: dict = Depends(verify_admin_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all dashboards across the platform."""
+    try:
+        from sqlalchemy.orm import selectinload
+        stmt = select(Dashboard).order_by(Dashboard.created_at.desc())
+        result = await db.execute(stmt)
+        dashboards = result.scalars().all()
+        
+        dash_list = []
+        for d in dashboards:
+            dash_list.append({
+                "id": str(d.id),
+                "title": d.title,
+                "user_id": str(d.user_id),
+                "is_public": d.is_public,
+                "created_at": d.created_at.isoformat() if d.created_at else None,
+                "widgets_count": len(d.layout) if isinstance(d.layout, list) else 0
+            })
+        return {"success": True, "dashboards": dash_list, "total": len(dash_list)}
+    except Exception as e:
+        logger.error(f"Error fetching admin dashboards: {e}")
+        return {"success": True, "dashboards": [], "total": 0}
+
+
+@router.get("/automl/models")
+async def list_all_automl_models(
+    admin: dict = Depends(verify_admin_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all deployed ML models and experiments."""
+    try:
+        # Get Deployed Models
+        stmt = select(DeployedModel).order_by(DeployedModel.created_at.desc())
+        result = await db.execute(stmt)
+        models = result.scalars().all()
+        
+        model_list = []
+        for m in models:
+            model_list.append({
+                "id": str(m.id),
+                "name": m.name,
+                "version": m.version,
+                "status": getattr(m, 'status', 'deployed'),
+                "framework": getattr(m, 'framework', 'sklearn'),
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+                "project_id": str(m.project_id) if m.project_id else None
+            })
+            
+        return {"success": True, "models": model_list, "total": len(model_list)}
+    except Exception as e:
+        logger.error(f"Error fetching admin ML models: {e}")
+        return {"success": True, "models": [], "total": 0}
+
+
+@router.get("/automl/predictions")
+async def list_all_predictions(
+    admin: dict = Depends(verify_admin_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """List ML prediction API calls and activity."""
+    try:
+        stmt = select(APICallLog).where(APICallLog.endpoint.ilike("%predict%")).order_by(APICallLog.timestamp.desc()).limit(100)
+        result = await db.execute(stmt)
+        calls = result.scalars().all()
+        
+        pred_list = []
+        for c in calls:
+            pred_list.append({
+                "id": str(c.id),
+                "user_id": c.user_id,
+                "endpoint": c.endpoint,
+                "method": c.method,
+                "status_code": c.status_code,
+                "latency_ms": c.latency_ms,
+                "timestamp": c.timestamp.isoformat() if c.timestamp else None
+            })
+        return {"success": True, "predictions": pred_list, "total": len(pred_list)}
+    except Exception as e:
+        logger.error(f"Error fetching admin ML predictions: {e}")
+        return {"success": True, "predictions": [], "total": 0}
+
+
+@router.get("/cv/tasks")
+async def list_all_cv_tasks(
+    admin: dict = Depends(verify_admin_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all computer vision tasks."""
+    try:
+        stmt = select(ComputerVisionTask).order_by(ComputerVisionTask.created_at.desc())
+        result = await db.execute(stmt)
+        tasks = result.scalars().all()
+        
+        task_list = []
+        for t in tasks:
+            task_list.append({
+                "id": str(t.id),
+                "task_name": t.task_name,
+                "task_type": t.task_type,
+                "model_name": t.model_name,
+                "status": t.status,
+                "detected_objects": t.detected_objects_count,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "user_id": str(t.user_id)
+            })
+        return {"success": True, "tasks": task_list, "total": len(task_list)}
+    except Exception as e:
+        logger.error(f"Error fetching admin CV tasks: {e}")
+        return {"success": True, "tasks": [], "total": 0}
+
+
+@router.get("/developer")
+async def list_developer_integrations(
+    admin: dict = Depends(verify_admin_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """List Developer integrations (API Keys, Webhooks)."""
+    try:
+        from sqlalchemy.orm import selectinload
+        
+        # Webhooks
+        webhook_stmt = select(WebhookEndpoint).order_by(WebhookEndpoint.created_at.desc())
+        webhooks = (await db.execute(webhook_stmt)).scalars().all()
+        
+        webhook_list = []
+        for w in webhooks:
+            webhook_list.append({
+                "id": str(w.id),
+                "url": w.url,
+                "user_id": str(w.user_id),
+                "is_active": w.is_active,
+                "subscribed_events": w.subscribed_events,
+                "created_at": w.created_at.isoformat() if w.created_at else None
+            })
+            
+        # API Keys
+        key_stmt = select(DeveloperAPIKey).order_by(DeveloperAPIKey.created_at.desc())
+        keys = (await db.execute(key_stmt)).scalars().all()
+        
+        key_list = []
+        for k in keys:
+            key_list.append({
+                "id": str(k.id),
+                "name": k.name,
+                "user_id": str(k.user_id),
+                "is_active": k.is_active,
+                "created_at": k.created_at.isoformat() if k.created_at else None
+            })
+
+        return {
+            "success": True, 
+            "developer_data": {
+                "webhooks": webhook_list,
+                "api_keys": key_list
+            },
+            "total_webhooks": len(webhook_list),
+            "total_api_keys": len(key_list)
+        }
+    except Exception as e:
+        logger.error(f"Error fetching admin developer data: {e}")
+        return {"success": True, "developer_data": {"webhooks": [], "api_keys": []}}

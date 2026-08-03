@@ -5,7 +5,8 @@ import {
   Shield, Users, FileText, MessageSquare, Activity, Database,
   Server, Trash2, Search, LogOut, BarChart3, Globe, Cpu,
   HardDrive, Clock, RefreshCw, UserX, UserCheck, ChevronDown,
-  Megaphone, X, AlertTriangle, CheckCircle2, Zap, Wifi, Code
+  Megaphone, X, AlertTriangle, CheckCircle2, Zap, Wifi, Code,
+  Target, Brain, LayoutDashboard, Eye
 } from 'lucide-react';
 import { api } from '@/services/api';
 
@@ -69,7 +70,7 @@ const DialRing = ({ percentage, label, icon: Icon, colorClass, gradientFrom, gra
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'datasets' | 'chats' | 'system' | 'activity'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'datasets' | 'dashboards' | 'automl' | 'predictions' | 'computervision' | 'chats' | 'system' | 'activity'>('overview');
   
   // Real-time State
   const [stats, setStats] = useState<any>(null);
@@ -82,6 +83,11 @@ export default function AdminDashboard() {
   const [datasets, setDatasets] = useState<any[]>([]);
   const [chats, setChats] = useState<any[]>([]);
   const [activity, setActivity] = useState<any[]>([]);
+  const [dashboards, setDashboards] = useState<any[]>([]);
+  const [automlModels, setAutomlModels] = useState<any[]>([]);
+  const [predictions, setPredictions] = useState<any[]>([]);
+  const [cvTasks, setCvTasks] = useState<any[]>([]);
+  const [developerData, setDeveloperData] = useState<{webhooks: any[], api_keys: any[]}>({ webhooks: [], api_keys: [] });
   const [loading, setLoading] = useState(true);
   
   // UI State
@@ -143,18 +149,29 @@ export default function AdminDashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersRes, actRes, datasetsRes, chatsRes, sysRes] = await Promise.all([
+      const [usersRes, actRes, datasetsRes, chatsRes, sysRes, dashRes, automlRes, predRes, cvRes, devRes] = await Promise.all([
         adminApi.get('/api/v1/admin/users').catch(() => ({ data: { users: [] } })),
         adminApi.get('/api/v1/admin/activity?limit=50').catch(() => ({ data: { activities: [] } })),
         adminApi.get('/api/v1/admin/datasets').catch(() => ({ data: { datasets: [] } })),
         adminApi.get('/api/v1/admin/chats').catch(() => ({ data: { chats: [] } })),
         adminApi.get('/api/v1/admin/system').catch(() => ({ data: { system: null } })),
+        adminApi.get('/api/v1/admin/dashboards').catch(() => ({ data: { dashboards: [] } })),
+        adminApi.get('/api/v1/admin/automl/models').catch(() => ({ data: { models: [] } })),
+        adminApi.get('/api/v1/admin/automl/predictions').catch(() => ({ data: { predictions: [] } })),
+        adminApi.get('/api/v1/admin/cv/tasks').catch(() => ({ data: { tasks: [] } })),
+        adminApi.get('/api/v1/admin/developer').catch(() => ({ data: { developer_data: { webhooks: [], api_keys: [] } } })),
       ]);
       setUsers(usersRes.data.users || []);
       setActivity(actRes.data.activities || []);
       setDatasets(datasetsRes.data.datasets || []);
       setChats(chatsRes.data.chats || []);
       if (sysRes.data?.system) setSystem(sysRes.data.system);
+      
+      setDashboards(dashRes.data.dashboards || []);
+      setAutomlModels(automlRes.data.models || []);
+      setPredictions(predRes.data.predictions || []);
+      setCvTasks(cvRes.data.tasks || []);
+      if (devRes.data?.developer_data) setDeveloperData(devRes.data.developer_data);
     } catch (err: any) {
       if (err.response?.status === 401 || err.response?.status === 403) {
         sessionStorage.removeItem('admin_token');
@@ -208,7 +225,12 @@ export default function AdminDashboard() {
     { id: 'overview' as const, label: 'Overview', icon: BarChart3 },
     { id: 'users' as const, label: 'Users', icon: Users },
     { id: 'datasets' as const, label: 'User Datasets', icon: Database },
+    { id: 'dashboards' as const, label: 'Dashboards', icon: LayoutDashboard },
+    { id: 'automl' as const, label: 'AutoML Models', icon: Brain },
+    { id: 'predictions' as const, label: 'ML Predictions', icon: Zap },
+    { id: 'computervision' as const, label: 'Computer Vision', icon: Eye },
     { id: 'chats' as const, label: 'AI Chat Logs', icon: MessageSquare },
+    { id: 'developer' as const, label: 'Developer', icon: Code },
     { id: 'system' as const, label: 'System', icon: Server },
     { id: 'activity' as const, label: 'Activity', icon: Activity },
   ];
@@ -524,6 +546,158 @@ export default function AdminDashboard() {
             </motion.div>
           )}
 
+          {/* ═══ DASHBOARDS ═══ */}
+          {activeTab === 'dashboards' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-extrabold text-white">Platform Dashboards</h2>
+                  <p className="text-sm text-gray-400 mt-1">{dashboards.length} user dashboards across the enterprise.</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {dashboards.map((d, i) => (
+                  <div key={d.id || i} className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl p-6 shadow-2xl relative group hover:border-indigo-500/50 transition-colors">
+                    <div className="absolute top-4 right-4 bg-gray-800/50 text-xs px-2 py-1 rounded text-gray-400">{d.widgets_count} widgets</div>
+                    <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center mb-4 text-indigo-400">
+                      <LayoutDashboard className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white truncate pr-16">{d.title}</h3>
+                    <p className="text-xs text-gray-500 mt-1 font-mono">{d.user_id}</p>
+                    <div className="mt-4 pt-4 border-t border-gray-800/40 flex justify-between items-center text-xs text-gray-400">
+                      <span>{d.is_public ? 'Public' : 'Private'}</span>
+                      <span>{d.created_at ? new Date(d.created_at).toLocaleDateString() : 'Unknown date'}</span>
+                    </div>
+                  </div>
+                ))}
+                {dashboards.length === 0 && (
+                  <div className="col-span-full p-16 text-center bg-[#11111a]/80 border border-gray-800/60 rounded-3xl">
+                    <LayoutDashboard className="w-12 h-12 mx-auto mb-4 text-gray-700" />
+                    <p className="text-gray-500 font-medium">No dashboards created yet.</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {/* ═══ AUTOML MODELS ═══ */}
+          {activeTab === 'automl' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              <div>
+                <h2 className="text-3xl font-extrabold text-white">AutoML Models registry</h2>
+                <p className="text-sm text-gray-400 mt-1">{automlModels.length} ML models trained and deployed.</p>
+              </div>
+              <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
+                <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                  <span>Model Name</span><span>Version</span><span>Framework</span><span>Status</span><span>Created At</span>
+                </div>
+                <div className="divide-y divide-gray-800/40 max-h-[600px] overflow-y-auto custom-scrollbar">
+                  {automlModels.map((m, i) => (
+                    <div key={m.id || i} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-4 items-center hover:bg-white/5 transition-colors group">
+                      <div className="flex items-center gap-3">
+                        <Brain className="w-4 h-4 text-emerald-400" />
+                        <span className="font-semibold text-white">{m.name}</span>
+                      </div>
+                      <span className="text-sm font-mono text-gray-400">v{m.version || '1.0'}</span>
+                      <span className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-300 w-max">{m.framework}</span>
+                      <span className={`text-xs px-2 py-1 rounded border w-max ${
+                        m.status === 'deployed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                        m.status === 'training' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
+                        'bg-gray-800 text-gray-400 border-gray-700'
+                      }`}>{m.status}</span>
+                      <span className="text-sm text-gray-500">{m.created_at ? new Date(m.created_at).toLocaleDateString() : '—'}</span>
+                    </div>
+                  ))}
+                  {automlModels.length === 0 && (
+                    <div className="p-16 text-center">
+                      <Brain className="w-12 h-12 mx-auto mb-4 text-gray-700" />
+                      <p className="text-gray-500 font-medium">No AutoML models found.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ═══ PREDICTIONS ═══ */}
+          {activeTab === 'predictions' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              <div>
+                <h2 className="text-3xl font-extrabold text-white">ML Prediction Logs</h2>
+                <p className="text-sm text-gray-400 mt-1">Recent inference and prediction API calls.</p>
+              </div>
+              <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
+                <div className="grid grid-cols-[1fr_2fr_1fr_1fr_2fr] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                  <span>Method</span><span>Endpoint</span><span>Status</span><span>Latency</span><span>Timestamp</span>
+                </div>
+                <div className="divide-y divide-gray-800/40 max-h-[600px] overflow-y-auto custom-scrollbar">
+                  {predictions.map((p, i) => (
+                    <div key={p.id || i} className="grid grid-cols-[1fr_2fr_1fr_1fr_2fr] gap-4 px-6 py-4 items-center hover:bg-white/5 transition-colors">
+                      <span className={`text-xs px-2 py-1 rounded w-max font-bold ${
+                        p.method === 'POST' ? 'bg-blue-500/10 text-blue-400' : 'bg-green-500/10 text-green-400'
+                      }`}>{p.method}</span>
+                      <span className="text-sm text-gray-300 font-mono truncate">{p.endpoint}</span>
+                      <span className={`text-sm font-bold ${p.status_code < 400 ? 'text-emerald-400' : 'text-red-400'}`}>{p.status_code}</span>
+                      <span className="text-sm text-amber-400 font-mono">{p.latency_ms}ms</span>
+                      <span className="text-xs text-gray-500">{p.timestamp ? new Date(p.timestamp).toLocaleString() : '—'}</span>
+                    </div>
+                  ))}
+                  {predictions.length === 0 && (
+                    <div className="p-16 text-center">
+                      <Zap className="w-12 h-12 mx-auto mb-4 text-gray-700" />
+                      <p className="text-gray-500 font-medium">No recent prediction logs.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ═══ COMPUTER VISION ═══ */}
+          {activeTab === 'computervision' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+              <div>
+                <h2 className="text-3xl font-extrabold text-white">Computer Vision Tasks</h2>
+                <p className="text-sm text-gray-400 mt-1">{cvTasks.length} active CV processing jobs.</p>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                {cvTasks.map((t, i) => (
+                  <div key={t.id || i} className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl p-6 shadow-2xl relative">
+                    <div className={`absolute top-4 right-4 text-[10px] uppercase font-bold px-2 py-1 rounded border ${
+                      t.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                      t.status === 'failed' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                      'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                    }`}>
+                      {t.status}
+                    </div>
+                    <div className="w-12 h-12 bg-pink-500/10 rounded-2xl flex items-center justify-center mb-4 text-pink-400">
+                      <Eye className="w-6 h-6" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white truncate pr-20">{t.task_name}</h3>
+                    <p className="text-sm text-gray-400 mt-1">{t.task_type.replace('_', ' ')}</p>
+                    <div className="mt-4 pt-4 border-t border-gray-800/40 grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Model</p>
+                        <p className="text-sm font-mono text-gray-300">{t.model_name}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Detections</p>
+                        <p className="text-sm font-bold text-white">{t.detected_objects}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {cvTasks.length === 0 && (
+                  <div className="col-span-full p-16 text-center bg-[#11111a]/80 border border-gray-800/60 rounded-3xl">
+                    <Eye className="w-12 h-12 mx-auto mb-4 text-gray-700" />
+                    <p className="text-gray-500 font-medium">No computer vision tasks running.</p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+
           {/* ═══ CHATS ═══ */}
           {activeTab === 'chats' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
@@ -564,6 +738,79 @@ export default function AdminDashboard() {
                       <p className="text-gray-500 font-medium">No chat sessions found.</p>
                     </div>
                   )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* ═══ DEVELOPER ═══ */}
+          {activeTab === 'developer' && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+              <div>
+                <h2 className="text-3xl font-extrabold text-white">Developer Platform</h2>
+                <p className="text-sm text-gray-400 mt-1">Manage API Keys and Webhook integrations across the platform.</p>
+              </div>
+
+              {/* Webhooks Section */}
+              <div className="space-y-4">
+                <h3 className="text-xl font-bold text-indigo-400 flex items-center gap-2">
+                  <Globe className="w-5 h-5" /> Webhooks
+                </h3>
+                <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
+                  <div className="grid grid-cols-[3fr_1fr_1fr_2fr_1fr] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                    <span>Webhook URL</span><span>User ID</span><span>Status</span><span>Events</span><span>Created At</span>
+                  </div>
+                  <div className="divide-y divide-gray-800/40 max-h-[300px] overflow-y-auto custom-scrollbar">
+                    {developerData?.webhooks?.map((w, i) => (
+                      <div key={w.id || i} className="grid grid-cols-[3fr_1fr_1fr_2fr_1fr] gap-4 px-6 py-4 items-center hover:bg-white/5 transition-colors">
+                        <span className="text-sm text-gray-300 font-mono truncate">{w.url}</span>
+                        <span className="text-xs text-gray-500 font-mono truncate">{w.user_id}</span>
+                        <span className={`text-xs px-2 py-1 rounded border w-max ${w.is_active ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                          {w.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {w.subscribed_events?.map((evt: string, j: number) => (
+                            <span key={j} className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-1.5 py-0.5 rounded">{evt}</span>
+                          ))}
+                        </div>
+                        <span className="text-xs text-gray-500">{w.created_at ? new Date(w.created_at).toLocaleDateString() : '—'}</span>
+                      </div>
+                    ))}
+                    {!developerData?.webhooks?.length && (
+                      <div className="p-8 text-center">
+                        <p className="text-gray-500 font-medium">No webhooks registered.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* API Keys Section */}
+              <div className="space-y-4">
+                <h3 className="text-xl font-bold text-orange-400 flex items-center gap-2">
+                  <Code className="w-5 h-5" /> API Keys
+                </h3>
+                <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
+                  <div className="grid grid-cols-[2fr_2fr_1fr_1fr] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                    <span>Key Name</span><span>User ID</span><span>Status</span><span>Created At</span>
+                  </div>
+                  <div className="divide-y divide-gray-800/40 max-h-[300px] overflow-y-auto custom-scrollbar">
+                    {developerData?.api_keys?.map((k, i) => (
+                      <div key={k.id || i} className="grid grid-cols-[2fr_2fr_1fr_1fr] gap-4 px-6 py-4 items-center hover:bg-white/5 transition-colors">
+                        <span className="text-sm font-bold text-white">{k.name}</span>
+                        <span className="text-xs text-gray-500 font-mono truncate">{k.user_id}</span>
+                        <span className={`text-xs px-2 py-1 rounded border w-max ${k.is_active ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
+                          {k.is_active ? 'Active' : 'Revoked'}
+                        </span>
+                        <span className="text-xs text-gray-500">{k.created_at ? new Date(k.created_at).toLocaleDateString() : '—'}</span>
+                      </div>
+                    ))}
+                    {!developerData?.api_keys?.length && (
+                      <div className="p-8 text-center">
+                        <p className="text-gray-500 font-medium">No API keys generated.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </motion.div>

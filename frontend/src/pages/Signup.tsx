@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { motion } from 'framer-motion';
 import { useUserStore } from '../store/userStore';
-import { Sun, Moon, CheckCircle2, ChevronRight, XCircle } from 'lucide-react';
+import { Sun, Moon } from 'lucide-react';
 
 export default function Signup() {
     const navigate = useNavigate();
