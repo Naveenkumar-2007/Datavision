@@ -110,7 +110,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 app.add_middleware(SecurityHeadersMiddleware)
 
 # Add session middleware (required for Authlib OAuth)
-app.add_middleware(SessionMiddleware, secret_key=os.environ.get("JWT_SECRET_KEY", "super-secret-session-key"))
+session_secret = os.environ.get("JWT_SECRET") or os.environ.get("JWT_SECRET_KEY") or "datavision-production-jwt-secret-key-32bytes-long!"
+app.add_middleware(SessionMiddleware, secret_key=session_secret)
 
 class APICallLogMiddleware(BaseHTTPMiddleware):
     """Log all API requests to the APICallLog table"""

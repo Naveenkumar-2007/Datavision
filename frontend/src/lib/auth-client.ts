@@ -64,6 +64,9 @@ export const auth = {
             if (res.data.session) {
                 localStorage.setItem('auth_token', res.data.session.access_token);
                 localStorage.setItem('auth_user', JSON.stringify(res.data.user));
+                if (res.data.user?.id) {
+                    localStorage.setItem('userId', res.data.user.id);
+                }
             }
             return { data: res.data, error: null };
         } catch (error: any) {
@@ -77,6 +80,9 @@ export const auth = {
             if (res.data.session) {
                 localStorage.setItem('auth_token', res.data.session.access_token);
                 localStorage.setItem('auth_user', JSON.stringify(res.data.user));
+                if (res.data.user?.id) {
+                    localStorage.setItem('userId', res.data.user.id);
+                }
             }
             return { data: res.data, error: null };
         } catch (error: any) {

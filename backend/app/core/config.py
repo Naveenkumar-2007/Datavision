@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # ── JWT Auth ────────────────────────────────────────────────────
     JWT_SECRET: str = Field(
-        default="datavision-production-jwt-secret-key-32bytes-long!",
+        default=os.environ.get("JWT_SECRET") or os.environ.get("JWT_SECRET_KEY") or "datavision-production-jwt-secret-key-32bytes-long!",
         description="Secret key for signing JWT tokens. Must be kept secret."
     )
     JWT_ALGORITHM: str = "HS256"
