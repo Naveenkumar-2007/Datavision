@@ -40,13 +40,6 @@ class SignupRequest(BaseModel):
             raise ValueError("Password must be at least 8 characters long")
         if len(password) > 128:
             raise ValueError("Password must be less than 128 characters")
-        if not re.search(r'[A-Z]', password):
-            raise ValueError("Password must contain at least one uppercase letter")
-        if not re.search(r'[a-z]', password):
-            raise ValueError("Password must contain at least one lowercase letter")
-        if not re.search(r'[0-9]', password):
-            raise ValueError("Password must contain at least one number")
-        # Check for common weak passwords
         weak_passwords = ['password', '12345678', 'qwerty', 'admin', 'letmein']
         if password.lower() in weak_passwords:
             raise ValueError("Password is too common. Please choose a stronger password")
@@ -218,19 +211,17 @@ async def login_via_oauth(provider: str, request: Request):
     import os
     from fastapi.responses import RedirectResponse
     
-    # Check if credentials are configured
     client_id = os.environ.get(f"{provider.upper()}_CLIENT_ID")
+    space_host = os.environ.get("SPACE_HOST")
+    if space_host:
+        frontend_url = f"https://{space_host}"
+    else:
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+
     if not client_id:
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "https://datavision-ai-datavision.hf.space"))
         return RedirectResponse(f"{frontend_url}/login?error={provider}_not_configured")
     
     try:
-        space_host = os.environ.get("SPACE_HOST")
-        if space_host:
-            frontend_url = f"https://{space_host}"
-        else:
-            frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
-        
         redirect_uri_str = f"{frontend_url}/api/v1/auth/oauth/{provider}/callback"
         logger.info(f"OAuth {provider} redirect_uri: {redirect_uri_str}")
         
@@ -238,7 +229,6 @@ async def login_via_oauth(provider: str, request: Request):
         return await client.authorize_redirect(request, redirect_uri_str)
     except Exception as e:
         logger.error(f"OAuth redirect failed for {provider}: {e}")
-        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "https://datavision-ai-datavision.hf.space"))
         return RedirectResponse(f"{frontend_url}/login?error=oauth_failed")
 
 
@@ -251,50 +241,58 @@ async def auth_via_oauth_callback(provider: str, request: Request, db: AsyncSess
     import os
     from fastapi.responses import RedirectResponse
     
-    client = oauth.create_client(provider)
+    space_host = os.environ.get("SPACE_HOST")
+    if space_host:
+        frontend_url = f"https://{space_host}"
+    else:
+        frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
+        
+    redirect_uri_str = f"{frontend_url}/api/v1/auth/oauth/{provider}/callback"
+    
     try:
-        token = await client.authorize_access_token(request)
+        client = oauth.create_client(provider)
+        token = await client.authorize_access_token(request, redirect_uri=redirect_uri_str)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"OAuth login failed: {str(e)}")
+        logger.error(f"OAuth token exchange failed for {provider}: {e}")
+        return RedirectResponse(f"{frontend_url}/login?error=oauth_token_failed")
     
-    email = None
-    full_name = None
-    
-    if provider == 'google':
-        user_info = token.get('userinfo')
-        if not user_info:
-            resp = await client.get('https://openidconnect.googleapis.com/v1/userinfo', token=token)
-            user_info = resp.json()
-        email = user_info.get('email')
-        full_name = user_info.get('name')
-    elif provider == 'github':
-        resp = await client.get('user', token=token)
-        profile = resp.json()
+    try:
+        email = None
+        full_name = None
         
-        email_resp = await client.get('user/emails', token=token)
-        emails = email_resp.json()
-        email = next((e['email'] for e in emails if e.get('primary')), None)
-        if not email and len(emails) > 0:
-            email = emails[0]['email']
+        if provider == 'google':
+            user_info = token.get('userinfo')
+            if not user_info:
+                resp = await client.get('https://openidconnect.googleapis.com/v1/userinfo', token=token)
+                user_info = resp.json()
+            email = user_info.get('email')
+            full_name = user_info.get('name')
+        elif provider == 'github':
+            resp = await client.get('user', token=token)
+            profile = resp.json()
+            
+            email_resp = await client.get('user/emails', token=token)
+            emails = email_resp.json()
+            email = next((e['email'] for e in emails if e.get('primary')), None)
+            if not email and len(emails) > 0:
+                email = emails[0]['email']
+            
+            full_name = profile.get('name') or profile.get('login')
         
-        full_name = profile.get('name') or profile.get('login')
-    
-    if not email:
-        raise HTTPException(status_code=400, detail="Failed to retrieve email from OAuth provider")
+        if not email:
+            return RedirectResponse(f"{frontend_url}/login?error=no_email_from_provider")
+            
+        auth_service = get_auth_service(db)
+        result = await auth_service.update_or_create_oauth_user(provider, email, full_name)
         
-    auth_service = get_auth_service(db)
-    result = await auth_service.update_or_create_oauth_user(provider, email, full_name)
-    
-    if result.get("success"):
-        access_token = result["session"]["access_token"]
-        space_host = os.environ.get("SPACE_HOST")
-        if space_host:
-            frontend_url = f"https://{space_host}"
-        else:
-            frontend_url = os.environ.get("FRONTEND_URL", os.environ.get("APP_URL", "http://localhost:5173"))
-        return RedirectResponse(f"{frontend_url}/auth/callback?token={access_token}")
+        if result.get("success"):
+            access_token = result["session"]["access_token"]
+            return RedirectResponse(f"{frontend_url}/auth/callback?token={access_token}")
+            
+    except Exception as e:
+        logger.error(f"OAuth user processing failed for {provider}: {e}")
         
-    raise HTTPException(status_code=400, detail="Failed to process OAuth login")
+    return RedirectResponse(f"{frontend_url}/login?error=oauth_login_failed")
 
 
 @router.get("/me")
