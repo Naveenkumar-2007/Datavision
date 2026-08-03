@@ -70,7 +70,7 @@ const DialRing = ({ percentage, label, icon: Icon, colorClass, gradientFrom, gra
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'datasets' | 'dashboards' | 'automl' | 'predictions' | 'computervision' | 'chats' | 'system' | 'activity'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'datasets' | 'dashboards' | 'automl' | 'predictions' | 'computervision' | 'chats' | 'developer' | 'system' | 'activity'>('overview');
   
   // Real-time State
   const [stats, setStats] = useState<any>(null);
