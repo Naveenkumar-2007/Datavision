@@ -17,5 +17,6 @@ else
     echo "ℹ️ DATABASE_URL not set. Running with default configuration."
 fi
 
-echo "🟢 Starting FastAPI Uvicorn server on port 7860..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 7860
+echo "🟢 Starting FastAPI Uvicorn server via python main.py..."
+export PORT=${PORT:-7860}
+exec python main.py
