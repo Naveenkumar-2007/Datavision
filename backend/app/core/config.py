@@ -6,6 +6,7 @@ All settings are loaded from environment variables or .env files.
 Required variables will raise validation errors on startup if missing.
 """
 
+import os
 from typing import Optional, Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
