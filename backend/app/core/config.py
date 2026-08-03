@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # ── Database ────────────────────────────────────────────────────
     DATABASE_URL: str = Field(
-        ...,
+        default="postgresql+asyncpg://datavision:datavision_dev@localhost:5433/datavision",
         description="PostgreSQL async connection URL (postgresql+asyncpg://...)"
     )
     DB_POOL_SIZE: int = 5
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
 
     # ── JWT Auth ────────────────────────────────────────────────────
     JWT_SECRET: str = Field(
-        ...,
+        default="datavision-production-jwt-secret-key-32bytes-long!",
         description="Secret key for signing JWT tokens. Must be kept secret."
     )
     JWT_ALGORITHM: str = "HS256"
