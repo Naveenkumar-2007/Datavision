@@ -251,7 +251,15 @@ async def auth_via_oauth_callback(provider: str, request: Request, db: AsyncSess
     
     try:
         client = oauth.create_client(provider)
-        token = await client.authorize_access_token(request, redirect_uri=redirect_uri_str)
+        try:
+            token = await client.authorize_access_token(request)
+        except TypeError as te:
+            if "redirect_uri" in str(te):
+                token = await client.authorize_access_token(request)
+            else:
+                raise
+        except Exception:
+            token = await client.authorize_access_token(request, redirect_uri=redirect_uri_str)
     except Exception as e:
         logger.error(f"OAuth token exchange failed for {provider}: {e}")
         return RedirectResponse(f"{frontend_url}/login?error=oauth_token_failed")

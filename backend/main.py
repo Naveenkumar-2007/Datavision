@@ -143,13 +143,22 @@ class APICallLogMiddleware(BaseHTTPMiddleware):
         try:
             from database.db import AsyncSessionLocal
             from database.orm import APICallLog
+            import uuid
+            
+            parsed_uid = None
+            if user_id:
+                try:
+                    parsed_uid = uuid.UUID(user_id)
+                except ValueError:
+                    parsed_uid = None
+
             async with AsyncSessionLocal() as db:
                 log = APICallLog(
-                    user_id=user_id,
+                    user_id=parsed_uid,
                     endpoint=endpoint,
-                    method=method,
+                    http_method=method,
                     status_code=status_code,
-                    latency_ms=latency_ms
+                    response_time_ms=latency_ms
                 )
                 db.add(log)
                 await db.commit()

@@ -697,7 +697,7 @@ async def list_all_predictions(
 ):
     """List ML prediction API calls and activity."""
     try:
-        stmt = select(APICallLog).where(APICallLog.endpoint.ilike("%predict%")).order_by(APICallLog.timestamp.desc()).limit(100)
+        stmt = select(APICallLog).where(APICallLog.endpoint.ilike("%predict%")).order_by(APICallLog.created_at.desc()).limit(100)
         result = await db.execute(stmt)
         calls = result.scalars().all()
         
@@ -705,12 +705,12 @@ async def list_all_predictions(
         for c in calls:
             pred_list.append({
                 "id": str(c.id),
-                "user_id": c.user_id,
+                "user_id": str(c.user_id) if c.user_id else "",
                 "endpoint": c.endpoint,
-                "method": c.method,
+                "method": getattr(c, 'http_method', 'POST'),
                 "status_code": c.status_code,
-                "latency_ms": c.latency_ms,
-                "timestamp": c.timestamp.isoformat() if c.timestamp else None
+                "latency_ms": getattr(c, 'response_time_ms', 0),
+                "timestamp": c.created_at.isoformat() if getattr(c, 'created_at', None) else None
             })
         return {"success": True, "predictions": pred_list, "total": len(pred_list)}
     except Exception as e:

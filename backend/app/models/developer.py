@@ -69,10 +69,10 @@ class APICallLog(UUIDPrimaryKeyMixin, Base):
         Index("ix_api_call_logs_api_key_id", "api_key_id"),
     )
 
-    user_id: Mapped[uuid.UUID] = mapped_column(
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
     api_key_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),

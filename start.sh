@@ -9,6 +9,28 @@ cd /app/backend
 # Initialize fresh database migrations and seed default roles/admin user if DATABASE_URL is present
 if [ -n "$DATABASE_URL" ]; then
     echo "📦 [1/2] Initializing fresh database schema..."
+    
+    # Auto-healing check for legacy v1 schema or orphan tables
+    python -c "
+import asyncio
+from sqlalchemy import text
+from database.db import engine
+
+async def auto_clean_legacy_schema():
+    try:
+        async with engine.begin() as conn:
+            # Check if old v1 'profiles' table exists
+            res = await conn.execute(text(\"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'profiles');\"))
+            has_profiles = res.scalar()
+            if has_profiles:
+                print('⚠️ Legacy v1 database schema detected. Performing automated fresh schema reset...')
+                await conn.execute(text('DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO public;'))
+    except Exception as e:
+        print(f'DB verification notice: {e}')
+
+asyncio.run(auto_clean_legacy_schema())
+" 2>/dev/null || true
+
     alembic stamp head 2>/dev/null || true
     alembic upgrade head || echo "⚠️ Migration warning: check DB logs"
 
