@@ -151,7 +151,7 @@ async def list_webhooks(x_user_id: Optional[str] = Header(None, alias="X-User-ID
             except ValueError:
                 return []
             result = await db.execute(
-                select(WebhookEndpoint).filter(WebhookEndpoint.user_id == uid, WebhookEndpoint.status != 'deleted')
+                select(WebhookEndpoint).filter(WebhookEndpoint.user_id == uid, WebhookEndpoint.is_active == True)
             )
             webhooks = result.scalars().all()
 
@@ -159,8 +159,8 @@ async def list_webhooks(x_user_id: Optional[str] = Header(None, alias="X-User-ID
             WebhookResponse(
                 id=str(w.id),
                 url=w.url,
-                status=w.status,
-                events=w.events or ["autopilot.completed"]
+                status="active" if getattr(w, 'is_active', True) else "inactive",
+                events=getattr(w, 'subscribed_events', ["autopilot.completed"]) or ["autopilot.completed"]
             ) for w in webhooks
         ]
     except Exception as e:
@@ -184,8 +184,8 @@ async def create_webhook(payload: WebhookRequest, x_user_id: Optional[str] = Hea
             new_webhook = WebhookEndpoint(
                 user_id=uid,
                 url=payload.url,
-                status="active",
-                events=["autopilot.completed"],
+                is_active=True,
+                subscribed_events=["autopilot.completed"],
                 secret=_secrets.token_hex(16),
             )
             db.add(new_webhook)
@@ -195,8 +195,8 @@ async def create_webhook(payload: WebhookRequest, x_user_id: Optional[str] = Hea
         return WebhookResponse(
             id=str(new_webhook.id),
             url=new_webhook.url,
-            status=new_webhook.status,
-            events=new_webhook.events or ["autopilot.completed"]
+            status="active" if new_webhook.is_active else "inactive",
+            events=new_webhook.subscribed_events or ["autopilot.completed"]
         )
     except Exception as e:
         logger.error(f"Failed to create webhook: {e}")
@@ -222,7 +222,7 @@ async def delete_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None
             webhook = result.scalars().first()
             if not webhook:
                 raise HTTPException(status_code=404, detail="Webhook not found")
-            webhook.status = "deleted"
+            await db.delete(webhook)
             await db.commit()
             return {"success": True}
     except HTTPException:
@@ -653,7 +653,7 @@ async def get_usage_analytics(x_user_id: Optional[str] = Header(None, alias="X-U
         # Get call logs for the last 7 days
         week_ago = now - timedelta(days=7)
         result = await db.execute(
-            select(APICallLog).filter(APICallLog.user_id == user_id, APICallLog.timestamp >= week_ago)
+            select(APICallLog).filter(APICallLog.user_id == safe_uid, APICallLog.created_at >= week_ago)
         )
         calls = result.scalars().all()
         
@@ -661,9 +661,9 @@ async def get_usage_analytics(x_user_id: Optional[str] = Header(None, alias="X-U
         two_weeks_ago = now - timedelta(days=14)
         result_prev_week = await db.execute(
             select(func.count(APICallLog.id)).filter(
-                APICallLog.user_id == user_id, 
-                APICallLog.timestamp >= two_weeks_ago,
-                APICallLog.timestamp < week_ago
+                APICallLog.user_id == safe_uid, 
+                APICallLog.created_at >= two_weeks_ago,
+                APICallLog.created_at < week_ago
             )
         )
         prev_week_calls = result_prev_week.scalar() or 0

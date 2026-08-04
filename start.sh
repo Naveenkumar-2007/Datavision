@@ -24,7 +24,9 @@ async def auto_clean_legacy_schema():
             has_profiles = res.scalar()
             if has_profiles:
                 print('⚠️ Legacy v1 database schema detected. Performing automated fresh schema reset...')
-                await conn.execute(text('DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO public;'))
+                await conn.execute(text('DROP SCHEMA public CASCADE;'))
+                await conn.execute(text('CREATE SCHEMA public;'))
+                await conn.execute(text('GRANT ALL ON SCHEMA public TO public;'))
     except Exception as e:
         print(f'DB verification notice: {e}')
 
