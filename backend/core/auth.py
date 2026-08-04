@@ -1,12 +1,11 @@
 import os
+import bcrypt
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 from fastapi import Request, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import logging
-import uuid
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 
@@ -20,8 +19,6 @@ oauth = OAuth(oauth_config)
 try:
     oauth.register(
         name='google',
-        client_id=os.environ.get('GOOGLE_CLIENT_ID'),
-        client_secret=os.environ.get('GOOGLE_CLIENT_SECRET'),
         server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
         client_kwargs={
             'scope': 'openid email profile'
@@ -34,8 +31,6 @@ except Exception as e:
 try:
     oauth.register(
         name='github',
-        client_id=os.environ.get('GITHUB_CLIENT_ID'),
-        client_secret=os.environ.get('GITHUB_CLIENT_SECRET'),
         api_base_url='https://api.github.com/',
         access_token_url='https://github.com/login/oauth/access_token',
         authorize_url='https://github.com/login/oauth/authorize',
@@ -49,8 +44,6 @@ except Exception as e:
 SECRET_KEY = os.environ.get("JWT_SECRET") or os.environ.get("JWT_SECRET_KEY") or "datavision-production-jwt-secret-key-32bytes-long!"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days for ease of use
-
-import bcrypt
 
 security = HTTPBearer(auto_error=False)
 

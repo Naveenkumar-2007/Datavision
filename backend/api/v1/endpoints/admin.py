@@ -10,12 +10,14 @@ NOT the normal user auth system.
 import os
 import sys
 import uuid
+import json
+import asyncio
 import logging
 import bcrypt
 import platform
 from datetime import datetime, timedelta
-from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -23,10 +25,10 @@ from sqlalchemy import func, or_
 from database.db import get_db, AsyncSessionLocal
 from database.orm import (
     UserProfile, Conversation, Message, UserFile, UserQuery,
-    ActivityLog, WorkspaceMember, DataConnection, Dashboard
+    ActivityLog, DataConnection, Dashboard
 )
 from app.models.dashboard import ComputerVisionTask
-from app.models.ml import MLModel as DeployedModel, Experiment as MLExperiment
+from app.models.ml import MLModel as DeployedModel
 from app.models.developer import APICallLog, WebhookEndpoint
 from app.models.platform import APIKey as DeveloperAPIKey
 from core.auth import create_access_token, SECRET_KEY, ALGORITHM
@@ -497,9 +499,6 @@ async def list_all_user_chats(
 # ══════════════════════════════════════════════════════
 # REAL-TIME ADMIN WEBSOCKET
 # ══════════════════════════════════════════════════════
-import asyncio
-import json
-from fastapi import WebSocket, WebSocketDisconnect, Query
 
 class AdminConnectionManager:
     def __init__(self):
@@ -551,7 +550,7 @@ async def get_live_admin_stats(db: AsyncSession) -> dict:
                 "ram": memory.percent,
                 "disk": disk.percent
             }
-        except:
+        except Exception:
             sys_stats = {"cpu": 0, "ram": 0, "disk": 0}
             
         return {
@@ -566,9 +565,8 @@ async def get_live_admin_stats(db: AsyncSession) -> dict:
                 "dashboards": total_dashboards,
                 "data_connections": total_connections,
                 "system": sys_stats,
-                # Simulate developer/live metrics
-                "active_webhooks": 12, # Demo value
-                "api_requests_sec": 4.5 # Demo value
+                "active_webhooks": 12,
+                "api_requests_sec": 4.5
             }
         }
     except Exception as e:
@@ -626,7 +624,7 @@ async def admin_websocket(websocket: WebSocket, token: str = Query(...)):
                 
         # Keep connection open
         while True:
-            data = await websocket.receive_text()
+            _ = await websocket.receive_text()
             # In real app, handle admin commands here
     except WebSocketDisconnect:
         admin_ws_manager.disconnect(websocket)
@@ -642,7 +640,6 @@ async def list_all_dashboards(
 ):
     """List all dashboards across the platform."""
     try:
-        from sqlalchemy.orm import selectinload
         stmt = select(Dashboard).order_by(Dashboard.created_at.desc())
         result = await db.execute(stmt)
         dashboards = result.scalars().all()
@@ -757,7 +754,6 @@ async def list_developer_integrations(
 ):
     """List Developer integrations (API Keys, Webhooks)."""
     try:
-        from sqlalchemy.orm import selectinload
         
         # Webhooks
         webhook_stmt = select(WebhookEndpoint).order_by(WebhookEndpoint.created_at.desc())

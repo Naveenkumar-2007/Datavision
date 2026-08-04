@@ -247,7 +247,7 @@ export default function AdminDashboard() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-primary">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-400 text-sm font-medium tracking-wide">Initializing Enterprise Hub...</p>
         </div>
       </div>
@@ -255,7 +255,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen flex bg-primary text-white selection:bg-red-500/30 font-sans">
+    <div className="min-h-screen flex bg-primary text-white selection:bg-emerald-500/30 font-sans">
       
       {/* Dynamic Background */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
@@ -283,7 +283,7 @@ export default function AdminDashboard() {
       <div className="w-64 border-r border-gray-800/40 flex flex-col bg-[#11111a]/80 backdrop-blur-3xl relative z-10">
         <div className="p-6 border-b border-gray-800/40">
           <div className="flex items-center gap-4">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-[0_0_20px_rgba(220,38,38,0.3)]">
+            <div className="p-2.5 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]">
               <Shield className="w-6 h-6 text-white" />
             </div>
             <div>
