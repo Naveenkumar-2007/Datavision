@@ -98,6 +98,12 @@ async def get_current_user_id(
         fingerprint = hashlib.sha256(f"{ip}:{ua}".encode()).hexdigest()[:12]
         resolved_user_id = f"guest_{fingerprint}"
             
+    import uuid as _uuid
+    try:
+        _uuid.UUID(resolved_user_id)
+    except ValueError:
+        resolved_user_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, resolved_user_id))
+            
     return resolved_user_id
 
 def get_verified_user_id(

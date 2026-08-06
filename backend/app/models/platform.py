@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, Boolean, Text, Integer, BigInteger, Index, ForeignKey
+from sqlalchemy import String, Boolean, Text, Integer, BigInteger, Float, Index, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -61,6 +61,9 @@ class APIKey(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(10), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    api_key: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
+    data_processed_mb: Mapped[float] = mapped_column(default=0.0, nullable=False)
     scopes: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_used_at: Mapped[Optional[datetime]] = mapped_column(nullable=True)

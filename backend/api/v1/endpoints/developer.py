@@ -40,7 +40,7 @@ async def list_keys(x_user_id: Optional[str] = Header(None, alias="X-User-ID")):
             try:
                 uid = _uuid.UUID(user_id)
             except ValueError:
-                return []
+                uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
             result = await db.execute(select(DeveloperAPIKey).filter(DeveloperAPIKey.user_id == uid))
             keys = result.scalars().all()
         return [
@@ -74,11 +74,21 @@ async def generate_key(x_user_id: Optional[str] = Header(None, alias="X-User-ID"
             try:
                 uid = _uuid.UUID(user_id)
             except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid user ID format")
+                uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+                
+            from database.orm import UserProfile
+            from sqlalchemy import select
+            if not (await db.execute(select(UserProfile).filter(UserProfile.id == uid))).scalars().first():
+                db.add(UserProfile(id=uid, email=f"{user_id}@guest.local", password_hash_algorithm="none", full_name="Guest User"))
+                await db.flush()
+                
+            import hashlib
             new_db_key = DeveloperAPIKey(
                 user_id=uid,
                 api_key=new_key,
-                name="New API Key"
+                name="New API Key",
+                key_prefix=new_key[:10],
+                key_hash=hashlib.sha256(new_key.encode()).hexdigest(),
             )
             db.add(new_db_key)
             await db.commit()
@@ -109,9 +119,13 @@ async def revoke_key(key_id: str, x_user_id: Optional[str] = Header(None, alias=
         import uuid
         
         async with AsyncSessionLocal() as db:
+            try:
+                uid = uuid.UUID(user_id)
+            except ValueError:
+                uid = uuid.uuid5(uuid.NAMESPACE_OID, str(user_id))
             result = await db.execute(select(DeveloperAPIKey).filter(
                 DeveloperAPIKey.id == uuid.UUID(key_id), 
-                DeveloperAPIKey.user_id == uuid.UUID(user_id)
+                DeveloperAPIKey.user_id == uid
             ))
             key = result.scalars().first()
             if not key:
@@ -149,7 +163,7 @@ async def list_webhooks(x_user_id: Optional[str] = Header(None, alias="X-User-ID
             try:
                 uid = _uuid.UUID(user_id)
             except ValueError:
-                return []
+                uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
             result = await db.execute(
                 select(WebhookEndpoint).filter(WebhookEndpoint.user_id == uid, WebhookEndpoint.is_active == True)
             )
@@ -180,13 +194,19 @@ async def create_webhook(payload: WebhookRequest, x_user_id: Optional[str] = Hea
             try:
                 uid = _uuid.UUID(user_id)
             except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid user ID format")
+                uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+                
+            from database.orm import UserProfile
+            from sqlalchemy import select
+            if not (await db.execute(select(UserProfile).filter(UserProfile.id == uid))).scalars().first():
+                db.add(UserProfile(id=uid, email=f"{user_id}@guest.local", password_hash_algorithm="none", full_name="Guest User"))
+                await db.flush()
             new_webhook = WebhookEndpoint(
                 user_id=uid,
                 url=payload.url,
                 is_active=True,
                 subscribed_events=["autopilot.completed"],
-                secret=_secrets.token_hex(16),
+                secret_key=_secrets.token_hex(16),
             )
             db.add(new_webhook)
             await db.commit()
@@ -215,7 +235,7 @@ async def delete_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None
             try:
                 uid = _uuid.UUID(user_id)
             except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid user ID format")
+                uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
             result = await db.execute(
                 select(WebhookEndpoint).filter(WebhookEndpoint.id == _uuid.UUID(webhook_id), WebhookEndpoint.user_id == uid)
             )
@@ -247,7 +267,7 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
             try:
                 safe_uid = _uuid.UUID(user_id)
             except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid user ID format")
+                safe_uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
             result = await db.execute(
                 select(WebhookEndpoint).filter(WebhookEndpoint.id == _uuid.UUID(webhook_id), WebhookEndpoint.user_id == safe_uid)
             )
@@ -681,7 +701,7 @@ async def get_usage_analytics(x_user_id: Optional[str] = Header(None, alias="X-U
     for h in range(24):
         hour_start = now - timedelta(hours=24 - h)
         hour_end = now - timedelta(hours=23 - h)
-        count = sum(1 for c in calls if hour_start <= c.timestamp <= hour_end)
+        count = sum(1 for c in calls if hour_start <= c.created_at <= hour_end)
         calls_per_hour.append({
             "hour": hour_start.strftime("%H:%M"),
             "calls": count
@@ -692,14 +712,14 @@ async def get_usage_analytics(x_user_id: Optional[str] = Header(None, alias="X-U
     for d in range(7):
         day_start = now - timedelta(days=7 - d)
         day_end = now - timedelta(days=6 - d)
-        count = sum(1 for c in calls if day_start <= c.timestamp <= day_end)
+        count = sum(1 for c in calls if day_start <= c.created_at <= day_end)
         calls_per_day.append({
             "day": day_start.strftime("%a %b %d"),
             "calls": count
         })
     
     # Latency percentiles
-    latencies = [c.latency_ms for c in calls]
+    latencies = [c.response_time_ms for c in calls]
     latencies.sort()
     p50 = latencies[len(latencies)//2] if latencies else 0
     p95 = latencies[int(len(latencies)*0.95)] if latencies else 0
@@ -719,7 +739,7 @@ async def get_usage_analytics(x_user_id: Optional[str] = Header(None, alias="X-U
     top_endpoints = sorted(endpoint_counts.items(), key=lambda x: x[1], reverse=True)[:5]
     
     # Rate limit status
-    calls_last_minute = sum(1 for c in calls if c.timestamp >= (now - timedelta(minutes=1)))
+    calls_last_minute = sum(1 for c in calls if c.created_at >= (now - timedelta(minutes=1)))
     rate_limit = 1000  # per minute
     
     return {
@@ -900,7 +920,7 @@ async def get_webhook_deliveries(webhook_id: str, x_user_id: Optional[str] = Hea
             del_result = await db.execute(
                 select(WebhookDelivery)
                 .filter(WebhookDelivery.webhook_id == webhook.id)
-                .order_by(WebhookDelivery.timestamp.desc())
+                .order_by(WebhookDelivery.delivered_at.desc())
                 .limit(10)
             )
             deliveries = del_result.scalars().all()
@@ -908,12 +928,12 @@ async def get_webhook_deliveries(webhook_id: str, x_user_id: Optional[str] = Hea
             return {
                 "deliveries": [{
                     "id": str(d.id),
-                    "event": d.event,
-                    "status_code": d.status_code,
-                    "response_time_ms": d.response_time_ms,
-                    "success": d.success,
-                    "timestamp": d.timestamp.isoformat(),
-                    "error_message": d.error_message
+                    "event": d.event_type,
+                    "status_code": d.response_status_code,
+                    "response_time_ms": d.duration_ms,
+                    "success": d.is_success,
+                    "timestamp": d.delivered_at.isoformat(),
+                    "error_message": d.response_body
                 } for d in deliveries]
             }
     except HTTPException:

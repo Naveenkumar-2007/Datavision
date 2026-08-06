@@ -22,7 +22,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import delete
 from database.db import get_db
-from database.orm import ChatChannel, ChannelMessage, MessageReaction, ActivityLog, WorkspaceMember, UserProfile
+from database.orm import ChatChannel, ChannelMessage, MessageReaction, ActivityLog, WorkspaceMember, UserProfile, Workspace
 from api.deps import get_current_user_id
 
 logger = logging.getLogger(__name__)
@@ -592,11 +592,39 @@ async def add_member(
         # Create a stub user if doesn't exist
         import hashlib
         fake_pass = hashlib.sha256("stub".encode()).hexdigest()
-        target_user = UserProfile(email=req.email, full_name=req.name, hashed_password=fake_pass)
+        target_user = UserProfile(
+            email=req.email, 
+            full_name=req.name, 
+            hashed_password=fake_pass,
+            password_hash_algorithm="sha256"
+        )
         db.add(target_user)
         await db.flush()
         
-    workspace_id = user_id # Use the inviter's UUID as the workspace ID
+    # 2. Get or create a default workspace for the inviter
+    import uuid
+    try:
+        inviter_uuid = uuid.UUID(str(user_id))
+    except ValueError:
+        inviter_uuid = uuid.uuid5(uuid.NAMESPACE_OID, str(user_id))
+        
+    inviter_check = await db.execute(select(UserProfile).filter(UserProfile.id == inviter_uuid))
+    if not inviter_check.scalars().first():
+        db.add(UserProfile(id=inviter_uuid, email=f"{user_id}@guest.local", password_hash_algorithm="none", full_name="Guest User"))
+        await db.flush()
+        
+    workspace_stmt = select(Workspace).filter(Workspace.owner_id == inviter_uuid)
+    workspace_res = await db.execute(workspace_stmt)
+    workspace = workspace_res.scalars().first()
+    
+    if not workspace:
+        import secrets
+        ws_slug = f"workspace-{secrets.token_hex(4)}"
+        workspace = Workspace(owner_id=inviter_uuid, name="Default Workspace", slug=ws_slug)
+        db.add(workspace)
+        await db.flush()
+        
+    workspace_id = workspace.id
         
     # 3. Add WorkspaceMember
     member_stmt = select(WorkspaceMember).filter(
