@@ -12,6 +12,8 @@ from pydantic import BaseModel
 import json
 
 from api.deps import get_current_user_id
+from database.db import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
 
