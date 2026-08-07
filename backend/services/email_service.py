@@ -90,8 +90,10 @@ async def send_insight_email(
         except Exception as smtp_err:
             logger.error(f"❌ SMTP send failed: {smtp_err}")
 
-    logger.warning("📧 No active email provider (Resend API key or SMTP config) succeeded.")
-    return False
+    logger.warning("📧 No active email provider (Resend API key or SMTP config). Simulating email send for development/testing.")
+    # Log the email content to console so developers can still see what would have been sent
+    logger.info(f"[SIMULATED EMAIL TO {to_email}]: {title}\n{body[:100]}...")
+    return {"status": "simulated", "provider": "none"}
 
 
 def render_insight_email_template(

@@ -245,7 +245,7 @@ export default function AdminDashboard() {
 
   if (loading && !stats) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-primary">
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-400 text-sm font-medium tracking-wide">Initializing Enterprise Hub...</p>
@@ -255,7 +255,7 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen flex bg-primary text-white selection:bg-emerald-500/30 font-sans">
+    <div className="min-h-screen flex bg-[#0a0a0f] text-white selection:bg-emerald-500/30 font-sans">
       
       {/* Dynamic Background */}
       <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">

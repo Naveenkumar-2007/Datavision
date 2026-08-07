@@ -17,7 +17,7 @@ from app.models.dashboard import Dashboard, Chart, ComputerVisionTask, Notificat
 from app.models.vector_rag import VectorStore, DocumentChunk, RAGQueryLog
 from app.models.simulator import Simulation, SimulationVersion
 from app.models.reports import Report, ScheduledReport
-from app.models.collaboration import Workspace, WorkspaceMember, SharedLink
+from app.models.collaboration import Workspace, WorkspaceMember, SharedLink, ChatChannel, ChannelMessage, MessageReaction
 from app.models.developer import WebhookEndpoint, WebhookDelivery, APICallLog
 
 # Legacy Aliases
@@ -41,9 +41,6 @@ MLRegistryModel = DeployedModel
 MLRegistryVersion = TrainingJob
 ReportHistory = Report
 ReportTemplate = Report
-ChatChannel = Workspace
-ChannelMessage = Message
-MessageReaction = Message
 
 __all__ = [
     "Base",

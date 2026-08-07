@@ -91,3 +91,38 @@ class SharedLink(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     def __repr__(self) -> str:
         return f"<SharedLink token={self.share_token} type={self.resource_type}>"
+
+
+class ChatChannel(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Channels for collaboration."""
+    __tablename__ = "chat_channels"
+    
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
+class ChannelMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Messages inside a collaboration channel."""
+    __tablename__ = "channel_messages"
+    
+    channel_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    parent_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    is_ai: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Relationships
+    user: Mapped[Optional["app.models.user.User"]] = relationship("User")
+
+
+class MessageReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """Emoji reactions on channel messages."""
+    __tablename__ = "message_reactions"
+    
+    message_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    emoji: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # Relationships
+    user: Mapped["app.models.user.User"] = relationship("User")

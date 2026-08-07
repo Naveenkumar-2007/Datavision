@@ -49,7 +49,7 @@ async def fix_alembic():
 asyncio.run(fix_alembic())
 " 2>/dev/null || true
 
-    alembic stamp head 2>/dev/null || true
+    # Run migrations to create any missing tables
     alembic upgrade head || echo "⚠️ Migration warning: check DB logs"
 
     echo "🌱 [2/2] Seeding fresh system roles, permissions, and super admin user..."
