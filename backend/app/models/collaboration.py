@@ -7,10 +7,14 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import String, Boolean, Text, Index, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.models.user import User
 
 
 class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -113,7 +117,7 @@ class ChannelMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
-    user: Mapped[Optional["app.models.user.User"]] = relationship("User")
+    user: Mapped[Optional["User"]] = relationship("User")
 
 
 class MessageReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -125,4 +129,4 @@ class MessageReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     emoji: Mapped[str] = mapped_column(String(50), nullable=False)
 
     # Relationships
-    user: Mapped["app.models.user.User"] = relationship("User")
+    user: Mapped["User"] = relationship("User")
