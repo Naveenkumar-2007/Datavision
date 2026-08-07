@@ -148,7 +148,7 @@ def render_insight_email_template(
                                                 {title}
                                             </h1>
                                             <p style="margin: 0; font-size: 15px; color: #71717a; font-weight: 400;">
-                                                Autonomous Insights powered by Nvidia Enterprise LLMs.
+                                                Powered by Datavision AI.
                                             </p>
                                         </td>
                                     </tr>

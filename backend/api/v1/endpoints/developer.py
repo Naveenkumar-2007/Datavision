@@ -25,24 +25,28 @@ class APIKeyResponse(BaseModel):
     scopes: List[str] = ["read:data", "predict"]
     expires_at: Optional[datetime] = None
 
+from database.db import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from database.orm import DeveloperAPIKey
+from sqlalchemy import select
+import uuid as _uuid
+
 @router.get("/keys", response_model=List[APIKeyResponse])
-async def list_keys(x_user_id: Optional[str] = Header(None, alias="X-User-ID")):
+async def list_keys(
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    db: AsyncSession = Depends(get_db)
+):
     user_id = x_user_id or "default"
     
-    # Try ORM, fallback to memory
     try:
-        from database.db import AsyncSessionLocal
-        from database.orm import DeveloperAPIKey
-        from sqlalchemy import select
-        import uuid as _uuid
+        try:
+            uid = _uuid.UUID(user_id)
+        except ValueError:
+            uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+            
+        result = await db.execute(select(DeveloperAPIKey).filter(DeveloperAPIKey.user_id == uid))
+        keys = result.scalars().all()
         
-        async with AsyncSessionLocal() as db:
-            try:
-                uid = _uuid.UUID(user_id)
-            except ValueError:
-                uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
-            result = await db.execute(select(DeveloperAPIKey).filter(DeveloperAPIKey.user_id == uid))
-            keys = result.scalars().all()
         return [
             APIKeyResponse(
                 id=str(k.id),
@@ -61,38 +65,35 @@ async def list_keys(x_user_id: Optional[str] = Header(None, alias="X-User-ID")):
         logger.error(f"Failed to list developer keys: {e}")
         raise HTTPException(status_code=500, detail="Database error")
 @router.post("/keys/generate", response_model=APIKeyResponse)
-async def generate_key(x_user_id: Optional[str] = Header(None, alias="X-User-ID")):
+async def generate_key(
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    db: AsyncSession = Depends(get_db)
+):
     user_id = x_user_id or "default"
     new_key = f"dv_live_{secrets.token_hex(16)}"
     
     try:
-        from database.db import AsyncSessionLocal
-        from database.orm import DeveloperAPIKey
-        import uuid as _uuid
-        
-        async with AsyncSessionLocal() as db:
-            try:
-                uid = _uuid.UUID(user_id)
-            except ValueError:
-                uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
-                
-            from database.orm import UserProfile
-            from sqlalchemy import select
-            if not (await db.execute(select(UserProfile).filter(UserProfile.id == uid))).scalars().first():
-                db.add(UserProfile(id=uid, email=f"{user_id}@guest.local", password_hash_algorithm="none", full_name="Guest User"))
-                await db.flush()
-                
-            import hashlib
-            new_db_key = DeveloperAPIKey(
-                user_id=uid,
-                api_key=new_key,
-                name="New API Key",
-                key_prefix=new_key[:10],
-                key_hash=hashlib.sha256(new_key.encode()).hexdigest(),
-            )
-            db.add(new_db_key)
-            await db.commit()
-            await db.refresh(new_db_key)
+        try:
+            uid = _uuid.UUID(user_id)
+        except ValueError:
+            uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+            
+        from database.orm import UserProfile
+        if not (await db.execute(select(UserProfile).filter(UserProfile.id == uid))).scalars().first():
+            db.add(UserProfile(id=uid, email=f"{user_id}@guest.local", password_hash_algorithm="none", full_name="Guest User"))
+            await db.flush()
+            
+        import hashlib
+        new_db_key = DeveloperAPIKey(
+            user_id=uid,
+            api_key=new_key,
+            name="New API Key",
+            key_prefix=new_key[:10],
+            key_hash=hashlib.sha256(new_key.encode()).hexdigest(),
+        )
+        db.add(new_db_key)
+        await db.commit()
+        await db.refresh(new_db_key)
         
         return APIKeyResponse(
             id=str(new_db_key.id),
@@ -102,37 +103,37 @@ async def generate_key(x_user_id: Optional[str] = Header(None, alias="X-User-ID"
             created_at=new_db_key.created_at,
             last_used_at=new_db_key.last_used_at,
             total_calls=new_db_key.total_calls,
-            data_processed_mb=new_db_key.data_processed_mb
+            data_processed_mb=new_db_key.data_processed_mb,
+            scopes=new_db_key.scopes or ["read:data", "predict"],
+            expires_at=new_db_key.expires_at
         )
     except Exception as e:
         logger.error(f"Failed to generate developer key: {e}")
         raise HTTPException(status_code=500, detail="Database error")
 
 @router.post("/keys/{key_id}/revoke")
-async def revoke_key(key_id: str, x_user_id: Optional[str] = Header(None, alias="X-User-ID")):
+async def revoke_key(
+    key_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
+    db: AsyncSession = Depends(get_db)
+):
     user_id = x_user_id or "default"
     
     try:
-        from database.db import AsyncSessionLocal
-        from database.orm import DeveloperAPIKey
-        from sqlalchemy import select
-        import uuid
-        
-        async with AsyncSessionLocal() as db:
-            try:
-                uid = uuid.UUID(user_id)
-            except ValueError:
-                uid = uuid.uuid5(uuid.NAMESPACE_OID, str(user_id))
-            result = await db.execute(select(DeveloperAPIKey).filter(
-                DeveloperAPIKey.id == uuid.UUID(key_id), 
-                DeveloperAPIKey.user_id == uid
-            ))
-            key = result.scalars().first()
-            if not key:
-                raise HTTPException(status_code=404, detail="Key not found")
-            await db.delete(key)
-            await db.commit()
-            return {"success": True}
+        try:
+            uid = _uuid.UUID(user_id)
+        except ValueError:
+            uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+        result = await db.execute(select(DeveloperAPIKey).filter(
+            DeveloperAPIKey.id == _uuid.UUID(key_id), 
+            DeveloperAPIKey.user_id == uid
+        ))
+        key = result.scalars().first()
+        if not key:
+            raise HTTPException(status_code=404, detail="Key not found")
+        await db.delete(key)
+        await db.commit()
+        return {"success": True}
     except HTTPException:
         raise
     except Exception as e:

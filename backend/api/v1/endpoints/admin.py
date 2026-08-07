@@ -389,25 +389,39 @@ async def list_all_user_datasets(
 ):
     """List all uploaded datasets across all users (Tabular CSV/Parquet DB files + Computer Vision Image Datasets)."""
     try:
+        stmt = select(UserFile).order_by(UserFile.created_at.desc())
+        
+        # Load user relationships safely
         from sqlalchemy.orm import selectinload
-        stmt = select(UserFile).order_by(UserFile.uploaded_at.desc()).options(selectinload(UserFile.user))
+        # FileUpload doesn't have a direct 'user' relationship configured yet, so we have to manually fetch or configure it
+        # Actually, FileUpload has user_id, let's just do a manual join or skip selectinload if relationship isn't named user.
+        # But wait, looking at platform.py, FileUpload does not have a user relationship defined!
+        # It just has user_id: Mapped[uuid.UUID] = mapped_column(...)
+        
         result = await db.execute(stmt)
         files = result.scalars().all()
 
         dataset_list = []
         for f in files:
-            owner_email = f.user.email if f.user else "Workspace User"
-            meta = f.metadata_ or {}
+            # Manually query user email
+            user_email = "Workspace User"
+            if f.user_id:
+                user_res = await db.execute(select(UserProfile).filter(UserProfile.id == f.user_id))
+                u = user_res.scalars().first()
+                if u:
+                    user_email = u.email
+
+            meta = f.metadata_json or {}
             dataset_list.append({
                 "id": str(f.id),
                 "filename": f.original_filename or f.filename,
                 "file_type": f.file_type or "CSV/Data",
                 "file_size_mb": round((f.file_size or 0) / (1024 * 1024), 2),
-                "user_email": owner_email,
-                "status": f.processing_status or ("Processed" if f.is_processed else "Pending"),
+                "user_email": user_email,
+                "status": f.processing_status,
                 "rows_count": meta.get("rows", meta.get("row_count", 150)),
                 "columns_count": meta.get("cols", meta.get("col_count", 8)),
-                "uploaded_at": f.uploaded_at.isoformat() if f.uploaded_at else datetime.utcnow().isoformat()
+                "uploaded_at": f.created_at.isoformat() if f.created_at else datetime.utcnow().isoformat()
             })
 
         # Also collect Computer Vision image datasets

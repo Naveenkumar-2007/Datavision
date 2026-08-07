@@ -24,7 +24,7 @@ const DecryptedMessage = ({ msg, channelKey }: { msg: any, channelKey: string })
   return <span>{decrypted}</span>;
 };
 
-const EMOJI_LIST = ['👍', '❤️', '😂', '🎉', '🤔', '👀', '🔥', '✅'];
+const EMOJI_LIST = ['👍', '❤️', '😂', '🎉', '🤔', '👀', '🔥', '✅', '🚀', '💯', '🙏', '👏'];
 
 const Collaborate: React.FC = () => {
   const { isDark } = useUserStore();
@@ -507,10 +507,16 @@ const Collaborate: React.FC = () => {
               let avatarStyle = '';
               let nameStyle = textPrimary;
               
+              const isMine = msg.user === displayName;
+              
               if (msg.isAi) {
                 bubbleStyle = isDark ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-indigo-50 border-indigo-200';
                 avatarStyle = 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white';
                 nameStyle = 'text-indigo-500 font-bold';
+              } else if (isMine) {
+                bubbleStyle = isDark ? 'bg-emerald-500/20 border-emerald-500/30' : 'bg-emerald-50 border-emerald-200';
+                avatarStyle = 'bg-gradient-to-br from-emerald-400 to-teal-500 text-white';
+                nameStyle = isDark ? 'text-emerald-400 font-bold' : 'text-emerald-700 font-bold';
               } else if (role === 'Owner' || role === 'Admin') {
                 bubbleStyle = isDark ? 'bg-purple-500/10 border-purple-500/20' : 'bg-purple-50 border-purple-200';
                 avatarStyle = 'bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/20';
@@ -528,7 +534,7 @@ const Collaborate: React.FC = () => {
               return (
               <div 
                 key={msg.id} 
-                className={`group flex items-start gap-3 p-3 rounded-xl border transition-colors ${bgHover} ${bubbleStyle}`}
+                className={`group flex items-start gap-3 p-3 transition-colors ${isMine ? 'flex-row-reverse' : ''}`}
               >
                 {/* Avatar */}
                 <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold ${avatarStyle}`}>
@@ -536,21 +542,22 @@ const Collaborate: React.FC = () => {
                 </div>
 
                 {/* Message Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-2">
+                <div className={`flex flex-col min-w-0 max-w-[80%] ${isMine ? 'items-end' : 'items-start'}`}>
+                  <div className={`flex items-baseline gap-2 mb-1 ${isMine ? 'flex-row-reverse' : ''}`}>
                     <span className={`text-sm ${nameStyle}`}>
                       {msg.isAi ? 'DataVision AI' : msg.user} {role !== 'Viewer' && !msg.isAi && <span className="text-[10px] opacity-70 px-1.5 py-0.5 rounded bg-black/10">[{role}]</span>}
                     </span>
                     <span className={`text-[10px] ${textMuted}`}>{msg.time}</span>
                     {msg.is_encrypted && <Lock className="w-3 h-3 text-green-500" />}
                   </div>
-                  <div className={`text-sm mt-0.5 leading-relaxed ${textSecondary}`}>
+                  
+                  <div className={`text-sm leading-relaxed px-4 py-2.5 rounded-2xl border shadow-sm ${bubbleStyle} ${isMine ? 'rounded-tr-sm' : 'rounded-tl-sm'} ${textSecondary}`}>
                     <DecryptedMessage msg={msg} channelKey={activeChannel} />
                   </div>
 
                   {/* Reactions */}
                   {reactions[msg.id] && Object.keys(reactions[msg.id]).length > 0 && (
-                    <div className="flex gap-1 mt-2 flex-wrap">
+                    <div className={`flex gap-1 mt-1.5 flex-wrap ${isMine ? 'justify-end' : 'justify-start'}`}>
                       {Object.entries(reactions[msg.id]).map(([emoji, users]) => (
                         <span key={emoji} className={`px-2 py-0.5 rounded-full text-xs flex items-center gap-1 ${isDark ? 'bg-white/5 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
                           {emoji} {(users as string[]).length}
@@ -572,7 +579,7 @@ const Collaborate: React.FC = () => {
                 </div>
 
                 {/* Action buttons (on hover) */}
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0">
+                <div className={`opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 shrink-0 mt-6 ${isMine ? 'flex-row-reverse' : ''}`}>
                   <button onClick={() => setShowEmojiPicker(showEmojiPicker === msg.id ? null : msg.id)} className={`p-1.5 rounded-lg ${bgHover} ${textMuted}`} title="React">
                     <Smile className="w-3.5 h-3.5" />
                   </button>
