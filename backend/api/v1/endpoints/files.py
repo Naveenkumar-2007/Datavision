@@ -19,7 +19,7 @@ import os
 from ingestion.pipeline import IngestionPipeline
 from config.settings import Settings
 from utils.paths import get_user_paths, STORAGE_BASE
-from api.deps import get_db
+from database.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from database.orm import UserFile
 import uuid

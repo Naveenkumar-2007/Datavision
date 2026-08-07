@@ -33,20 +33,26 @@ async def auto_clean_legacy_schema():
 asyncio.run(auto_clean_legacy_schema())
 " 2>/dev/null || true
 
-    # Clean stale alembic version from legacy migrations
+    # Heal alembic version if tables exist but version was dropped
     python -c "
 import asyncio
 from sqlalchemy import text
 from database.db import engine
 
-async def fix_alembic():
+async def heal_alembic():
     try:
         async with engine.begin() as conn:
-            await conn.execute(text('DROP TABLE IF EXISTS alembic_version'))
-    except:
-        pass
+            res = await conn.execute(text(\"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'audit_logs')\"))
+            if res.scalar():
+                res_ver = await conn.execute(text(\"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'alembic_version')\"))
+                if not res_ver.scalar():
+                    print('Healing missing alembic_version...')
+                    await conn.execute(text('CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL, CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))'))
+                    await conn.execute(text(\"INSERT INTO alembic_version (version_num) VALUES ('008079ed9ce8')\"))
+    except Exception as e:
+        print(f'Alembic heal error: {e}')
 
-asyncio.run(fix_alembic())
+asyncio.run(heal_alembic())
 " 2>/dev/null || true
 
     # Run migrations to create any missing tables
