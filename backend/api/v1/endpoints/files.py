@@ -19,6 +19,10 @@ import os
 from ingestion.pipeline import IngestionPipeline
 from config.settings import Settings
 from utils.paths import get_user_paths, STORAGE_BASE
+from api.deps import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from database.orm import UserFile
+import uuid
 from utils.currency import (
     detect_and_save_user_currency,
     save_currency_metadata,
@@ -141,7 +145,8 @@ async def upload_files(
     user_id: str,
     files: List[UploadFile] = File(...),
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
-    authorization: Optional[str] = Header(None, alias="Authorization")
+    authorization: Optional[str] = Header(None, alias="Authorization"),
+    db: AsyncSession = Depends(get_db)
 ):
     """Upload and process files with REAL ingestion pipeline
     SECURED: Validates user identity from JWT token
@@ -317,11 +322,58 @@ async def upload_files(
                 clear_cancellation(user_id)
                 return {"success": False, "cancelled": True, "message": "Upload cancelled by user"}
             
-            # Map pipeline results back to file info
+            # Map pipeline results back to file info and SAVE TO DB
             for file_info in uploaded_files:
                 file_info["status"] = "completed"
                 file_info["trained"] = True
                 file_info["currency"] = detected_currency
+                
+                # Check if it exists in DB, otherwise insert
+                try:
+                    from sqlalchemy import select
+                    import uuid as _uuid
+                    
+                    try:
+                        uid = _uuid.UUID(user_id)
+                    except ValueError:
+                        uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+                        
+                    existing = (await db.execute(
+                        select(UserFile).filter(UserFile.user_id == uid, UserFile.filename == file_info["name"])
+                    )).scalars().first()
+                    
+                    if not existing:
+                        import pandas as pd
+                        row_count = 0
+                        col_count = 0
+                        file_path = paths["files"] / file_info["name"]
+                        if file_path.suffix.lower() == '.csv':
+                            try:
+                                df = pd.read_csv(file_path)
+                                row_count = len(df)
+                                col_count = len(df.columns)
+                            except: pass
+                        elif file_path.suffix.lower() in ['.xlsx', '.xls']:
+                            try:
+                                df = pd.read_excel(file_path)
+                                row_count = len(df)
+                                col_count = len(df.columns)
+                            except: pass
+                            
+                        new_file = UserFile(
+                            user_id=uid,
+                            filename=file_info["name"],
+                            file_size_bytes=file_info["size"],
+                            content_type=file_info["type"],
+                            is_processed=True,
+                            row_count=row_count,
+                            column_count=col_count,
+                            metadata_json={"currency": detected_currency}
+                        )
+                        db.add(new_file)
+                        await db.commit()
+                except Exception as db_err:
+                    print(f"⚠️ Failed to save file {file_info['name']} to database: {db_err}")
                 
         except Exception as e:
             print(f"Processing error: {e}")

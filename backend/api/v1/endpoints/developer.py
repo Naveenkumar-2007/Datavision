@@ -79,8 +79,19 @@ async def generate_key(
             uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
             
         from database.orm import UserProfile
-        if not (await db.execute(select(UserProfile).filter(UserProfile.id == uid))).scalars().first():
-            db.add(UserProfile(id=uid, email=f"{user_id}@guest.local", password_hash_algorithm="none", full_name="Guest User"))
+        
+        # Check if user exists by ID
+        existing_user = (await db.execute(select(UserProfile).filter(UserProfile.id == uid))).scalars().first()
+        
+        # If not found by ID, check by the fallback email to prevent unique constraint violations
+        fallback_email = f"{user_id}@guest.local"
+        if not existing_user:
+            existing_user = (await db.execute(select(UserProfile).filter(UserProfile.email == fallback_email))).scalars().first()
+            if existing_user:
+                uid = existing_user.id
+        
+        if not existing_user:
+            db.add(UserProfile(id=uid, email=fallback_email, password_hash_algorithm="none", full_name="Guest User"))
             await db.flush()
             
         import hashlib

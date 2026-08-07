@@ -418,7 +418,8 @@ async def list_all_user_datasets(
                 "file_type": f.file_type or "CSV/Data",
                 "file_size_mb": round((f.file_size or 0) / (1024 * 1024), 2),
                 "user_email": user_email,
-                "status": f.processing_status,
+                "user_id": str(f.user_id) if f.user_id else "default",
+                "status": f.processing_status or "completed",
                 "rows_count": meta.get("rows", meta.get("row_count", 150)),
                 "columns_count": meta.get("cols", meta.get("col_count", 8)),
                 "uploaded_at": f.created_at.isoformat() if f.created_at else datetime.utcnow().isoformat()

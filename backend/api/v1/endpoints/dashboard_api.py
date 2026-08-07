@@ -32,7 +32,8 @@ class DashboardResponse(BaseModel):
 @router.post("/generate")
 async def generate_dashboard(
     request: DashboardRequest = None,
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
 ):
     """
     Generate an autonomous dashboard from user's data.
@@ -72,6 +73,37 @@ async def generate_dashboard(
                 success=False,
                 error=dashboard["error"]
             )
+            
+        # SAVE TO DB for Admin visibility
+        try:
+            import uuid as _uuid
+            from database.orm import Dashboard, Chart
+            
+            try:
+                uid = _uuid.UUID(user_id)
+            except ValueError:
+                uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+                
+            title = dashboard.get('title', 'Autonomous Dashboard')
+            new_dashboard = Dashboard(user_id=uid, title=title, layout=dashboard.get('layout', []))
+            db.add(new_dashboard)
+            await db.flush()
+
+            for chart in dashboard.get('charts', []):
+                new_chart = Chart(
+                    dashboard_id=new_dashboard.id,
+                    title=chart.get('title', 'Untitled Chart'),
+                    chart_type=chart.get('type', 'bar'),
+                    data=chart.get('data', []),
+                    config=chart.get('config', {})
+                )
+                db.add(new_chart)
+                
+            await db.commit()
+            print("✅ Dashboard saved to database for admin visibility.")
+        except Exception as db_e:
+            print(f"⚠️ Could not save dashboard to DB: {db_e}")
+            await db.rollback()
         
         return DashboardResponse(
             success=True,

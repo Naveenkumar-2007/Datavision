@@ -328,9 +328,15 @@ async def post_message(
             "attachment_type": req.attachment_type
         })
         
+    import uuid as _uuid
+    try:
+        uid = _uuid.UUID(user_id)
+    except ValueError:
+        uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+        
     new_msg = ChannelMessage(
         channel_id=real_channel_id,
-        user_id=user_id,
+        user_id=uid,
         content=content_payload,
         is_ai=False
     )
@@ -357,9 +363,14 @@ async def post_message(
             question = "give me a summary"
         ai_insight = await collab_swarm.process_message(user_id, question)
         if ai_insight:
+            try:
+                ws_uid = _uuid.UUID(effective_workspace)
+            except ValueError:
+                ws_uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(effective_workspace))
+                
             ai_msg = ChannelMessage(
                 channel_id=real_channel_id,
-                user_id=effective_workspace, # Attribute AI message to workspace owner
+                user_id=ws_uid, # Attribute AI message to workspace owner
                 content=ai_insight['message'],
                 is_ai=True
             )
@@ -807,9 +818,17 @@ async def websocket_endpoint(
                         effective_workspace = workspace_id if workspace_id != "default" else user_id
                         real_channel_id = await _resolve_channel_id(room_id, db, effective_workspace)
                         
+                        import uuid as _ws_uuid
+                        u_id_val = None
+                        if user_id != "default":
+                            try:
+                                u_id_val = _ws_uuid.UUID(user_id)
+                            except ValueError:
+                                u_id_val = _ws_uuid.uuid5(_ws_uuid.NAMESPACE_OID, str(user_id))
+                                
                         new_msg = ChannelMessage(
                             channel_id=real_channel_id,
-                            user_id=user_id if user_id != "default" else None,
+                            user_id=u_id_val,
                             content=payload["message"],
                             is_ai=False
                         )

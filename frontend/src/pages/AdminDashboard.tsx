@@ -508,15 +508,15 @@ export default function AdminDashboard() {
               </div>
 
               <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
-                <div className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_140px] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
-                  <span>Filename</span><span>Owner Email</span><span>Size</span><span className="text-center">Rows</span><span className="text-center">Status</span><span>Uploaded</span>
+                <div className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_140px_100px] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                  <span>Filename</span><span>Owner Email</span><span>Size</span><span className="text-center">Rows</span><span className="text-center">Status</span><span>Uploaded</span><span className="text-center">Action</span>
                 </div>
                 <div className="divide-y divide-gray-800/40 max-h-[600px] overflow-y-auto custom-scrollbar">
                   {datasets.map((d, i) => (
                     <motion.div 
                       key={d.id || i} 
                       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                      className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_140px] gap-4 px-6 py-4 items-center hover:bg-white/[0.03] transition-colors"
+                      className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_140px_100px] gap-4 px-6 py-4 items-center hover:bg-white/[0.03] transition-colors"
                     >
                       <div className="flex items-center gap-3">
                         <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 font-bold text-xs">
@@ -533,6 +533,14 @@ export default function AdminDashboard() {
                         </span>
                       </div>
                       <span className="text-xs text-gray-500">{d.uploaded_at ? new Date(d.uploaded_at).toLocaleDateString() : '—'}</span>
+                      <div className="text-center">
+                        <button 
+                          onClick={() => window.open(`http://localhost:8000/api/v1/files/${d.user_id}/${d.filename}/download`, '_blank')}
+                          className="px-3 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-lg text-xs font-bold transition-colors"
+                        >
+                          View
+                        </button>
+                      </div>
                     </motion.div>
                   ))}
                   {datasets.length === 0 && (
