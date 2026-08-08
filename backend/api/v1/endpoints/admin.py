@@ -337,24 +337,34 @@ async def get_global_activity(
 ):
     """Get global activity feed across all users."""
     try:
-        from sqlalchemy.orm import selectinload
+        # AuditLog has: user_id, action, resource_type, resource_id, details (JSONB), created_at
         stmt = (
-            select(ActivityLog).order_by(ActivityLog.timestamp.desc())
-            .limit(limit).options(selectinload(ActivityLog.user))
+            select(ActivityLog).order_by(ActivityLog.created_at.desc())
+            .limit(limit)
         )
         result = await db.execute(stmt)
         logs = result.scalars().all()
         
+        # Batch load user emails
+        user_ids = list(set(log.user_id for log in logs if log.user_id))
+        user_map = {}
+        if user_ids:
+            user_result = await db.execute(select(UserProfile).where(UserProfile.id.in_(user_ids)))
+            for u in user_result.scalars().all():
+                user_map[u.id] = u
+        
         activities = []
         for log in logs:
-            name = log.user.full_name if log.user and log.user.full_name else log.user_name or "System"
+            user = user_map.get(log.user_id)
+            name = user.full_name if user and user.full_name else user.email if user else "System"
+            detail_text = log.details.get('message', '') if isinstance(log.details, dict) else str(log.details) if log.details else log.action
             activities.append({
                 "id": str(log.id),
                 "user_name": name,
-                "user_email": log.user.email if log.user else "",
+                "user_email": user.email if user else "",
                 "action": log.action,
-                "detail": log.detail,
-                "timestamp": log.timestamp.isoformat()
+                "detail": detail_text or f"{log.action} on {getattr(log, 'resource_type', 'system')}",
+                "timestamp": log.created_at.isoformat()
             })
         
         return {"success": True, "activities": activities}
@@ -369,12 +379,13 @@ async def broadcast_announcement(
     admin: dict = Depends(verify_admin_token),
     db: AsyncSession = Depends(get_db)
 ):
-    """Send a system-wide announcement (stored as activity log)."""
+    """Send a system-wide announcement (stored as audit log)."""
     log = ActivityLog(
         user_id=None,
-        user_name="System Admin",
         action="broadcast",
-        detail=f"📢 {req.title}: {req.message}"
+        resource_type="system",
+        resource_id=None,
+        details={"message": f"📢 {req.title}: {req.message}", "title": req.title}
     )
     db.add(log)
     await db.commit()
@@ -659,12 +670,23 @@ async def list_all_dashboards(
         result = await db.execute(stmt)
         dashboards = result.scalars().all()
         
+        # Batch load user emails
+        user_ids = list(set(d.user_id for d in dashboards if d.user_id))
+        user_map = {}
+        if user_ids:
+            user_result = await db.execute(select(UserProfile).where(UserProfile.id.in_(user_ids)))
+            for u in user_result.scalars().all():
+                user_map[u.id] = u
+        
         dash_list = []
         for d in dashboards:
+            user = user_map.get(d.user_id)
             dash_list.append({
                 "id": str(d.id),
                 "title": d.title,
                 "user_id": str(d.user_id),
+                "user_email": user.email if user else "Unknown",
+                "user_name": user.full_name if user and user.full_name else "",
                 "is_public": d.is_public,
                 "created_at": d.created_at.isoformat() if d.created_at else None,
                 "widgets_count": len(d.layout) if isinstance(d.layout, list) else 0
@@ -680,24 +702,84 @@ async def list_all_automl_models(
     admin: dict = Depends(verify_admin_token),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all deployed ML models and experiments."""
+    """List all ML models from DB + filesystem CV trained models."""
     try:
-        # Get Deployed Models
-        stmt = select(DeployedModel).order_by(DeployedModel.created_at.desc())
-        result = await db.execute(stmt)
-        models = result.scalars().all()
-        
         model_list = []
-        for m in models:
-            model_list.append({
-                "id": str(m.id),
-                "name": m.name,
-                "version": m.version,
-                "status": getattr(m, 'status', 'deployed'),
-                "framework": getattr(m, 'framework', 'sklearn'),
-                "created_at": m.created_at.isoformat() if m.created_at else None,
-                "project_id": str(m.project_id) if m.project_id else None
-            })
+        
+        # 1. Get DB-persisted models (AutoML tabular)
+        try:
+            stmt = select(DeployedModel).order_by(DeployedModel.created_at.desc())
+            result = await db.execute(stmt)
+            models = result.scalars().all()
+            
+            # Batch load user emails
+            user_ids = list(set(m.user_id for m in models if hasattr(m, 'user_id') and m.user_id))
+            user_map = {}
+            if user_ids:
+                user_result = await db.execute(select(UserProfile).where(UserProfile.id.in_(user_ids)))
+                for u in user_result.scalars().all():
+                    user_map[u.id] = u
+            
+            for m in models:
+                user = user_map.get(getattr(m, 'user_id', None))
+                model_list.append({
+                    "id": str(m.id),
+                    "name": m.name,
+                    "version": m.version,
+                    "status": getattr(m, 'stage', 'deployed'),
+                    "framework": getattr(m, 'framework', 'sklearn'),
+                    "user_email": user.email if user else "Unknown",
+                    "user_name": user.full_name if user and user.full_name else "",
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                    "source": "automl"
+                })
+        except Exception as db_err:
+            logger.warning(f"Could not query DB models: {db_err}")
+        
+        # 2. Get filesystem CV trained models
+        try:
+            from core.mode_engines.cv_engine import CVAutoMLEngine
+            cv_engine = CVAutoMLEngine()
+            cv_models = cv_engine.list_models()
+            for cm in cv_models:
+                model_list.append({
+                    "id": cm.get('id', ''),
+                    "name": cm.get('name', 'CV Model'),
+                    "version": "1.0",
+                    "status": cm.get('status', 'ready'),
+                    "framework": "YOLOv8",
+                    "user_email": "CV Pipeline",
+                    "user_name": "",
+                    "created_at": cm.get('createdAt'),
+                    "source": "computer_vision",
+                    "accuracy": cm.get('accuracy', 0),
+                    "size_mb": cm.get('size_mb', 0)
+                })
+        except Exception as cv_err:
+            logger.warning(f"Could not load CV models: {cv_err}")
+        
+        # 3. Get in-memory training jobs (currently running or recently completed)
+        try:
+            from core.mode_engines.cv_trainer import _training_jobs
+            for job_id, job in _training_jobs.items():
+                if job.get('status') in ('completed', 'running', 'starting'):
+                    # Don't duplicate models already listed from filesystem
+                    if not any(m['id'] == job_id for m in model_list):
+                        model_list.append({
+                            "id": job_id,
+                            "name": f"{job.get('config', {}).get('model', 'yolov8n').upper()} ({job.get('mode', 'fast')} mode)",
+                            "version": "1.0",
+                            "status": job.get('status', 'unknown'),
+                            "framework": "YOLOv8",
+                            "user_email": job.get('user_id', 'Unknown'),
+                            "user_name": "",
+                            "created_at": job.get('started_at'),
+                            "source": "cv_training",
+                            "accuracy": job.get('metrics', {}).get('mAP50', 0),
+                            "size_mb": job.get('metrics', {}).get('modelSizeMB', 0)
+                        })
+        except Exception as mem_err:
+            logger.warning(f"Could not load in-memory training jobs: {mem_err}")
             
         return {"success": True, "models": model_list, "total": len(model_list)}
     except Exception as e:
@@ -738,24 +820,84 @@ async def list_all_cv_tasks(
     admin: dict = Depends(verify_admin_token),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all computer vision tasks."""
+    """List all computer vision tasks from DB + in-memory training jobs + filesystem datasets."""
     try:
-        stmt = select(ComputerVisionTask).order_by(ComputerVisionTask.created_at.desc())
-        result = await db.execute(stmt)
-        tasks = result.scalars().all()
-        
         task_list = []
-        for t in tasks:
-            task_list.append({
-                "id": str(t.id),
-                "task_name": t.task_name,
-                "task_type": t.task_type,
-                "model_name": t.model_name,
-                "status": t.status,
-                "detected_objects": t.detected_objects_count,
-                "created_at": t.created_at.isoformat() if t.created_at else None,
-                "user_id": str(t.user_id)
-            })
+        
+        # 1. Get DB-persisted CV tasks
+        try:
+            stmt = select(ComputerVisionTask).order_by(ComputerVisionTask.created_at.desc())
+            result = await db.execute(stmt)
+            tasks = result.scalars().all()
+            
+            user_ids = list(set(t.user_id for t in tasks if t.user_id))
+            user_map = {}
+            if user_ids:
+                user_result = await db.execute(select(UserProfile).where(UserProfile.id.in_(user_ids)))
+                for u in user_result.scalars().all():
+                    user_map[u.id] = u
+            
+            for t in tasks:
+                user = user_map.get(t.user_id)
+                task_list.append({
+                    "id": str(t.id),
+                    "task_name": t.task_name,
+                    "task_type": t.task_type,
+                    "model_name": t.model_name,
+                    "status": t.status,
+                    "detected_objects": t.detected_objects_count,
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                    "user_id": str(t.user_id),
+                    "user_email": user.email if user else "Unknown"
+                })
+        except Exception as db_err:
+            logger.warning(f"Could not query DB CV tasks: {db_err}")
+        
+        # 2. Get in-memory training jobs
+        try:
+            from core.mode_engines.cv_trainer import _training_jobs
+            for job_id, job in _training_jobs.items():
+                if not any(t['id'] == job_id for t in task_list):
+                    task_list.append({
+                        "id": job_id,
+                        "task_name": f"CV Training: {job.get('config', {}).get('model', 'yolov8n')}",
+                        "task_type": job.get('config', {}).get('task_type', 'object_detection'),
+                        "model_name": job.get('config', {}).get('model', 'yolov8n'),
+                        "status": job.get('status', 'unknown'),
+                        "detected_objects": len(job.get('classes', [])),
+                        "created_at": job.get('started_at'),
+                        "user_id": job.get('user_id', 'anonymous'),
+                        "user_email": job.get('user_id', 'anonymous'),
+                        "accuracy": job.get('metrics', {}).get('mAP50', 0),
+                        "dataset_id": job.get('dataset_id', '')
+                    })
+        except Exception as mem_err:
+            logger.warning(f"Could not load in-memory CV jobs: {mem_err}")
+        
+        # 3. Get CV datasets as info items
+        try:
+            from core.mode_engines.cv_dataset_service import CVDatasetService
+            cv_service = CVDatasetService()
+            cv_datasets = cv_service.list_datasets(user_id="")
+            for cv_d in cv_datasets:
+                ds_id = cv_d.get('id', '')
+                if not any(t['id'] == ds_id for t in task_list):
+                    task_list.append({
+                        "id": ds_id,
+                        "task_name": f"Dataset: {cv_d.get('name', 'CV Dataset')}",
+                        "task_type": cv_d.get('taskType', 'object_detection'),
+                        "model_name": "—",
+                        "status": "dataset_ready",
+                        "detected_objects": cv_d.get('numClasses', 0),
+                        "created_at": cv_d.get('createdAt'),
+                        "user_id": cv_d.get('user_id', 'anonymous'),
+                        "user_email": cv_d.get('user_id', 'anonymous'),
+                        "num_images": cv_d.get('numImages', 0),
+                        "classes": cv_d.get('classes', [])
+                    })
+        except Exception as ds_err:
+            logger.warning(f"Could not load CV datasets: {ds_err}")
+        
         return {"success": True, "tasks": task_list, "total": len(task_list)}
     except Exception as e:
         logger.error(f"Error fetching admin CV tasks: {e}")
@@ -774,12 +916,22 @@ async def list_developer_integrations(
         webhook_stmt = select(WebhookEndpoint).order_by(WebhookEndpoint.created_at.desc())
         webhooks = (await db.execute(webhook_stmt)).scalars().all()
         
+        # Batch load user emails for webhooks
+        w_user_ids = list(set(w.user_id for w in webhooks if w.user_id))
+        w_user_map = {}
+        if w_user_ids:
+            wr = await db.execute(select(UserProfile).where(UserProfile.id.in_(w_user_ids)))
+            for u in wr.scalars().all():
+                w_user_map[u.id] = u
+        
         webhook_list = []
         for w in webhooks:
+            user = w_user_map.get(w.user_id)
             webhook_list.append({
                 "id": str(w.id),
                 "url": w.url,
                 "user_id": str(w.user_id),
+                "user_email": user.email if user else str(w.user_id),
                 "is_active": w.is_active,
                 "subscribed_events": w.subscribed_events,
                 "created_at": w.created_at.isoformat() if w.created_at else None
@@ -789,12 +941,22 @@ async def list_developer_integrations(
         key_stmt = select(DeveloperAPIKey).order_by(DeveloperAPIKey.created_at.desc())
         keys = (await db.execute(key_stmt)).scalars().all()
         
+        # Batch load user emails for API keys
+        k_user_ids = list(set(k.user_id for k in keys if k.user_id))
+        k_user_map = {}
+        if k_user_ids:
+            kr = await db.execute(select(UserProfile).where(UserProfile.id.in_(k_user_ids)))
+            for u in kr.scalars().all():
+                k_user_map[u.id] = u
+        
         key_list = []
         for k in keys:
+            user = k_user_map.get(k.user_id)
             key_list.append({
                 "id": str(k.id),
                 "name": k.name,
                 "user_id": str(k.user_id),
+                "user_email": user.email if user else str(k.user_id),
                 "is_active": k.is_active,
                 "created_at": k.created_at.isoformat() if k.created_at else None
             })
@@ -811,3 +973,102 @@ async def list_developer_integrations(
     except Exception as e:
         logger.error(f"Error fetching admin developer data: {e}")
         return {"success": True, "developer_data": {"webhooks": [], "api_keys": []}}
+
+
+
+@router.get("/users/{target_user_id}/full")
+async def get_user_full_profile(
+    target_user_id: str,
+    admin: dict = Depends(verify_admin_token),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get COMPLETE profile for a specific user: files, models, dashboards, CV tasks, API keys, chats — all grouped."""
+    try:
+        uid = uuid.UUID(target_user_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid user ID")
+    
+    user = (await db.execute(select(UserProfile).where(UserProfile.id == uid))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    result = {
+        "success": True,
+        "user": {
+            "id": str(user.id), "email": user.email, "full_name": user.full_name,
+            "role": getattr(user, 'role', 'authenticated'),
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+        },
+        "files": [],
+        "dashboards": [],
+        "models": [],
+        "cv_tasks": [],
+        "conversations": [],
+        "api_keys": [],
+    }
+    
+    # Files
+    try:
+        files = (await db.execute(select(UserFile).where(UserFile.user_id == uid).order_by(UserFile.created_at.desc()))).scalars().all()
+        result["files"] = [{
+            "id": str(f.id), "filename": f.original_filename or f.filename,
+            "file_type": f.file_type, "file_size_mb": round((f.file_size or 0) / (1024*1024), 2),
+            "status": f.processing_status, "uploaded_at": f.created_at.isoformat() if f.created_at else None
+        } for f in files]
+    except Exception: pass
+    
+    # Dashboards
+    try:
+        dashes = (await db.execute(select(Dashboard).where(Dashboard.user_id == uid))).scalars().all()
+        result["dashboards"] = [{
+            "id": str(d.id), "title": d.title, "is_public": d.is_public,
+            "widgets_count": len(d.layout) if isinstance(d.layout, list) else 0,
+            "created_at": d.created_at.isoformat() if d.created_at else None
+        } for d in dashes]
+    except Exception: pass
+    
+    # ML Models
+    try:
+        models = (await db.execute(select(DeployedModel).where(DeployedModel.user_id == uid))).scalars().all()
+        result["models"] = [{
+            "id": str(m.id), "name": m.name, "version": m.version,
+            "framework": m.framework, "stage": getattr(m, 'stage', 'deployed'),
+            "created_at": m.created_at.isoformat() if m.created_at else None
+        } for m in models]
+    except Exception: pass
+    
+    # CV Tasks
+    try:
+        cv = (await db.execute(select(ComputerVisionTask).where(ComputerVisionTask.user_id == uid))).scalars().all()
+        result["cv_tasks"] = [{
+            "id": str(t.id), "task_name": t.task_name, "task_type": t.task_type,
+            "model_name": t.model_name, "status": t.status,
+            "detected_objects": t.detected_objects_count,
+            "created_at": t.created_at.isoformat() if t.created_at else None
+        } for t in cv]
+    except Exception: pass
+    
+    # Conversations
+    try:
+        from sqlalchemy.orm import selectinload
+        convs = (await db.execute(
+            select(Conversation).where(Conversation.user_id == uid)
+            .options(selectinload(Conversation.messages)).order_by(Conversation.updated_at.desc())
+        )).scalars().all()
+        result["conversations"] = [{
+            "id": str(c.id), "title": c.title or "Chat", "mode": c.mode,
+            "message_count": len(c.messages),
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None
+        } for c in convs]
+    except Exception: pass
+    
+    # API Keys
+    try:
+        keys = (await db.execute(select(DeveloperAPIKey).where(DeveloperAPIKey.user_id == uid))).scalars().all()
+        result["api_keys"] = [{
+            "id": str(k.id), "name": k.name, "status": k.status if hasattr(k, 'status') else 'active',
+            "is_active": k.is_active, "created_at": k.created_at.isoformat() if k.created_at else None
+        } for k in keys]
+    except Exception: pass
+    
+    return result

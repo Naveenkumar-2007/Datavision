@@ -9,13 +9,24 @@ import asyncio
 import tempfile
 import time
 import logging
+import uuid as _uuid
 
 from core.auth import get_current_user_optional
 from core.mode_engines.cv_engine import CVAutoMLEngine
+from database.db import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 cv_engine = CVAutoMLEngine()
+
+def _is_valid_uuid(val: str) -> bool:
+    try:
+        _uuid.UUID(str(val))
+        return True
+    except (ValueError, AttributeError):
+        return False
+
 
 # ─────────────────────────────────────────────────────
 # REQUEST MODELS
@@ -43,17 +54,56 @@ class ExportRequest(BaseModel):
 # ─────────────────────────────────────────────────────
 
 @router.post("/predict")
-async def predict_image(request: PredictRequest, current_user=Depends(get_current_user_optional)):
-    """Runs real-time prediction on an image"""
+async def predict_image(
+    request: PredictRequest,
+    current_user=Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """Runs real-time prediction on an image — logs to DB for admin visibility."""
     try:
         model_path = None
+        model_name = "default"
         if request.model_id:
             progress = cv_engine.get_training_progress(request.model_id)
             model_path = progress.get('model_path')
+            model_name = progress.get('config', {}).get('model', 'custom')
 
         result = cv_engine.predict_image(request.image, model_path)
         if "error" in result and not result.get("success"):
             raise HTTPException(status_code=500, detail=result["error"])
+        
+        # Persist a ComputerVisionTask record for admin visibility
+        try:
+            from app.models.dashboard import ComputerVisionTask
+            user_id = None
+            if current_user and hasattr(current_user, 'id'):
+                user_id = current_user.id
+            elif current_user and hasattr(current_user, 'user_id'):
+                try:
+                    user_id = _uuid.UUID(str(current_user.user_id))
+                except Exception:
+                    pass
+            
+            if user_id:
+                task_type = result.get('task_type', 'object_detection')
+                predictions = result.get('predictions', [])
+                det_count = len(predictions) if isinstance(predictions, list) else 0
+                
+                cv_task = ComputerVisionTask(
+                    user_id=user_id,
+                    task_name=f"Prediction ({task_type.replace('_', ' ').title()})",
+                    task_type=task_type,
+                    model_name=model_name,
+                    status="completed",
+                    results_json=result,
+                    detected_objects_count=det_count,
+                    confidence_threshold=0.25
+                )
+                db.add(cv_task)
+                await db.commit()
+        except Exception as db_err:
+            logger.warning(f"Could not persist CV prediction to DB: {db_err}")
+        
         return result
     except HTTPException:
         raise
@@ -157,8 +207,12 @@ async def get_dataset_image(dataset_id: str, index: int, current_user=Depends(ge
 # ─────────────────────────────────────────────────────
 
 @router.post("/train")
-async def start_training(request: TrainRequest, current_user=Depends(get_current_user_optional)):
-    """Start training in Fast/Ultra/Expert mode (returns job_id)"""
+async def start_training(
+    request: TrainRequest,
+    current_user=Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """Start training in Fast/Ultra/Expert mode (returns job_id) — persists task record to DB."""
     user_id = str(current_user.id) if (current_user and hasattr(current_user, 'id')) else "anonymous"
     
     # Ensure dataset exists
@@ -167,6 +221,32 @@ async def start_training(request: TrainRequest, current_user=Depends(get_current
         raise HTTPException(status_code=404, detail="Dataset not found")
         
     job_id = cv_engine.train_model(request.dataset_id, request.config, "ignored_task_id", request.mode, user_id, request.task_type)
+
+    # Persist a ComputerVisionTask record so admin can see it
+    try:
+        from app.models.dashboard import ComputerVisionTask
+        db_user_id = None
+        if current_user and hasattr(current_user, 'id'):
+            db_user_id = current_user.id
+        
+        if db_user_id:
+            task_type = request.task_type or dataset.get('taskType', 'object_detection')
+            model_name = request.config.get('model', 'yolov8n')
+            cv_task = ComputerVisionTask(
+                id=_uuid.UUID(job_id) if _is_valid_uuid(job_id) else _uuid.uuid4(),
+                user_id=db_user_id,
+                task_name=f"Training: {model_name} ({request.mode} mode)",
+                task_type=task_type,
+                model_name=model_name,
+                status="running",
+                results_json={"job_id": job_id, "dataset_id": request.dataset_id, "mode": request.mode},
+                detected_objects_count=len(dataset.get('classes', [])),
+                confidence_threshold=0.25
+            )
+            db.add(cv_task)
+            await db.commit()
+    except Exception as db_err:
+        logger.warning(f"Could not persist CV training task to DB: {db_err}")
 
     return {
         "success": True,

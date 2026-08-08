@@ -73,6 +73,9 @@ async def generate_key(
     new_key = f"dv_live_{secrets.token_hex(16)}"
     
     try:
+        import hashlib
+        
+        # Resolve user ID to UUID
         try:
             uid = _uuid.UUID(user_id)
         except ValueError:
@@ -83,24 +86,38 @@ async def generate_key(
         # Check if user exists by ID
         existing_user = (await db.execute(select(UserProfile).filter(UserProfile.id == uid))).scalars().first()
         
-        # If not found by ID, check by the fallback email to prevent unique constraint violations
-        fallback_email = f"{user_id}@guest.local"
         if not existing_user:
+            # Generate a unique fallback email using hash of the user_id to avoid collisions
+            email_hash = hashlib.md5(str(user_id).encode()).hexdigest()[:12]
+            fallback_email = f"dev_{email_hash}@guest.local"
+            
+            # Check by fallback email pattern
             existing_user = (await db.execute(select(UserProfile).filter(UserProfile.email == fallback_email))).scalars().first()
             if existing_user:
                 uid = existing_user.id
+            else:
+                # Create guest user profile
+                try:
+                    new_user = UserProfile(id=uid, email=fallback_email, password_hash_algorithm="none", full_name="Developer User")
+                    db.add(new_user)
+                    await db.flush()
+                except Exception as user_err:
+                    # If unique constraint violation, rollback and try to find existing
+                    await db.rollback()
+                    logger.warning(f"Could not create guest user, checking for existing: {user_err}")
+                    existing_user = (await db.execute(select(UserProfile).filter(UserProfile.email.like(f"%{email_hash}%")))).scalars().first()
+                    if existing_user:
+                        uid = existing_user.id
+                    else:
+                        raise HTTPException(status_code=500, detail="Could not resolve user for API key generation")
         
-        if not existing_user:
-            db.add(UserProfile(id=uid, email=fallback_email, password_hash_algorithm="none", full_name="Guest User"))
-            await db.flush()
-            
-        import hashlib
         new_db_key = DeveloperAPIKey(
             user_id=uid,
             api_key=new_key,
             name="New API Key",
             key_prefix=new_key[:10],
             key_hash=hashlib.sha256(new_key.encode()).hexdigest(),
+            scopes=["read:data", "predict", "write:data"],
         )
         db.add(new_db_key)
         await db.commit()
@@ -115,12 +132,16 @@ async def generate_key(
             last_used_at=new_db_key.last_used_at,
             total_calls=new_db_key.total_calls,
             data_processed_mb=new_db_key.data_processed_mb,
-            scopes=new_db_key.scopes or ["read:data", "predict"],
+            scopes=new_db_key.scopes if isinstance(new_db_key.scopes, list) else ["read:data", "predict"],
             expires_at=new_db_key.expires_at
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to generate developer key: {e}")
-        raise HTTPException(status_code=500, detail="Database error")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to generate API key: {str(e)[:100]}")
+
 
 @router.post("/keys/{key_id}/revoke")
 async def revoke_key(

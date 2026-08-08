@@ -89,6 +89,8 @@ export default function AdminDashboard() {
   const [cvTasks, setCvTasks] = useState<any[]>([]);
   const [developerData, setDeveloperData] = useState<{webhooks: any[], api_keys: any[]}>({ webhooks: [], api_keys: [] });
   const [loading, setLoading] = useState(true);
+  const [selectedUserDetail, setSelectedUserDetail] = useState<any | null>(null);
+  const [userDetailLoading, setUserDetailLoading] = useState(false);
   
   // UI State
   const [searchQuery, setSearchQuery] = useState('');
@@ -197,6 +199,15 @@ export default function AdminDashboard() {
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role } : u));
       showToast(`Role updated to ${role}`);
     } catch { showToast('Failed to update role', 'error'); }
+  };
+
+  const handleViewUserDetail = async (userId: string) => {
+    setUserDetailLoading(true);
+    try {
+      const res = await adminApi.get(`/api/v1/admin/users/${userId}/full`);
+      setSelectedUserDetail(res.data);
+    } catch { showToast('Failed to load user details', 'error'); }
+    finally { setUserDetailLoading(false); }
   };
 
   const handleBroadcast = async () => {
@@ -448,15 +459,15 @@ export default function AdminDashboard() {
               </div>
 
               <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
-                <div className="grid grid-cols-[1fr_2fr_1fr_80px_80px_100px_80px] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
-                  <span>Name</span><span>Email</span><span>Role</span><span className="text-center">Files</span><span className="text-center">Chats</span><span>Joined</span><span>Actions</span>
+                <div className="grid grid-cols-[1fr_2fr_1fr_80px_80px_100px_80px_80px] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                  <span>Name</span><span>Email</span><span>Role</span><span className="text-center">Files</span><span className="text-center">Chats</span><span>Joined</span><span>Actions</span><span className="text-center">Details</span>
                 </div>
                 <div className="divide-y divide-gray-800/40 max-h-[600px] overflow-y-auto custom-scrollbar">
                   {filteredUsers.map((u, i) => (
                     <motion.div 
                       key={u.id} 
                       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                      className="grid grid-cols-[1fr_2fr_1fr_80px_80px_100px_80px] gap-4 px-6 py-4 items-center hover:bg-white/[0.03] transition-colors group"
+                      className="grid grid-cols-[1fr_2fr_1fr_80px_80px_100px_80px_80px] gap-4 px-6 py-4 items-center hover:bg-white/[0.03] transition-colors group"
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0 shadow-lg">
@@ -481,10 +492,17 @@ export default function AdminDashboard() {
                       <span className="text-xs text-gray-500 font-medium">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</span>
                       <button
                         onClick={() => handleDeleteUser(u.id, u.email)}
-                        className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-gray-500 hover:text-emerald-400 hover:bg-red-500/10 transition-all ml-auto"
+                        className="opacity-0 group-hover:opacity-100 p-2 rounded-xl text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
                         title="Delete user"
                       >
                         <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleViewUserDetail(u.id)}
+                        className="p-2 rounded-xl text-gray-500 hover:text-emerald-400 hover:bg-emerald-500/10 transition-all"
+                        title="View all user activity"
+                      >
+                        <Eye className="w-4 h-4" />
                       </button>
                     </motion.div>
                   ))}
@@ -571,9 +589,10 @@ export default function AdminDashboard() {
                       <LayoutDashboard className="w-6 h-6" />
                     </div>
                     <h3 className="text-lg font-bold text-white truncate pr-16">{d.title}</h3>
-                    <p className="text-xs text-gray-500 mt-1 font-mono">{d.user_id}</p>
+                    <p className="text-xs text-emerald-400 mt-1 font-semibold">{d.user_email || d.user_id}</p>
+                    {d.user_name && <p className="text-xs text-gray-500">{d.user_name}</p>}
                     <div className="mt-4 pt-4 border-t border-gray-800/40 flex justify-between items-center text-xs text-gray-400">
-                      <span>{d.is_public ? 'Public' : 'Private'}</span>
+                      <span>{d.is_public ? '🌐 Public' : '🔒 Private'}</span>
                       <span>{d.created_at ? new Date(d.created_at).toLocaleDateString() : 'Unknown date'}</span>
                     </div>
                   </div>
@@ -596,21 +615,29 @@ export default function AdminDashboard() {
                 <p className="text-sm text-gray-400 mt-1">{automlModels.length} ML models trained and deployed.</p>
               </div>
               <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
-                <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
-                  <span>Model Name</span><span>Version</span><span>Framework</span><span>Status</span><span>Created At</span>
+                <div className="grid grid-cols-[2fr_1.5fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                  <span>Model Name</span><span>User</span><span>Version</span><span>Framework</span><span>Status</span><span>Created At</span>
                 </div>
                 <div className="divide-y divide-gray-800/40 max-h-[600px] overflow-y-auto custom-scrollbar">
                   {automlModels.map((m, i) => (
-                    <div key={m.id || i} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-4 items-center hover:bg-white/5 transition-colors group">
+                    <div key={m.id || i} className="grid grid-cols-[2fr_1.5fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-4 items-center hover:bg-white/5 transition-colors group">
                       <div className="flex items-center gap-3">
                         <Brain className="w-4 h-4 text-emerald-400" />
-                        <span className="font-semibold text-white">{m.name}</span>
+                        <div>
+                          <span className="font-semibold text-white block">{m.name}</span>
+                          {m.source === 'computer_vision' && <span className="text-[10px] text-pink-400">CV Model</span>}
+                          {m.source === 'automl' && <span className="text-[10px] text-blue-400">AutoML</span>}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-sm text-emerald-400 font-semibold block truncate">{m.user_email || '—'}</span>
+                        {m.user_name && <span className="text-xs text-gray-500">{m.user_name}</span>}
                       </div>
                       <span className="text-sm font-mono text-gray-400">v{m.version || '1.0'}</span>
                       <span className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-300 w-max">{m.framework}</span>
                       <span className={`text-xs px-2 py-1 rounded border w-max ${
-                        m.status === 'deployed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
-                        m.status === 'training' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
+                        m.status === 'deployed' || m.status === 'ready' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 
+                        m.status === 'training' || m.status === 'running' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 
                         'bg-gray-800 text-gray-400 border-gray-700'
                       }`}>{m.status}</span>
                       <span className="text-sm text-gray-500">{m.created_at ? new Date(m.created_at).toLocaleDateString() : '—'}</span>
@@ -672,8 +699,9 @@ export default function AdminDashboard() {
                 {cvTasks.map((t, i) => (
                   <div key={t.id || i} className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl p-6 shadow-2xl relative">
                     <div className={`absolute top-4 right-4 text-[10px] uppercase font-bold px-2 py-1 rounded border ${
-                      t.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                      t.status === 'completed' || t.status === 'dataset_ready' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                       t.status === 'failed' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                      t.status === 'running' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                       'bg-amber-500/10 text-amber-400 border-amber-500/20'
                     }`}>
                       {t.status}
@@ -682,16 +710,34 @@ export default function AdminDashboard() {
                       <Eye className="w-6 h-6" />
                     </div>
                     <h3 className="text-lg font-bold text-white truncate pr-20">{t.task_name}</h3>
-                    <p className="text-sm text-gray-400 mt-1">{t.task_type.replace('_', ' ')}</p>
+                    <p className="text-sm text-emerald-400 font-semibold mt-1">{t.user_email || t.user_id}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{t.task_type?.replace(/_/g, ' ')}</p>
                     <div className="mt-4 pt-4 border-t border-gray-800/40 grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-xs text-gray-500 mb-1">Model</p>
-                        <p className="text-sm font-mono text-gray-300">{t.model_name}</p>
+                        <p className="text-sm font-mono text-gray-300">{t.model_name || '—'}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Detections</p>
-                        <p className="text-sm font-bold text-white">{t.detected_objects}</p>
+                        <p className="text-xs text-gray-500 mb-1">{t.status === 'dataset_ready' ? 'Classes' : 'Detections'}</p>
+                        <p className="text-sm font-bold text-white">{t.detected_objects || t.num_images || 0}</p>
                       </div>
+                      {t.accuracy > 0 && (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">mAP50</p>
+                          <p className="text-sm font-bold text-blue-400">{(t.accuracy * 100).toFixed(1)}%</p>
+                        </div>
+                      )}
+                      {t.classes && t.classes.length > 0 && (
+                        <div className="col-span-2">
+                          <p className="text-xs text-gray-500 mb-1">Classes</p>
+                          <div className="flex flex-wrap gap-1">
+                            {t.classes.slice(0, 4).map((cls: string, j: number) => (
+                              <span key={j} className="text-[10px] bg-pink-500/10 text-pink-400 border border-pink-500/20 px-1.5 py-0.5 rounded">{cls}</span>
+                            ))}
+                            {t.classes.length > 4 && <span className="text-[10px] text-gray-500">+{t.classes.length - 4} more</span>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -751,7 +797,6 @@ export default function AdminDashboard() {
             </motion.div>
           )}
 
-          {/* ═══ DEVELOPER ═══ */}
           {activeTab === 'developer' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
               <div>
@@ -765,14 +810,14 @@ export default function AdminDashboard() {
                   <Globe className="w-5 h-5" /> Webhooks
                 </h3>
                 <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
-                  <div className="grid grid-cols-[3fr_1fr_1fr_2fr_1fr] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
-                    <span>Webhook URL</span><span>User ID</span><span>Status</span><span>Events</span><span>Created At</span>
+                  <div className="grid grid-cols-[3fr_2fr_1fr_2fr_1fr] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                    <span>Webhook URL</span><span>User Email</span><span>Status</span><span>Events</span><span>Created At</span>
                   </div>
                   <div className="divide-y divide-gray-800/40 max-h-[300px] overflow-y-auto custom-scrollbar">
                     {developerData?.webhooks?.map((w, i) => (
-                      <div key={w.id || i} className="grid grid-cols-[3fr_1fr_1fr_2fr_1fr] gap-4 px-6 py-4 items-center hover:bg-white/5 transition-colors">
+                      <div key={w.id || i} className="grid grid-cols-[3fr_2fr_1fr_2fr_1fr] gap-4 px-6 py-4 items-center hover:bg-white/5 transition-colors">
                         <span className="text-sm text-gray-300 font-mono truncate">{w.url}</span>
-                        <span className="text-xs text-gray-500 font-mono truncate">{w.user_id}</span>
+                        <span className="text-xs text-emerald-400 font-semibold truncate">{w.user_email || w.user_id}</span>
                         <span className={`text-xs px-2 py-1 rounded border w-max ${w.is_active ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
                           {w.is_active ? 'Active' : 'Inactive'}
                         </span>
@@ -800,13 +845,13 @@ export default function AdminDashboard() {
                 </h3>
                 <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
                   <div className="grid grid-cols-[2fr_2fr_1fr_1fr] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
-                    <span>Key Name</span><span>User ID</span><span>Status</span><span>Created At</span>
+                    <span>Key Name</span><span>User Email</span><span>Status</span><span>Created At</span>
                   </div>
                   <div className="divide-y divide-gray-800/40 max-h-[300px] overflow-y-auto custom-scrollbar">
                     {developerData?.api_keys?.map((k, i) => (
                       <div key={k.id || i} className="grid grid-cols-[2fr_2fr_1fr_1fr] gap-4 px-6 py-4 items-center hover:bg-white/5 transition-colors">
                         <span className="text-sm font-bold text-white">{k.name}</span>
-                        <span className="text-xs text-gray-500 font-mono truncate">{k.user_id}</span>
+                        <span className="text-xs text-emerald-400 font-semibold truncate">{k.user_email || k.user_id}</span>
                         <span className={`text-xs px-2 py-1 rounded border w-max ${k.is_active ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'}`}>
                           {k.is_active ? 'Active' : 'Revoked'}
                         </span>
@@ -953,6 +998,169 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* User Detail Modal */}
+      <AnimatePresence>
+        {(selectedUserDetail || userDetailLoading) && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center backdrop-blur-md bg-black/70 p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full max-w-4xl max-h-[90vh] bg-[#11111a] border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl flex flex-col"
+            >
+              <div className="flex items-center justify-between p-6 border-b border-gray-800/60 bg-white/[0.01] shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-400"><Users className="w-5 h-5" /></div>
+                  <div>
+                    <h3 className="font-bold text-white text-lg">{selectedUserDetail?.user?.full_name || selectedUserDetail?.user?.email || 'User Details'}</h3>
+                    <p className="text-xs text-gray-500">{selectedUserDetail?.user?.email}</p>
+                  </div>
+                </div>
+                <button onClick={() => setSelectedUserDetail(null)} className="p-2 rounded-xl hover:bg-white/10 text-gray-500 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              {userDetailLoading ? (
+                <div className="flex-1 flex items-center justify-center p-16">
+                  <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : selectedUserDetail && (
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                  {/* Summary chips */}
+                  <div className="flex flex-wrap gap-3">
+                    {[{label:'Files', count: selectedUserDetail.files?.length||0, color:'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'},
+                      {label:'Dashboards', count: selectedUserDetail.dashboards?.length||0, color:'bg-purple-500/10 text-purple-400 border-purple-500/20'},
+                      {label:'ML Models', count: selectedUserDetail.models?.length||0, color:'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'},
+                      {label:'CV Tasks', count: selectedUserDetail.cv_tasks?.length||0, color:'bg-pink-500/10 text-pink-400 border-pink-500/20'},
+                      {label:'Chats', count: selectedUserDetail.conversations?.length||0, color:'bg-blue-500/10 text-blue-400 border-blue-500/20'},
+                      {label:'API Keys', count: selectedUserDetail.api_keys?.length||0, color:'bg-orange-500/10 text-orange-400 border-orange-500/20'},
+                    ].map(chip => (
+                      <div key={chip.label} className={`px-4 py-2 rounded-xl border font-bold text-sm ${chip.color}`}>
+                        {chip.count} {chip.label}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Files */}
+                  {selectedUserDetail.files?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3">📁 Uploaded Files</h4>
+                      <div className="space-y-2">
+                        {selectedUserDetail.files.map((f: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-gray-800/40">
+                            <span className="text-sm text-white font-medium">{f.filename}</span>
+                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                              <span className="px-2 py-0.5 bg-gray-800 rounded">{f.file_type}</span>
+                              <span>{f.file_size_mb} MB</span>
+                              <span>{f.uploaded_at ? new Date(f.uploaded_at).toLocaleDateString() : '—'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ML Models */}
+                  {selectedUserDetail.models?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3">🤖 ML Models</h4>
+                      <div className="space-y-2">
+                        {selectedUserDetail.models.map((m: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-gray-800/40">
+                            <span className="text-sm text-white font-medium">{m.name}</span>
+                            <div className="flex items-center gap-3 text-xs">
+                              <span className="text-gray-500">{m.framework}</span>
+                              <span className={`px-2 py-0.5 rounded border ${
+                                m.stage === 'deployed' || m.stage === 'production' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-gray-800 text-gray-400 border-gray-700'
+                              }`}>{m.stage}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* CV Tasks */}
+                  {selectedUserDetail.cv_tasks?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3">👁️ Computer Vision Tasks</h4>
+                      <div className="space-y-2">
+                        {selectedUserDetail.cv_tasks.map((t: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-gray-800/40">
+                            <span className="text-sm text-white font-medium">{t.task_name}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded border ${
+                              t.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            }`}>{t.status}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dashboards */}
+                  {selectedUserDetail.dashboards?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3">📊 Dashboards</h4>
+                      <div className="space-y-2">
+                        {selectedUserDetail.dashboards.map((d: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-gray-800/40">
+                            <span className="text-sm text-white font-medium">{d.title}</span>
+                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                              <span>{d.widgets_count} widgets</span>
+                              <span>{d.is_public ? '🌐 Public' : '🔒 Private'}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Conversations */}
+                  {selectedUserDetail.conversations?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3">💬 AI Conversations</h4>
+                      <div className="space-y-2">
+                        {selectedUserDetail.conversations.slice(0, 5).map((c: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-gray-800/40">
+                            <span className="text-sm text-white font-medium">{c.title}</span>
+                            <span className="text-xs text-gray-500">{c.message_count} messages</span>
+                          </div>
+                        ))}
+                        {selectedUserDetail.conversations.length > 5 && (
+                          <p className="text-xs text-gray-600 pl-3">+{selectedUserDetail.conversations.length - 5} more conversations</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* API Keys */}
+                  {selectedUserDetail.api_keys?.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-3">🔑 API Keys</h4>
+                      <div className="space-y-2">
+                        {selectedUserDetail.api_keys.map((k: any, i: number) => (
+                          <div key={i} className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-gray-800/40">
+                            <span className="text-sm text-white font-medium">{k.name}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded border ${
+                              k.is_active ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
+                            }`}>{k.is_active ? 'Active' : 'Revoked'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {Object.values({f: selectedUserDetail.files?.length, m: selectedUserDetail.models?.length, c: selectedUserDetail.conversations?.length}).every(v => !v) && (
+                    <div className="p-8 text-center text-gray-500">
+                      <Users className="w-10 h-10 mx-auto mb-3 text-gray-700" />
+                      <p>This user has no recorded activity yet.</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </motion.div>
           </div>
         )}

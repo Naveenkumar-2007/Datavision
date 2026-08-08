@@ -104,20 +104,19 @@ class CVAutoMLEngine:
     # REAL-WORLD ENTERPRISE COMPUTER VISION INFERENCE ENGINE
     # ─────────────────────────────────────────────────────
     def initialize_model(self, model_path: Optional[str] = None):
+        """Load the YOLO model. ALWAYS uses the custom model when provided — never overrides with pretrained."""
         try:
             from ultralytics import YOLO
             
             if model_path and os.path.exists(model_path):
-                test_model = YOLO(model_path)
-                names_val = getattr(test_model, 'names', {})
-                # If custom model has generic class names, use SOTA real-world model
-                if len(names_val) <= 1 and str(names_val.get(0, '')).lower() in {'object', 'detected_object', 'default_class'}:
-                    self.model = YOLO('yolov8s.pt')
-                else:
-                    self.model = test_model
-                self.model_type = 'yolo'
+                # Always trust the user's trained custom model
+                self.model = YOLO(model_path)
+                self.model_type = 'yolo_custom'
+                custom_names = getattr(self.model, 'names', {})
+                logger.info(f"Loaded custom model: {model_path} with {len(custom_names)} classes: {list(custom_names.values())[:10]}")
                 return True
             
+            # No custom model — use pretrained for general inference
             self.model = YOLO('yolov8s.pt')
             self.model_type = 'yolo'
             return True
@@ -128,9 +127,13 @@ class CVAutoMLEngine:
     def predict_image(self, base64_image: str, model_path: Optional[str] = None, conf: float = 0.25, iou: float = 0.45) -> Dict[str, Any]:
         """
         Runs dynamic inference reading actual model class names with zero hardcoding.
+        When a custom model_path is provided, ALWAYS uses it — never falls back to simulation.
         """
+        has_custom_model = model_path and os.path.exists(model_path)
         success = self.initialize_model(model_path)
         if not success or not self.model:
+            if has_custom_model:
+                return {"success": False, "error": "Failed to load your trained model. Please retrain."}
             return self._simulate_prediction(base64_image)
 
         try:
@@ -144,16 +147,30 @@ class CVAutoMLEngine:
             h, w, c = img.shape
 
             # Run inference with confidence threshold & IOU threshold
-            results = self.model(img, conf=conf, iou=iou)
+            # Lower confidence threshold for custom models to ensure detections aren't missed
+            effective_conf = conf if not has_custom_model else max(0.1, conf - 0.1)
+            results = self.model(img, conf=effective_conf, iou=iou)
             if not results or len(results) == 0:
+                if has_custom_model:
+                    return {
+                        "success": True, "is_low_confidence": True, "task_type": "object_detection",
+                        "class": "No Objects Detected", "confidence": 0.0,
+                        "predictions": [{"class": "No Objects Detected", "confidence": 0.0}],
+                        "processed_image": base64_image, "model": "Custom Trained Model"
+                    }
                 return self._simulate_prediction(base64_image)
 
             result = results[0]
             predictions = []
 
-            # Retrieve active dataset classes for dynamic fallback if model label is generic
-            datasets = self.dataset_service.list_datasets('anonymous')
-            ds_classes = datasets[0]['classes'] if datasets and datasets[0].get('classes') else []
+            # Only use dataset classes as fallback for pretrained models, not custom trained
+            ds_classes = []
+            if self.model_type != 'yolo_custom':
+                try:
+                    datasets = self.dataset_service.list_datasets('anonymous')
+                    ds_classes = datasets[0]['classes'] if datasets and datasets[0].get('classes') else []
+                except Exception:
+                    pass
 
             # ─── 1. OBJECT DETECTION, SEGMENTATION, KEYPOINTS, & OCR ───
             if hasattr(result, 'boxes') and result.boxes is not None and len(result.boxes) > 0:
@@ -189,7 +206,8 @@ class CVAutoMLEngine:
                         raw_name = names.get(cls_id, f"Object_{cls_id}")
                         class_name = str(raw_name).replace('_', ' ').title()
 
-                        if class_name.lower() in {'object', 'detected object', 'default class'} and ds_classes:
+                        # Only use dataset class fallback for pretrained models, never for custom
+                        if self.model_type != 'yolo_custom' and class_name.lower() in {'object', 'detected object', 'default class'} and ds_classes:
                             class_name = str(ds_classes[min(cls_id, len(ds_classes)-1)]).replace('_', ' ').title()
 
                         final_boxes.append({
@@ -423,10 +441,19 @@ class CVAutoMLEngine:
                     "model": "YOLO Classifier"
                 }
 
+            if has_custom_model:
+                return {
+                    "success": True, "is_low_confidence": True, "task_type": "classification",
+                    "class": "Unrecognized", "confidence": 0.0,
+                    "predictions": [{"class": "Unrecognized", "confidence": 0.0}],
+                    "processed_image": base64_image, "model": "Custom Trained Model"
+                }
             return self._simulate_prediction(base64_image)
 
         except Exception as e:
             logger.error(f"CV Engine Error: {str(e)}")
+            if has_custom_model:
+                return {"success": False, "error": f"Prediction failed: {str(e)}"}
             return self._simulate_prediction(base64_image)
             
     def _simulate_prediction(self, base64_image: str) -> Dict[str, Any]:
