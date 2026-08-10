@@ -151,7 +151,7 @@ export default function AdminDashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [usersRes, actRes, datasetsRes, chatsRes, sysRes, dashRes, automlRes, predRes, cvRes, devRes] = await Promise.all([
+      const [usersRes, actRes, datasetsRes, chatsRes, sysRes, dashRes, automlRes, predRes, cvRes, devRes, statsRes] = await Promise.all([
         adminApi.get('/api/v1/admin/users').catch(() => ({ data: { users: [] } })),
         adminApi.get('/api/v1/admin/activity?limit=50').catch(() => ({ data: { activities: [] } })),
         adminApi.get('/api/v1/admin/datasets').catch(() => ({ data: { datasets: [] } })),
@@ -162,6 +162,7 @@ export default function AdminDashboard() {
         adminApi.get('/api/v1/admin/automl/predictions').catch(() => ({ data: { predictions: [] } })),
         adminApi.get('/api/v1/admin/cv/tasks').catch(() => ({ data: { tasks: [] } })),
         adminApi.get('/api/v1/admin/developer').catch(() => ({ data: { developer_data: { webhooks: [], api_keys: [] } } })),
+        adminApi.get('/api/v1/admin/stats').catch(() => ({ data: { stats: {} } })),
       ]);
       setUsers(usersRes.data.users || []);
       setActivity(actRes.data.activities || []);
@@ -174,6 +175,21 @@ export default function AdminDashboard() {
       setPredictions(predRes.data.predictions || []);
       setCvTasks(cvRes.data.tasks || []);
       if (devRes.data?.developer_data) setDeveloperData(devRes.data.developer_data);
+      
+      // Map stats from backend response — backend uses total_users, total_files, etc.
+      const rawStats = statsRes.data?.stats || {};
+      setStats({
+        users: rawStats.total_users || usersRes.data.users?.length || 0,
+        files: rawStats.total_files || datasetsRes.data.datasets?.length || 0,
+        conversations: rawStats.total_conversations || chatsRes.data.chats?.length || 0,
+        messages: rawStats.total_messages || 0,
+        queries: rawStats.total_queries || 0,
+        data_connections: rawStats.data_connections || 0,
+        dashboards: rawStats.dashboards || dashRes.data.dashboards?.length || 0,
+        active_today: rawStats.active_today || 0,
+        active_webhooks: devRes.data?.developer_data?.webhooks?.length || 0,
+        api_requests_sec: '0.0',
+      });
     } catch (err: any) {
       if (err.response?.status === 401 || err.response?.status === 403) {
         sessionStorage.removeItem('admin_token');
@@ -521,50 +537,75 @@ export default function AdminDashboard() {
           {activeTab === 'datasets' && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
               <div>
-                <h2 className="text-3xl font-extrabold text-white">Platform Uploaded Datasets</h2>
-                <p className="text-sm text-gray-400 mt-1">{datasets.length} datasets uploaded across all workspace users.</p>
+                <h2 className="text-3xl font-extrabold text-white">Platform Datasets & Connections</h2>
+                <p className="text-sm text-gray-400 mt-1">{datasets.length} datasets and connections across all workspace users.</p>
               </div>
 
               <div className="bg-[#11111a]/80 backdrop-blur-xl border border-gray-800/60 rounded-3xl overflow-hidden shadow-2xl">
-                <div className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_140px_100px] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
-                  <span>Filename</span><span>Owner Email</span><span>Size</span><span className="text-center">Rows</span><span className="text-center">Status</span><span>Uploaded</span><span className="text-center">Action</span>
+                <div className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_100px_140px_100px] gap-4 px-6 py-4 border-b border-gray-800/60 text-xs font-bold text-gray-500 uppercase tracking-widest bg-black/20">
+                  <span>Filename</span><span>Owner Email</span><span>Source</span><span>Size</span><span className="text-center">Rows</span><span className="text-center">Status</span><span>Uploaded</span><span className="text-center">Action</span>
                 </div>
                 <div className="divide-y divide-gray-800/40 max-h-[600px] overflow-y-auto custom-scrollbar">
                   {datasets.map((d, i) => (
                     <motion.div 
                       key={d.id || i} 
                       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                      className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_140px_100px] gap-4 px-6 py-4 items-center hover:bg-white/[0.03] transition-colors"
+                      className="grid grid-cols-[2fr_1.5fr_100px_100px_100px_100px_140px_100px] gap-4 px-6 py-4 items-center hover:bg-white/[0.03] transition-colors"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-400 font-bold text-xs">
-                          📁 {d.file_type}
+                        <div className={`p-2 rounded-xl text-xs font-bold ${
+                          d.source_type === 'snowflake' || d.source_type === 'kafka' || d.source_type === 'postgres' || d.source_type === 'api_push'
+                            ? 'bg-cyan-500/10 text-cyan-400'
+                            : d.source_type === 'computer_vision'
+                            ? 'bg-pink-500/10 text-pink-400'
+                            : 'bg-indigo-500/10 text-indigo-400'
+                        }`}>
+                          {d.source_type === 'computer_vision' ? '📷' : d.source_type && ['snowflake', 'kafka', 'postgres', 'api_push'].includes(d.source_type) ? '📡' : '📁'} {d.file_type}
                         </div>
                         <span className="text-sm text-white font-semibold truncate">{d.filename}</span>
                       </div>
                       <span className="text-sm text-gray-400 truncate">{d.user_email}</span>
+                      <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded border w-max ${
+                        d.source_type && ['snowflake', 'kafka', 'postgres', 'api_push'].includes(d.source_type)
+                          ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+                          : d.source_type === 'computer_vision'
+                          ? 'bg-pink-500/10 text-pink-400 border-pink-500/20'
+                          : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                      }`}>
+                        {d.source_type || 'File'}
+                      </span>
                       <span className="text-xs text-gray-300 font-mono">{d.file_size_mb} MB</span>
                       <span className="text-xs text-emerald-400 font-mono text-center">{d.rows_count || '—'}</span>
                       <div className="text-center">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                          d.status === 'Active' || d.status === 'completed' || d.status === 'Processed'
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : d.status === 'streaming' || d.status === 'Ready for Training'
+                            ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        }`}>
                           {d.status}
                         </span>
                       </div>
                       <span className="text-xs text-gray-500">{d.uploaded_at ? new Date(d.uploaded_at).toLocaleDateString() : '—'}</span>
                       <div className="text-center">
-                        <button 
-                          onClick={() => window.open(`http://localhost:8000/api/v1/files/${d.user_id}/${d.filename}/download`, '_blank')}
-                          className="px-3 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-lg text-xs font-bold transition-colors"
-                        >
-                          View
-                        </button>
+                        {d.user_id && d.filename && !d.source_type?.includes('computer_vision') && !['snowflake', 'kafka', 'postgres', 'api_push'].includes(d.source_type || '') ? (
+                          <button 
+                            onClick={() => window.open(`/api/v1/files/${d.user_id}/${encodeURIComponent(d.filename)}/download`, '_blank')}
+                            className="px-3 py-1 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-lg text-xs font-bold transition-colors"
+                          >
+                            Download
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-600">—</span>
+                        )}
                       </div>
                     </motion.div>
                   ))}
                   {datasets.length === 0 && (
                     <div className="p-16 text-center">
                       <Database className="w-12 h-12 mx-auto mb-4 text-gray-700" />
-                      <p className="text-gray-500 font-medium">No datasets uploaded yet.</p>
+                      <p className="text-gray-500 font-medium">No datasets or connections found.</p>
                     </div>
                   )}
                 </div>

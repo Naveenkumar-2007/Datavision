@@ -136,7 +136,8 @@ class CVTrainer:
             'dataset_id': dataset_id,
             'user_id': user_id,
             'mode': mode,
-            'config': config,
+            'config': {**config, 'task_type': task_type},
+            'task_type': task_type,
             'classes': classes or [],
             'status': 'starting',
             'progress': {
@@ -207,14 +208,20 @@ class CVTrainer:
             
             loss = metrics.get('train/box_loss', 0) + metrics.get('train/cls_loss', 0) + metrics.get('train/dfl_loss', 0)
             if loss == 0:
-                loss = metrics.get('train/loss', 0.05 + np.random.normal(0, 0.005))
+                loss = metrics.get('train/loss', 0.0)
             val_loss = metrics.get('val/box_loss', 0) + metrics.get('val/cls_loss', 0) + metrics.get('val/dfl_loss', 0)
             if val_loss == 0:
-                val_loss = metrics.get('val/loss', 0.04 + np.random.normal(0, 0.005))
+                val_loss = metrics.get('val/loss', 0.0)
                 
+            # Read real metrics — no fake fallbacks
             mAP50 = metrics.get('metrics/mAP50(B)', 0.0)
             if mAP50 == 0:
-                mAP50 = metrics.get('metrics/accuracy_top1', 0.85 + (epoch / max(1, epochs)) * 0.1)
+                # Try seg mask metric, then pose metric, then classification accuracy
+                mAP50 = (
+                    metrics.get('metrics/mAP50(M)', 0.0) or
+                    metrics.get('metrics/mAP50(P)', 0.0) or
+                    metrics.get('metrics/accuracy_top1', 0.0)
+                )
                  
             job['progress']['epoch'] = epoch
             job['progress']['loss'] = float(abs(loss))
@@ -226,11 +233,19 @@ class CVTrainer:
                 'recall': float(metrics.get('metrics/recall(B)', mAP50 * 0.92)),
                 'accuracy': float(mAP50)
             }
+            # Real system stats
+            try:
+                import psutil
+                cpu_pct = int(psutil.cpu_percent())
+                ram_used = f"{psutil.virtual_memory().used / (1024**3):.1f}GB"
+            except Exception:
+                cpu_pct = 0
+                ram_used = "N/A"
             job['progress']['systemStats'] = {
-                'gpuUsage': int(85 + np.random.normal(0, 5)),
-                'vramUsage': "2.4GB",
-                'cpuUsage': int(75 + np.random.normal(0, 5)),
-                'ramUsage': "4.2GB"
+                'gpuUsage': 0,
+                'vramUsage': "N/A (CPU mode)",
+                'cpuUsage': cpu_pct,
+                'ramUsage': ram_used
             }
             job['progress']['logs'].append(f"Epoch {epoch}/{job['progress']['totalEpochs']} | Loss: {abs(loss):.3f} | Accuracy/mAP: {mAP50*100:.1f}%")
 
@@ -238,9 +253,11 @@ class CVTrainer:
             from ultralytics import YOLO
             
             if mode == 'fast':
-                epochs = min(epochs, 1)
-            else:
-                epochs = min(epochs, 2)
+                epochs = min(epochs, 10)      # Quick but actually learns
+            elif mode == 'ultra':
+                epochs = min(epochs, 50)      # Production quality
+            else:  # expert
+                epochs = min(epochs, 100)     # Maximum accuracy
 
             job['progress']['totalEpochs'] = epochs
             selected_model = config.get('model', 'yolov8n')
@@ -272,31 +289,77 @@ class CVTrainer:
             # ═══════════════════════════════════════════════════════════════
             # MODEL WEIGHT SELECTION — Map task to correct Ultralytics arch
             # ═══════════════════════════════════════════════════════════════
+            # ═══════════════════════════════════════════════════════════
+            # COMPREHENSIVE MODEL WEIGHT RESOLVER
+            # Maps ALL frontend model IDs to actual Ultralytics .pt files
+            # ═══════════════════════════════════════════════════════════
+            DETECTION_WEIGHTS = {
+                # YOLO11 family
+                'yolo11n': 'yolo11n.pt', 'yolo11s': 'yolo11s.pt', 'yolo11m': 'yolo11m.pt',
+                'yolo11l': 'yolo11l.pt', 'yolo11x': 'yolo11x.pt',
+                # YOLOv10
+                'yolov10n': 'yolov10n.pt', 'yolov10s': 'yolov10s.pt', 'yolov10m': 'yolov10m.pt',
+                'yolov10x': 'yolov10x.pt',
+                # YOLOv9
+                'yolov9c': 'yolov9c.pt', 'yolov9e': 'yolov9e.pt', 'yolov9t': 'yolov9t.pt',
+                # YOLOv8
+                'yolov8n': 'yolov8n.pt', 'yolov8s': 'yolov8s.pt', 'yolov8m': 'yolov8m.pt',
+                'yolov8l': 'yolov8l.pt', 'yolov8x': 'yolov8x.pt',
+                # RT-DETR
+                'rtdetr-l': 'rtdetr-l.pt', 'rtdetr-x': 'rtdetr-x.pt',
+            }
+            CLASSIFICATION_WEIGHTS = {
+                'yolov8n-cls': 'yolov8n-cls.pt', 'yolov8s-cls': 'yolov8s-cls.pt',
+                'yolov8m-cls': 'yolov8m-cls.pt', 'yolov8l-cls': 'yolov8l-cls.pt',
+                'yolov8x-cls': 'yolov8x-cls.pt',
+                'yolo11n-cls': 'yolo11n-cls.pt', 'yolo11s-cls': 'yolo11s-cls.pt',
+                'yolo11m-cls': 'yolo11m-cls.pt',
+                # Non-YOLO models → map to best YOLO classifier equivalent
+                'resnet18': 'yolov8s-cls.pt', 'resnet50': 'yolov8m-cls.pt', 'resnet101': 'yolov8l-cls.pt',
+                'efficientnet_b0': 'yolov8s-cls.pt', 'efficientnet_b4': 'yolov8m-cls.pt',
+                'efficientnet_v2_s': 'yolov8m-cls.pt',
+                'vit_b_16': 'yolov8m-cls.pt', 'vit_l_16': 'yolov8l-cls.pt',
+                'swin_t': 'yolov8m-cls.pt', 'deit_base': 'yolov8m-cls.pt',
+                'convnext_tiny': 'yolov8m-cls.pt',
+                'mobilenet_v3_small': 'yolov8n-cls.pt', 'mobilenet_v3_large': 'yolov8s-cls.pt',
+                'shufflenet_v2_x1_0': 'yolov8n-cls.pt',
+            }
+            SEGMENTATION_WEIGHTS = {
+                'yolov8n-seg': 'yolov8n-seg.pt', 'yolov8s-seg': 'yolov8s-seg.pt',
+                'yolov8m-seg': 'yolov8m-seg.pt', 'yolov8l-seg': 'yolov8l-seg.pt',
+                'yolo11n-seg': 'yolo11n-seg.pt', 'yolo11s-seg': 'yolo11s-seg.pt',
+                # Non-YOLO models → map to YOLO seg equivalent
+                'sam_b': 'yolov8m-seg.pt', 'sam2_t': 'yolov8s-seg.pt',
+                'mask_rcnn': 'yolov8m-seg.pt', 'deeplabv3': 'yolov8m-seg.pt',
+            }
+            POSE_WEIGHTS = {
+                'yolov8n-pose': 'yolov8n-pose.pt', 'yolov8s-pose': 'yolov8s-pose.pt',
+                'yolov8m-pose': 'yolov8m-pose.pt', 'yolov8x-pose': 'yolov8x-pose.pt',
+                'yolo11n-pose': 'yolo11n-pose.pt', 'yolo11s-pose': 'yolo11s-pose.pt',
+                # Non-YOLO models → map to YOLO pose equivalent
+                'hrnet_w32': 'yolov8s-pose.pt', 'openpose': 'yolov8s-pose.pt',
+            }
+
             if task_type == 'classification':
-                model_file = 'yolov8n-cls.pt'
-                if 'yolov8s' in selected_model: model_file = 'yolov8s-cls.pt'
-                elif 'yolov8m' in selected_model: model_file = 'yolov8m-cls.pt'
-                elif 'yolov8l' in selected_model: model_file = 'yolov8l-cls.pt'
-                elif 'yolov8x' in selected_model: model_file = 'yolov8x-cls.pt'
+                model_file = CLASSIFICATION_WEIGHTS.get(selected_model, 'yolov8s-cls.pt')
+                if selected_model not in CLASSIFICATION_WEIGHTS:
+                    job['progress']['logs'].append(f"Model '{selected_model}' mapped to Ultralytics equivalent: {model_file}")
             elif task_type in {'instance_segmentation', 'semantic_segmentation'}:
-                model_file = 'yolov8n-seg.pt'
-                if 'yolov8s' in selected_model: model_file = 'yolov8s-seg.pt'
-                elif 'yolov8m' in selected_model: model_file = 'yolov8m-seg.pt'
-                elif 'yolov8l' in selected_model: model_file = 'yolov8l-seg.pt'
+                model_file = SEGMENTATION_WEIGHTS.get(selected_model, 'yolov8s-seg.pt')
+                if selected_model not in SEGMENTATION_WEIGHTS:
+                    job['progress']['logs'].append(f"Model '{selected_model}' mapped to Ultralytics equivalent: {model_file}")
             elif task_type == 'pose_estimation':
-                model_file = 'yolov8n-pose.pt'
-                if 'yolov8s' in selected_model: model_file = 'yolov8s-pose.pt'
-                elif 'yolov8m' in selected_model: model_file = 'yolov8m-pose.pt'
+                model_file = POSE_WEIGHTS.get(selected_model, 'yolov8s-pose.pt')
+                if selected_model not in POSE_WEIGHTS:
+                    job['progress']['logs'].append(f"Model '{selected_model}' mapped to Ultralytics equivalent: {model_file}")
             elif task_type == 'ocr':
-                # OCR uses standard detection model to detect text regions
-                model_file = 'yolov8n.pt'
-                if 'yolov8s' in selected_model: model_file = 'yolov8s.pt'
+                # OCR uses standard detection model for text region detection
+                model_file = DETECTION_WEIGHTS.get(selected_model, 'yolov8s.pt')
             else:
                 # object_detection default
-                model_file = 'yolov8n.pt'
-                if 'yolov8s' in selected_model: model_file = 'yolov8s.pt'
-                elif 'yolov8m' in selected_model: model_file = 'yolov8m.pt'
-                elif 'yolov8l' in selected_model: model_file = 'yolov8l.pt'
+                model_file = DETECTION_WEIGHTS.get(selected_model, 'yolov8s.pt')
+                if selected_model not in DETECTION_WEIGHTS:
+                    job['progress']['logs'].append(f"Model '{selected_model}' mapped to Ultralytics equivalent: {model_file}")
 
             job['progress']['logs'].append(f"Starting {mode.upper()} Training using architecture: {selected_model} ({model_file}). Epochs: {epochs}")
             
@@ -423,29 +486,28 @@ class CVTrainer:
                             pass
 
                 # ═══════════════════════════════════════════════════════════
-                # TASK-SPECIFIC LABEL GENERATION for images missing labels
+                # SKIP UNLABELED IMAGES — Don't generate fake labels
+                # Fake centered bounding boxes corrupt model training.
                 # ═══════════════════════════════════════════════════════════
                 img_in_dir = [f for f in images_dir.iterdir() if f.is_file() and f.suffix.lower() in IMAGE_EXTS]
+                skipped_count = 0
                 for img_f in img_in_dir:
                     txt_f = labels_dir / (img_f.stem + '.txt')
                     if not txt_f.exists() or os.path.getsize(txt_f) == 0:
-                        with open(txt_f, 'w', encoding='utf-8') as f:
-                            if task_type in {'instance_segmentation', 'semantic_segmentation'}:
-                                # Polygon format: cls x1 y1 x2 y2 x3 y3 x4 y4
-                                f.write("0 0.05 0.05 0.95 0.05 0.95 0.95 0.05 0.95\n")
-                            elif task_type == 'pose_estimation':
-                                # COCO 17-keypoint format: cls cx cy w h [kpx kpy vis]*17
-                                kps = " ".join(["0.5 0.5 2"] * 17)
-                                f.write(f"0 0.5 0.5 0.9 0.9 {kps}\n")
-                            elif task_type == 'ocr':
-                                # OCR as detection: text region bounding boxes
-                                f.write("0 0.5 0.3 0.8 0.15\n")  # header region
-                                f.write("1 0.5 0.5 0.7 0.1\n")   # line item region
-                                f.write("2 0.6 0.7 0.3 0.08\n")  # total region
-                                f.write("3 0.5 0.85 0.4 0.06\n") # date region
-                            else:
-                                # Standard detection: cls cx cy w h
-                                f.write("0 0.5 0.5 0.9 0.9\n")
+                        # Remove unlabeled images from training set — don't fabricate labels
+                        skipped_count += 1
+                        try:
+                            img_f.unlink()  # Remove the image so YOLO doesn't try to train on it
+                        except Exception:
+                            pass
+                        # Also remove empty label file if it exists
+                        if txt_f.exists():
+                            try:
+                                txt_f.unlink()
+                            except Exception:
+                                pass
+                if skipped_count > 0:
+                    job['progress']['logs'].append(f"Skipped {skipped_count} unlabeled images (no annotations found).")
 
                 # Inspect ALL label files to discover max class ID
                 found_class_ids = set()
@@ -474,9 +536,6 @@ class CVTrainer:
                             expanded.append(file_classes[i])
                         elif classes and i < len(classes):
                             expanded.append(classes[i])
-                        elif task_type == 'ocr':
-                            ocr_labels = ['text_header', 'text_line', 'text_total', 'text_date']
-                            expanded.append(ocr_labels[i] if i < len(ocr_labels) else f"text_region_{i}")
                         else:
                             expanded.append(f"class_{i}")
                     classes = expanded
@@ -508,13 +567,15 @@ class CVTrainer:
             
             abs_project_path = os.path.abspath(f"{self.models_dir}/{job_id}")
             
-            # Use appropriate image size per task
+            # Use proper image size per task — standard YOLO sizes for accuracy
             if task_type == 'classification':
-                imgsz = 224
+                imgsz = 224       # Standard for ImageNet classifiers
             elif task_type == 'pose_estimation':
-                imgsz = 320
+                imgsz = 640       # Pose needs high res for keypoint accuracy
+            elif task_type in {'instance_segmentation', 'semantic_segmentation'}:
+                imgsz = 640       # Segmentation needs full resolution for masks
             else:
-                imgsz = 256
+                imgsz = 640       # YOLO standard for detection & OCR
             
             results = model.train(
                 data=data_arg,
@@ -542,27 +603,64 @@ class CVTrainer:
                         df.columns = df.columns.str.strip()
                         if not df.empty:
                             last_row = df.iloc[-1]
-                            # Try detection metrics first, then classification
+                            
+                            # ── TASK-SPECIFIC METRIC PARSING ──
+                            # Detection box metrics
                             mAP50_val = last_row.get('metrics/mAP50(B)', None)
+                            mAP50_95_val = last_row.get('metrics/mAP50-95(B)', None)
+                            prec_val = last_row.get('metrics/precision(B)', None)
+                            rec_val = last_row.get('metrics/recall(B)', None)
+                            
+                            # Segmentation mask metrics (override if present and better)
+                            mask_mAP50 = last_row.get('metrics/mAP50(M)', None)
+                            mask_mAP50_95 = last_row.get('metrics/mAP50-95(M)', None)
+                            if mask_mAP50 is not None and float(mask_mAP50) > 0:
+                                final_metrics['mask_mAP50'] = float(mask_mAP50)
+                                final_metrics['mask_mAP50_95'] = float(mask_mAP50_95) if mask_mAP50_95 is not None else 0.0
+                                # Use mask metric as primary if task is segmentation
+                                if task_type in {'instance_segmentation', 'semantic_segmentation'}:
+                                    mAP50_val = mask_mAP50
+                                    mAP50_95_val = mask_mAP50_95
+                            
+                            # Pose keypoint metrics
+                            pose_mAP50 = last_row.get('metrics/mAP50(P)', None)
+                            pose_mAP50_95 = last_row.get('metrics/mAP50-95(P)', None)
+                            if pose_mAP50 is not None and float(pose_mAP50) > 0:
+                                final_metrics['pose_mAP50'] = float(pose_mAP50)
+                                final_metrics['pose_mAP50_95'] = float(pose_mAP50_95) if pose_mAP50_95 is not None else 0.0
+                                if task_type == 'pose_estimation':
+                                    mAP50_val = pose_mAP50
+                                    mAP50_95_val = pose_mAP50_95
+                            
+                            # Classification accuracy metrics
+                            acc_top1 = last_row.get('metrics/accuracy_top1', None)
+                            acc_top5 = last_row.get('metrics/accuracy_top5', None)
+                            if acc_top1 is not None and float(acc_top1) > 0:
+                                final_metrics['accuracy_top1'] = float(acc_top1)
+                                final_metrics['accuracy_top5'] = float(acc_top5) if acc_top5 is not None else 0.0
+                                if task_type == 'classification':
+                                    mAP50_val = acc_top1  # Use top1 accuracy as primary metric
+                            
+                            # Fallback: if primary metric still None, try detection
                             if mAP50_val is None or (isinstance(mAP50_val, float) and mAP50_val == 0):
-                                mAP50_val = last_row.get('metrics/accuracy_top1', None)
+                                mAP50_val = acc_top1  # Last resort for any task
+                            
                             if mAP50_val is not None:
                                 final_metrics['mAP50'] = float(mAP50_val)
-                            
-                            mAP50_95_val = last_row.get('metrics/mAP50-95(B)', None)
                             if mAP50_95_val is not None:
                                 final_metrics['mAP50_95'] = float(mAP50_95_val)
-                            
-                            prec_val = last_row.get('metrics/precision(B)', None)
                             if prec_val is not None:
                                 final_metrics['precision'] = float(prec_val)
-                            
-                            rec_val = last_row.get('metrics/recall(B)', None)
                             if rec_val is not None:
                                 final_metrics['recall'] = float(rec_val)
                             
                             final_metrics['accuracy'] = final_metrics.get('mAP50', 0)
-                            job['progress']['logs'].append(f"Parsed final metrics: accuracy/mAP50={final_metrics.get('mAP50', 0):.3f}")
+                            job['progress']['logs'].append(
+                                f"Parsed final metrics ({task_type}): "
+                                f"primary={final_metrics.get('mAP50', 0):.3f}, "
+                                f"precision={final_metrics.get('precision', 0):.3f}, "
+                                f"recall={final_metrics.get('recall', 0):.3f}"
+                            )
                     except Exception as parse_e:
                         logger.warning(f"Failed to parse results.csv: {parse_e}")
                 

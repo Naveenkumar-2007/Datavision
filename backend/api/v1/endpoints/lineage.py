@@ -121,6 +121,31 @@ def build_real_lineage(user_id: str) -> Dict[str, Any]:
 
                 size_str = _format_size(size_bytes)
 
+                # Get column-level details for data quality
+                column_details = []
+                try:
+                    if file_path.suffix.lower() == '.csv':
+                        sample_df = pd.read_csv(file_path, nrows=100)
+                    elif file_path.suffix.lower() in ['.xlsx', '.xls']:
+                        sample_df = pd.read_excel(file_path, nrows=100)
+                    else:
+                        sample_df = None
+                    
+                    if sample_df is not None:
+                        for col in sample_df.columns:
+                            null_pct = round(sample_df[col].isnull().mean() * 100, 1)
+                            dtype_str = str(sample_df[col].dtype)
+                            unique_count = sample_df[col].nunique()
+                            column_details.append({
+                                "name": col,
+                                "type": dtype_str,
+                                "null_pct": null_pct,
+                                "unique": unique_count,
+                                "sample": str(sample_df[col].dropna().iloc[0])[:50] if not sample_df[col].dropna().empty else "—"
+                            })
+                except Exception:
+                    pass
+
                 nodes.append({
                     "id": fid,
                     "type": "source",
@@ -130,8 +155,10 @@ def build_real_lineage(user_id: str) -> Dict[str, Any]:
                     "metadata": {
                         "Rows": row_count,
                         "Size": size_str,
+                        "Columns": str(len(column_details)) if column_details else "—",
                         "Last Synced": time_ago,
-                    }
+                    },
+                    "column_details": column_details
                 })
 
                 audit_log.append({
@@ -174,28 +201,6 @@ def build_real_lineage(user_id: str) -> Dict[str, Any]:
                 "status": "Success",
             })
 
-            # ── VECTOR INDEX NODE ──
-            vector_id = "vector_index"
-            has_vectors = (user_dir / "vectors").exists() or Path("backend/qdrant_data").exists()
-            nodes.append({
-                "id": vector_id,
-                "type": "transform",
-                "label": "Vector Indexing (Qdrant)",
-                "status": "success" if has_vectors else "pending",
-                "icon": "brain",
-                "metadata": {
-                    "Engine": "Qdrant + MiniLM-L6",
-                    "Status": "Indexed" if has_vectors else "Pending",
-                    "Use": "Semantic Search & RAG",
-                }
-            })
-            edges.append({
-                "id": "e_etl_to_vector",
-                "source": etl_id,
-                "target": vector_id,
-                "animated": True,
-            })
-
             # ── DESTINATION NODES ──
             # Dashboard
             dash_id = "dest_dashboard"
@@ -218,7 +223,7 @@ def build_real_lineage(user_id: str) -> Dict[str, Any]:
                 "animated": True,
             })
 
-            # AI Analyst
+            # AI Analyst (connected directly to ETL, not via Vector)
             analyst_id = "dest_analyst"
             nodes.append({
                 "id": analyst_id,
@@ -233,8 +238,8 @@ def build_real_lineage(user_id: str) -> Dict[str, Any]:
                 }
             })
             edges.append({
-                "id": "e_vector_to_analyst",
-                "source": vector_id,
+                "id": "e_etl_to_analyst",
+                "source": etl_id,
                 "target": analyst_id,
                 "animated": True,
             })
@@ -281,14 +286,32 @@ def build_real_lineage(user_id: str) -> Dict[str, Any]:
                 "animated": True,
             })
 
+        # ── DATA QUALITY METRICS ──
+        all_column_details = []
+        for node in nodes:
+            if node.get('column_details'):
+                all_column_details.extend(node['column_details'])
+        
+        total_nulls = sum(c.get('null_pct', 0) for c in all_column_details)
+        avg_completeness = round(100 - (total_nulls / max(1, len(all_column_details))), 1) if all_column_details else 0
+        numeric_cols = sum(1 for c in all_column_details if 'int' in c.get('type', '') or 'float' in c.get('type', ''))
+        cat_cols = sum(1 for c in all_column_details if 'object' in c.get('type', '') or 'category' in c.get('type', ''))
+
         # ── STATS ──
         stats = {
             "total_files": total_files,
             "total_rows": total_rows,
             "total_pipelines": len(edges),
             "total_nodes": len(nodes),
+            "total_columns": len(all_column_details),
             "gdpr_status": "Verified" if total_files > 0 else "No Data",
             "encryption": "AES-256 (at rest)",
+            "data_quality": {
+                "completeness": avg_completeness,
+                "numeric_columns": numeric_cols,
+                "categorical_columns": cat_cols,
+                "total_columns": len(all_column_details),
+            }
         }
 
         return {

@@ -139,10 +139,33 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ onRunSimulation, onTabChange 
     );
   }
 
+  if (variables.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 text-center">
+        <div className={`p-3 rounded-xl mb-4 ${isDark ? 'bg-amber-500/10' : 'bg-amber-50'}`}>
+          <BarChart3 className={`w-8 h-8 ${isDark ? 'text-amber-400' : 'text-amber-500'}`} />
+        </div>
+        <h3 className="text-lg font-bold mb-2" style={{ color: textPrimary }}>No Simulation Data Available</h3>
+        <p className="text-sm max-w-md mb-4" style={{ color: textMuted }}>
+          Upload a dataset in the Data Hub and train a model to start running simulations. 
+          The simulator uses your dataset columns as variables you can adjust.
+        </p>
+        {onTabChange && (
+          <button
+            onClick={() => window.location.href = '/datahub'}
+            className="px-4 py-2 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl text-xs font-bold transition-all"
+          >
+            Go to Data Hub
+          </button>
+        )}
+      </div>
+    );
+  }
+
   const kpis = overview?.kpis || {};
   const modelInfo = overview?.model_info || {};
   const targetName = simResult?.target_name || modelInfo.target_name || modelInfo.target_column || 'Target Metric';
-  const summaryData = overview?.simulation_summary || { total: 2202, completed: 2114, running: 50, failed: 15 };
+  const summaryData = overview?.simulation_summary || { total: 0, completed: 0, running: 0, failed: 0 };
   const pieData = [
     { name: 'Completed', value: summaryData.completed, color: '#6366f1' },
     { name: 'Running', value: summaryData.running, color: '#22c55e' },

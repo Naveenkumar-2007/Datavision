@@ -76,22 +76,25 @@ class CVAutoMLEngine:
         return self.trainer.resume_training(job_id)
 
     def list_models(self) -> List[Dict[str, Any]]:
-        """Lists all trained models with performance metrics for Model Hub."""
+        """Lists all trained models with real performance metrics for Model Hub."""
         models = []
         if self.models_dir.exists():
             for d in self.models_dir.iterdir():
                 if d.is_dir() and (d / 'train' / 'weights' / 'best.pt').exists():
                     job_progress = self.trainer.get_progress(d.name) or {}
                     meta = job_progress.get('metrics', {})
+                    task_type = job_progress.get('task_type') or job_progress.get('config', {}).get('task_type') or meta.get('task_type', 'object_detection')
                     models.append({
                         'id': d.name,
-                        'name': f"{job_progress.get('config', {}).get('model', 'yolov8n').upper()} Model",
-                        'task': 'Computer Vision',
-                        'mAP50': meta.get('mAP50', 0.912),
-                        'accuracy': meta.get('accuracy', 0.912),
-                        'size_mb': meta.get('modelSizeMB', 8.4),
+                        'name': f"{job_progress.get('config', {}).get('model', 'yolov8n').upper()} - {task_type.replace('_', ' ').title()}",
+                        'task': task_type.replace('_', ' ').title(),
+                        'mAP50': meta.get('mAP50', 0.0),
+                        'accuracy': meta.get('accuracy', 0.0),
+                        'size_mb': meta.get('modelSizeMB', 0.0),
                         'status': 'ready',
-                        'createdAt': job_progress.get('started_at', '2026-07-27T10:00:00Z')
+                        'task_type': task_type,
+                        'classes': job_progress.get('classes', []),
+                        'createdAt': job_progress.get('started_at', '')
                     })
         return models
 
@@ -100,11 +103,56 @@ class CVAutoMLEngine:
         job = self.trainer.get_progress(job_id) or {'id': job_id}
         return self.export_service.generate_export_package(job, formats)
 
+    def find_latest_trained_model(self, user_id: str = None) -> tuple:
+        """Find the most recent best.pt trained model for this user.
+        Returns (model_path, task_type) or (None, None) if no trained model exists."""
+        try:
+            best_models = list(self.models_dir.glob('*/train/weights/best.pt'))
+            if not best_models:
+                best_models = list(self.models_dir.glob('*/train/weights/last.pt'))
+            if not best_models:
+                return None, None
+            
+            # Sort by modification time, newest first
+            latest = max(best_models, key=lambda p: p.stat().st_mtime)
+            job_id = latest.parent.parent.parent.name
+            
+            # Get task type — check multiple locations for backwards compatibility
+            progress = self.trainer.get_progress(job_id)
+            task_type = None
+            if progress:
+                # Priority: job-level > config > metrics
+                task_type = (
+                    progress.get('task_type') or 
+                    progress.get('config', {}).get('task_type') or 
+                    progress.get('metrics', {}).get('task_type')
+                )
+                # If user_id specified, only match models trained by this user
+                if user_id and progress.get('user_id') and progress.get('user_id') != user_id:
+                    for m in sorted(best_models, key=lambda p: p.stat().st_mtime, reverse=True):
+                        jid = m.parent.parent.parent.name
+                        prog = self.trainer.get_progress(jid)
+                        if prog and prog.get('user_id') == user_id:
+                            latest = m
+                            task_type = (
+                                prog.get('task_type') or 
+                                prog.get('config', {}).get('task_type') or 
+                                prog.get('metrics', {}).get('task_type')
+                            )
+                            break
+            
+            logger.info(f"Auto-discovered trained model: {latest} (task: {task_type})")
+            return str(latest), task_type
+        except Exception as e:
+            logger.warning(f"Could not auto-discover trained model: {e}")
+            return None, None
+
     # ─────────────────────────────────────────────────────
     # REAL-WORLD ENTERPRISE COMPUTER VISION INFERENCE ENGINE
     # ─────────────────────────────────────────────────────
-    def initialize_model(self, model_path: Optional[str] = None):
-        """Load the YOLO model. ALWAYS uses the custom model when provided — never overrides with pretrained."""
+    def initialize_model(self, model_path: Optional[str] = None, task_type: Optional[str] = None):
+        """Load the YOLO model. Selects the correct architecture based on task_type.
+        Custom model_path always takes priority over pretrained."""
         try:
             from ultralytics import YOLO
             
@@ -116,25 +164,43 @@ class CVAutoMLEngine:
                 logger.info(f"Loaded custom model: {model_path} with {len(custom_names)} classes: {list(custom_names.values())[:10]}")
                 return True
             
-            # No custom model — use pretrained for general inference
-            self.model = YOLO('yolov8s.pt')
+            # No custom model — select correct pretrained architecture based on task type
+            task_model_map = {
+                'classification': 'yolov8s-cls.pt',
+                'instance_segmentation': 'yolov8s-seg.pt',
+                'semantic_segmentation': 'yolov8s-seg.pt',
+                'pose_estimation': 'yolov8s-pose.pt',
+                'object_detection': 'yolov8s.pt',
+                'ocr': 'yolov8s.pt',
+            }
+            model_file = task_model_map.get(task_type, 'yolov8s.pt')
+            
+            try:
+                self.model = YOLO(model_file)
+            except Exception:
+                # Fallback to base detection model if task-specific weights unavailable
+                logger.warning(f"Could not load {model_file}, falling back to yolov8s.pt")
+                self.model = YOLO('yolov8s.pt')
+            
             self.model_type = 'yolo'
+            logger.info(f"Loaded pretrained model: {model_file} for task: {task_type or 'general'}")
             return True
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             return False
 
-    def predict_image(self, base64_image: str, model_path: Optional[str] = None, conf: float = 0.25, iou: float = 0.45) -> Dict[str, Any]:
+    def predict_image(self, base64_image: str, model_path: Optional[str] = None, task_type: Optional[str] = None, conf: float = 0.25, iou: float = 0.45) -> Dict[str, Any]:
         """
         Runs dynamic inference reading actual model class names with zero hardcoding.
-        When a custom model_path is provided, ALWAYS uses it — never falls back to simulation.
+        Selects the correct model architecture based on task_type.
+        When a custom model_path is provided, ALWAYS uses it.
         """
         has_custom_model = model_path and os.path.exists(model_path)
-        success = self.initialize_model(model_path)
+        success = self.initialize_model(model_path, task_type=task_type)
         if not success or not self.model:
             if has_custom_model:
                 return {"success": False, "error": "Failed to load your trained model. Please retrain."}
-            return self._simulate_prediction(base64_image)
+            return {"success": False, "error": "YOLO model not available. Install ultralytics: pip install ultralytics"}
 
         try:
             # Decode base64 image
@@ -142,7 +208,7 @@ class CVAutoMLEngine:
             nparr = np.frombuffer(img_data, np.uint8)
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             if img is None:
-                return self._simulate_prediction(base64_image)
+                return {"success": False, "error": "Failed to decode image. Please upload a valid image file."}
 
             h, w, c = img.shape
 
@@ -158,7 +224,12 @@ class CVAutoMLEngine:
                         "predictions": [{"class": "No Objects Detected", "confidence": 0.0}],
                         "processed_image": base64_image, "model": "Custom Trained Model"
                     }
-                return self._simulate_prediction(base64_image)
+                return {
+                    "success": True, "is_low_confidence": True, "task_type": "object_detection",
+                    "class": "No Objects Detected", "confidence": 0.0,
+                    "predictions": [{"class": "No Objects Detected", "confidence": 0.0}],
+                    "processed_image": base64_image, "model": "YOLOv8 Pretrained"
+                }
 
             result = results[0]
             predictions = []
@@ -280,68 +351,6 @@ class CVAutoMLEngine:
                     except Exception as ke:
                         logger.warning(f"Keypoint rendering warning: {ke}")
 
-                # ─── OCR TEXT BOUNDING BOX & RECOGNITION OVERLAY ───
-                ocr_text_blocks = []
-                try:
-                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                    blur = cv2.GaussianBlur(gray, (5, 5), 0)
-                    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
-                    
-                    # 1. Outer Receipt Paper Contour (Cyan Outline matching ground truth)
-                    ext_contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    if ext_contours:
-                        largest_cnt = max(ext_contours, key=cv2.contourArea)
-                        if cv2.contourArea(largest_cnt) > (w * h * 0.12):
-                            cv2.polylines(img, [largest_cnt], True, (255, 255, 0), 3)
-
-                    # 2. Text Line Region Box Extraction (Horizontal Dilation to merge line characters)
-                    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 3))
-                    dilated = cv2.dilate(thresh, kernel, iterations=1)
-                    line_cnts, _ = cv2.findContours(dilated, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-                    
-                    text_regions = []
-                    for cnt in line_cnts:
-                        x, y, bw, bh = cv2.boundingRect(cnt)
-                        if bw > w * 0.10 and bh > 10 and bh < h * 0.12 and bw < w * 0.95:
-                            text_regions.append((x, y, bw, bh))
-                            
-                    # Sort text regions vertically top to bottom
-                    text_regions = sorted(text_regions, key=lambda r: r[1])
-                    
-                    if text_regions:
-                        for r_idx, (rx, ry, rbw, rbh) in enumerate(text_regions[:12]):
-                            if r_idx == 0:
-                                col = (0, 255, 0)     # Neon Green (Header/Logo)
-                                ocr_label = "STORE HEADER / BRAND LOGO"
-                            elif r_idx == len(text_regions[:12]) - 1:
-                                col = (0, 0, 255)     # Bright Red (Timestamp / Date Footer)
-                                ocr_label = "DATE & TIMESTAMP FOOTER"
-                            elif r_idx == len(text_regions[:12]) - 2:
-                                col = (255, 0, 255)   # Neon Pink (Subtotal / Total Amount)
-                                ocr_label = "TOTAL / SUBTOTAL AMOUNT"
-                            else:
-                                col = (0, 165, 255)   # Vibrant Orange (Line Items)
-                                ocr_label = f"RECEIPT LINE ITEM {r_idx}"
-
-                            # Draw 3px bounding box + filled background label box
-                            cv2.rectangle(img, (rx, ry), (rx + rbw, ry + rbh), col, 3)
-                            
-                            tag_str = f" {ocr_label} "
-                            (tw, th), _ = cv2.getTextSize(tag_str, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-                            cv2.rectangle(img, (rx, max(th + 4, ry - 4) - th - 4), (rx + tw, max(th + 4, ry - 4) + 2), col, -1)
-                            cv2.putText(img, tag_str, (rx, max(th + 4, ry - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 1, cv2.LINE_AA)
-
-                            ocr_text_blocks.append({
-                                "class": ocr_label,
-                                "confidence": round(0.98 - (r_idx * 0.01), 3),
-                                "bbox": [rx, ry, rx + rbw, ry + rbh]
-                            })
-                except Exception as ocr_e:
-                    logger.warning(f"OCR contour processing warning: {ocr_e}")
-
-                if not final_boxes and ocr_text_blocks:
-                    final_boxes = ocr_text_blocks
-
                 if not final_boxes:
                     banner_height = 40
                     overlay = img.copy()
@@ -355,26 +364,24 @@ class CVAutoMLEngine:
                     return {
                         "success": True,
                         "is_low_confidence": True,
-                        "task_type": "object_detection",
+                        "task_type": task_type or "object_detection",
                         "class": "No Objects Detected",
                         "confidence": 0.0,
                         "predictions": [{"class": "No Objects Detected", "confidence": 0.0}],
                         "processed_image": f"data:image/jpeg;base64,{out_base64}",
-                        "model": "YOLOv8 NMS Filtered"
+                        "model": self.model_type or "YOLOv8"
                     }
 
                 # Sort by confidence
                 final_boxes = sorted(final_boxes, key=lambda x: x['confidence'], reverse=True)
                 top_pred = final_boxes[0]
 
-                # Determine active task type
-                detected_task_type = "object_detection"
+                # Determine active task type from actual model output
+                detected_task_type = task_type or "object_detection"
                 if hasattr(result, 'masks') and result.masks is not None and len(result.masks) > 0:
                     detected_task_type = "instance_segmentation"
                 elif hasattr(result, 'keypoints') and result.keypoints is not None and len(result.keypoints) > 0:
                     detected_task_type = "pose_estimation"
-                elif ocr_text_blocks:
-                    detected_task_type = "ocr"
 
                 # Draw top prediction banner
                 banner_height = 40
@@ -448,167 +455,25 @@ class CVAutoMLEngine:
                     "predictions": [{"class": "Unrecognized", "confidence": 0.0}],
                     "processed_image": base64_image, "model": "Custom Trained Model"
                 }
-            return self._simulate_prediction(base64_image)
+            return {
+                "success": True, "is_low_confidence": True, "task_type": "classification",
+                "class": "Unrecognized", "confidence": 0.0,
+                "predictions": [{"class": "Unrecognized", "confidence": 0.0}],
+                "processed_image": base64_image, "model": "YOLOv8 Pretrained"
+            }
 
         except Exception as e:
             logger.error(f"CV Engine Error: {str(e)}")
-            if has_custom_model:
-                return {"success": False, "error": f"Prediction failed: {str(e)}"}
-            return self._simulate_prediction(base64_image)
+            return {"success": False, "error": f"Prediction failed: {str(e)}"}
             
-    def _simulate_prediction(self, base64_image: str) -> Dict[str, Any]:
-        """Authentic dynamic vision analysis reading actual uploaded dataset class labels with ZERO hardcoding."""
-        try:
-            img_data = base64.b64decode(base64_image.split(',')[1] if ',' in base64_image else base64_image)
-            nparr = np.frombuffer(img_data, np.uint8)
-            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-            # Retrieve active dataset classes dynamically
-            datasets = self.dataset_service.list_datasets('anonymous')
-            active_classes = datasets[0]['classes'] if (datasets and datasets[0].get('classes')) else []
-            
-            # Format class names nicely
-            active_classes = [str(c).replace('_', ' ').title() for c in active_classes if str(c).lower() not in {'default_class', 'object'}]
-            if not active_classes:
-                active_classes = ['Object Line Region', 'Extracted Region']
-
-            confidence = 0.942
-
-            if img is not None:
-                h, w, c = img.shape
-                
-                # Check if document / receipt image (tall aspect ratio)
-                is_receipt_doc = (h > w * 1.12)
-
-                if is_receipt_doc:
-                    # Authentic OCR paper contour + text line region extraction
-                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                    thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
-                    
-                    # 1. Cyan Paper Contour Outline
-                    ext_contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    if ext_contours:
-                        largest_cnt = max(ext_contours, key=cv2.contourArea)
-                        if cv2.contourArea(largest_cnt) > (w * h * 0.12):
-                            cv2.polylines(img, [largest_cnt], True, (255, 255, 0), 3)
-
-                    # 2. Text Line Region Boxes (Horizontal Dilation to merge line characters)
-                    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (20, 3))
-                    dilated = cv2.dilate(thresh, kernel, iterations=1)
-                    line_cnts, _ = cv2.findContours(dilated, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-                    
-                    text_regions = []
-                    for cnt in line_cnts:
-                        x, y, bw, bh = cv2.boundingRect(cnt)
-                        if bw > w * 0.10 and bh > 10 and bh < h * 0.12 and bw < w * 0.95:
-                            text_regions.append((x, y, bw, bh))
-                            
-                    text_regions = sorted(text_regions, key=lambda r: r[1])
-                    sim_preds = []
-                    
-                    if text_regions:
-                        for r_idx, (rx, ry, rbw, rbh) in enumerate(text_regions[:12]):
-                            if r_idx == 0:
-                                col = (34, 197, 94)   # Green (Header/Logo)
-                                label_name = "STORE HEADER / BRAND LOGO"
-                            elif r_idx == len(text_regions[:12]) - 1:
-                                col = (239, 68, 68)   # Red (Timestamp / Date Footer)
-                                label_name = "DATE & TIMESTAMP FOOTER"
-                            elif r_idx == len(text_regions[:12]) - 2:
-                                col = (236, 72, 153)  # Pink (Subtotal / Total Amount)
-                                label_name = "TOTAL / SUBTOTAL AMOUNT"
-                            else:
-                                col = (249, 115, 22)  # Orange (Line Items)
-                                label_name = f"RECEIPT LINE ITEM {r_idx}"
-
-                            conf_val = round(0.98 - (r_idx * 0.01), 3)
-                            sim_preds.append({
-                                "class": label_name,
-                                "confidence": conf_val,
-                                "bbox": [rx, ry, rx + rbw, ry + rbh]
-                            })
-                            cv2.rectangle(img, (rx, ry), (rx + rbw, ry + rbh), col, 2)
-                    else:
-                        boxes_def = [
-                            (int(w*0.18), int(h*0.15), int(w*0.82), int(h*0.25), (34, 197, 94), "STORE HEADER / BRAND LOGO"),
-                            (int(w*0.16), int(h*0.42), int(w*0.88), int(h*0.50), (249, 115, 22), "RECEIPT LINE ITEM 1"),
-                            (int(w*0.50), int(h*0.60), int(w*0.86), int(h*0.65), (236, 72, 153), "TOTAL / SUBTOTAL AMOUNT"),
-                            (int(w*0.30), int(h*0.82), int(w*0.75), int(h*0.87), (239, 68, 68), "DATE & TIMESTAMP FOOTER")
-                        ]
-                        for bx1, by1, bx2, by2, bcol, blbl in boxes_def:
-                            cv2.rectangle(img, (bx1, by1), (bx2, by2), bcol, 2)
-                            sim_preds.append({
-                                "class": blbl,
-                                "confidence": 0.95,
-                                "bbox": [bx1, by1, bx2, by2]
-                            })
-
-                    top1_class = sim_preds[0]["class"]
-                    confidence = sim_preds[0]["confidence"]
-                    task_type_ret = "ocr"
-
-                    # Top Banner
-                    banner_height = 40
-                    overlay = img.copy()
-                    cv2.rectangle(overlay, (0, 0), (w, banner_height), (249, 115, 22), -1)
-                    cv2.addWeighted(overlay, 0.85, img, 0.15, 0, img)
-                    cv2.putText(img, f"OCR TEXT & BOUNDARIES EXTRACTED ({confidence*100:.1f}%)", (15, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2, cv2.LINE_AA)
-
-                else:
-                    # Multi-object detection visualization fallback
-                    task_type_ret = "object_detection"
-                    sim_preds = []
-                    boxes_def = [
-                        (int(w*0.1), int(h*0.15), int(w*0.5), int(h*0.65), (16, 185, 129), active_classes[0] if len(active_classes)>0 else "Object Region A"),
-                        (int(w*0.52), int(h*0.25), int(w*0.9), int(h*0.85), (59, 130, 246), active_classes[1] if len(active_classes)>1 else "Object Region B")
-                    ]
-                    for bx1, by1, bx2, by2, bcol, blbl in boxes_def:
-                        cv2.rectangle(img, (bx1, by1), (bx2, by2), bcol, 2)
-                        cv2.putText(img, f"{blbl}: {confidence*100:.1f}%", (bx1, max(15, by1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, bcol, 2, cv2.LINE_AA)
-                        sim_preds.append({
-                            "class": blbl,
-                            "confidence": confidence,
-                            "bbox": [bx1, by1, bx2, by2]
-                        })
-
-                    top1_class = sim_preds[0]["class"]
-
-                    banner_height = 40
-                    overlay = img.copy()
-                    cv2.rectangle(overlay, (0, 0), (w, banner_height), (16, 185, 129), -1)
-                    cv2.addWeighted(overlay, 0.85, img, 0.15, 0, img)
-                    cv2.putText(img, f"{top1_class.upper()}: {confidence*100:.1f}%", (15, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
-
-                _, buffer = cv2.imencode('.jpg', img)
-                proc_img = f"data:image/jpeg;base64,{base64.b64encode(buffer).decode('utf-8')}"
-            else:
-                proc_img = base64_image
-                task_type_ret = "ocr"
-                top1_class = "HEADER / STORE LOGO"
-                sim_preds = [{"class": top1_class, "confidence": confidence}]
-
-            return {
-                "success": True,
-                "is_low_confidence": False,
-                "task_type": task_type_ret,
-                "class": top1_class,
-                "confidence": confidence,
-                "predictions": sim_preds,
-                "processed_image": proc_img,
-                "model": "Trained Vision Engine"
-            }
-        except Exception as sim_err:
-            logger.warning(f"Simulate prediction exception: {sim_err}")
-            return {
-                "success": True,
-                "is_low_confidence": False,
-                "task_type": "ocr",
-                "class": "HEADER / STORE LOGO",
-                "confidence": 0.960,
-                "predictions": [
-                    {"class": "HEADER / STORE LOGO", "confidence": 0.960},
-                    {"class": "SUBTOTAL / TOTAL", "confidence": 0.945}
-                ],
-                "processed_image": base64_image,
-                "model": "Trained Vision Engine"
-            }
+    def _no_model_response(self, message: str = "No model available") -> Dict[str, Any]:
+        """Returns an honest error response when no model is available."""
+        return {
+            "success": False,
+            "error": message,
+            "task_type": "unknown",
+            "class": "No Model",
+            "confidence": 0.0,
+            "predictions": [],
+            "model": "None"
+        }

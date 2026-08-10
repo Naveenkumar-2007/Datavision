@@ -63,12 +63,32 @@ async def predict_image(
     try:
         model_path = None
         model_name = "default"
+        task_type = None
+        
+        # Resolve user ID for model discovery
+        user_id_str = None
+        if current_user and hasattr(current_user, 'id'):
+            user_id_str = str(current_user.id)
+        elif current_user and hasattr(current_user, 'user_id'):
+            user_id_str = str(current_user.user_id)
+        
         if request.model_id:
+            # User explicitly selected a model
             progress = cv_engine.get_training_progress(request.model_id)
-            model_path = progress.get('model_path')
-            model_name = progress.get('config', {}).get('model', 'custom')
+            if progress:
+                model_path = progress.get('model_path')
+                model_name = progress.get('config', {}).get('model', 'custom')
+                task_type = progress.get('config', {}).get('task_type')
+        else:
+            # Auto-discover the user's latest trained model
+            auto_path, auto_task = cv_engine.find_latest_trained_model(user_id=user_id_str)
+            if auto_path:
+                model_path = auto_path
+                task_type = auto_task
+                model_name = f"auto-discovered ({auto_task or 'detection'})"
+                logger.info(f"Auto-discovered trained model for prediction: {auto_path} (task: {auto_task})")
 
-        result = cv_engine.predict_image(request.image, model_path)
+        result = cv_engine.predict_image(request.image, model_path, task_type=task_type)
         if "error" in result and not result.get("success"):
             raise HTTPException(status_code=500, detail=result["error"])
         

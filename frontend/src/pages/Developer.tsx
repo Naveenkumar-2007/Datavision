@@ -236,13 +236,22 @@ const Developer: React.FC = () => {
     try {
       const res = await fetch('/api/v1/developer/keys/generate', {
         method: 'POST',
-        headers: { 'X-User-ID': getUserIdSync() }
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': getUserIdSync()
+        }
       });
       if (res.ok) {
         await fetchKeys();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.detail || errData.message || 'Failed to generate API key';
+        alert(`Error: ${msg}`);
+        console.error('Key generation failed:', msg);
       }
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      console.error('Key generation error:', e);
+      alert(`Network error: ${e.message || 'Could not reach server'}`);
     } finally {
       setIsGenerating(false);
     }

@@ -134,6 +134,18 @@ const ScenarioBuilderTab: React.FC = () => {
     return <div className="flex items-center justify-center h-96"><div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin" /></div>;
   }
 
+  if (variables.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 text-center">
+        <Sliders className={`w-10 h-10 mb-3 ${isDark ? 'text-slate-600' : 'text-slate-300'}`} />
+        <h3 className="text-base font-bold mb-1" style={{ color: textPrimary }}>No Variables to Configure</h3>
+        <p className="text-xs max-w-md" style={{ color: textMuted }}>
+          Variables are automatically generated from your dataset columns. Upload data in the Data Hub first.
+        </p>
+      </div>
+    );
+  }
+
   const targetName = result?.target_name || 'Target Metric';
 
   return (

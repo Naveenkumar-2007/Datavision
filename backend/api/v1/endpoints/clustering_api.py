@@ -114,19 +114,46 @@ async def run_clustering_analysis(
         paths = get_user_paths(user_id)
         files_dir = paths.get("files", paths["base"] / "files")
         
-        # Try multiple file path patterns
+        # Try multiple file path patterns (CSV + Excel)
         file_path = None
-        for pattern in [
+        search_patterns = [
             files_dir / request.file_id,
             files_dir / f"{request.file_id}.csv",
+            files_dir / f"{request.file_id}.xlsx",
+            files_dir / f"{request.file_id}.xls",
             Path(f"storage/users/{user_id}/files/{request.file_id}"),
             Path(f"storage/users/{user_id}/files/{request.file_id}.csv"),
+            Path(f"storage/users/{user_id}/files/{request.file_id}.xlsx"),
+            Path(f"storage/users/{user_id}/files/{request.file_id}.xls"),
             Path(f"backend/storage/users/{user_id}/files/{request.file_id}"),
             Path(f"backend/storage/users/{user_id}/files/{request.file_id}.csv"),
-        ]:
+            Path(f"backend/storage/users/{user_id}/files/{request.file_id}.xlsx"),
+        ]
+        
+        for pattern in search_patterns:
             if pattern.exists():
                 file_path = pattern
                 break
+        
+        # Fallback: glob search in user's files directory for partial match
+        if not file_path and files_dir.exists():
+            file_stem = Path(request.file_id).stem  # Remove extension if present
+            for ext in ['*.csv', '*.xlsx', '*.xls', '*.tsv']:
+                matches = list(files_dir.glob(ext))
+                for m in matches:
+                    if file_stem.lower() in m.stem.lower() or m.name == request.file_id:
+                        file_path = m
+                        break
+                if file_path:
+                    break
+            # Last resort: just pick any data file if only one exists
+            if not file_path:
+                all_data_files = [f for f in files_dir.iterdir() 
+                                  if f.is_file() and f.suffix.lower() in ('.csv', '.xlsx', '.xls', '.tsv')
+                                  and not f.name.startswith('cleaned_') and not f.name.startswith('clustered_')]
+                if len(all_data_files) == 1:
+                    file_path = all_data_files[0]
+                    logger.info(f"📂 Auto-selected only available file: {file_path.name}")
         
         if not file_path:
             raise HTTPException(
@@ -134,9 +161,17 @@ async def run_clustering_analysis(
                 detail=f"File not found: {request.file_id}. Upload a file in DataHub first."
             )
         
-        # 2. Read data
-        df = pd.read_csv(file_path)
-        logger.info(f"📊 Loaded {len(df)} rows x {len(df.columns)} columns")
+        logger.info(f"📂 Found file: {file_path}")
+        
+        # 2. Read data — support CSV and Excel
+        file_ext = file_path.suffix.lower()
+        if file_ext in ('.xlsx', '.xls'):
+            df = pd.read_excel(file_path, engine='openpyxl' if file_ext == '.xlsx' else None)
+        elif file_ext == '.tsv':
+            df = pd.read_csv(file_path, sep='\t')
+        else:
+            df = pd.read_csv(file_path)
+        logger.info(f"📊 Loaded {len(df)} rows x {len(df.columns)} columns from {file_ext}")
         
         if len(df) < 10:
             raise HTTPException(status_code=400, detail="Need at least 10 rows for clustering")
@@ -420,6 +455,124 @@ async def _run_production_clustering(
             logger.warning(f"Could not save clustering charts: {e}")
     
     # =======================================================================
+    # 🔬 PRODUCTION ML ENGINEERING FEATURES
+    # =======================================================================
+    
+    # --- Anomaly Detection (Isolation Forest) ---
+    anomaly_results = None
+    try:
+        from sklearn.ensemble import IsolationForest
+        iso_forest = IsolationForest(n_estimators=100, contamination=0.05, random_state=42)
+        anomaly_labels = iso_forest.fit_predict(X_scaled)
+        anomaly_scores = iso_forest.decision_function(X_scaled)
+        n_anomalies = int(np.sum(anomaly_labels == -1))
+        anomaly_results = {
+            'n_anomalies': n_anomalies,
+            'anomaly_percentage': round(n_anomalies / len(X_scaled) * 100, 2),
+            'anomaly_indices': np.where(anomaly_labels == -1)[0].tolist()[:50],  # Limit to 50
+            'anomaly_scores_summary': {
+                'min': float(np.min(anomaly_scores)),
+                'max': float(np.max(anomaly_scores)),
+                'mean': float(np.mean(anomaly_scores)),
+                'threshold': float(np.percentile(anomaly_scores, 5)),
+            }
+        }
+        logger.info(f"🔍 Anomaly Detection: {n_anomalies} anomalies ({anomaly_results['anomaly_percentage']}%)")
+    except Exception as ae:
+        logger.warning(f"Anomaly detection skipped: {ae}")
+    
+    # --- t-SNE Visualization (2D) ---
+    tsne_visualization = None
+    try:
+        from sklearn.manifold import TSNE
+        if len(X_scaled) <= 5000:  # t-SNE is expensive for large datasets
+            perplexity = min(30, max(5, len(X_scaled) // 5))
+            tsne = TSNE(n_components=2, perplexity=perplexity, random_state=42, n_iter=500)
+            X_tsne = tsne.fit_transform(X_scaled)
+            tsne_visualization = {
+                'x': X_tsne[:, 0].tolist(),
+                'y': X_tsne[:, 1].tolist(),
+            }
+            logger.info(f"📊 t-SNE computed for {len(X_scaled)} samples")
+        else:
+            logger.info(f"⏭️ t-SNE skipped: dataset too large ({len(X_scaled)} samples)")
+    except Exception as te:
+        logger.warning(f"t-SNE skipped: {te}")
+    
+    # --- Feature Importance per Cluster ---
+    feature_importance = None
+    try:
+        from sklearn.ensemble import RandomForestClassifier
+        if actual_n_clusters >= 2 and len(feature_columns) >= 2:
+            # Use cluster labels as targets, features as input
+            valid_mask = labels >= 0  # Exclude noise points
+            if np.sum(valid_mask) > 20:
+                rf = RandomForestClassifier(n_estimators=50, max_depth=10, random_state=42, n_jobs=-1)
+                rf.fit(X_scaled[valid_mask], labels[valid_mask])
+                importances = rf.feature_importances_
+                sorted_idx = np.argsort(importances)[::-1]
+                feature_importance = {
+                    'features': [feature_columns[i] for i in sorted_idx],
+                    'importance_scores': [round(float(importances[i]), 4) for i in sorted_idx],
+                    'top_3_features': [feature_columns[i] for i in sorted_idx[:3]],
+                }
+                logger.info(f"🎯 Feature importance: top features = {feature_importance['top_3_features']}")
+    except Exception as fie:
+        logger.warning(f"Feature importance skipped: {fie}")
+    
+    # --- Cluster Stability (Bootstrap Silhouette Variance) ---
+    cluster_stability = None
+    try:
+        if actual_n_clusters >= 2 and len(X_scaled) >= 50:
+            n_bootstrap = 5
+            bootstrap_scores = []
+            for _ in range(n_bootstrap):
+                sample_idx = np.random.choice(len(X_scaled), size=min(len(X_scaled), 500), replace=True)
+                X_sample = X_scaled[sample_idx]
+                try:
+                    km_boot = KMeans(n_clusters=actual_n_clusters, random_state=np.random.randint(1000), n_init=5)
+                    boot_labels = km_boot.fit_predict(X_sample)
+                    if len(set(boot_labels)) > 1:
+                        score = silhouette_score(X_sample, boot_labels)
+                        bootstrap_scores.append(score)
+                except Exception:
+                    pass
+            if bootstrap_scores:
+                cluster_stability = {
+                    'mean_silhouette': round(float(np.mean(bootstrap_scores)), 4),
+                    'std_silhouette': round(float(np.std(bootstrap_scores)), 4),
+                    'stability_rating': 'High' if np.std(bootstrap_scores) < 0.03 else 'Medium' if np.std(bootstrap_scores) < 0.08 else 'Low',
+                    'n_bootstrap_runs': len(bootstrap_scores),
+                }
+                logger.info(f"📈 Cluster stability: {cluster_stability['stability_rating']} (σ={cluster_stability['std_silhouette']})")
+    except Exception as cse:
+        logger.warning(f"Cluster stability skipped: {cse}")
+    
+    # --- Per-Sample Silhouette Scores ---
+    sample_silhouettes = None
+    try:
+        from sklearn.metrics import silhouette_samples
+        if actual_n_clusters >= 2:
+            valid_mask = labels >= 0
+            if np.sum(valid_mask) > 10 and len(set(labels[valid_mask])) > 1:
+                sil_samples = silhouette_samples(X_scaled[valid_mask], labels[valid_mask])
+                # Per-cluster average silhouette
+                per_cluster_sil = {}
+                for cl in range(actual_n_clusters):
+                    mask = labels[valid_mask] == cl
+                    if np.sum(mask) > 0:
+                        per_cluster_sil[f"Cluster {cl}"] = round(float(np.mean(sil_samples[mask])), 4)
+                sample_silhouettes = {
+                    'per_cluster': per_cluster_sil,
+                    'overall_mean': round(float(np.mean(sil_samples)), 4),
+                    'n_negative': int(np.sum(sil_samples < 0)),  # Misclassified samples
+                    'negative_percentage': round(float(np.sum(sil_samples < 0) / len(sil_samples) * 100), 2),
+                }
+                logger.info(f"📊 Silhouette analysis: {sample_silhouettes['n_negative']} potentially misclassified ({sample_silhouettes['negative_percentage']}%)")
+    except Exception as sse:
+        logger.warning(f"Sample silhouettes skipped: {sse}")
+    
+    # =======================================================================
     # BUILD RESPONSE
     # =======================================================================
     response = {
@@ -449,6 +602,12 @@ async def _run_production_clustering(
         'cleaned_file': cleaned_file,
         'model_pkl_file': model_pkl_file,
         'k_scores': k_scores,  # For elbow chart on frontend
+        # 🔬 Production ML Engineering Features
+        'anomaly_detection': anomaly_results,
+        'tsne_visualization': tsne_visualization,
+        'feature_importance': feature_importance,
+        'cluster_stability': cluster_stability,
+        'sample_silhouettes': sample_silhouettes,
     }
     
     logger.info(f"✅ Clustering complete: {actual_n_clusters} clusters, silhouette={metrics['silhouette_score']:.3f}")

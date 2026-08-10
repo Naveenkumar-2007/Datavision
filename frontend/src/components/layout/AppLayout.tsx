@@ -214,7 +214,6 @@ const AppLayout: React.FC = () => {
         { path: '/chat', label: 'AI Analyst', icon: MessageSquare },
         { path: '/ml-predictions', label: 'AutoML & Predict', icon: Brain, roles: ['Owner', 'Admin', 'Analyst'] }, 
         { path: '/computer-vision', label: 'Computer Vision', icon: Camera, roles: ['Owner', 'Admin', 'Analyst'] },
-        { path: '/vector', label: 'Vector AI & RAG', icon: Layers, roles: ['Owner', 'Admin', 'Analyst'] },
         { path: '/simulator', label: 'Scenario Simulator', icon: Sliders, roles: ['Owner', 'Admin', 'Analyst'] },
       ]
     },

@@ -448,40 +448,54 @@ async def list_all_user_datasets(
                     "file_type": f"Image ({cv_d.get('taskType', 'CV')})",
                     "file_size_mb": 12.4,
                     "user_email": cv_d.get("user_id", "CV User"),
+                    "user_id": cv_d.get("user_id", "default"),
                     "status": "Ready for Training",
                     "rows_count": cv_d.get("numImages", 0),
                     "columns_count": cv_d.get("numClasses", 0),
-                    "uploaded_at": cv_d.get("createdAt", datetime.utcnow().isoformat())
+                    "uploaded_at": cv_d.get("createdAt", datetime.utcnow().isoformat()),
+                    "source_type": "computer_vision"
                 })
         except Exception as cv_e:
             logger.warning(f"Could not load CV datasets in admin panel: {cv_e}")
 
-        if not dataset_list:
-            # Fallback demonstration datasets if none uploaded yet
-            dataset_list = [
-                {
-                    "id": "ds-demo-1",
-                    "filename": "enterprise_sales_q4.csv",
-                    "file_type": "CSV",
-                    "file_size_mb": 4.82,
-                    "user_email": "demo@datavision.app",
-                    "status": "Processed",
-                    "rows_count": 12450,
-                    "columns_count": 14,
-                    "uploaded_at": datetime.utcnow().isoformat()
-                },
-                {
-                    "id": "ds-demo-2",
-                    "filename": "📷 fruit_defect_detection.zip",
-                    "file_type": "Image (Object Detection)",
-                    "file_size_mb": 18.5,
-                    "user_email": "cv_analyst@datavision.app",
-                    "status": "Ready for Training",
-                    "rows_count": 850,
-                    "columns_count": 4,
-                    "uploaded_at": datetime.utcnow().isoformat()
-                }
-            ]
+        # Also collect DataHub Live Connections (Snowflake, Kafka, Postgres, API, etc.)
+        try:
+            conn_stmt = select(DataConnection).order_by(DataConnection.created_at.desc())
+            conn_result = await db.execute(conn_stmt)
+            connections = conn_result.scalars().all()
+            
+            for conn in connections:
+                # Get owner email
+                conn_email = "Workspace User"
+                if conn.user_id:
+                    u_res = await db.execute(select(UserProfile).filter(UserProfile.id == conn.user_id))
+                    u_obj = u_res.scalars().first()
+                    if u_obj:
+                        conn_email = u_obj.email
+                
+                source_label = (conn.source_type or "unknown").upper()
+                table_name = conn.target_table or conn.database_name or "live_stream"
+                
+                dataset_list.append({
+                    "id": str(conn.id),
+                    "filename": f"📡 {table_name} ({source_label})",
+                    "file_type": f"Live ({source_label})",
+                    "file_size_mb": round(getattr(conn, 'total_records', 0) * 0.001, 2) if hasattr(conn, 'total_records') else 0,
+                    "user_email": conn_email,
+                    "user_id": str(conn.user_id) if conn.user_id else "default",
+                    "status": "Active" if getattr(conn, 'is_active', True) else "Inactive",
+                    "rows_count": getattr(conn, 'total_records', 0) if hasattr(conn, 'total_records') else 0,
+                    "columns_count": 0,
+                    "uploaded_at": conn.created_at.isoformat() if conn.created_at else datetime.utcnow().isoformat(),
+                    "source_type": source_label.lower(),
+                    "connection_details": {
+                        "host": conn.host,
+                        "database": conn.database_name,
+                        "table": conn.target_table,
+                    }
+                })
+        except Exception as conn_e:
+            logger.warning(f"Could not load data connections in admin: {conn_e}")
 
         return {"success": True, "datasets": dataset_list, "total": len(dataset_list)}
     except Exception as e:
