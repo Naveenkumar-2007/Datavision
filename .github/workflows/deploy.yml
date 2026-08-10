@@ -56,22 +56,25 @@ jobs:
             # Install Git LFS
             git lfs install --skip-smudge 2>/dev/null || true
 
-            # Create clean orphan release branch without historical broken LFS pointers
-            git checkout --orphan hf-release
-            git reset
+            # Create deploy branch
+            git checkout -b hf-deploy
+            
+            # Setup HF remote and fetch
+            git remote remove hf 2>/dev/null || true
+            git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
+            git fetch hf main || true
 
             # Stage all current active files and frontend dist
             git add -A
             git add -f frontend/dist 2>/dev/null || true
-            git commit -m "release: clean production build for HuggingFace Space" || true
+            git commit -m "release: production build for HuggingFace Space" || true
 
-            # Setup HF remote
-            git remote remove hf 2>/dev/null || true
-            git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
+            # Merge remote main to avoid force push restriction, favoring our files
+            git merge -s ours hf/main --allow-unrelated-histories -m "Merge HF main" || true
 
-            # Push clean orphan release branch to Hugging Face Space main
-            echo "🚀 Force pushing clean release to Hugging Face..."
-            git push -f hf hf-release:main
+            # Push normal release branch to Hugging Face Space main
+            echo "🚀 Pushing release to Hugging Face..."
+            git push hf hf-deploy:main
             echo "✅ Successfully deployed to Hugging Face Space: $SPACE_NAME"
           else
             echo "⚠️ HF_TOKEN or HUGGINGFACE_TOKEN secret is required in GitHub repository settings!"
