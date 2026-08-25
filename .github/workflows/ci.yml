@@ -39,6 +39,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          lfs: true
       
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -58,7 +59,6 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
           HF_SPACE: ${{ secrets.HF_SPACE }}
-          GIT_LFS_SKIP_SMUDGE: "1"
         run: |
           TOKEN="${HF_TOKEN:-$HUGGINGFACE_TOKEN}"
           SPACE_NAME="${HF_SPACE:-datavision-ai/Datavision}"
@@ -67,9 +67,9 @@ jobs:
             echo "🚀 Syncing clean release to Hugging Face Space: $SPACE_NAME"
             git config --global user.email "ci@datavision.ai"
             git config --global user.name "DataVision CI/CD Bot"
-            git config --global lfs.allowincompletepush true
-            
-            git lfs install --skip-smudge 2>/dev/null || true
+            git config --global lfs.allowincompletepush false
+            git lfs install
+            git lfs pull
 
             # Create clean orphan release branch without historical broken LFS pointers
             git checkout --orphan hf-release
@@ -83,6 +83,7 @@ jobs:
             # Setup HF remote and force push clean orphan branch to main
             git remote remove hf 2>/dev/null || true
             git remote add hf "https://user:$TOKEN@huggingface.co/spaces/$SPACE_NAME"
+            git lfs push hf hf-release
             git push -f hf hf-release:main
             echo "✅ Successfully pushed clean release to Hugging Face Space: $SPACE_NAME"
           else
