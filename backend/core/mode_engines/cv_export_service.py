@@ -2,8 +2,11 @@ import os
 import shutil
 import zipfile
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 class CVExportService:
     def __init__(self, export_dir: str = "cv_exports"):

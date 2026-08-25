@@ -1,5 +1,6 @@
 import time
 import uuid
+import json
 import threading
 import numpy as np
 import logging
@@ -811,5 +812,4 @@ class CVTrainer:
                         json.dump(job, pf, indent=2)
             except Exception:
                 pass
-
 
