@@ -1,3 +1,13 @@
+---
+title: DataVision AI
+emoji: 📊
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 <div align="center">
   <img src="frontend/public/datavision-logo.png" alt="DataVision logo" width="96" />
   <h1>DataVision AI</h1>
