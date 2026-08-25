@@ -21,6 +21,7 @@ class CVAutoMLEngine:
     def __init__(self):
         self.model = None
         self.model_type = None
+        self._model_cache_key = None  # (model_path, task_type) tuple for caching
         self.models_dir = Path("cv_models")
         self.datasets_dir = Path("cv_datasets")
         self.models_dir.mkdir(exist_ok=True)
@@ -151,8 +152,16 @@ class CVAutoMLEngine:
     # REAL-WORLD ENTERPRISE COMPUTER VISION INFERENCE ENGINE
     # ─────────────────────────────────────────────────────
     def initialize_model(self, model_path: Optional[str] = None, task_type: Optional[str] = None):
-        """Load the YOLO model. Selects the correct architecture based on task_type.
-        Custom model_path always takes priority over pretrained."""
+        """Load the YOLO model with caching. Selects the correct architecture based on task_type.
+        Custom model_path always takes priority over pretrained.
+        Models are cached by (model_path, task_type) to avoid reload on every prediction."""
+        cache_key = (model_path, task_type)
+        
+        # Return cached model if same path and task
+        if self._model_cache_key == cache_key and self.model is not None:
+            logger.debug(f"Using cached model: {cache_key}")
+            return True
+        
         try:
             from ultralytics import YOLO
             
@@ -160,6 +169,7 @@ class CVAutoMLEngine:
                 # Always trust the user's trained custom model
                 self.model = YOLO(model_path)
                 self.model_type = 'yolo_custom'
+                self._model_cache_key = cache_key
                 custom_names = getattr(self.model, 'names', {})
                 logger.info(f"Loaded custom model: {model_path} with {len(custom_names)} classes: {list(custom_names.values())[:10]}")
                 return True
@@ -183,10 +193,12 @@ class CVAutoMLEngine:
                 self.model = YOLO('yolov8s.pt')
             
             self.model_type = 'yolo'
+            self._model_cache_key = cache_key
             logger.info(f"Loaded pretrained model: {model_file} for task: {task_type or 'general'}")
             return True
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
+            self._model_cache_key = None
             return False
 
     def predict_image(self, base64_image: str, model_path: Optional[str] = None, task_type: Optional[str] = None, conf: float = 0.25, iou: float = 0.45) -> Dict[str, Any]:

@@ -30,7 +30,8 @@ import os
 PREFS_DIR = Path(__file__).parent.parent.parent.parent / "storage" / "email_prefs"
 
 PREFS_DIR.mkdir(parents=True, exist_ok=True)
-print(f"📁 Email Prefs PREFS_DIR: {PREFS_DIR.absolute()}")
+logger.info(f"Email Prefs PREFS_DIR: {PREFS_DIR.absolute()}")
+
 
 
 class EmailPreferences(BaseModel):

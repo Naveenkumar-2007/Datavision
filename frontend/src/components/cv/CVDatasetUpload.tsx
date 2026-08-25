@@ -42,9 +42,13 @@ const CVDatasetUpload: React.FC<Props> = ({ onUploadComplete }) => {
   };
 
   const handleFiles = async (file: File) => {
-    const validExts = ['.zip', '.tar', '.tar.gz', '.rar'];
+    const validExts = ['.zip', '.tar', '.tar.gz', '.tgz'];
     if (!validExts.some(ext => file.name.toLowerCase().endsWith(ext))) {
-      toast.error('Please upload your dataset as a compressed folder (.zip, .tar, .rar) so we can preserve your directory structure.');
+      toast.error('Please upload your dataset as a compressed folder (.zip, .tar, .tar.gz, .tgz) so we can preserve your directory structure.');
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024 * 1024) {
+      toast.error('Vision datasets can be up to 20 GB. Please choose a smaller archive.');
       return;
     }
 
@@ -118,7 +122,7 @@ const CVDatasetUpload: React.FC<Props> = ({ onUploadComplete }) => {
               ref={fileInputRef} 
               onChange={handleFileChange} 
               className="hidden" 
-              accept=".zip,.tar,.tar.gz,.rar" 
+              accept=".zip,.tar,.tar.gz,.tgz" 
             />
             
             <AnimatePresence mode="wait">
@@ -168,7 +172,7 @@ const CVDatasetUpload: React.FC<Props> = ({ onUploadComplete }) => {
                       Click or drag archive here
                     </h3>
                     <p className="text-sm px-4 max-w-md mx-auto" style={{ color: 'var(--text-muted)' }}>
-                      Supports .zip, .tar, .rar formats up to 5GB.
+                      Supports .zip, .tar, .tar.gz, and .tgz formats up to 20 GB.
                     </p>
                   </div>
                   

@@ -128,8 +128,20 @@ async def _resolve_channel_id(channel_id: str, db: AsyncSession, workspace_id: s
     """Resolve 'default' to the UUID of the workspace's general channel."""
     if channel_id == "default":
         channel = await _get_or_create_workspace_channel(db, workspace_id)
-        return str(channel.id)
-    return channel_id
+        return channel.id
+    try:
+        import uuid as _uuid
+        return _uuid.UUID(str(channel_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid channel ID")
+
+
+def _message_uuid(message_id: str):
+    import uuid as _uuid
+    try:
+        return _uuid.UUID(str(message_id))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid message ID")
 
 
 def _generate_ai_insight(user_id: str, user_question: str) -> Optional[Dict]:
@@ -941,7 +953,7 @@ async def react_to_message(
     """Add/toggle emoji reaction on a message."""
     try:
         stmt = select(MessageReaction).where(
-            MessageReaction.message_id == message_id,
+            MessageReaction.message_id == _message_uuid(message_id),
             MessageReaction.user_id == user_id,
             MessageReaction.emoji == req.emoji
         )
@@ -953,7 +965,7 @@ async def react_to_message(
             await db.commit()
         else:
             new_reaction = MessageReaction(
-                message_id=message_id,
+                message_id=_message_uuid(message_id),
                 user_id=user_id,
                 emoji=req.emoji
             )
@@ -961,7 +973,7 @@ async def react_to_message(
             await db.commit()
             
         # Refetch all reactions for message with user names
-        stmt2 = select(MessageReaction).where(MessageReaction.message_id == message_id).options(selectinload(MessageReaction.user))
+        stmt2 = select(MessageReaction).where(MessageReaction.message_id == _message_uuid(message_id)).options(selectinload(MessageReaction.user))
         result2 = await db.execute(stmt2)
         reactions = result2.scalars().all()
         
@@ -983,7 +995,7 @@ async def react_to_message(
 async def get_reactions(message_id: str, db: AsyncSession = Depends(get_db)):
     """Get reactions for a message."""
     try:
-        stmt = select(MessageReaction).where(MessageReaction.message_id == message_id).options(selectinload(MessageReaction.user))
+        stmt = select(MessageReaction).where(MessageReaction.message_id == _message_uuid(message_id)).options(selectinload(MessageReaction.user))
         result = await db.execute(stmt)
         reactions = result.scalars().all()
         
@@ -1008,7 +1020,8 @@ async def reply_to_message(
 ):
     """Add a threaded reply to a message."""
     # Find parent to get channel_id
-    stmt = select(ChannelMessage).where(ChannelMessage.id == message_id)
+    message_uuid = _message_uuid(message_id)
+    stmt = select(ChannelMessage).where(ChannelMessage.id == message_uuid)
     result = await db.execute(stmt)
     parent = result.scalar_one_or_none()
     
@@ -1020,7 +1033,7 @@ async def reply_to_message(
         user_id=user_id,
         content=req.message,
         is_ai=False,
-        parent_id=message_id
+        parent_id=message_uuid
     )
     db.add(reply_msg)
     await db.commit()
@@ -1039,7 +1052,7 @@ async def reply_to_message(
     }
 
     # Count total replies
-    stmt_count = select(ChannelMessage).where(ChannelMessage.parent_id == message_id)
+    stmt_count = select(ChannelMessage).where(ChannelMessage.parent_id == message_uuid)
     total_replies = len((await db.execute(stmt_count)).scalars().all())
     
     return {"success": True, "reply": reply, "total_replies": total_replies}
@@ -1048,7 +1061,7 @@ async def reply_to_message(
 @router.get("/threads/{message_id}/replies")
 async def get_replies(message_id: str, db: AsyncSession = Depends(get_db)):
     """Get all replies for a message thread."""
-    stmt = select(ChannelMessage).where(ChannelMessage.parent_id == message_id).order_by(ChannelMessage.created_at.asc()).options(selectinload(ChannelMessage.user))
+    stmt = select(ChannelMessage).where(ChannelMessage.parent_id == _message_uuid(message_id)).order_by(ChannelMessage.created_at.asc()).options(selectinload(ChannelMessage.user))
     result = await db.execute(stmt)
     replies_db = result.scalars().all()
     
@@ -1066,6 +1079,31 @@ async def get_replies(message_id: str, db: AsyncSession = Depends(get_db)):
         })
         
     return {"replies": formatted, "total": len(formatted)}
+
+
+@router.delete("/threads/{message_id}")
+async def delete_message(
+    message_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Explicitly remove only the caller's message and its thread data."""
+    import uuid as _uuid
+    try:
+        caller_id = _uuid.UUID(user_id)
+    except ValueError:
+        caller_id = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+    message_uuid = _message_uuid(message_id)
+    message = (await db.execute(select(ChannelMessage).where(ChannelMessage.id == message_uuid))).scalar_one_or_none()
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if message.user_id != caller_id:
+        raise HTTPException(status_code=403, detail="You can delete only your own messages")
+    await db.execute(delete(MessageReaction).where(MessageReaction.message_id == message_uuid))
+    await db.execute(delete(ChannelMessage).where(ChannelMessage.parent_id == message_uuid))
+    await db.delete(message)
+    await db.commit()
+    return {"success": True, "message_id": message_id}
 
 
 @router.post("/channels/{channel_id}/pin")

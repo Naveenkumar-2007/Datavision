@@ -32,6 +32,7 @@ const Collaborate = React.lazy(() => import('./pages/Collaborate'));
 const Developer = React.lazy(() => import('./pages/Developer'));
 const ComputerVision = React.lazy(() => import('./pages/ComputerVision'));
 
+
 const Autopilot = React.lazy(() => import('./pages/Autopilot'));
 
 const PrivacyPolicy = React.lazy(() => import('./pages/PrivacyPolicy'));
@@ -130,6 +131,7 @@ function App() {
                 <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
                   <Route path="/dashboard" element={<AutonomousDashboard />} />
                   <Route path="/data-hub" element={<DataHub />} />
+
                   <Route path="/datahub" element={<DataHub />} />
                   <Route path="/ml-predictions" element={<MLPredictions />} />
                   <Route path="/pipelines" element={<PipelineBuilder />} />

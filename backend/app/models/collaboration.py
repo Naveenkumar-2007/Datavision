@@ -109,9 +109,10 @@ class ChannelMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Messages inside a collaboration channel."""
     __tablename__ = "channel_messages"
     
-    channel_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Production collaboration tables use UUID identifiers.
+    channel_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    parent_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     is_ai: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -124,7 +125,7 @@ class MessageReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     """Emoji reactions on channel messages."""
     __tablename__ = "message_reactions"
     
-    message_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    message_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     emoji: Mapped[str] = mapped_column(String(50), nullable=False)
 

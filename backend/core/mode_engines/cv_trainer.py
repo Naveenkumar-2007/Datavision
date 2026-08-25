@@ -164,9 +164,21 @@ class CVTrainer:
         return job_id
         
     def get_progress(self, job_id: str) -> Optional[Dict[str, Any]]:
-        if job_id not in _training_jobs:
-            return None
-        return _training_jobs[job_id]
+        if job_id in _training_jobs:
+            return _training_jobs[job_id]
+        
+        # Fallback: check if progress.json exists on disk in cv_models/{job_id}
+        disk_path = Path(self.models_dir) / job_id / "progress.json"
+        if disk_path.exists():
+            try:
+                with open(disk_path, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                    _training_jobs[job_id] = loaded
+                    return loaded
+            except Exception:
+                pass
+        return None
+
         
     def stop_training(self, job_id: str) -> bool:
         if job_id in _training_jobs and _training_jobs[job_id]['status'] == 'running':
@@ -213,8 +225,12 @@ class CVTrainer:
             if val_loss == 0:
                 val_loss = metrics.get('val/loss', 0.0)
                 
-            # Read real metrics — no fake fallbacks
+            # Read real metrics — no fake fallbacks, read directly from trainer
             mAP50 = metrics.get('metrics/mAP50(B)', 0.0)
+            precision = metrics.get('metrics/precision(B)', 0.0)
+            recall = metrics.get('metrics/recall(B)', 0.0)
+            mAP50_95 = metrics.get('metrics/mAP50-95(B)', 0.0)
+            
             if mAP50 == 0:
                 # Try seg mask metric, then pose metric, then classification accuracy
                 mAP50 = (
@@ -222,15 +238,25 @@ class CVTrainer:
                     metrics.get('metrics/mAP50(P)', 0.0) or
                     metrics.get('metrics/accuracy_top1', 0.0)
                 )
+            if precision == 0:
+                precision = metrics.get('metrics/precision(M)', 0.0) or metrics.get('metrics/precision(P)', 0.0)
+            if recall == 0:
+                recall = metrics.get('metrics/recall(M)', 0.0) or metrics.get('metrics/recall(P)', 0.0)
+            if mAP50_95 == 0:
+                mAP50_95 = metrics.get('metrics/mAP50-95(M)', 0.0) or metrics.get('metrics/mAP50-95(P)', 0.0)
+                
+            # Compute F1 from real precision/recall
+            f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
                  
             job['progress']['epoch'] = epoch
             job['progress']['loss'] = float(abs(loss))
             job['progress']['valLoss'] = float(abs(val_loss))
             job['progress']['metrics'] = {
                 'mAP50': float(mAP50),
-                'mAP50_95': float(metrics.get('metrics/mAP50-95(B)', mAP50 * 0.7)),
-                'precision': float(metrics.get('metrics/precision(B)', mAP50 * 0.95)),
-                'recall': float(metrics.get('metrics/recall(B)', mAP50 * 0.92)),
+                'mAP50_95': float(mAP50_95),
+                'precision': float(precision),
+                'recall': float(recall),
+                'f1': float(f1),
                 'accuracy': float(mAP50)
             }
             # Real system stats
@@ -253,11 +279,11 @@ class CVTrainer:
             from ultralytics import YOLO
             
             if mode == 'fast':
-                epochs = min(epochs, 10)      # Quick but actually learns
+                epochs = min(epochs, 20)      # Quick prototyping — enough to converge on small datasets
             elif mode == 'ultra':
-                epochs = min(epochs, 50)      # Production quality
-            else:  # expert
-                epochs = min(epochs, 100)     # Maximum accuracy
+                epochs = max(epochs, 50)      # Production quality — at least 50 epochs
+                epochs = min(epochs, 200)     # Cap at 200 for safety
+            # expert mode: no cap — use user-specified epoch count exactly
 
             job['progress']['totalEpochs'] = epochs
             selected_model = config.get('model', 'yolov8n')
@@ -544,6 +570,8 @@ class CVTrainer:
 
                 # ═══════════════════════════════════════════════════════════
                 # WRITE data.yaml with correct task-specific fields
+                # NOTE: This is ONLY for detection/segmentation/pose/ocr.
+                # Classification uses folder-based data_arg from prepare_classification_dataset.
                 # ═══════════════════════════════════════════════════════════
                 yaml_path = ds_path / 'data.yaml'
                 train_dir = 'images'
@@ -562,6 +590,7 @@ class CVTrainer:
                     else:
                         f.write("  0: object\n")
                 data_arg = str(yaml_path)
+                job['progress']['logs'].append(f"Written data.yaml at {yaml_path} with {len(classes)} classes.")
 
             model.add_callback("on_train_epoch_end", on_train_epoch_end)
             
@@ -577,7 +606,8 @@ class CVTrainer:
             else:
                 imgsz = 640       # YOLO standard for detection & OCR
             
-            results = model.train(
+            # Build training arguments
+            train_kwargs = dict(
                 data=data_arg,
                 epochs=epochs,
                 imgsz=imgsz,
@@ -585,9 +615,31 @@ class CVTrainer:
                 name="train",
                 exist_ok=True,
                 device="cpu",
-                batch=4,
-                verbose=False
+                batch=config.get('batchSize', 4),
+                verbose=False,
+                patience=max(10, epochs // 3),  # Early stopping with reasonable patience
             )
+            
+            # Add optimizer from user config if expert mode
+            if mode == 'expert':
+                optimizer = config.get('optimizer', 'AdamW')
+                lr0 = config.get('learningRate', 0.001)
+                weight_decay = config.get('weightDecay', 0.0005)
+                train_kwargs['optimizer'] = optimizer
+                train_kwargs['lr0'] = lr0
+                train_kwargs['weight_decay'] = weight_decay
+            
+            # Add augmentation settings
+            augs = config.get('augmentations', [])
+            if 'mosaic' not in augs:
+                train_kwargs['mosaic'] = 0.0
+            if 'mixup' not in augs:
+                train_kwargs['mixup'] = 0.0
+            if 'hflip' in augs:
+                train_kwargs['fliplr'] = 0.5
+            
+            job['progress']['logs'].append(f"Training args: epochs={epochs}, batch={train_kwargs['batch']}, imgsz={imgsz}, task={task_type}")
+            results = model.train(**train_kwargs)
             
             if job['status'] == 'running':
                 job['status'] = 'completed'
@@ -655,11 +707,55 @@ class CVTrainer:
                                 final_metrics['recall'] = float(rec_val)
                             
                             final_metrics['accuracy'] = final_metrics.get('mAP50', 0)
+                            
+                            # Compute real F1 from precision and recall
+                            p = final_metrics.get('precision', 0)
+                            r = final_metrics.get('recall', 0)
+                            final_metrics['f1'] = 2 * (p * r) / (p + r) if (p + r) > 0 else 0.0
+                            
+                            # ── PARSE PER-CLASS METRICS if available ──
+                            per_class_metrics = []
+                            for cls_idx, cls_name in enumerate(classes or []):
+                                cls_p_col = f'metrics/precision_class{cls_idx}'
+                                cls_r_col = f'metrics/recall_class{cls_idx}'
+                                cls_p = last_row.get(cls_p_col, p)  # Fallback to overall
+                                cls_r = last_row.get(cls_r_col, r)
+                                cls_f1 = 2 * (float(cls_p) * float(cls_r)) / (float(cls_p) + float(cls_r)) if (float(cls_p) + float(cls_r)) > 0 else 0.0
+                                per_class_metrics.append({
+                                    'name': cls_name,
+                                    'precision': float(cls_p),
+                                    'recall': float(cls_r),
+                                    'f1': cls_f1,
+                                })
+                            if per_class_metrics:
+                                final_metrics['per_class'] = per_class_metrics
+                            
+                            # ── PARSE FULL TRAINING HISTORY for loss curves ──
+                            try:
+                                loss_history = []
+                                for _, row in df.iterrows():
+                                    epoch_data = {'epoch': int(row.get('epoch', 0) if 'epoch' in df.columns else 0)}
+                                    # Try different loss column names
+                                    for col in ['train/box_loss', 'train/cls_loss', 'train/dfl_loss', 'train/loss']:
+                                        if col in df.columns:
+                                            epoch_data[col.replace('/', '_')] = float(row.get(col, 0))
+                                    for col in ['val/box_loss', 'val/cls_loss', 'val/dfl_loss', 'val/loss']:
+                                        if col in df.columns:
+                                            epoch_data[col.replace('/', '_')] = float(row.get(col, 0))
+                                    for col in ['metrics/mAP50(B)', 'metrics/precision(B)', 'metrics/recall(B)', 'metrics/accuracy_top1']:
+                                        if col in df.columns:
+                                            epoch_data[col.replace('/', '_').replace('(', '').replace(')', '')] = float(row.get(col, 0))
+                                    loss_history.append(epoch_data)
+                                final_metrics['loss_history'] = loss_history
+                            except Exception:
+                                pass
+                            
                             job['progress']['logs'].append(
                                 f"Parsed final metrics ({task_type}): "
                                 f"primary={final_metrics.get('mAP50', 0):.3f}, "
                                 f"precision={final_metrics.get('precision', 0):.3f}, "
-                                f"recall={final_metrics.get('recall', 0):.3f}"
+                                f"recall={final_metrics.get('recall', 0):.3f}, "
+                                f"f1={final_metrics.get('f1', 0):.3f}"
                             )
                     except Exception as parse_e:
                         logger.warning(f"Failed to parse results.csv: {parse_e}")
@@ -686,10 +782,34 @@ class CVTrainer:
                 job['metrics']['fps'] = int(1000 / max(1, job['metrics']['inferenceTime']))
                 job['model_path'] = best_pt
                 
+                # Check for confusion matrix and validation batch assets
+                val_dir = os.path.join(abs_project_path, "train")
+                error_assets = {}
+                for asset in ['confusion_matrix.png', 'results.png', 'val_batch0_pred.jpg', 'val_batch0_labels.jpg']:
+                    asset_path = os.path.join(val_dir, asset)
+                    if os.path.exists(asset_path):
+                        error_assets[asset.replace('.', '_')] = asset_path
+                job['error_analysis_assets'] = error_assets
+
+                # Save progress.json to disk for persistence across restarts
+                try:
+                    progress_file = os.path.join(abs_project_path, "progress.json")
+                    with open(progress_file, 'w', encoding='utf-8') as pf:
+                        json.dump(job, pf, indent=2)
+                except Exception as save_e:
+                    logger.warning(f"Could not save progress.json: {save_e}")
+                
         except Exception as e:
             logger.error(f"Training error: {e}")
             job['status'] = 'failed'
             job['error'] = str(e)
             job['progress']['logs'].append(f"ERROR: {str(e)}")
             job['completed_at'] = time.strftime('%Y-%m-%dT%H:%M:%SZ')
+            try:
+                if 'abs_project_path' in locals():
+                    with open(os.path.join(abs_project_path, "progress.json"), 'w', encoding='utf-8') as pf:
+                        json.dump(job, pf, indent=2)
+            except Exception:
+                pass
+
 

@@ -24,20 +24,14 @@ const CVTrainingMonitor: React.FC<Props> = ({ job, onPause, onResume, onStop }) 
   const metrics = progress.metrics || {};
   const logs = progress.logs || [];
 
-  // Mock chart data history if not provided by backend yet (in real app, backend sends history array)
-  // For UI sake, we'll simulate a history based on current epoch
-  const chartData = Array.from({ length: Math.max(1, currentEpoch) }).map((_, i) => ({
-    epoch: i + 1,
-    loss: Math.max(0, 3.5 * Math.exp(-(i/totalEpochs)*4) + (Math.random() * 0.1)),
-    map: Math.min(0.98, 0.1 + (0.85 * (1 - Math.exp(-(i/totalEpochs)*5))))
+  // Training history is produced by the trainer. Do not display synthetic curves.
+  const chartData = (((metrics as any).loss_history || (progress as any).history || []) as any[]).map((point: any, index: number) => ({
+    epoch: point.epoch ?? index + 1,
+    loss: point.loss ?? point.train_loss ?? 0,
+    map: point.mAP50 ?? point.map ?? 0,
   }));
-
-  if (currentEpoch > 0) {
-    chartData[currentEpoch - 1] = {
-      epoch: currentEpoch,
-      loss: progress.loss || 0,
-      map: metrics.mAP50 || 0
-    };
+  if (!chartData.length && currentEpoch > 0) {
+    chartData.push({ epoch: currentEpoch, loss: progress.loss ?? 0, map: metrics.mAP50 ?? 0 });
   }
 
   return (

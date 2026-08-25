@@ -44,7 +44,9 @@ router = APIRouter()
 # ============================================
 # Allowed file extensions (whitelist approach)
 ALLOWED_EXTENSIONS = {'.csv', '.xlsx', '.xls', '.json', '.pdf', '.docx', '.doc', '.txt', '.png', '.jpg', '.jpeg'}
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB max
+# Large tabular/BI extracts are common in production. The reverse proxy should
+# use the same value (2 GiB) when one is configured.
+MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2 GiB max
 MAX_FILENAME_LENGTH = 255
 
 def sanitize_filename(filename: str) -> str:
@@ -211,6 +213,10 @@ async def upload_files(
         for file in files:
             # SECURITY: Validate each uploaded file
             validate_file(file)
+
+            declared_size = getattr(file, "size", None)
+            if declared_size is not None and declared_size > MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="File exceeds the 2 GB upload limit.")
             
             # Check cancellation for each file
             if await is_cancelled():

@@ -7,7 +7,7 @@ SECURED: Uses JWT authentication for proper user isolation.
 """
 
 from fastapi import APIRouter, HTTPException, Header, Depends
-from typing import Optional
+from typing import Optional, Dict, List, Any
 from pydantic import BaseModel
 import json
 
@@ -22,6 +22,14 @@ class DashboardRequest(BaseModel):
     """Request model for dashboard generation"""
     user_id: Optional[str] = None  # Legacy - ignored, use JWT instead
     refresh: bool = False
+    # Slicers are applied server-side before every KPI/chart is calculated.
+    active_filters: Dict[str, List[str]] = {}
+
+
+class ChartExplainRequest(BaseModel):
+    chart_title: str
+    chart_type: str = "chart"
+    chart_data: Any = None
 
 
 class DashboardResponse(BaseModel):
@@ -65,6 +73,21 @@ async def generate_dashboard(
                 error="No data available. Please upload files first in DataHub."
             )
         
+        # Apply the selected slicers before generating every dashboard artifact.
+        # Ignore stale/unknown columns and empty selections so a saved dashboard
+        # still opens after a data-source schema change.
+        selected_filters = request.active_filters if request else {}
+        for column, values in selected_filters.items():
+            if column in df.columns and values:
+                normalized = {str(value) for value in values}
+                df = df[df[column].astype(str).isin(normalized)]
+
+        if df.empty:
+            return DashboardResponse(
+                success=False,
+                error="The selected slicers do not match any rows. Clear one or more filters and try again."
+            )
+
         # Generate REAL dashboard with pandas calculations - NOT LLM math!
         from core.real_dashboard import generate_real_dashboard
         is_refresh = request.refresh if request else False
@@ -119,6 +142,57 @@ async def generate_dashboard(
             success=False,
             error=str(e)
         )
+
+
+@router.post("/explain-chart")
+async def explain_chart(request: ChartExplainRequest):
+    """Provide a data-grounded explanation for a chart without inventing facts."""
+    try:
+        traces = request.chart_data or []
+        if isinstance(traces, dict):
+            traces = [traces]
+        if not isinstance(traces, list):
+            traces = []
+
+        points: List[tuple[str, float]] = []
+        for trace in traces:
+            if not isinstance(trace, dict):
+                continue
+            labels = trace.get("x") or trace.get("labels") or []
+            values = trace.get("y") or trace.get("values") or []
+            if not isinstance(labels, list): labels = [labels]
+            if not isinstance(values, list): values = [values]
+            for label, value in zip(labels, values):
+                try:
+                    points.append((str(label), float(value)))
+                except (TypeError, ValueError):
+                    continue
+
+        if not points:
+            explanation = (
+                f"**{request.chart_title}** is a {request.chart_type} visualization. "
+                "There are no numeric points available in this chart payload yet, so no trend or ranking is inferred."
+            )
+        else:
+            values = [value for _, value in points]
+            total = sum(values)
+            top_label, top_value = max(points, key=lambda item: item[1])
+            bottom_label, bottom_value = min(points, key=lambda item: item[1])
+            share = (top_value / total * 100) if total else 0
+            trend = ""
+            if len(values) >= 2:
+                change = values[-1] - values[0]
+                direction = "increased" if change > 0 else "decreased" if change < 0 else "was unchanged"
+                trend = f" Across the displayed order, the value {direction} from {values[0]:,.2f} to {values[-1]:,.2f}."
+            explanation = (
+                f"**{request.chart_title}** contains {len(points)} plotted values. "
+                f"The highest value is **{top_label}** at **{top_value:,.2f}**"
+                f" ({share:,.1f}% of the displayed total); the lowest is **{bottom_label}** at **{bottom_value:,.2f}**."
+                f" The displayed total is **{total:,.2f}**.{trend}"
+            )
+        return {"success": True, "explanation": explanation}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Unable to explain chart data: {exc}")
 
 
 @router.get("/summary/{path_user_id}")

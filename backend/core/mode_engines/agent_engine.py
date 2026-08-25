@@ -285,6 +285,20 @@ def tool_web_search(query: str) -> Dict[str, Any]:
         return {"error": "Web search not available", "query": query}
 
 
+def tool_cv_defect_analysis(image_base64: str = None, model_id: str = None) -> Dict[str, Any]:
+    """Computer Vision defect inspection & object detection tool"""
+    try:
+        from core.mode_engines.cv_engine import CVAutoMLEngine
+        cv_eng = CVAutoMLEngine()
+        auto_path, auto_task = cv_eng.find_latest_trained_model()
+        if not auto_path:
+            return {"status": "info", "message": "No custom CV model trained yet. YOLOv8 general object detector will be used."}
+        return {"status": "ready", "model_path": auto_path, "task_type": auto_task}
+    except Exception as e:
+        return {"error": f"CV analysis tool error: {str(e)}"}
+
+
+
 # =============================================================================
 # TASK PLANNER
 # =============================================================================

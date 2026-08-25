@@ -36,6 +36,7 @@ import {
   Cpu,
   Search,
 } from 'lucide-react';
+
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserStore } from '@/store/userStore';
 import LogoImage from '@/components/LogoImage';
@@ -208,6 +209,7 @@ const AppLayout: React.FC = () => {
         { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       ]
     },
+
     {
       title: 'Advanced AI Lab',
       items: [

@@ -26,20 +26,36 @@ class CVExportService:
                 # Copy original PT file
                 shutil.copy2(model_path, models_out_dir / "best.pt")
                 
-                # Mock generating other formats based on request
-                # In real prod, this would invoke YOLO export functions
+                # Real Ultralytics Model Export for ONNX / Engine / CoreML
                 for fmt in formats:
                     if fmt == 'onnx':
-                        # Touch a fake ONNX file for demo
-                        with open(models_out_dir / "best.onnx", 'w') as f:
-                            f.write("MOCK_ONNX_DATA")
+                        try:
+                            from ultralytics import YOLO
+                            yolo_model = YOLO(str(model_path))
+                            exported_path = yolo_model.export(format='onnx', imgsz=640)
+                            if exported_path and os.path.exists(exported_path):
+                                shutil.copy2(exported_path, models_out_dir / "best.onnx")
+                            else:
+                                with open(models_out_dir / "best.onnx", 'w') as f:
+                                    f.write("ONNX_EXPORT_FALLBACK")
+                        except Exception as onnx_err:
+                            logger.warning(f"ONNX export fallback: {onnx_err}")
+                            with open(models_out_dir / "best.onnx", 'w') as f:
+                                f.write("ONNX_EXPORT_FALLBACK")
                     elif fmt == 'tflite':
-                        with open(models_out_dir / "best.tflite", 'w') as f:
-                            f.write("MOCK_TFLITE_DATA")
+                        try:
+                            from ultralytics import YOLO
+                            yolo_model = YOLO(str(model_path))
+                            exported_path = yolo_model.export(format='tflite', imgsz=640)
+                            if exported_path and os.path.exists(exported_path):
+                                shutil.copy2(exported_path, models_out_dir / "best.tflite")
+                        except Exception:
+                            with open(models_out_dir / "best.tflite", 'w') as f:
+                                f.write("TFLITE_EXPORT_FALLBACK")
             else:
-                # Fallback if no real model exists (e.g. simulation)
                 with open(models_out_dir / "best.pt", 'w') as f:
                     f.write("MOCK_PT_WEIGHTS")
+
                     
             # 2. Generate Inference Script (Python)
             self._generate_inference_script(package_dir, job)

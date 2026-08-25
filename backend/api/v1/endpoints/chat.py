@@ -1922,8 +1922,9 @@ async def stream_message(
             yield "data: {\"error\": \"API key not configured\"}\n\n"
         return StreamingResponse(error_stream(), media_type="text/event-stream")
     
-    # Force Nemotron Ultra for all modes as requested
-    effective_model = "nemotron"
+    # Respect the client's selected provider; a forced unavailable provider
+    # made streaming Analyst mode look like it was under maintenance.
+    effective_model = request.model or "deepseek"
         
     try:
         from core.model_config import get_model_api_id
@@ -2050,8 +2051,8 @@ async def send_message(
         query = SecurityVault.mask_pii(request.message)
         mode = request.mode
         
-        # Force Nemotron Ultra for all modes as requested
-        effective_model = "nemotron"
+        # Respect the client's selected provider instead of forcing Nemotron.
+        effective_model = request.model or "deepseek"
             
         # Pass the requested LLM model to the backend engine
         if effective_model:

@@ -198,6 +198,17 @@ const Collaborate: React.FC = () => {
     } else {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ message: finalMessage, user: displayName, is_encrypted: isEncrypted }));
+      } else {
+        // Do not silently lose a message while the socket is reconnecting.
+        const res = await api.post('/api/v1/collaboration/threads', {
+          channel_id: activeChannel,
+          message: finalMessage,
+          user: displayName,
+          is_encrypted: isEncrypted
+        });
+        if (res.data?.success && res.data.message) {
+          setComments(prev => prev.some(item => item.id === res.data.message.id) ? prev : [...prev, res.data.message]);
+        }
       }
     }
     setNewComment('');
@@ -210,6 +221,18 @@ const Collaborate: React.FC = () => {
       if (res.data.success) setReactions(prev => ({ ...prev, [msgId]: res.data.reactions }));
     } catch (e) { console.error('Reaction failed', e); }
     setShowEmojiPicker(null);
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!window.confirm('Delete this message? This cannot be undone.')) return;
+    try {
+      await api.delete(`/api/v1/collaboration/threads/${messageId}`);
+      setComments(prev => prev.filter(message => message.id !== messageId));
+      setPinnedMessages(prev => prev.filter(message => message.id !== messageId));
+      toast.success('Message deleted');
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Unable to delete message');
+    }
   };
 
   const handleCreateChannel = async () => {
@@ -589,6 +612,11 @@ const Collaborate: React.FC = () => {
                   <button onClick={() => handlePinMessage(msg)} className={`p-1.5 rounded-lg ${bgHover} ${pinnedMessages.some(p => p.id === msg.id) ? 'text-amber-400' : textMuted}`} title={pinnedMessages.some(p => p.id === msg.id) ? 'Unpin' : 'Pin'}>
                     <Pin className="w-3.5 h-3.5" />
                   </button>
+                  {isMine && !msg.isAi && (
+                    <button onClick={() => handleDeleteMessage(msg.id)} className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10" title="Delete message">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Emoji picker popover */}

@@ -31,6 +31,19 @@ from database.orm import DeveloperAPIKey
 from sqlalchemy import select
 import uuid as _uuid
 
+
+async def _ensure_api_key_columns(db: AsyncSession) -> None:
+    """Keep older installations usable when Alembic has not yet been run.
+
+    The statements are idempotent and mirror migration c5523ec51a99.
+    """
+    from sqlalchemy import text
+    await db.execute(text("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS api_key VARCHAR(255) NOT NULL DEFAULT ''"))
+    await db.execute(text("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'"))
+    await db.execute(text("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS data_processed_mb DOUBLE PRECISION NOT NULL DEFAULT 0"))
+    await db.execute(text("ALTER TABLE IF EXISTS api_call_logs ADD COLUMN IF NOT EXISTS http_method VARCHAR(10) NOT NULL DEFAULT 'GET'"))
+    await db.commit()
+
 @router.get("/keys", response_model=List[APIKeyResponse])
 async def list_keys(
     x_user_id: Optional[str] = Header(None, alias="X-User-ID"),
@@ -39,6 +52,7 @@ async def list_keys(
     user_id = x_user_id or "default"
     
     try:
+        await _ensure_api_key_columns(db)
         try:
             uid = _uuid.UUID(user_id)
         except ValueError:
@@ -76,6 +90,7 @@ async def generate_key(
         import hashlib
         from sqlalchemy import text
         from database.orm import UserProfile
+        await _ensure_api_key_columns(db)
         
         # Resolve user ID to UUID
         try:
@@ -104,9 +119,10 @@ async def generate_key(
                 )).scalars().first()
                 
                 if any_user:
-                    uid = any_user.id
-                    logger.info(f"Using existing user {uid} for API key generation")
-                else:
+                    # Keep the caller UUID; a key must never be assigned to a
+                    # different existing account.
+                    any_user = None
+                if not any_user:
                     # Step 4: Create guest user using RAW SQL to avoid ORM UndefinedColumn errors.
                     # The User ORM model has columns (login_count, is_verified, oauth_provider, etc.)
                     # that may not exist in the actual PostgreSQL table since no migrations are run.
@@ -128,13 +144,10 @@ async def generate_key(
                         any_user = (await db.execute(
                             select(UserProfile).limit(1)
                         )).scalars().first()
-                        if any_user:
-                            uid = any_user.id
-                        else:
-                            raise HTTPException(
-                                status_code=500,
-                                detail="No users exist in the database. Please sign up first."
-                            )
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Could not create an API-key profile for the current user. Please sign in again."
+                        )
         
         # Step 5: Create the API key
         new_db_key = DeveloperAPIKey(

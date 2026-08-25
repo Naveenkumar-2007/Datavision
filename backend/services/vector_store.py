@@ -4,13 +4,18 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
 
+os.environ["USE_TF"] = "0"
+os.environ["USE_TORCH"] = "1"
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
 try:
     from qdrant_client import QdrantClient
     from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
     from sentence_transformers import SentenceTransformer
     QDRANT_AVAILABLE = True
-except ImportError:
+except (ImportError, Exception):
     QDRANT_AVAILABLE = False
+
 
 logger = logging.getLogger(__name__)
 

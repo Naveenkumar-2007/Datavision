@@ -1,6 +1,7 @@
 import os
 import shutil
 import zipfile
+import tarfile
 import uuid
 import time
 import json
@@ -32,8 +33,23 @@ class CVDatasetService:
         extract_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
+            archive = Path(zip_path)
+            if zipfile.is_zipfile(archive):
+                with zipfile.ZipFile(archive, 'r') as zip_ref:
+                    for member in zip_ref.infolist():
+                        destination = (extract_dir / member.filename).resolve()
+                        if not str(destination).startswith(str(extract_dir.resolve())):
+                            raise ValueError("Archive contains an unsafe path")
+                    zip_ref.extractall(extract_dir)
+            elif tarfile.is_tarfile(archive):
+                with tarfile.open(archive, 'r:*') as tar_ref:
+                    for member in tar_ref.getmembers():
+                        destination = (extract_dir / member.name).resolve()
+                        if not str(destination).startswith(str(extract_dir.resolve())):
+                            raise ValueError("Archive contains an unsafe path")
+                    tar_ref.extractall(extract_dir)
+            else:
+                raise ValueError("Supported formats are ZIP and TAR archives")
 
             # Recursively extract any inner zip files (e.g. train.zip, test.zip inside archive)
             for _ in range(3):

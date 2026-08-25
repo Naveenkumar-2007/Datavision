@@ -23,10 +23,10 @@ import Logo from '@/components/Logo';
 import { useAuth } from '@/contexts/AuthContext';
 
 const navItems = [
-
   { path: '/data-hub', icon: Database, label: 'Data Hub' },
   { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/anomalies', icon: TrendingDown, label: 'Anomaly Monitor' },
+
   { path: '/lineage', icon: Boxes, label: 'Data Lineage' },
   { path: '/simulator', icon: TrendingUp, label: 'Scenario Simulator' },
   { path: '/reports', icon: FileText, label: 'Reports' },

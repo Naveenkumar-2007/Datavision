@@ -76,10 +76,27 @@ async def verify_tables():
     from database.db import engine
     from database import orm
     from database.orm import Base
+    from sqlalchemy import text
     try:
         async with engine.begin() as conn:
             logger.info("📦 Verifying database tables exist (auto-healing)...")
             await conn.run_sync(Base.metadata.create_all)
+            await conn.execute(text("ALTER TABLE IF EXISTS api_keys ADD COLUMN IF NOT EXISTS api_key VARCHAR(255) NOT NULL DEFAULT ''"))
+            await conn.execute(text("ALTER TABLE IF EXISTS api_keys ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'"))
+            await conn.execute(text("ALTER TABLE IF EXISTS api_keys ADD COLUMN IF NOT EXISTS data_processed_mb DOUBLE PRECISION NOT NULL DEFAULT 0"))
+            await conn.execute(text("ALTER TABLE IF EXISTS chat_channels ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"))
+            await conn.execute(text("ALTER TABLE IF EXISTS channel_messages ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"))
+            await conn.execute(text("ALTER TABLE IF EXISTS message_reactions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"))
+            await conn.execute(text("ALTER TABLE IF EXISTS message_reactions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()"))
+            await conn.execute(text("ALTER TABLE IF EXISTS api_call_logs ADD COLUMN IF NOT EXISTS http_method VARCHAR(10) NOT NULL DEFAULT 'GET'"))
+            await conn.execute(text("ALTER TABLE IF EXISTS api_call_logs ADD COLUMN IF NOT EXISTS response_time_ms INTEGER NOT NULL DEFAULT 0"))
+            await conn.execute(text("""DO $$ BEGIN
+              IF to_regclass('public.webhook_endpoints') IS NOT NULL
+                 AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'webhook_endpoints' AND column_name = 'secret')
+                 AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'webhook_endpoints' AND column_name = 'secret_key') THEN
+                ALTER TABLE webhook_endpoints RENAME COLUMN secret TO secret_key;
+              END IF;
+            END $$;"""))
             logger.info("✅ Database tables verified/created successfully!")
     except Exception as e:
         logger.error(f"⚠️ Failed to auto-heal database tables: {e}")
@@ -311,6 +328,7 @@ app.include_router(cv_router.router, prefix="/api/v1/cv", tags=["Computer Vision
 # 🧠 Vector AI & RAG Inspector
 from api.v1.endpoints import vector_router
 app.include_router(vector_router.router, prefix="/api/v1/vector", tags=["Vector AI"])
+
 
 # ==========================================
 # 🚀 V2 APIs (Agentic + RAG)

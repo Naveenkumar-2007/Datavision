@@ -254,7 +254,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
         const userId = user?.id || getUserIdSync();
         const cacheKey = `dashboard_cache_${userId}_${JSON.stringify(activeFilters)}`;
         
-        if (!forceRefresh) {
+        if (!forceRefresh && Object.keys(activeFilters).length === 0) {
             const cached = getDashboardCache(cacheKey);
             if (cached) {
                 setDashboard(cached);
@@ -576,7 +576,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
             const response = await api.post('/api/v1/dashboard/explain-chart', {
                 chart_title: chart.title,
                 chart_type: chart.type,
-                chart_data: chart.plotly_config?.data || {}
+                chart_data: chart.plotly_config?.data || []
             });
             if (response.data.success) {
                 setChartExplanations(prev => ({ ...prev, [chart.chart_id]: response.data.explanation }));
@@ -1052,7 +1052,7 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                     </div>
                                     <div className="px-2 mt-4">
                                         <button 
-                                            onClick={() => setActiveFilters(pendingFilters)}
+                                            onClick={() => setActiveFilters({ ...pendingFilters })}
                                             className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-2 rounded-lg transition-colors"
                                         >
                                             Apply Filters

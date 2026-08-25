@@ -7,6 +7,7 @@ import os
 import json
 import asyncio
 import tempfile
+from pathlib import Path
 import time
 import logging
 import uuid as _uuid
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 router = APIRouter()
 cv_engine = CVAutoMLEngine()
+MAX_CV_DATASET_SIZE = 20 * 1024 * 1024 * 1024  # 20 GiB
 
 def _is_valid_uuid(val: str) -> bool:
     try:
@@ -153,17 +155,26 @@ async def upload_dataset(file: UploadFile = File(...), current_user=Depends(get_
     """Upload a ZIP dataset, auto-detect structure"""
     try:
         user_id = str(current_user.id) if (current_user and hasattr(current_user, 'id')) else "anonymous"
+        filename = file.filename or "dataset.zip"
+        if not filename.lower().endswith((".zip", ".tar", ".tar.gz", ".tgz")):
+            raise HTTPException(status_code=400, detail="Use a .zip, .tar, .tar.gz, or .tgz archive for a vision dataset.")
+        if getattr(file, "size", None) and file.size > MAX_CV_DATASET_SIZE:
+            raise HTTPException(status_code=413, detail="Vision dataset exceeds the 20 GB upload limit.")
 
         # Save uploaded file to temp
-        suffix = os.path.splitext(file.filename or "dataset.zip")[1]
+        suffix = ".tar.gz" if filename.lower().endswith(".tar.gz") else Path(filename).suffix
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            content = await file.read()
-            tmp.write(content)
+            bytes_written = 0
+            while chunk := await file.read(8 * 1024 * 1024):
+                bytes_written += len(chunk)
+                if bytes_written > MAX_CV_DATASET_SIZE:
+                    raise HTTPException(status_code=413, detail="Vision dataset exceeds the 20 GB upload limit.")
+                tmp.write(chunk)
             tmp_path = tmp.name
 
         try:
             # Process dataset
-            result = cv_engine.prepare_dataset(tmp_path, user_id, file.filename)
+            result = cv_engine.prepare_dataset(tmp_path, user_id, filename)
             
             if result and isinstance(result, dict):
                 result['success'] = True
