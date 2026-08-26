@@ -121,6 +121,7 @@ c = Consumer({
 c.subscribe(["${tableName}"])  # Kafka Topic Name
 
 print("Listening to Kafka topic '${tableName}' and streaming to DataVision Cloud...")
+sent_messages = 0
 while True:
     msg = c.poll(1.0)
     if msg is None:
@@ -136,14 +137,19 @@ while True:
             event = {"value": event}
     except Exception:
         event = {"value": msg.value().decode("utf-8", errors="replace")}
-    res = requests.post(URL, json={
-        "data": [event],
-        "rows_per_sec": 1,
-        "cpu_usage": 0.0,
-        "error_rate": 0.0,
-        "status": "Receiving Kafka messages"
-    })
-    print(f"Pushed msg #{total_messages} -> {res.json()}")
+    try:
+        res = requests.post(URL, json={
+            "data": [event],
+            "rows_per_sec": 1,
+            "cpu_usage": 0.0,
+            "error_rate": 0.0,
+            "status": "Receiving Kafka messages"
+        }, timeout=15)
+        res.raise_for_status()
+        sent_messages += 1  # Count only records DataVision accepted.
+        print(f"Pushed message #{sent_messages} -> {res.json()}")
+    except requests.RequestException as exc:
+        print(f"Push failed; event was not counted: {exc}")
 `;
 };
 

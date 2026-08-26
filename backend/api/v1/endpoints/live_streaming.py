@@ -487,7 +487,8 @@ async def push_live_data(connection_id: str, payload: dict):
             "rows_per_sec": 0,
         }
 
-    pushed_rows = 1
+    # Never create a fake data row for a status/error-only heartbeat.
+    pushed_rows = 0
     if isinstance(payload, dict):
         if "rows" in payload and isinstance(payload["rows"], int):
             pushed_rows = payload["rows"]
@@ -496,7 +497,7 @@ async def push_live_data(connection_id: str, payload: dict):
         elif "batch_size" in payload and isinstance(payload["batch_size"], int):
             pushed_rows = payload["batch_size"]
         elif "batch" in payload and isinstance(payload["batch"], int):
-            pushed_rows = 1000
+            pushed_rows = payload["batch"]
     elif isinstance(payload, list):
         pushed_rows = len(payload)
 

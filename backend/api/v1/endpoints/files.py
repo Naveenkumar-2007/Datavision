@@ -817,6 +817,12 @@ async def delete_file(
         
         if not file_path.exists():
             print(f"❌ File not found: {file_path}")
+            if file_id.startswith("live_stream_") and file_id.endswith(".csv"):
+                telemetry_path = paths["files"] / f"{Path(file_id).stem}.telemetry.json"
+                if telemetry_path.exists():
+                    telemetry_path.unlink()
+                # The Space filesystem may already have expired; deletion is safe.
+                return {"success": True, "message": "Live stream file was already removed"}
             raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
         
         # Delete the file FIRST
