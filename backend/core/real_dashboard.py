@@ -159,24 +159,31 @@ COLOR_PALETTES = {
     }
 }
 
+# Schema-led domain intelligence.  These are decision lenses, not templates:
+# the chart planner still uses only columns present in the customer's data.
+DOMAIN_PROFILES = {
+    'finance': {'keywords': ['revenue', 'profit', 'cost', 'expense', 'income', 'margin', 'budget', 'invoice', 'payment', 'balance', 'asset', 'liability'], 'sections': ['Financial Overview', 'Profitability', 'Cash & Revenue Trends', 'Risk & Variance', 'Drivers & Segments']},
+    'sales': {'keywords': ['sales', 'order', 'deal', 'lead', 'opportunity', 'quota', 'discount', 'pipeline', 'quantity'], 'sections': ['Sales Overview', 'Pipeline & Conversion', 'Product Performance', 'Customer Segments', 'Growth Drivers']},
+    'marketing': {'keywords': ['campaign', 'conversion', 'click', 'impression', 'reach', 'engagement', 'traffic', 'subscriber', 'roi'], 'sections': ['Campaign Overview', 'Acquisition Funnel', 'Channel Performance', 'Audience Segments', 'ROI & Optimisation']},
+    'hr': {'keywords': ['employee', 'salary', 'hire', 'department', 'position', 'performance', 'leave', 'attendance', 'attrition'], 'sections': ['Workforce Overview', 'Hiring & Attrition', 'Compensation', 'Performance & Attendance', 'Department Insights']},
+    'operations': {'keywords': ['inventory', 'supply', 'warehouse', 'stock', 'vendor', 'supplier', 'capacity', 'procurement'], 'sections': ['Operations Overview', 'Inventory Health', 'Supplier Performance', 'Capacity & Throughput', 'Exceptions & Risk']},
+    'retail': {'keywords': ['store', 'sku', 'basket', 'merchant', 'shop', 'retail', 'return', 'product'], 'sections': ['Retail Overview', 'Sales by Product', 'Store & Channel Performance', 'Customer Behaviour', 'Inventory & Returns']},
+    'healthcare': {'keywords': ['patient', 'diagnosis', 'clinical', 'hospital', 'treatment', 'admission', 'provider', 'medication'], 'sections': ['Care Overview', 'Patient Flow', 'Clinical Outcomes', 'Capacity & Utilisation', 'Quality & Risk']},
+    'manufacturing': {'keywords': ['production', 'machine', 'factory', 'defect', 'yield', 'assembly', 'downtime', 'quality'], 'sections': ['Production Overview', 'Quality & Defects', 'Yield & Throughput', 'Machine Utilisation', 'Downtime Drivers']},
+    'education': {'keywords': ['student', 'course', 'grade', 'exam', 'school', 'teacher', 'enrollment', 'attendance'], 'sections': ['Learning Overview', 'Enrollment & Retention', 'Academic Performance', 'Attendance', 'Programme Insights']},
+    'logistics': {'keywords': ['delivery', 'shipping', 'freight', 'route', 'carrier', 'dispatch', 'shipment', 'transport'], 'sections': ['Logistics Overview', 'Delivery Performance', 'Route & Carrier Analysis', 'Cost & Capacity', 'Service Exceptions']},
+    'real_estate': {'keywords': ['property', 'rent', 'lease', 'tenant', 'occupancy', 'building', 'mortgage', 'listing'], 'sections': ['Portfolio Overview', 'Occupancy & Leasing', 'Revenue & Costs', 'Property Performance', 'Market Insights']},
+    'technology': {'keywords': ['subscription', 'saas', 'user', 'session', 'api', 'software', 'ticket', 'incident', 'churn'], 'sections': ['Product Overview', 'Adoption & Engagement', 'Retention & Churn', 'Service Reliability', 'Account Growth']},
+    'telecom': {'keywords': ['network', 'telecom', 'call', 'bandwidth', 'latency', 'tower', 'subscriber', 'usage'], 'sections': ['Network Overview', 'Subscriber Growth', 'Usage & Revenue', 'Service Quality', 'Churn & Retention']},
+    'energy': {'keywords': ['energy', 'power', 'electricity', 'utility', 'meter', 'emission', 'generation', 'consumption'], 'sections': ['Energy Overview', 'Generation & Demand', 'Consumption Patterns', 'Cost & Emissions', 'Asset Reliability']},
+    'public_sector': {'keywords': ['citizen', 'municipal', 'government', 'public', 'permit', 'district', 'case', 'service'], 'sections': ['Service Overview', 'Demand & Cases', 'Programme Performance', 'Geographic Insights', 'Service Quality']},
+}
+
 
 def detect_data_domain(df: pd.DataFrame) -> str:
-    """Autonomously detect the domain of the data based on column names"""
+    """Identify the best fitting business domain from schema and field names."""
     columns_lower = ' '.join(df.columns.str.lower())
-    
-    finance_keywords = ['revenue', 'profit', 'cost', 'expense', 'income', 'margin', 'budget', 'invoice', 'payment', 'price', 'amount', 'balance', 'asset', 'liability']
-    sales_keywords = ['sales', 'order', 'customer', 'product', 'deal', 'lead', 'opportunity', 'quota', 'discount', 'quantity']
-    marketing_keywords = ['campaign', 'channel', 'conversion', 'click', 'impression', 'reach', 'engagement', 'traffic', 'subscriber', 'follower']
-    hr_keywords = ['employee', 'salary', 'hire', 'department', 'position', 'performance', 'leave', 'attendance', 'training']
-    operations_keywords = ['inventory', 'supply', 'delivery', 'shipping', 'warehouse', 'stock', 'vendor', 'supplier', 'logistics']
-    
-    scores = {
-        'finance': sum(1 for kw in finance_keywords if kw in columns_lower),
-        'sales': sum(1 for kw in sales_keywords if kw in columns_lower),
-        'marketing': sum(1 for kw in marketing_keywords if kw in columns_lower),
-        'hr': sum(1 for kw in hr_keywords if kw in columns_lower),
-        'operations': sum(1 for kw in operations_keywords if kw in columns_lower)
-    }
+    scores = {domain: sum(keyword in columns_lower for keyword in profile['keywords']) for domain, profile in DOMAIN_PROFILES.items()}
     
     best_domain = max(scores, key=scores.get)
     return best_domain if scores[best_domain] > 0 else 'general'
@@ -189,6 +196,7 @@ def analyze_domain_and_sections(df: pd.DataFrame) -> Dict:
         columns = list(df.columns)
         dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
         
+        supported_domains = '|'.join(DOMAIN_PROFILES)
         prompt = f"""
         Analyze this dataset profile to determine its domain and 4-6 logical dashboard sections.
         Columns: {columns}
@@ -196,7 +204,7 @@ def analyze_domain_and_sections(df: pd.DataFrame) -> Dict:
         
         Respond ONLY with a valid JSON object matching this exact format:
         {{
-            "domain": "finance|sales|marketing|hr|operations|general",
+            "domain": "{supported_domains}|general",
             "dashboard_title": "A 3-5 word professional title",
             "sections": ["Section 1 Name", "Section 2 Name", "Section 3 Name", "Section 4 Name"]
         }}
@@ -211,6 +219,10 @@ def analyze_domain_and_sections(df: pd.DataFrame) -> Dict:
             response = response[3:-3]
             
         data = json.loads(response.strip())
+        if data.get('domain') not in DOMAIN_PROFILES:
+            data['domain'] = detect_data_domain(df)
+        if not data.get('sections'):
+            data['sections'] = DOMAIN_PROFILES.get(data['domain'], {}).get('sections', [])
         return data
     except Exception as e:
         logger.warning(f"Domain Agent failed: {e}. Falling back to heuristics.")
@@ -218,7 +230,7 @@ def analyze_domain_and_sections(df: pd.DataFrame) -> Dict:
         return {
             "domain": domain,
             "dashboard_title": f"{domain.title()} Analytics Dashboard",
-            "sections": ["Overview", "Distribution Analysis", "Correlation Studio", "Performance Metrics", "Advanced Insights"]
+            "sections": DOMAIN_PROFILES.get(domain, {}).get('sections', ["Overview", "Trends", "Segments", "Performance", "Insights"])
         }
 
 
