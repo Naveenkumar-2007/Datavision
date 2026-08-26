@@ -37,12 +37,15 @@ def build_dashboard_schema_agent(df: pd.DataFrame, domain: str, chat_func=None) 
         except:
             pass
 
-    columns = list(df.columns)
-    dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
-    
-    # Get basic stats for numericals
-    num_cols = df.select_dtypes(include=['number']).columns.tolist()
-    cat_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+    # Only provide chartable business fields to the architect. IDs remain in the
+    # data grid, but must never become a visual axis.
+    from core.real_dashboard import dashboard_column_profile
+    profile = dashboard_column_profile(df)
+    num_cols = profile['metrics']
+    cat_cols = profile['dimensions']
+    date_cols = profile['dates']
+    columns = num_cols + cat_cols + date_cols
+    dtypes = {col: str(df[col].dtype) for col in columns}
     
     stats = {}
     for col in num_cols[:5]:  # Limit to avoid huge prompt
@@ -60,7 +63,7 @@ def build_dashboard_schema_agent(df: pd.DataFrame, domain: str, chat_func=None) 
 
     prompt = f"""
 You are an expert Power BI / Tableau Dashboard Architect.
-Your task is to design a highly dense, premium dashboard with exactly 20 unique charts for a {domain} dataset.
+Your task is to design a useful executive dashboard with 8-12 distinct business charts for a {domain} dataset.
 
 Dataset Schema:
 Columns: {columns}
@@ -71,8 +74,8 @@ Available Chart Types:
 "stacked_bar", "grouped_bar", "line", "area", "horizontal_bar", "pie", "donut", "scatter", "bubble", "treemap", "heatmap", "waterfall", "funnel", "sunburst", "radar", "3d_scatter", "3d_surface", "3d_bubble", "polar_bar", "sankey", "choropleth", "violin", "bullet", "density_contour", "parallel_categories", "multi_sunburst", "hexbin"
 
 CRITICAL INSTRUCTIONS:
-1. Generate EXACTLY 20 charts.
-2. Use a wide variety of chart types, prioritizing advanced data science visuals if the data fits (violin, density_contour, parallel_categories, hexbin, bullet, radar, 3d_surface, 3d_bubble, polar_bar, multi_sunburst).
+1. Generate 8-12 charts only when the dataset supports them. Do not pad the dashboard with weak visuals.
+2. Use a variety of chart types when they fit: trends for date fields, rankings and composition for low-cardinality categories, distributions for measures, and scatter/correlation for related measures.
 3. The `x_column` and `y_column` MUST be EXACT strings from the Columns list provided above. You MUST provide BOTH x_column and y_column for EVERY chart.
 4. For pie, donut, treemap, funnel, and waterfall: `x_column` is the category (Labels), and `y_column` is the numeric field to aggregate (Values).
 5. For sankey and parallel_categories: `x_column` is Source Category, `y_column` is Target Category, and `color_by_column` is Value.
@@ -148,18 +151,19 @@ JSON Format required:
         print(f"AI Schema Agent failed: {e}")
         traceback.print_exc()
         
-    # Fallback to a basic generated schema if LLM fails
+    # Deterministic business-aware fallback for unavailable AI providers.
     fallback_schema = []
-    for i, num in enumerate(num_cols[:4]):
-        for j, cat in enumerate(cat_cols[:3]):
-            fallback_schema.append({
-                "title": f"{num} by {cat}",
-                "chart_type": "bar",
-                "x_column": cat,
-                "y_column": num,
-                "color_by_column": "",
-                "aggregation": "sum"
-            })
+    primary_metric = num_cols[0] if num_cols else None
+    if primary_metric:
+        for date_col in date_cols[:1]:
+            fallback_schema.append({"title": f"{primary_metric} Trend", "chart_type": "line", "x_column": date_col, "y_column": primary_metric, "color_by_column": "", "aggregation": "sum"})
+        for index, cat in enumerate(cat_cols[:3]):
+            chart_type = ["horizontal_bar", "donut", "treemap"][index]
+            fallback_schema.append({"title": f"{primary_metric} by {cat}", "chart_type": chart_type, "x_column": cat, "y_column": primary_metric, "color_by_column": "", "aggregation": "sum"})
+        if len(cat_cols) >= 2:
+            fallback_schema.append({"title": f"{primary_metric} by {cat_cols[0]} and {cat_cols[1]}", "chart_type": "stacked_bar", "x_column": cat_cols[0], "y_column": primary_metric, "color_by_column": cat_cols[1], "aggregation": "sum"})
+    if len(num_cols) >= 2:
+        fallback_schema.append({"title": f"{num_cols[0]} vs {num_cols[1]}", "chart_type": "scatter", "x_column": num_cols[0], "y_column": num_cols[1], "color_by_column": cat_cols[0] if cat_cols else "", "aggregation": "mean"})
             
     final_schema = {
         "theme": {

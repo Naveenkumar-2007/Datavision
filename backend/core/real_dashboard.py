@@ -24,6 +24,7 @@ import json
 import logging
 import hashlib
 import time as time_module
+import re
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import numpy as np
@@ -37,6 +38,33 @@ logger = logging.getLogger(__name__)
 # 🚀 DASHBOARD CACHE - Avoid regenerating same dashboard
 _dashboard_cache = {}
 _CACHE_TTL = 30  # 30 seconds cache
+
+
+def dashboard_column_profile(df: pd.DataFrame) -> Dict[str, List[str]]:
+    """Choose fields that form meaningful business visuals, excluding raw IDs."""
+    identifiers, dates, metrics, dimensions = [], [], [], []
+    id_pattern = re.compile(r"(^|[_\s-])(id|uuid|guid|key|code|reference|ref|number)([_\s-]|$)|account.?id|transaction.?id", re.I)
+    for col in df.columns:
+        series = df[col]
+        name = str(col)
+        non_null = series.dropna()
+        unique_ratio = (non_null.nunique() / len(non_null)) if len(non_null) else 0
+        is_date_name = any(token in name.lower() for token in ("date", "time", "timestamp", "month", "year", "period"))
+        if pd.api.types.is_datetime64_any_dtype(series) or is_date_name:
+            if pd.to_datetime(series, errors="coerce").notna().mean() >= 0.70:
+                dates.append(col)
+                continue
+        is_identifier = bool(id_pattern.search(name)) or (
+            unique_ratio > 0.98 and any(token in name.lower() for token in ("account", "transaction", "customer", "order"))
+        )
+        if is_identifier:
+            identifiers.append(col)
+            continue
+        if pd.api.types.is_numeric_dtype(series):
+            metrics.append(col)
+        elif 2 <= non_null.nunique() <= 40 and unique_ratio < 0.60:
+            dimensions.append(col)
+    return {"identifiers": identifiers, "dates": dates, "metrics": metrics, "dimensions": dimensions}
 
 
 def sanitize_for_json(obj):
@@ -193,9 +221,10 @@ def analyze_column_relationships(df: pd.DataFrame) -> List[Dict]:
     """Analyze relationships between columns to determine best visualizations"""
     relationships = []
     
-    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
-    datetime_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
+    profile = dashboard_column_profile(df)
+    numeric_cols = profile['metrics']
+    categorical_cols = profile['dimensions']
+    datetime_cols = profile['dates']
     
     # Numeric vs Categorical (best for bar, pie, donut)
     for num in numeric_cols[:3]:
@@ -777,10 +806,17 @@ def generate_autonomous_chart(df: pd.DataFrame, relationship: Dict, chart_type: 
         
         elif rel_type == 'time_series':
             num_col = relationship['value']
-            n_points = min(20, len(df))
-            segment_size = max(1, len(df) // n_points)
-            values = [float(df[num_col].iloc[i*segment_size:(i+1)*segment_size].sum()) for i in range(n_points)]
-            labels = [f'P{i+1}' for i in range(n_points)]
+            time_col = relationship['time']
+            timed = df[[time_col, num_col]].copy()
+            timed[time_col] = pd.to_datetime(timed[time_col], errors='coerce')
+            timed = timed.dropna().sort_values(time_col)
+            if timed.empty:
+                return None
+            span_days = max(1, (timed[time_col].max() - timed[time_col].min()).days)
+            frequency = 'M' if span_days > 90 else 'W' if span_days > 21 else 'D'
+            grouped = timed.set_index(time_col)[num_col].resample(frequency).sum().tail(24)
+            labels = [index.strftime('%b %Y') if frequency == 'M' else index.strftime('%d %b') for index in grouped.index]
+            values = [float(value) for value in grouped.values]
             
             if chart_type == 'area':
                 return create_area_chart(labels, values, num_col, colors)
@@ -2486,9 +2522,10 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str, refresh: bool = Fals
         # ============================================================
         # AGENT 1: Data Profiling Agent (pandas-powered)
         # ============================================================
-        numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
-        datetime_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
+        profile = dashboard_column_profile(df)
+        numeric_cols = profile['metrics']
+        categorical_cols = profile['dimensions']
+        datetime_cols = profile['dates']
         
         logger.info(f"📋 Profile: {len(numeric_cols)} numeric, {len(categorical_cols)} categorical, {len(datetime_cols)} datetime")
         
@@ -2542,14 +2579,14 @@ def generate_real_dashboard(df: pd.DataFrame, user_id: str, refresh: bool = Fals
                     charts.append(chart)
                     
             # Supplement with heuristics if LLM misses the target density
-            if len(charts) < 20:
-                logger.info(f"Supplementing {len(charts)} LLM charts with heuristic engine to hit density target.")
+            if len(charts) < 12:
+                logger.info(f"Supplementing {len(charts)} AI charts with business-aware heuristics.")
                 relationships = analyze_column_relationships(df)
                 heuristic_charts = autonomous_chart_selection(df, domain, relationships)
                 
                 existing_titles = {c.get('title') for c in charts}
                 for hc in heuristic_charts:
-                    if hc.get('title') not in existing_titles and len(charts) < 25:
+                    if hc.get('title') not in existing_titles and len(charts) < 14:
                         charts.append(hc)
                         existing_titles.add(hc.get('title'))
         except Exception as e:
