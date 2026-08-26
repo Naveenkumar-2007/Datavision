@@ -67,6 +67,11 @@ def dashboard_column_profile(df: pd.DataFrame) -> Dict[str, List[str]]:
     return {"identifiers": identifiers, "dates": dates, "metrics": metrics, "dimensions": dimensions}
 
 
+def find_business_metric(columns: List[str], terms: Tuple[str, ...]) -> Optional[str]:
+    """Find a real business measure by name; never infer profit from unrelated data."""
+    return next((column for column in columns if any(term in column.lower() for term in terms)), None)
+
+
 def sanitize_for_json(obj):
     """Recursively convert numpy/pandas types to Python native types for JSON serialization."""
     if isinstance(obj, dict):
@@ -3220,12 +3225,10 @@ def calculate_advanced_kpis(df: pd.DataFrame, palette: Dict) -> List[Dict]:
     - Statistical Confidence
     """
     kpis = []
-    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-    categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
-    datetime_cols = [c for c in df.columns if 'date' in c.lower() or 'time' in c.lower()]
-    
-    # Filter out ID-like columns
-    numeric_cols = [c for c in numeric_cols if not any(x in c.lower() for x in ['id', 'index', 'key', 'code'])]
+    profile = dashboard_column_profile(df)
+    numeric_cols = profile['metrics']
+    categorical_cols = profile['dimensions']
+    datetime_cols = profile['dates']
     
     # 1. Total Records with completeness score
     null_pct = df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100
@@ -3239,6 +3242,23 @@ def calculate_advanced_kpis(df: pd.DataFrame, palette: Dict) -> List[Dict]:
         'kpi_type': 'count',
         'sparkline': df[numeric_cols[0]].head(20).tolist() if numeric_cols else None
     })
+
+    # Finance KPIs appear only when the data actually supplies the required
+    # measures.  A bank transaction "Amount" is not falsely labelled profit.
+    revenue_col = find_business_metric(numeric_cols, ('revenue', 'sales', 'income'))
+    cost_col = find_business_metric(numeric_cols, ('cost', 'expense', 'cogs'))
+    profit_col = find_business_metric(numeric_cols, ('profit', 'net_income', 'ebitda'))
+    if revenue_col:
+        revenue = float(df[revenue_col].sum())
+        kpis.append({'title': 'Total Revenue', 'value': revenue, 'format': 'currency', 'trend': 'neutral', 'comparison': f'Sourced from {revenue_col}', 'kpi_type': 'revenue', 'sparkline': df[revenue_col].tail(20).tolist()})
+    if cost_col:
+        costs = float(df[cost_col].sum())
+        kpis.append({'title': 'Total Costs', 'value': costs, 'format': 'currency', 'trend': 'down', 'comparison': f'Sourced from {cost_col}', 'kpi_type': 'cost', 'sparkline': df[cost_col].tail(20).tolist()})
+    if profit_col or (revenue_col and cost_col):
+        profit = float(df[profit_col].sum()) if profit_col else float(df[revenue_col].sum() - df[cost_col].sum())
+        revenue = float(df[revenue_col].sum()) if revenue_col else 0
+        margin = (profit / revenue * 100) if revenue else None
+        kpis.append({'title': 'Net Profit' if profit_col else 'Calculated Net Profit', 'value': profit, 'format': 'currency', 'trend': 'up' if profit >= 0 else 'down', 'comparison': f'Profit margin: {margin:.1f}%' if margin is not None else f'Sourced from {profit_col}', 'kpi_type': 'profit'})
     
     # 2. Primary Metric with CAGR
     if numeric_cols:

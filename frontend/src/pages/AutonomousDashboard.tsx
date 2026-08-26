@@ -60,6 +60,30 @@ const GridWrapper = ({ children, layouts, breakpoints, cols, rowHeight, isDragga
     );
 };
 
+// Pack chart cards left-to-right without leaving holes when a full-width visual
+// follows standard cards.  The previous index-based positions overlapped rows.
+const buildPackedLayout = (charts: ChartData[], columns: number, sectionIndex: number, compact = false) => {
+    let x = 0;
+    let y = 0;
+    const cardHeight = 5;
+    return charts.map((chart, index) => {
+        const plotType = chart.plotly_config?.data?.[0]?.type;
+        const isWide = !compact && ['sankey', 'combo_bar_line', 'parcoords', 'slope', 'scattermatrix'].includes(chart.type || plotType);
+        const width = isWide ? columns : Math.max(1, Math.floor(columns / (columns >= 12 ? 3 : 2)));
+        if (x + width > columns) {
+            x = 0;
+            y += cardHeight;
+        }
+        const item = { i: chart.chart_id || `${sectionIndex}-${index}`, x, y, w: width, h: cardHeight, minW: Math.min(width, compact ? 1 : 3) };
+        x += width;
+        if (x >= columns) {
+            x = 0;
+            y += cardHeight;
+        }
+        return item;
+    });
+};
+
 // Dynamic Plotly import
 const Plot = lazy(() => import('react-plotly.js'));
 
@@ -1424,33 +1448,9 @@ const VisualIntelligenceDashboard: React.FC = () => {
                                     <GridWrapper
                                         className="layout"
                                         layouts={{
-                                            lg: section.charts.map((chart, i) => {
-                                                const isWide = ['sankey', 'combo_bar_line', 'parcoords', 'slope'].includes(chart.type) || ['sankey', 'scattermatrix'].includes(chart.plotly_config?.data?.[0]?.type);
-                                                return {
-                                                    i: chart.chart_id || `${sIdx}-${i}`,
-                                                    x: isWide ? 0 : (i % 3) * 4,
-                                                    y: Math.floor(i / (isWide ? 1 : 3)) * 4,
-                                                    w: isWide ? 12 : 4,
-                                                    h: chartExplanations[chart.chart_id] ? 5.5 : 4.5,
-                                                    minW: 3
-                                                };
-                                            }),
-                                            md: section.charts.map((chart, i) => ({
-                                                i: chart.chart_id || `${sIdx}-${i}`,
-                                                x: (i % 2) * 6,
-                                                y: Math.floor(i / 2) * 4,
-                                                w: 6,
-                                                h: 4.5,
-                                                minW: 4
-                                            })),
-                                            sm: section.charts.map((chart, i) => ({
-                                                i: chart.chart_id || `${sIdx}-${i}`,
-                                                x: 0,
-                                                y: i * 4,
-                                                w: 1,
-                                                h: 4.5,
-                                                minW: 1
-                                            }))
+                                            lg: buildPackedLayout(section.charts, 12, sIdx),
+                                            md: buildPackedLayout(section.charts, 12, sIdx, true),
+                                            sm: buildPackedLayout(section.charts, 1, sIdx, true)
                                         }}
                                         breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
                                         cols={{ lg: 12, md: 12, sm: 1, xs: 1, xxs: 1 }}
