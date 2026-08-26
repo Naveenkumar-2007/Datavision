@@ -7,7 +7,7 @@ SECURED: Uses JWT authentication for user isolation
 """
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, Query, Header, Depends, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from typing import List, Optional, Dict
 from pathlib import Path
 import shutil
@@ -15,6 +15,7 @@ import traceback
 from datetime import datetime
 import re
 import os
+import json
 
 from ingestion.pipeline import IngestionPipeline
 from config.settings import Settings
@@ -1129,24 +1130,6 @@ async def get_file_columns(
         file_path = paths["files"] / file_id
         
         if not file_path.exists():
-            # A metric-only PostgreSQL/Snowflake stream has no raw records yet.
-            # Let users still download a valid CSV describing its last checkpoint
-            # instead of returning the confusing generic "Download failed".
-            telemetry_path = paths["files"] / f"{Path(file_id).stem}.telemetry.json"
-            if telemetry_path.exists() and file_id.startswith("live_stream_"):
-                import io
-                state = json.loads(telemetry_path.read_text(encoding="utf-8"))
-                row = {
-                    "total_rows": state.get("total_rows", 0),
-                    "rows_per_sec": state.get("rows_per_sec", 0),
-                    "timestamp": state.get("timestamp", ""),
-                    "status": state.get("status", ""),
-                }
-                csv_data = ",".join(row.keys()) + "\n" + ",".join(str(v).replace(",", " ") for v in row.values()) + "\n"
-                return StreamingResponse(
-                    io.StringIO(csv_data), media_type="text/csv",
-                    headers={"Content-Disposition": f"attachment; filename={file_id}"},
-                )
             raise HTTPException(status_code=404, detail="File not found")
             
         import pandas as pd
@@ -1216,6 +1199,23 @@ async def download_file(user_id: str, file_id: str):
         file_path = paths["files"] / file_id
         
         if not file_path.exists():
+            # A metric-only PostgreSQL/Snowflake stream has no raw records yet.
+            # Download a valid checkpoint CSV instead of an opaque 404.
+            telemetry_path = paths["files"] / f"{Path(file_id).stem}.telemetry.json"
+            if telemetry_path.exists() and file_id.startswith("live_stream_"):
+                import io
+                state = json.loads(telemetry_path.read_text(encoding="utf-8"))
+                row = {
+                    "total_rows": state.get("total_rows", 0),
+                    "rows_per_sec": state.get("rows_per_sec", 0),
+                    "timestamp": state.get("timestamp", ""),
+                    "status": state.get("status", ""),
+                }
+                csv_data = ",".join(row.keys()) + "\n" + ",".join(str(v).replace(",", " ") for v in row.values()) + "\n"
+                return StreamingResponse(
+                    io.StringIO(csv_data), media_type="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={file_id}"},
+                )
             raise HTTPException(status_code=404, detail="File not found")
         
         return FileResponse(
