@@ -17,7 +17,8 @@ const generateScript = (source: string, pushUrl: string, host: string, dbName: s
   const sourceLower = source.toLowerCase();
 
   if (sourceLower === 'postgresql') {
-    return `import psycopg2, requests, time
+  return `import json, psycopg2, requests, time
+from psycopg2.extras import RealDictCursor
 
 # Your unique DataVision Cloud Push URL (do NOT share this)
 URL = "${pushUrl}"
@@ -31,22 +32,25 @@ conn = psycopg2.connect(
     port="5432"
 )
 conn.autocommit = True
-cursor = conn.cursor()
+cursor = conn.cursor(cursor_factory=RealDictCursor)
 
 print("Connected to ${dbName}! Streaming '${tableName}' to DataVision Cloud...")
 previous_count = 0
 
 while True:
     try:
-        cursor.execute("SELECT COUNT(*) FROM ${tableName};")
-        total_rows = cursor.fetchone()[0]
-
-        rows_per_sec = max(0, total_rows - previous_count) if previous_count > 0 else 0
+        # First run imports the existing table; later polls send the table again.
+        # DataVision de-duplicates identical records before writing its live CSV.
+        cursor.execute("SELECT * FROM ${tableName};")
+        records = json.loads(json.dumps([dict(row) for row in cursor.fetchall()], default=str))
+        total_rows = len(records)
+        rows_per_sec = max(0, total_rows - previous_count) if previous_count else 0
         previous_count = total_rows
 
         res = requests.post(URL, json={
             "total_rows": total_rows,
             "rows_per_sec": rows_per_sec,
+            "data": records,
             "cpu_usage": 0.0,
             "error_rate": 0.0,
             "status": "Streaming ${tableName} to Cloud"
@@ -54,12 +58,12 @@ while True:
         print(f"Sent: {total_rows} rows -> {res.json()}")
     except Exception as e:
         print("Error:", e)
-    time.sleep(1)
+    time.sleep(5)
 `;
   }
 
   if (sourceLower === 'snowflake') {
-    return `import snowflake.connector, requests, time
+  return `import json, snowflake.connector, requests, time
 
 # Your unique DataVision Cloud Push URL (do NOT share this)
 URL = "${pushUrl}"
@@ -80,15 +84,17 @@ previous_count = 0
 
 while True:
     try:
-        cursor.execute("SELECT COUNT(*) FROM ${tableName}")
-        total_rows = cursor.fetchone()[0]
-
-        rows_per_sec = max(0, total_rows - previous_count) if previous_count > 0 else 0
+        cursor.execute("SELECT * FROM ${tableName}")
+        columns = [item[0] for item in cursor.description]
+        records = json.loads(json.dumps([dict(zip(columns, row)) for row in cursor.fetchall()], default=str))
+        total_rows = len(records)
+        rows_per_sec = max(0, total_rows - previous_count) if previous_count else 0
         previous_count = total_rows
 
         res = requests.post(URL, json={
             "total_rows": total_rows,
             "rows_per_sec": rows_per_sec,
+            "data": records,
             "cpu_usage": 0.0,
             "error_rate": 0.0,
             "status": "Streaming ${tableName} from Snowflake"
@@ -96,7 +102,7 @@ while True:
         print(f"Sent: {total_rows} rows -> {res.json()}")
     except Exception as e:
         print("Error:", e)
-    time.sleep(1)
+    time.sleep(5)
 `;
   }
 

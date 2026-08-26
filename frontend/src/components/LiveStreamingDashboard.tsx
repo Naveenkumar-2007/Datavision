@@ -47,6 +47,11 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
         ws.current.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
+            if (data.error) {
+              setConnectionError(data.error);
+              setIsConnected(false);
+              return;
+            }
             const entry: LiveData = {
               timestamp: new Date().toISOString(),
               total_rows: data.total_rows,

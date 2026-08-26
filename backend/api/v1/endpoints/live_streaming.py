@@ -396,7 +396,9 @@ async def websocket_live_data(websocket: WebSocket, connection_id: str):
         return
     
     # Handle DataVision API Push (Passive receiver)
-    if conn_data['source_type'].lower() == 'api_push':
+    # Guest connections migrated from the browser keep their original connector
+    # label (for example api_push_postgresql). They are still API-push streams.
+    if conn_data['source_type'].lower().startswith('api_push'):
         try:
             clean_id = connection_id.split("_push_")[-1] if "_push_" in connection_id else connection_id.removeprefix("push_")
             state_owner = connection_id.split("_push_")[0] if connection_id.startswith("guest_") and "_push_" in connection_id else None
@@ -551,7 +553,10 @@ async def push_live_data(connection_id: str, payload: dict):
                 try:
                     existing = pd.read_csv(csv_path)
                     combined = pd.concat([existing, new_df], ignore_index=True)
-                    combined = combined.tail(10000)
+                    # Connector clients may replay a poll after a restart. Exact
+                    # record de-duplication makes reconnects idempotent while new
+                    # source rows continue to append.
+                    combined = combined.drop_duplicates().tail(10000)
                     combined.to_csv(csv_path, index=False)
                 except Exception:
                     new_df.to_csv(csv_path, index=False)
