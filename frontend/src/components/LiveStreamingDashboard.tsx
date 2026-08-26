@@ -33,6 +33,8 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
     const host = window.location.host;
     const wsUrl = `${protocol}//${host}/api/v1/ws/live-data/${connectionId}`;
     
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
     const connectWs = () => {
       try {
         ws.current = new WebSocket(wsUrl);
@@ -66,7 +68,7 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
 
         ws.current.onclose = () => {
           setIsConnected(false);
-          setTimeout(connectWs, 3000);
+          if (!disposed) reconnectTimer = setTimeout(connectWs, 3000);
         };
       } catch (e) {
         setConnectionError('Failed to establish WebSocket');
@@ -74,7 +76,11 @@ export const LiveStreamingDashboard: React.FC<Props> = ({ source, connectionId, 
     };
 
     connectWs();
-    return () => { ws.current?.close(); };
+    return () => {
+      disposed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws.current?.close();
+    };
   }, [source, connectionId]);
 
   const latestData = dataStream.length > 0 ? dataStream[dataStream.length - 1] : null;

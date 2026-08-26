@@ -646,7 +646,7 @@ async def list_files(
             for file_path in paths["files"].iterdir():
                 print(f"📄 [FILE LIST] Found: {file_path}")
                 # HIDE Generated Cleaned files from the main list (User Request)
-                if file_path.name.startswith("cleaned_"):
+                if file_path.name.startswith("cleaned_") or file_path.name.endswith(".telemetry.json"):
                     continue
                     
                 if file_path.is_file():
@@ -689,7 +689,7 @@ async def list_files(
                     continue  # Already listed from disk scan above
                     
                 source_label = conn.source_type.upper()
-                table_name = conn.target_table or conn.database_name or "live_data"
+                table_name = (conn.connection_params or {}).get("target_table") or conn.database_name or "live_data"
                 
                 # Check if CSV actually exists on disk
                 csv_path = paths["files"] / file_id
