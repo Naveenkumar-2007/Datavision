@@ -727,6 +727,201 @@ async def remove_member(
     """Remove a team member from the workspace."""
     user_stmt = select(UserProfile).filter(UserProfile.email == req.email)
     user_res = await db.execute(user_stmt)
+    # Add new member
+    new_member = WorkspaceMember(
+        workspace_id=invite_info["created_by"], # Use inviter's UUID
+        user_id=user_id,
+        role="Viewer" # Default role for invite links
+    )
+    db.add(new_member)
+    await db.commit()
+    
+    # Optional: Log activity
+    await _log_activity_db(db, user_id, "System", "join", "Joined workspace via invite link")
+    
+    return {"success": True, "message": "Successfully joined the workspace!"}
+
+
+# ── MEMBERS ──
+
+@router.get("/members")
+async def get_members(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """List team members."""
+    # We fetch members from WorkspaceMember and their UserProfile
+    stmt = select(WorkspaceMember).filter(WorkspaceMember.workspace_id == user_id).options(selectinload(WorkspaceMember.user))
+    result = await db.execute(stmt)
+    members_db = result.scalars().all()
+    
+    formatted_members = []
+    for m in members_db:
+        name = m.user.full_name if m.user and m.user.full_name else m.user.email.split("@")[0] if m.user else "Unknown"
+        formatted_members.append({
+            "name": name,
+            "email": m.user.email if m.user else "",
+            "role": m.role,
+            "status": "Online",
+            "avatar": name[0].upper() if name else "?"
+        })
+        
+    # If empty, fallback to the authenticated user's profile
+    if not formatted_members:
+        try:
+            user_stmt = select(UserProfile).filter(UserProfile.id == user_id)
+            u_res = await db.execute(user_stmt)
+            user_profile = u_res.scalars().first()
+            
+            if user_profile:
+                name = user_profile.full_name or user_profile.email.split("@")[0]
+                formatted_members.append({
+                    "name": name,
+                    "email": user_profile.email,
+                    "role": "Owner",
+                    "status": "Online",
+                    "avatar": name[0].upper() if name else "?"
+                })
+            else:
+                formatted_members.append({
+                    "name": "Admin", "email": "admin@datavision.app", "role": "Owner", "status": "Online", "avatar": "A"
+                })
+        except:
+            formatted_members.append({
+                "name": "Admin", "email": "admin@datavision.app", "role": "Owner", "status": "Online", "avatar": "A"
+            })
+        
+    return {"members": formatted_members}
+
+
+@router.post("/members")
+async def add_member(
+    req: InviteMemberRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Add a team member to the workspace."""
+    # 1. Ensure user exists
+    user_stmt = select(UserProfile).filter(UserProfile.email == req.email)
+    user_res = await db.execute(user_stmt)
+    target_user = user_res.scalars().first()
+    
+    if not target_user:
+        # Create a stub user if doesn't exist
+        import hashlib
+        fake_pass = hashlib.sha256("stub".encode()).hexdigest()
+        target_user = UserProfile(
+            email=req.email, 
+            full_name=req.name, 
+            hashed_password=fake_pass,
+            password_hash_algorithm="sha256"
+        )
+        db.add(target_user)
+        await db.flush()
+        
+    # 2. Get or create a default workspace for the inviter
+    import uuid
+    try:
+        inviter_uuid = uuid.UUID(str(user_id))
+    except ValueError:
+        inviter_uuid = uuid.uuid5(uuid.NAMESPACE_OID, str(user_id))
+        
+    inviter_check = await db.execute(select(UserProfile).filter(UserProfile.id == inviter_uuid))
+    if not inviter_check.scalars().first():
+        db.add(UserProfile(id=inviter_uuid, email=f"{user_id}@guest.local", password_hash_algorithm="none", full_name="Guest User"))
+        await db.flush()
+        
+    workspace_stmt = select(Workspace).filter(Workspace.owner_id == inviter_uuid)
+    workspace_res = await db.execute(workspace_stmt)
+    workspace = workspace_res.scalars().first()
+    
+    if not workspace:
+        import secrets
+        ws_slug = f"workspace-{secrets.token_hex(4)}"
+        workspace = Workspace(owner_id=inviter_uuid, name="Default Workspace", slug=ws_slug)
+        db.add(workspace)
+        await db.flush()
+        
+    workspace_id = workspace.id
+        
+    # 3. Add WorkspaceMember
+    member_stmt = select(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == workspace_id,
+        WorkspaceMember.user_id == target_user.id
+    )
+    member_res = await db.execute(member_stmt)
+    existing_member = member_res.scalars().first()
+    
+    if existing_member:
+        raise HTTPException(status_code=400, detail="User is already a member")
+        
+    new_member = WorkspaceMember(workspace_id=workspace_id, user_id=target_user.id, role=req.role)
+    db.add(new_member)
+    await db.commit()
+    
+    name = target_user.full_name or target_user.email.split("@")[0]
+    
+    # Send invite email via existing email service
+    email_sent = False
+    email_error = None
+    try:
+        from services.email_service import send_insight_email
+        from core.auth import create_access_token
+        import os
+        
+        inviter_name = "Your team"
+        try:
+            inviter_stmt = select(UserProfile).filter(UserProfile.id == user_id)
+            inviter_res = await db.execute(inviter_stmt)
+            inviter = inviter_res.scalars().first()
+            if inviter:
+                inviter_name = inviter.full_name or inviter.email.split("@")[0]
+        except:
+            pass
+            
+        # Generate a secure invite token valid for 7 days
+        from datetime import timedelta
+        invite_token = create_access_token(
+            {"email": req.email, "type": "invite"}, 
+            expires_delta=timedelta(days=7)
+        )
+        
+        frontend_url = os.environ.get("FRONTEND_URL", "https://datavision-ai-datavision.hf.space")
+        invite_link = f"{frontend_url}/accept-invite?token={invite_token}&email={req.email}"
+            
+        send_res = await send_insight_email(
+            to_email=req.email,
+            title="You've been invited to DataVision",
+            body=f"{inviter_name} invited you to collaborate on DataVision as a {req.role}.\n\nClick the link below to accept the invitation and set up your account:\n{invite_link}\n\nIf you already have an account, you can simply log in.",
+        )
+        if send_res:
+            email_sent = True
+            logger.info(f"✅ Invite email sent to {req.email}")
+        else:
+            email_error = "Email provider unconfigured or failed"
+    except Exception as e:
+        email_error = str(e)
+        logger.warning(f"❌ Failed to send invite email to {req.email}: {e}")
+    
+    msg = f"Invitation sent to {req.email}" if email_sent else f"Member added. Copy link: {invite_link}"
+    return {
+        "success": True, 
+        "member": {"name": name, "email": target_user.email, "role": new_member.role, "status": "Invited" if email_sent else "Added (Pending)", "avatar": name[0].upper()}, 
+        "message": msg,
+        "email_sent": email_sent,
+        "invite_link": invite_link
+    }
+
+
+@router.delete("/members")
+async def remove_member(
+    req: RemoveMemberRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove a team member from the workspace."""
+    user_stmt = select(UserProfile).filter(UserProfile.email == req.email)
+    user_res = await db.execute(user_stmt)
     target_user = user_res.scalars().first()
     
     if not target_user:
@@ -739,39 +934,7 @@ async def remove_member(
     )
     await db.execute(stmt)
     await db.commit()
-        
     return {"success": True, "message": f"Removed {req.email}"}
-
-
-@router.put("/members/role")
-async def update_member_role(
-    req: UpdateRoleRequest,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
-):
-    """Update a team member's role."""
-    user_stmt = select(UserProfile).filter(UserProfile.email == req.email)
-    user_res = await db.execute(user_stmt)
-    target_user = user_res.scalars().first()
-    
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    member_stmt = select(WorkspaceMember).filter(
-        WorkspaceMember.workspace_id == user_id,
-        WorkspaceMember.user_id == target_user.id
-    )
-    member_res = await db.execute(member_stmt)
-    member = member_res.scalars().first()
-    
-    if not member:
-        raise HTTPException(status_code=404, detail="Member not found in workspace")
-        
-    member.role = req.role
-    await db.commit()
-    
-    return {"success": True, "message": f"Updated role to {req.role}"}
-
 
 # ── WEBSOCKET REAL-TIME CHAT ──
 from fastapi import WebSocket, WebSocketDisconnect
@@ -817,6 +980,7 @@ async def websocket_endpoint(
     try:
         from database.db import AsyncSessionLocal
         from database.orm import ChannelMessage
+        import uuid as _ws_uuid
         
         while True:
             data = await websocket.receive_text()
@@ -824,41 +988,37 @@ async def websocket_endpoint(
                 payload = json.loads(data)
                 msg_text = payload.get("message", "").lower()
                 
-                # Save the user's message to the DB
-                if "message" in payload and payload.get("user") != "DataVision Agent":
-                    async with AsyncSessionLocal() as db:
-                        effective_workspace = workspace_id if workspace_id != "default" else user_id
-                        real_channel_id = await _resolve_channel_id(room_id, db, effective_workspace)
-                        
-                        import uuid as _ws_uuid
-                        u_id_val = None
-                        if user_id != "default":
-                            try:
-                                u_id_val = _ws_uuid.UUID(user_id)
-                            except ValueError:
-                                u_id_val = _ws_uuid.uuid5(_ws_uuid.NAMESPACE_OID, str(user_id))
-                                
-                        new_msg = ChannelMessage(
-                            channel_id=real_channel_id,
-                            user_id=u_id_val,
-                            content=payload["message"],
-                            is_ai=False
-                        )
-                        db.add(new_msg)
-                        await db.commit()
-                        await db.refresh(new_msg)
-                        # Inject message ID so frontend can thread replies
-                        payload["id"] = str(new_msg.id)
-                        data = json.dumps(payload)
-            except Exception as e:
-                logger.error(f"Error saving message: {e}")
+                # Deterministic valid UUID for user_id (not null in DB)
+                try:
+                    u_id_val = _ws_uuid.UUID(user_id) if user_id != "default" else _ws_uuid.uuid5(_ws_uuid.NAMESPACE_OID, "default_user")
+                except ValueError:
+                    u_id_val = _ws_uuid.uuid5(_ws_uuid.NAMESPACE_OID, str(user_id))
                 
-            # Broadcast user message immediately
-            await manager.broadcast(data, actual_room_id)
-            
-            try:
-                payload = json.loads(data)
-                msg_text = payload.get("message", "").lower()
+                # Save user message to PostgreSQL database
+                if "message" in payload and payload.get("user") != "DataVision Agent":
+                    try:
+                        async with AsyncSessionLocal() as db:
+                            effective_workspace = workspace_id if workspace_id != "default" else user_id
+                            real_channel_id = await _resolve_channel_id(room_id, db, effective_workspace)
+                            
+                            new_msg = ChannelMessage(
+                                channel_id=real_channel_id,
+                                user_id=u_id_val,
+                                content=payload["message"],
+                                is_ai=False
+                            )
+                            db.add(new_msg)
+                            await db.commit()
+                            await db.refresh(new_msg)
+                            payload["id"] = str(new_msg.id)
+                            data = json.dumps(payload)
+                    except Exception as db_err:
+                        logger.error(f"Error persisting WS message to DB: {db_err}")
+                        
+                # Broadcast to other peers in room
+                await manager.broadcast(data, actual_room_id)
+                
+                # Handle AI @ai questions
                 is_question = msg_text.strip().endswith("?")
                 is_mention = "@ai" in msg_text
                 
@@ -867,36 +1027,36 @@ async def websocket_endpoint(
                     if not question:
                         question = "give me a summary"
                         
-                    async def _handle_ai(q_text, eff_id, r_id, a_r_id):
+                    async def _handle_ai(q_text, eff_id, r_id, a_r_id, acting_uid):
                         try:
                             ai_response = await collab_swarm.process_message(eff_id, q_text)
                             if ai_response:
-                                ai_payload = json.dumps(ai_response)
                                 async with AsyncSessionLocal() as session:
                                     real_ch_id = await _resolve_channel_id(r_id, session, eff_id)
                                     ai_msg = ChannelMessage(
                                         channel_id=real_ch_id,
-                                        user_id=None,
+                                        user_id=acting_uid,
                                         content=ai_response.get("message", ""),
                                         is_ai=True
                                     )
                                     session.add(ai_msg)
                                     await session.commit()
                                     await session.refresh(ai_msg)
-                                    ai_dict = json.loads(ai_payload)
-                                    ai_dict["id"] = str(ai_msg.id)
-                                    ai_payload = json.dumps(ai_dict)
-                                await asyncio.sleep(0.5)
-                                await manager.broadcast(ai_payload, a_r_id)
+                                    ai_response["id"] = str(ai_msg.id)
+                                
+                                await asyncio.sleep(0.3)
+                                await manager.broadcast(json.dumps(ai_response), a_r_id)
                         except Exception as e:
-                            logger.error(f"AI response error: {e}")
+                            logger.error(f"AI response error in WS: {e}")
                     
                     effective_id = workspace_id if workspace_id != "default" else user_id
-                    asyncio.create_task(_handle_ai(question, effective_id, room_id, actual_room_id))
+                    asyncio.create_task(_handle_ai(question, effective_id, room_id, actual_room_id, u_id_val))
                     
             except json.JSONDecodeError:
                 pass
-            
+            except Exception as loop_e:
+                logger.error(f"WS loop exception: {loop_e}")
+                
     except WebSocketDisconnect:
         manager.disconnect(websocket, actual_room_id)
 
@@ -936,12 +1096,6 @@ async def get_roles():
             ]
         ]
     }
-
-
-
-# NOTE: update_member_role is already defined above at line ~695 with full DB support.
-# Removed duplicate mocked endpoint that was here.
-
 
 @router.post("/threads/{message_id}/react")
 async def react_to_message(

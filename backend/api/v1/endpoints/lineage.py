@@ -54,7 +54,7 @@ def build_real_lineage(user_id: str) -> Dict[str, Any]:
                 sync_url = db_url.replace("+asyncpg", "")
                 with psycopg2.connect(sync_url) as conn:
                     with conn.cursor() as cur:
-                        cur.execute("SELECT id, source_type, host, target_table, created_at FROM data_connections WHERE user_id = %s", (user_id,))
+                        cur.execute("SELECT id, source_type, host, COALESCE(name, database_name, 'Data Connection'), created_at FROM data_connections WHERE user_id = %s", (user_id,))
                         live_connections = cur.fetchall()
             
             for conn_row in live_connections:

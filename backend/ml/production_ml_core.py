@@ -2409,13 +2409,34 @@ class ProductionModelTrainer:
                     mae = mean_absolute_error(y_test, y_pred)
                     rmse = np.sqrt(mean_squared_error(y_test, y_pred))
                     
+                    # Additional regression metrics for better context
+                    from sklearn.metrics import explained_variance_score
+                    evs = explained_variance_score(y_test, y_pred)
+                    
+                    # MAPE (Mean Absolute Percentage Error) - handle zeros
+                    y_test_arr = np.array(y_test, dtype=float)
+                    non_zero_mask = y_test_arr != 0
+                    if non_zero_mask.sum() > 0:
+                        mape = float(np.mean(np.abs((y_test_arr[non_zero_mask] - np.array(y_pred, dtype=float)[non_zero_mask]) / y_test_arr[non_zero_mask])) * 100)
+                    else:
+                        mape = float('inf')
+                    
                     metrics = {
                         'r2': round(float(r2), 4),
                         'mae': round(float(mae), 4),
-                        'rmse': round(float(rmse), 4)
+                        'rmse': round(float(rmse), 4),
+                        'mape': round(float(mape), 2) if mape != float('inf') else None,
+                        'explained_variance': round(float(evs), 4),
                     }
-                    score = r2  # Use R² as primary metric
-                    print(f"   ✅ {name}: r2={r2:.4f}, mae={mae:.4f}, rmse={rmse:.4f}")
+                    
+                    # Handle negative R² — model is worse than predicting the mean
+                    # Use max(0, r2) for ranking but report the real value
+                    if r2 < 0:
+                        print(f"   ⚠️ {name}: NEGATIVE R²={r2:.4f} (model worse than mean baseline), mae={mae:.4f}")
+                        score = max(0.0, r2)  # Clamp for ranking purposes
+                    else:
+                        score = r2  # Use R² as primary metric
+                        print(f"   ✅ {name}: r2={r2:.4f}, mae={mae:.4f}, rmse={rmse:.4f}, mape={mape:.1f}%")
                 
                 elif self.task_type == 'clustering':
                     # Clustering metrics - use silhouette score

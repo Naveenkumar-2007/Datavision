@@ -196,18 +196,38 @@ const Collaborate: React.FC = () => {
       } catch (e) { console.error('Failed to reply', e); }
       setReplyingTo(null);
     } else {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ message: finalMessage, user: displayName, is_encrypted: isEncrypted }));
-      } else {
-        // Do not silently lose a message while the socket is reconnecting.
+      try {
+        // 1. Always persist to PostgreSQL DB first
         const res = await api.post('/api/v1/collaboration/threads', {
           channel_id: activeChannel,
           message: finalMessage,
           user: displayName,
           is_encrypted: isEncrypted
         });
+        
         if (res.data?.success && res.data.message) {
-          setComments(prev => prev.some(item => item.id === res.data.message.id) ? prev : [...prev, res.data.message]);
+          const savedMsg = res.data.message;
+          setComments(prev => prev.some(item => item.id === savedMsg.id) ? prev : [...prev, savedMsg]);
+          
+          if (res.data.ai_response) {
+            setComments(prev => prev.some(item => item.id === res.data.ai_response.id) ? prev : [...prev, res.data.ai_response]);
+          }
+          
+          // 2. Broadcast via WebSocket with real DB message ID
+          if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ 
+              id: savedMsg.id,
+              message: finalMessage, 
+              user: displayName, 
+              is_encrypted: isEncrypted 
+            }));
+          }
+        }
+      } catch (postErr) {
+        console.error('Failed to post message to DB:', postErr);
+        // Fallback: send via WebSocket if available
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ message: finalMessage, user: displayName, is_encrypted: isEncrypted }));
         }
       }
     }

@@ -255,7 +255,7 @@ def chat(
     
     # =========================================================================
     # ☁️ CASCADING PROVIDER FALLBACK CHAIN
-    # Chain: Nvidia NIM -> HuggingFace -> Ollama
+    # Chain: Groq (all keys, multiple models) → NVIDIA NIM → HuggingFace
     # =========================================================================
     
     # 1. Build the Provider Chain
@@ -285,6 +285,13 @@ def chat(
             "api_key": g_key,
             "api_base": None
         })
+        # Additional Groq model fallbacks per key
+        providers.append({
+            "name": f"Groq-Gemma2 (Key {i})",
+            "model": "groq/gemma2-9b-it",
+            "api_key": g_key,
+            "api_base": None
+        })
         
     # If no keys in settings (fallback), try direct env
     if not Settings.GROQ_API_KEYS and groq_key:
@@ -300,33 +307,14 @@ def chat(
             "api_key": groq_key,
             "api_base": None
         })
-    
-    # --- 2. SECONDARY: NVIDIA LLAMA ---
-    if nv_key:
         providers.append({
-            "name": "Nvidia-Llama",
-            "model": "openai/meta/llama-3.1-70b-instruct",
-            "api_key": nv_key,
-            "api_base": "https://integrate.api.nvidia.com/v1"
-        })
-        
-
-    # --- HUGGINGFACE ---
-    if hf_key:
-        providers.append({
-            "name": "HuggingFace",
+            "name": "Groq-Gemma2",
             "model": "huggingface/meta-llama/Meta-Llama-3-8B-Instruct",
             "api_key": hf_key,
             "api_base": None
         })
-        
-    # --- OLLAMA (Local fallback) ---
-    providers.append({
-        "name": "Ollama",
-        "model": "ollama/llama3",
-        "api_key": None,
-        "api_base": "http://localhost:11434"
-    })
+    
+    # No Ollama - removed (requires local server, causes chain exhaustion in production)
     
     # 2. Execute the Chain
     last_error = None

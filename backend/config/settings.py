@@ -90,7 +90,7 @@ class Settings:
     
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
-    # LLM Provider Support (groq | huggingface | ollama)
+    # LLM Provider Support (groq | nvidia | huggingface)
     LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "groq").lower()
 
     # API Keys Management

@@ -224,6 +224,21 @@ class CVAutoMLEngine:
 
             h, w, c = img.shape
 
+            # Detect model architecture task if not explicitly provided
+            model_task = getattr(self.model, 'task', None)
+            if model_task:
+                task_map = {
+                    'classify': 'classification',
+                    'segment': 'instance_segmentation',
+                    'pose': 'pose_estimation',
+                    'detect': 'object_detection',
+                    'obb': 'oriented_bounding_box'
+                }
+                if not task_type or task_type in {'general', 'auto', 'cv'}:
+                    task_type = task_map.get(model_task, task_type or 'object_detection')
+
+            resolved_task = task_type or 'object_detection'
+
             # Run inference with confidence threshold & IOU threshold
             # Lower confidence threshold for custom models to ensure detections aren't missed
             effective_conf = conf if not has_custom_model else max(0.1, conf - 0.1)
@@ -231,15 +246,15 @@ class CVAutoMLEngine:
             if not results or len(results) == 0:
                 if has_custom_model:
                     return {
-                        "success": True, "is_low_confidence": True, "task_type": "object_detection",
-                        "class": "No Objects Detected", "confidence": 0.0,
-                        "predictions": [{"class": "No Objects Detected", "confidence": 0.0}],
+                        "success": True, "is_low_confidence": True, "task_type": resolved_task,
+                        "class": "No Detections", "confidence": 0.0,
+                        "predictions": [{"class": "No Detections", "confidence": 0.0}],
                         "processed_image": base64_image, "model": "Custom Trained Model"
                     }
                 return {
-                    "success": True, "is_low_confidence": True, "task_type": "object_detection",
-                    "class": "No Objects Detected", "confidence": 0.0,
-                    "predictions": [{"class": "No Objects Detected", "confidence": 0.0}],
+                    "success": True, "is_low_confidence": True, "task_type": resolved_task,
+                    "class": "No Detections", "confidence": 0.0,
+                    "predictions": [{"class": "No Detections", "confidence": 0.0}],
                     "processed_image": base64_image, "model": "YOLOv8 Pretrained"
                 }
 
@@ -462,13 +477,13 @@ class CVAutoMLEngine:
 
             if has_custom_model:
                 return {
-                    "success": True, "is_low_confidence": True, "task_type": "classification",
+                    "success": True, "is_low_confidence": True, "task_type": resolved_task,
                     "class": "Unrecognized", "confidence": 0.0,
                     "predictions": [{"class": "Unrecognized", "confidence": 0.0}],
                     "processed_image": base64_image, "model": "Custom Trained Model"
                 }
             return {
-                "success": True, "is_low_confidence": True, "task_type": "classification",
+                "success": True, "is_low_confidence": True, "task_type": resolved_task,
                 "class": "Unrecognized", "confidence": 0.0,
                 "predictions": [{"class": "Unrecognized", "confidence": 0.0}],
                 "processed_image": base64_image, "model": "YOLOv8 Pretrained"

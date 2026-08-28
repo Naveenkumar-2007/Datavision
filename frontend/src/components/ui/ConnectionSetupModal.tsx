@@ -13,7 +13,7 @@ interface Props {
 }
 
 // Generate the Python script dynamically based on user inputs and connector type
-const generateScript = (source: string, pushUrl: string, host: string, dbName: string, tableName: string, username: string): string => {
+const generateScript = (source: string, pushUrl: string, host: string, dbName: string, tableName: string, username: string, schema: string = 'PUBLIC'): string => {
   const sourceLower = source.toLowerCase();
 
   if (sourceLower === 'postgresql') {
@@ -75,16 +75,16 @@ conn = snowflake.connector.connect(
     account="${host}",         # e.g. xy12345.us-east-1
     warehouse="COMPUTE_WH",
     database="${dbName}",
-    schema="PUBLIC"
+    schema="${schema || 'PUBLIC'}"
 )
 cursor = conn.cursor()
 
-print("Connected to Snowflake! Streaming '${tableName}' to DataVision Cloud...")
+print("Connected to Snowflake! Streaming '${tableName}' from schema '${schema || 'PUBLIC'}' to DataVision Cloud...")
 previous_count = 0
 
 while True:
     try:
-        cursor.execute("SELECT * FROM ${tableName}")
+        cursor.execute("SELECT * FROM ${schema ? `${schema}.${tableName}` : tableName}")
         columns = [item[0] for item in cursor.description]
         records = json.loads(json.dumps([dict(zip(columns, row)) for row in cursor.fetchall()], default=str))
         total_rows = len(records)
@@ -167,6 +167,7 @@ export const ConnectionSetupModal: React.FC<Props> = ({ source, onClose, onConne
   const [databaseName, setDatabaseName] = useState('');
   const [targetTable, setTargetTable] = useState('');
   const [username, setUsername] = useState('');
+  const [schema, setSchema] = useState('PUBLIC');
 
   // Generated values
   const [connectionId, setConnectionId] = useState('');
@@ -175,9 +176,9 @@ export const ConnectionSetupModal: React.FC<Props> = ({ source, onClose, onConne
   const sourceIcon = source === 'PostgreSQL' ? '🐘' : source === 'Snowflake' ? '❄️' : '⚡';
   const sourceColor = source === 'PostgreSQL' ? 'indigo' : source === 'Snowflake' ? 'blue' : 'yellow';
 
-  const placeholders: Record<string, { host: string; db: string; table: string; user: string }> = {
+  const placeholders: Record<string, { host: string; db: string; table: string; user: string; schema?: string }> = {
     PostgreSQL: { host: 'localhost', db: 'streaming_db', table: 'weather_data', user: 'postgres' },
-    Snowflake: { host: 'xy12345.us-east-1', db: 'PRODUCTION', table: 'SALES_DATA', user: 'admin' },
+    Snowflake: { host: 'xy12345.us-east-1', db: 'PRODUCTION', table: 'SALES_DATA', user: 'admin', schema: 'PUBLIC' },
     Kafka: { host: 'localhost:9092', db: '(not needed for Kafka)', table: 'my_topic', user: '(optional)' },
   };
   const ph = placeholders[source] || placeholders.PostgreSQL;
@@ -194,9 +195,9 @@ export const ConnectionSetupModal: React.FC<Props> = ({ source, onClose, onConne
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeadersSync() },
         body: JSON.stringify({
-          source_type: 'api_push',
+          source_type: `api_push_${source.toLowerCase()}`,
           host,
-          database_name: databaseName || 'push',
+          database_name: databaseName || (source === 'Snowflake' ? 'PRODUCTION' : 'push'),
           target_table: targetTable,
           credentials: 'none'
         })
@@ -223,7 +224,7 @@ export const ConnectionSetupModal: React.FC<Props> = ({ source, onClose, onConne
   };
 
   const handleCopy = () => {
-    const script = generateScript(source, pushUrl, host, databaseName, targetTable, username);
+    const script = generateScript(source, pushUrl, host, databaseName, targetTable, username, schema);
     navigator.clipboard.writeText(script);
     setCopied(true);
     toast.success('Script copied to clipboard!');
@@ -283,6 +284,15 @@ export const ConnectionSetupModal: React.FC<Props> = ({ source, onClose, onConne
                     <Database className="w-4 h-4" /> Database Name
                   </label>
                   <input type="text" value={databaseName} onChange={e => setDatabaseName(e.target.value)} placeholder={`e.g. ${ph.db}`} className={inputClasses} />
+                </div>
+              )}
+
+              {source === 'Snowflake' && (
+                <div className="space-y-1.5">
+                  <label className={`text-sm font-medium flex items-center gap-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                    <Database className="w-4 h-4" /> Schema Name
+                  </label>
+                  <input type="text" value={schema} onChange={e => setSchema(e.target.value)} placeholder="e.g. PUBLIC" className={inputClasses} />
                 </div>
               )}
 

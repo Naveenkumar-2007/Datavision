@@ -1,4 +1,6 @@
 import os
+import uuid
+from typing import Any
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
 
@@ -20,8 +22,17 @@ if "?sslmode=require" in DATABASE_URL:
 elif "&sslmode=require" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("&sslmode=require", "&ssl=require")
 
-# Async Engine
-engine = create_async_engine(DATABASE_URL, echo=False, future=True)
+# Async Engine with Enterprise High-Concurrency Connection Pooling
+engine = create_async_engine(
+    DATABASE_URL, 
+    echo=False, 
+    future=True,
+    pool_size=25,
+    max_overflow=35,
+    pool_timeout=30,
+    pool_recycle=1800,
+    pool_pre_ping=True
+)
 
 # Async Session Factory
 AsyncSessionLocal = async_sessionmaker(
@@ -50,4 +61,38 @@ async def get_db():
             raise
         finally:
             await session.close()
+
+async def ensure_user_exists(db: AsyncSession, user_id: Any) -> uuid.UUID:
+    """Ensure a user record exists in the users table to prevent ForeignKeyViolation errors."""
+    import uuid as _uuid
+    import hashlib
+    from sqlalchemy import text
+    
+    if isinstance(user_id, _uuid.UUID):
+        uid = user_id
+    else:
+        try:
+            uid = _uuid.UUID(str(user_id))
+        except (ValueError, AttributeError):
+            uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+            
+    email_hash = hashlib.md5(str(uid).encode()).hexdigest()[:10]
+    email = f"user_{email_hash}@datavision.local"
+    
+    try:
+        await db.execute(
+            text("""
+                INSERT INTO users (id, email, full_name, is_active, created_at, updated_at)
+                VALUES (:id, :email, :full_name, true, NOW(), NOW())
+                ON CONFLICT (id) DO NOTHING
+            """),
+            {"id": str(uid), "email": email, "full_name": "DataVision User"}
+        )
+        await db.flush()
+    except Exception as e:
+        # Ignore conflict or race condition
+        pass
+        
+    return uid
+
 

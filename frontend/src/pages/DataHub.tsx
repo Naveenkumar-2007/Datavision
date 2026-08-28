@@ -1252,15 +1252,19 @@ const DataHub: React.FC = () => {
           <div className="divide-y" style={{ borderColor: 'var(--border-color)' }}>
             {activeConnections.map((conn, i) => {
               // Map source type to icon and display name
+                const st = (conn.source_type || '').toLowerCase();
                 let icon = '🐘';
                 let displayName = 'PostgreSQL';
-                if (conn.source_type.toLowerCase() === 'snowflake') {
+                if (st.includes('snowflake')) {
                   icon = '❄️';
                   displayName = 'Snowflake';
-                } else if (conn.source_type.toLowerCase() === 'kafka') {
+                } else if (st.includes('kafka')) {
                   icon = '⚡';
                   displayName = 'Kafka';
-                } else if (conn.source_type.toLowerCase() === 'api_push') {
+                } else if (st.includes('postgres')) {
+                  icon = '🐘';
+                  displayName = 'PostgreSQL';
+                } else if (st.includes('api_push') || st === 'api' || st === 'push') {
                   icon = '🚀';
                   displayName = 'API Push';
                 }

@@ -37,6 +37,7 @@ def _is_valid_uuid(val: str) -> bool:
 class PredictRequest(BaseModel):
     image: str  # Base64 string
     model_id: Optional[str] = None
+    task_type: Optional[str] = None
 
 class BatchPredictRequest(BaseModel):
     images: List[str]
@@ -74,21 +75,26 @@ async def predict_image(
         elif current_user and hasattr(current_user, 'user_id'):
             user_id_str = str(current_user.user_id)
         
+        if request.task_type:
+            task_type = request.task_type
+            
         if request.model_id:
             # User explicitly selected a model
             progress = cv_engine.get_training_progress(request.model_id)
             if progress:
                 model_path = progress.get('model_path')
                 model_name = progress.get('config', {}).get('model', 'custom')
-                task_type = progress.get('config', {}).get('task_type')
+                if not task_type:
+                    task_type = progress.get('config', {}).get('task_type')
         else:
             # Auto-discover the user's latest trained model
             auto_path, auto_task = cv_engine.find_latest_trained_model(user_id=user_id_str)
             if auto_path:
                 model_path = auto_path
-                task_type = auto_task
-                model_name = f"auto-discovered ({auto_task or 'detection'})"
-                logger.info(f"Auto-discovered trained model for prediction: {auto_path} (task: {auto_task})")
+                if not task_type:
+                    task_type = auto_task
+                model_name = f"auto-discovered ({task_type or 'detection'})"
+                logger.info(f"Auto-discovered trained model for prediction: {auto_path} (task: {task_type})")
 
         result = cv_engine.predict_image(request.image, model_path, task_type=task_type)
         if "error" in result and not result.get("success"):

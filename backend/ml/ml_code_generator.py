@@ -224,6 +224,9 @@ def generate_code_zip(
         #    This removes ProductionFeatureEngineer and other backend-specific
         #    objects that would cause "ModuleNotFoundError: No module named 'ml'"
         #    when users run the scripts outside of DataVision.
+        #    ALSO strips numpy random state objects (PCG64, BitGenerator) that
+        #    cause "ValueError: ... is not a known BitGenerator module" across
+        #    different numpy versions.
         if model_path and model_path.exists():
             if model_state is not None:
                 # Create clean pkl with ONLY standard sklearn/numpy objects
@@ -243,11 +246,39 @@ def generate_code_zip(
                     if key in model_state:
                         standalone_state[key] = model_state[key]
                 
+                # Strip numpy random state from the model to prevent version mismatch
+                def _strip_random_state(obj, depth=0):
+                    """Recursively remove numpy random state from sklearn estimators."""
+                    if depth > 10:
+                        return
+                    try:
+                        import numpy as np
+                        # Reset random_state on sklearn estimators
+                        if hasattr(obj, 'random_state') and obj.random_state is not None:
+                            if not isinstance(obj.random_state, (int, type(None))):
+                                obj.random_state = 42
+                        # Clear internal numpy RandomState objects
+                        if hasattr(obj, '_random_state'):
+                            obj._random_state = None
+                        # Handle tree-based models with estimators_
+                        if hasattr(obj, 'estimators_'):
+                            for est in obj.estimators_:
+                                if hasattr(est, '__iter__'):
+                                    for sub_est in est:
+                                        _strip_random_state(sub_est, depth + 1)
+                                else:
+                                    _strip_random_state(est, depth + 1)
+                    except Exception:
+                        pass
+                
+                if 'model' in standalone_state and standalone_state['model'] is not None:
+                    _strip_random_state(standalone_state['model'])
+                
                 clean_buf = io.BytesIO()
-                pickle.dump(standalone_state, clean_buf)
+                pickle.dump(standalone_state, clean_buf, protocol=4)  # protocol 4 = Python 3.4+ compat
                 clean_bytes = clean_buf.getvalue()
                 zf.writestr('model.pkl', clean_bytes)
-                logger.info(f"Added standalone model.pkl ({len(clean_bytes) / 1024:.1f} KB, stripped backend deps)")
+                logger.info(f"Added standalone model.pkl ({len(clean_bytes) / 1024:.1f} KB, stripped backend deps + random state)")
             else:
                 # Fallback: copy raw model.pkl if we couldn't load it to clean
                 zf.write(model_path, 'model.pkl')

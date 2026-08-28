@@ -101,7 +101,40 @@ const Reports: React.FC = () => {
   const [reportHistory, setReportHistory] = useState<any[]>([]);
   const [reportTemplates, setReportTemplates] = useState<any[]>([]);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [scheduleForm, setScheduleForm] = useState({ name: '', type: 'executive', cron: '0 9 * * 1', emails: '' });
+  const [scheduleForm, setScheduleForm] = useState({ 
+    name: '', 
+    type: 'executive', 
+    frequency: 'weekly',
+    time: '09:00',
+    weekday: '1',
+    dayOfMonth: '1',
+    cron: '0 9 * * 1', 
+    emails: '' 
+  });
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [runningScheduleId, setRunningScheduleId] = useState<string | null>(null);
+
+  const computeCron = (freq: string, time: string, weekday: string, dayOfMonth: string) => {
+    const [h, m] = (time || '09:00').split(':').map(Number);
+    const minute = isNaN(m) ? 0 : m;
+    const hour = isNaN(h) ? 9 : h;
+    if (freq === 'daily') return `${minute} ${hour} * * *`;
+    if (freq === 'weekly') return `${minute} ${hour} * * ${weekday}`;
+    if (freq === 'monthly') return `${minute} ${hour} ${dayOfMonth} * *`;
+    if (freq === 'hourly') return `0 * * * *`;
+    return scheduleForm.cron || '0 9 * * 1';
+  };
+
+  const getCronSummary = (freq: string, time: string, weekday: string, dayOfMonth: string) => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = days[Number(weekday)] || 'Monday';
+    if (freq === 'daily') return `Every day at ${time}`;
+    if (freq === 'weekly') return `Every week on ${dayName} at ${time}`;
+    if (freq === 'monthly') return `Monthly on day ${dayOfMonth} at ${time}`;
+    if (freq === 'hourly') return 'Every hour at minute 0';
+    return `Custom cron: ${scheduleForm.cron}`;
+  };
 
   const CHART_COLORS = ['#22c55e', '#16a34a', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899'];
   const userPreferredCurrency = getUserPreferredCurrency();
@@ -139,10 +172,12 @@ const Reports: React.FC = () => {
 
   const toggleSchedule = async (id: string, currentStatus: boolean) => {
     try {
+      setScheduleError(null);
       await api.put(`/api/v1/reports/scheduled/${id}/toggle`);
       fetchScheduledReports();
     } catch (e) {
       console.error("Failed to toggle schedule", e);
+      setScheduleError('Unable to update this schedule. Please try again.');
     }
   };
 
@@ -164,27 +199,68 @@ const Reports: React.FC = () => {
 
   const handleCreateSchedule = async () => {
     try {
+      setScheduleError(null);
+      setScheduleSaving(true);
       const emails = scheduleForm.emails.split(',').map(e => e.trim()).filter(Boolean);
-      await api.post('/api/v1/reports/scheduled', {
+      const cronToSave = scheduleForm.frequency !== 'custom'
+        ? computeCron(scheduleForm.frequency, scheduleForm.time, scheduleForm.weekday, scheduleForm.dayOfMonth)
+        : (scheduleForm.cron || '0 9 * * 1');
+
+      const res = await api.post('/api/v1/reports/scheduled', {
         name: scheduleForm.name,
         report_type: scheduleForm.type,
-        schedule_cron: scheduleForm.cron,
-        recipients: emails
+        schedule_cron: cronToSave,
+        recipients: emails,
+        format: 'pdf'
       });
-      setShowScheduleModal(false);
-      setScheduleForm({ name: '', type: 'executive', cron: '0 9 * * 1', emails: '' });
-      fetchScheduledReports();
-    } catch (e) {
+
+      if (res.data?.success) {
+        setShowScheduleModal(false);
+        setScheduleForm({ 
+          name: '', 
+          type: 'executive', 
+          frequency: 'weekly',
+          time: '09:00',
+          weekday: '1',
+          dayOfMonth: '1',
+          cron: '0 9 * * 1', 
+          emails: '' 
+        });
+        fetchScheduledReports();
+      } else {
+        setScheduleError(res.data?.message || 'Unable to save the schedule.');
+      }
+    } catch (e: any) {
       console.error("Failed to create schedule", e);
+      const errorMsg = e.response?.data?.detail || e.response?.data?.message || e.message || 'Unable to save the schedule.';
+      setScheduleError(String(errorMsg));
+    } finally {
+      setScheduleSaving(false);
     }
   };
 
   const handleDeleteSchedule = async (id: string) => {
     try {
+      setScheduleError(null);
       await api.delete(`/api/v1/reports/scheduled/${id}`);
       fetchScheduledReports();
     } catch (e) {
       console.error("Failed to delete schedule", e);
+      setScheduleError('Unable to delete this schedule. Please try again.');
+    }
+  };
+
+  const handleRunSchedule = async (id: string) => {
+    try {
+      setScheduleError(null);
+      setRunningScheduleId(id);
+      await api.post(`/api/v1/reports/scheduled/${id}/run`);
+      await Promise.all([fetchScheduledReports(), fetchReportHistory()]);
+    } catch (e) {
+      console.error('Failed to run scheduled report', e);
+      setScheduleError('Unable to run this report now. Please try again.');
+    } finally {
+      setRunningScheduleId(null);
     }
   };
 
@@ -764,7 +840,36 @@ const Reports: React.FC = () => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-               {/* Template cards would go here */}
+              {reportTemplates.map((template: any) => (
+                <article key={template.id} className="p-5 rounded-2xl border flex flex-col gap-4" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
+                  <div>
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <h3 className="font-bold" style={{ color: 'var(--text-primary)' }}>{template.name}</h3>
+                      <span className="shrink-0 px-2 py-1 rounded-full text-[10px] font-bold bg-indigo-500/10 text-indigo-500">{template.category}</span>
+                    </div>
+                    <p className="text-sm leading-6" style={{ color: 'var(--text-muted)' }}>{template.description}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(template.chart_types || []).map((chart: string) => <span key={chart} className="px-2 py-1 rounded-md text-[10px] bg-black/5 dark:bg-white/5" style={{ color: 'var(--text-muted)' }}>{chart}</span>)}
+                  </div>
+                  <div className="mt-auto flex items-center justify-between gap-3 pt-1">
+                    <button onClick={() => { 
+                      setSelectedType(template.report_type); 
+                      setScheduleForm({ 
+                        name: template.name, 
+                        type: template.report_type, 
+                        frequency: 'weekly',
+                        time: '09:00',
+                        weekday: '1',
+                        dayOfMonth: '1',
+                        cron: template.recommended_cron || '0 9 * * 1', 
+                        emails: '' 
+                      }); 
+                      setShowScheduleModal(true); 
+                    }} className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold">Use template</button>
+                  </div>
+                </article>
+              ))}
             </div>
           )}
         </motion.div>
@@ -776,6 +881,8 @@ const Reports: React.FC = () => {
               <Plus className="w-4 h-4" /> New Schedule
             </button>
           </div>
+
+          {scheduleError && <div className="p-3 rounded-xl border bg-red-500/10 border-red-500/30 text-sm text-red-500">{scheduleError}</div>}
 
           {scheduledReports.length === 0 ? (
             <div className="p-12 rounded-2xl text-center border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
@@ -811,6 +918,9 @@ const Reports: React.FC = () => {
                       {schedule.is_active !== false ? 'Active' : 'Inactive'}
                     </button>
                   </div>
+                  <button onClick={() => handleRunSchedule(schedule.id)} disabled={runningScheduleId === schedule.id} className="mt-3 w-full py-2 rounded-lg border border-indigo-500/30 text-indigo-500 hover:bg-indigo-500/10 text-xs font-bold disabled:opacity-50">
+                    {runningScheduleId === schedule.id ? 'Running…' : 'Run now'}
+                  </button>
                 </div>
               ))}
             </div>
@@ -1466,9 +1576,8 @@ const Reports: React.FC = () => {
                 </div>
               )}
             </div>
-          </motion.div>
-        )
-      }
+        </motion.div>
+      )}
 
       {/* Empty State */}
       {!report && !generating && (
@@ -1490,62 +1599,175 @@ const Reports: React.FC = () => {
       {/* Schedule Modal */}
       {showScheduleModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className={`w-full max-w-md p-6 rounded-3xl shadow-2xl ${theme.isDark ? 'bg-zinc-900 border border-white/10' : 'bg-white'}`}>
-            <h3 className="text-xl font-bold mb-6" style={{ color: theme.isDark ? 'white' : 'black' }}>Schedule Automated Report</h3>
+          <div className={`w-full max-w-lg p-6 rounded-3xl shadow-2xl ${theme.isDark ? 'bg-zinc-900 border border-white/10 text-white' : 'bg-white text-black'}`}>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600/10 text-indigo-500 flex items-center justify-center">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">Schedule Automated Report</h3>
+                  <p className="text-xs text-gray-400">Automate recurring data exports to your team's inboxes.</p>
+                </div>
+              </div>
+              <button onClick={() => setShowScheduleModal(false)} className="text-gray-400 hover:text-white text-lg">✕</button>
+            </div>
+
+            {scheduleError && (
+              <div className="mb-4 p-3 rounded-xl border bg-red-500/10 border-red-500/30 text-xs text-red-400">
+                {scheduleError}
+              </div>
+            )}
             
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-400">Schedule Name</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Schedule Name</label>
                 <input 
                   type="text" 
                   value={scheduleForm.name}
                   onChange={(e) => setScheduleForm({...scheduleForm, name: e.target.value})}
                   placeholder="e.g., Weekly Executive Brief"
-                  className={`w-full px-4 py-2.5 rounded-xl border text-sm ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
                 />
               </div>
               
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-400">Report Type</label>
-                <select 
-                  value={scheduleForm.type}
-                  onChange={(e) => setScheduleForm({...scheduleForm, type: e.target.value})}
-                  className={`w-full px-4 py-2.5 rounded-xl border text-sm outline-none ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
-                >
-                  {reportTypes.map(rt => <option key={rt.value} value={rt.value}>{rt.label}</option>)}
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Report Type</label>
+                  <select 
+                    value={scheduleForm.type}
+                    onChange={(e) => setScheduleForm({...scheduleForm, type: e.target.value})}
+                    className={`w-full px-3 py-2.5 rounded-xl border text-sm outline-none ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+                  >
+                    {reportTypes.map(rt => <option key={rt.value} value={rt.value}>{rt.label}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Frequency</label>
+                  <select 
+                    value={scheduleForm.frequency}
+                    onChange={(e) => {
+                      const newFreq = e.target.value;
+                      const newCron = computeCron(newFreq, scheduleForm.time, scheduleForm.weekday, scheduleForm.dayOfMonth);
+                      setScheduleForm({...scheduleForm, frequency: newFreq, cron: newCron});
+                    }}
+                    className={`w-full px-3 py-2.5 rounded-xl border text-sm outline-none ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="hourly">Hourly</option>
+                    <option value="custom">Custom Cron</option>
+                  </select>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium mb-1 text-gray-400">Cron Schedule</label>
-                <input 
-                  type="text" 
-                  value={scheduleForm.cron}
-                  onChange={(e) => setScheduleForm({...scheduleForm, cron: e.target.value})}
-                  className={`w-full px-4 py-2.5 rounded-xl border text-sm font-mono ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
-                />
-                <p className="text-[10px] text-gray-500 mt-1">Format: min hour day month day-of-week (e.g., 0 9 * * 1 for Monday 9AM)</p>
-              </div>
+              {scheduleForm.frequency !== 'custom' ? (
+                <div className="p-3.5 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    {scheduleForm.frequency === 'weekly' && (
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-400 mb-1">Day of Week</label>
+                        <select 
+                          value={scheduleForm.weekday}
+                          onChange={(e) => {
+                            const newWd = e.target.value;
+                            const newCron = computeCron(scheduleForm.frequency, scheduleForm.time, newWd, scheduleForm.dayOfMonth);
+                            setScheduleForm({...scheduleForm, weekday: newWd, cron: newCron});
+                          }}
+                          className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-gray-200 text-black'}`}
+                        >
+                          <option value="1">Monday</option>
+                          <option value="2">Tuesday</option>
+                          <option value="3">Wednesday</option>
+                          <option value="4">Thursday</option>
+                          <option value="5">Friday</option>
+                          <option value="6">Saturday</option>
+                          <option value="0">Sunday</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {scheduleForm.frequency === 'monthly' && (
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-400 mb-1">Day of Month</label>
+                        <select 
+                          value={scheduleForm.dayOfMonth}
+                          onChange={(e) => {
+                            const newDom = e.target.value;
+                            const newCron = computeCron(scheduleForm.frequency, scheduleForm.time, scheduleForm.weekday, newDom);
+                            setScheduleForm({...scheduleForm, dayOfMonth: newDom, cron: newCron});
+                          }}
+                          className={`w-full px-3 py-2 rounded-lg border text-xs outline-none ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-gray-200 text-black'}`}
+                        >
+                          <option value="1">1st of Month</option>
+                          <option value="15">15th of Month</option>
+                          <option value="28">28th of Month</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {scheduleForm.frequency !== 'hourly' && (
+                      <div className={scheduleForm.frequency === 'daily' ? 'col-span-2' : ''}>
+                        <label className="block text-[11px] font-medium text-gray-400 mb-1">Time of Day</label>
+                        <input 
+                          type="time" 
+                          value={scheduleForm.time}
+                          onChange={(e) => {
+                            const newTime = e.target.value;
+                            const newCron = computeCron(scheduleForm.frequency, newTime, scheduleForm.weekday, scheduleForm.dayOfMonth);
+                            setScheduleForm({...scheduleForm, time: newTime, cron: newCron});
+                          }}
+                          className={`w-full px-3 py-2 rounded-lg border text-xs ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-white border-gray-200 text-black'}`}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs font-medium text-indigo-400 pt-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>{getCronSummary(scheduleForm.frequency, scheduleForm.time, scheduleForm.weekday, scheduleForm.dayOfMonth)}</span>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Custom Cron Expression</label>
+                  <input 
+                    type="text" 
+                    value={scheduleForm.cron}
+                    onChange={(e) => setScheduleForm({...scheduleForm, cron: e.target.value})}
+                    placeholder="0 9 * * 1"
+                    className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-mono ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">Format: min hour day month day-of-week (e.g. 0 8 * * * for 8:00 AM Daily)</p>
+                </div>
+              )}
 
               <div>
-                <label className="block text-sm font-medium mb-1 text-gray-400">Recipient Emails</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider mb-1.5 text-gray-400">Recipient Email(s)</label>
                 <input 
                   type="text" 
                   value={scheduleForm.emails}
                   onChange={(e) => setScheduleForm({...scheduleForm, emails: e.target.value})}
-                  placeholder="team@company.com, ceo@company.com"
-                  className={`w-full px-4 py-2.5 rounded-xl border text-sm ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+                  placeholder="team@company.com, boss@company.com"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm ${theme.isDark ? 'bg-black/50 border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
                 />
+                <p className="text-[10px] text-gray-500 mt-1">Separate multiple emails with commas</p>
               </div>
 
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => setShowScheduleModal(false)} className="flex-1 py-3 rounded-xl border dark:border-white/10 font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition-colors">Cancel</button>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setShowScheduleModal(false)} className="flex-1 py-2.5 rounded-xl border dark:border-white/10 font-semibold hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-sm">Cancel</button>
                 <button 
                   onClick={handleCreateSchedule}
-                  disabled={!scheduleForm.name || !scheduleForm.emails}
-                  className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold disabled:opacity-50 transition-all"
+                  disabled={!scheduleForm.name || !scheduleForm.emails || scheduleSaving}
+                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold disabled:opacity-50 transition-all text-sm flex items-center justify-center gap-2"
                 >
-                  Save Schedule
+                  {scheduleSaving ? (
+                    <>
+                      <Loader className="w-4 h-4 animate-spin" /> Saving…
+                    </>
+                  ) : 'Save Schedule'}
                 </button>
               </div>
             </div>

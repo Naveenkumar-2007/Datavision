@@ -23,7 +23,7 @@ from api.deps import get_current_user_id
 from database.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from database.orm import MLExperiment, DeployedModel, BatchPredictionJob, ABTestConfig
+from database.orm import MLExperiment, DeployedModel, BatchPredictionJob, ABTestConfig, TrainingJob
 from typing import List, Dict, Any
 from datetime import datetime
 logger = logging.getLogger(__name__)
@@ -283,7 +283,7 @@ async def god_level_train(
     authorization: Optional[str] = Header(None, alias="Authorization")
 ):
     """
-    🔱 GOD-LEVEL AUTOML INTELLIGENCE ENGINE
+     GOD-LEVEL AUTOML INTELLIGENCE ENGINE
     =======================================
     
     The ultimate AutoML system with:
@@ -309,7 +309,7 @@ async def god_level_train(
     try:
         # SECURITY: Get verified user_id from JWT
         user_id = get_secure_user_id(user_id, x_user_id, authorization)
-        print(f"🔱 [GOD-LEVEL] AutoML Training Started for user: {user_id}")
+        print(f" [GOD-LEVEL] AutoML Training Started for user: {user_id}")
         print(f"   Mode: {mode}")
         print(f"   Algorithm: {algorithm or 'auto'}")
         
@@ -3380,68 +3380,196 @@ async def download_model(
 @router.post("/batch-predict")
 async def batch_predict(
     file: UploadFile = File(...),
-    model_name: str = Form(...),
+    model_name: str = Form("latest"),
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
-    """Accept CSV upload, track job in DB, return CSV with predictions"""
+    """Accept CSV/Excel upload, predict using user's trained model, return CSV with predictions.
+    
+    Supports:
+    - Single row or multi-row input
+    - CSV and Excel (.xlsx, .xls) file formats
+    # Supports:
+    # - Single row or multi-row input
+    # - CSV and Excel (.xlsx, .xls) file formats
+    # - Uses the user's trained AutoML model (not a deployed joblib)
+    """
     import io
+    import uuid as _uuid
     from fastapi.responses import StreamingResponse
+    from database.db import ensure_user_exists
+    from app.models.ml import TrainingJob
     try:
         content = await file.read()
-        df = pd.read_csv(io.BytesIO(content))
+        filename = file.filename or "input.csv"
+        
+        # Parse input file — support CSV and Excel
+        if filename.lower().endswith(('.xlsx', '.xls')):
+            df = pd.read_excel(io.BytesIO(content))
+        else:
+            df = pd.read_csv(io.BytesIO(content))
+        
         total_rows = len(df)
+        if total_rows == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file contains no data rows")
         
-        job = BatchPredictionJob(
-            user_id=user_id,
-            model_name=model_name,
-            input_filename=file.filename,
-            status='running',
-            total_rows=total_rows,
-            completed_rows=0
-        )
-        db.add(job)
-        await db.flush()
-        
-        # Load model from disk using version_id (passed as model_name)
-        import joblib
-        import os
-        models_dir = "/data/models/deployments" if os.path.exists("/data") else "models/deployments"
-        model_path = f"{models_dir}/{model_name}.joblib"
-        
-        if not os.path.exists(model_path):
-            job.status = 'failed'
-            job.error = "Model file not found"
-            await db.commit()
-            raise HTTPException(status_code=404, detail="Model file not found")
-            
+        # Track the job using TrainingJob ORM (use config JSONB for batch-predict metadata)
+        job = None
         try:
-            model = joblib.load(model_path)
+            parsed_uid = await ensure_user_exists(db, user_id)
+            job = TrainingJob(
+                user_id=parsed_uid,
+                status='running',
+                config={
+                    "job_type": "batch_prediction",
+                    "model_name": model_name,
+                    "input_filename": filename,
+                    "total_rows": total_rows,
+                    "completed_rows": 0
+                },
+                metrics={},
+                logs=[]
+            )
+            db.add(job)
+            await db.flush()
+        except Exception as job_err:
+            logger.warning(f"Could not persist batch predict job: {job_err}")
+            job = None
+        
+        # ── Load user's trained model ──
+        predictions = None
+        probas = None
+        
+        try:
+            from ml.model_persistence import model_persistence
+            from ml.automl_engine import automl_engine
             
-            # The model is a full Scikit-Learn Pipeline (Preprocessor + Estimator)
-            # So we can just call predict on the raw DataFrame
-            predictions = model.predict(df)
+            # Try loading via the AutoML engine persistence layer
+            model_state = model_persistence.load_model(str(user_id))
             
-            # Convert predictions back to string if they are numeric categories?
-            # We don't have the original labels, so we leave it as is
-            df['Predicted_Value'] = predictions
-            if hasattr(model, "predict_proba"):
-                try:
-                    probs = model.predict_proba(df)
-                    df['Confidence'] = probs.max(axis=1)
-                except:
-                    pass
+            if model_state and 'model' in model_state:
+                model = model_state['model']
+                feature_columns = model_state.get('feature_columns', [])
+                target_column = model_state.get('target_column', '')
+                label_encoders = model_state.get('label_encoders', {})
+                target_encoder = model_state.get('target_encoder', None)
+                scaler = model_state.get('scaler', None)
                 
+                # Prepare features — use only the columns the model was trained on
+                predict_df = df.copy()
+                
+                # If specific feature columns are known, select them
+                if feature_columns:
+                    available = [c for c in feature_columns if c in predict_df.columns]
+                    missing = [c for c in feature_columns if c not in predict_df.columns]
+                    if missing:
+                        logger.warning(f"Batch predict: Missing columns {missing}, filling with 0/''")
+                        for mc in missing:
+                            predict_df[mc] = 0
+                    predict_df = predict_df[feature_columns]
+                elif target_column and target_column in predict_df.columns:
+                    predict_df = predict_df.drop(columns=[target_column], errors='ignore')
+                
+                # Encode categoricals using saved encoders
+                for col, enc in label_encoders.items():
+                    if col in predict_df.columns:
+                        try:
+                            predict_df[col] = predict_df[col].astype(str)
+                            # Handle unseen labels by mapping to the most frequent class
+                            known_classes = set(enc.classes_)
+                            predict_df[col] = predict_df[col].map(
+                                lambda x: x if x in known_classes else enc.classes_[0]
+                            )
+                            predict_df[col] = enc.transform(predict_df[col])
+                        except Exception as enc_e:
+                            logger.warning(f"Encoding {col} failed: {enc_e}, filling with 0")
+                            predict_df[col] = 0
+                
+                # Scale numerics if scaler exists
+                if scaler is not None:
+                    try:
+                        numeric_cols = predict_df.select_dtypes(include=['number']).columns
+                        if len(numeric_cols) > 0:
+                            predict_df[numeric_cols] = scaler.transform(predict_df[numeric_cols])
+                    except Exception as scale_e:
+                        logger.warning(f"Scaling failed: {scale_e}")
+                
+                # Fill any remaining NaN
+                predict_df = predict_df.fillna(0)
+                
+                # Predict
+                predictions = model.predict(predict_df)
+                
+                # Decode target labels if encoder exists
+                if target_encoder is not None:
+                    try:
+                        predictions = target_encoder.inverse_transform(predictions.astype(int))
+                    except Exception:
+                        pass
+                
+                # Probabilities for classification
+                if hasattr(model, "predict_proba"):
+                    try:
+                        probas = model.predict_proba(predict_df)
+                    except Exception:
+                        pass
+            else:
+                # Fallback: try loading from deployed joblib models
+                import joblib
+                models_dir = "/data/models/deployments" if os.path.exists("/data") else "models/deployments"
+                model_path = f"{models_dir}/{model_name}.joblib"
+                
+                if os.path.exists(model_path):
+                    model = joblib.load(model_path)
+                    predictions = model.predict(df)
+                    if hasattr(model, "predict_proba"):
+                        try:
+                            probas = model.predict_proba(df)
+                        except Exception:
+                            pass
+                else:
+                    if job:
+                        job.status = 'failed'
+                        job.config["error"] = "No trained model found. Please train a model first in the AutoML tab."
+                        try:
+                            await db.commit()
+                        except Exception:
+                            pass
+                    raise HTTPException(
+                        status_code=404,
+                        detail="No trained model found. Please train a model first in the AutoML tab."
+                    )
+        except HTTPException:
+            raise
+        except Exception as load_e:
+            if job:
+                job.status = 'failed'
+                job.config["error"] = str(load_e)
+                try:
+                    await db.commit()
+                except Exception:
+                    pass
+            raise HTTPException(status_code=500, detail=f"Model loading failed: {load_e}")
+        
+        # Add predictions to output DataFrame
+        df['Predicted_Value'] = predictions
+        if probas is not None:
+            try:
+                df['Confidence'] = probas.max(axis=1).round(4)
+            except Exception:
+                pass
+        
+        # Update job status
+        if job:
             job.status = 'completed'
-            job.completed_rows = total_rows
+            job.config["completed_rows"] = total_rows
             job.completed_at = datetime.utcnow()
-            await db.commit()
-        except Exception as pred_e:
-            job.status = 'failed'
-            job.error = str(pred_e)
-            await db.commit()
-            raise HTTPException(status_code=400, detail=f"Prediction failed: {pred_e}")
-            
+            job.metrics = {"total_rows": total_rows, "predictions_generated": int(len(predictions))}
+            try:
+                await db.commit()
+            except Exception:
+                pass
+        
         # Return CSV
         output = io.StringIO()
         df.to_csv(output, index=False)
@@ -3450,7 +3578,7 @@ async def batch_predict(
         return StreamingResponse(
             iter([output.getvalue()]),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename=predictions_{file.filename}"}
+            headers={"Content-Disposition": f"attachment; filename=predictions_{filename}"}
         )
     except HTTPException:
         raise

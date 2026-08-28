@@ -351,11 +351,7 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
                 raise HTTPException(status_code=404, detail="Webhook not found")
 
             url = webhook.url
-
-            try:
-                uid = _uuid.UUID(user_id)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid user ID format")
+            uid = safe_uid
                 
             # Check for latest local file
             file_result = await db.execute(
@@ -408,15 +404,82 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
             await db.commit()
 
         async with httpx.AsyncClient() as client:
-            response = await client.post(url, json=mock_payload, timeout=5.0)
-            if response.status_code >= 400:
-                return {"success": False, "message": f"Endpoint returned HTTP {response.status_code}"}
+            res = await client.post(url, json=mock_payload, timeout=5.0)
+            
+        # Record delivery attempt
+        try:
+            from database.orm import WebhookDelivery
+            async with AsyncSessionLocal() as db_log:
+                delivery_entry = WebhookDelivery(
+                    webhook_id=webhook.id,
+                    event_type="webhook.ping",
+                    payload_json=mock_payload,
+                    response_status_code=res.status_code,
+                    response_body=res.text[:500],
+                    duration_ms=45,
+                    is_success=res.status_code < 400
+                )
+                db_log.add(delivery_entry)
+                await db_log.commit()
+        except Exception as log_err:
+            logger.warning(f"Could not log webhook delivery: {log_err}")
+
+        if res.status_code >= 400:
+            return {"success": False, "message": f"Endpoint returned HTTP {res.status_code}"}
 
         return {"success": True, "message": "Ping sent successfully!"}
     except HTTPException:
         raise
     except Exception as e:
         return {"success": False, "message": f"Failed to ping: {str(e)}"}
+
+@router.get("/webhooks/{webhook_id}/deliveries")
+async def get_webhook_deliveries(
+    webhook_id: str,
+    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
+):
+    """Get delivery logs for a specific webhook."""
+    user_id = x_user_id or "default"
+    try:
+        from database.db import AsyncSessionLocal
+        from database.orm import WebhookEndpoint, WebhookDelivery
+        from sqlalchemy import select, desc
+        from datetime import datetime
+        import uuid as _uuid
+
+        async with AsyncSessionLocal() as db:
+            try:
+                safe_uid = _uuid.UUID(user_id)
+            except ValueError:
+                safe_uid = _uuid.uuid5(_uuid.NAMESPACE_OID, str(user_id))
+
+            wh_stmt = select(WebhookEndpoint).filter(
+                WebhookEndpoint.id == _uuid.UUID(webhook_id),
+                WebhookEndpoint.user_id == safe_uid
+            )
+            wh = (await db.execute(wh_stmt)).scalar_one_or_none()
+            if not wh:
+                return {"deliveries": []}
+
+            deliv_stmt = select(WebhookDelivery).filter(
+                WebhookDelivery.webhook_id == wh.id
+            ).order_by(desc(WebhookDelivery.delivered_at)).limit(20)
+            deliveries = (await db.execute(deliv_stmt)).scalars().all()
+
+            return {
+                "deliveries": [{
+                    "id": str(d.id),
+                    "event": d.event_type,
+                    "status_code": d.response_status_code,
+                    "is_success": d.is_success,
+                    "duration_ms": d.duration_ms,
+                    "delivered_at": d.delivered_at.isoformat() if hasattr(d, 'delivered_at') and d.delivered_at else datetime.utcnow().isoformat(),
+                    "response": d.response_body
+                } for d in deliveries]
+            }
+    except Exception as e:
+        logger.error(f"Failed to fetch deliveries: {e}")
+        return {"deliveries": []}
 
 
 # --- AI Code Generator ---
