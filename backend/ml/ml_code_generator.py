@@ -4803,7 +4803,7 @@ def main():
                     X_parts.append(np.full((len(df), 1), meta.get('mean', 0)))
             elif meta.get('type') == 'categorical':
                 if col in df.columns:
-                    encoding = meta.get('encoding', {})
+                    encoding = meta.get('encoding', {{}})
                     X_parts.append(df[col].astype(str).map(lambda v: encoding.get(v, 0)).values.reshape(-1, 1))
                 else:
                     X_parts.append(np.zeros((len(df), 1)))
@@ -4859,7 +4859,7 @@ def main():
             except Exception:
                 pass
         
-        label_encoders = state.get('label_encoders', {})
+        label_encoders = state.get('label_encoders', {{}})
         for col in X.select_dtypes(include=['object', 'category']).columns:
             if col in label_encoders:
                 try:
@@ -4896,7 +4896,7 @@ def main():
                     if top_numeric:
                         poly_input = X[top_numeric].values
                         poly_features = poly.transform(poly_input)
-                        poly_names = poly.get_feature_names_out(top_numeric) if hasattr(poly, 'get_feature_names_out') else [f'poly_{i}' for i in range(poly_features.shape[1])]
+                        poly_names = poly.get_feature_names_out(top_numeric) if hasattr(poly, 'get_feature_names_out') else [f'poly_{{i}}' for i in range(poly_features.shape[1])]
                         for i, name in enumerate(poly_names):
                             clean_name = name.replace(' ', '_x_').replace('^2', '_sq')
                             if clean_name not in X.columns:
@@ -4914,7 +4914,7 @@ def main():
                         ohe_features = onehot.transform(ohe_input)
                         if hasattr(ohe_features, 'toarray'):
                             ohe_features = ohe_features.toarray()
-                        ohe_names = onehot.get_feature_names_out(cat_cols_for_ohe) if hasattr(onehot, 'get_feature_names_out') else [f'ohe_{i}' for i in range(ohe_features.shape[1])]
+                        ohe_names = onehot.get_feature_names_out(cat_cols_for_ohe) if hasattr(onehot, 'get_feature_names_out') else [f'ohe_{{i}}' for i in range(ohe_features.shape[1])]
                         for i, name in enumerate(ohe_names):
                             X[name] = ohe_features[:, i]
                 except Exception:
