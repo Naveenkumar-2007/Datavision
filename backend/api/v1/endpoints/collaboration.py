@@ -716,8 +716,6 @@ async def add_member(
         "email_sent": email_sent,
         "invite_link": invite_link
     }
-
-
 @router.delete("/members")
 async def remove_member(
     req: RemoveMemberRequest,
@@ -727,19 +725,23 @@ async def remove_member(
     """Remove a team member from the workspace."""
     user_stmt = select(UserProfile).filter(UserProfile.email == req.email)
     user_res = await db.execute(user_stmt)
-    # Add new member
-    new_member = WorkspaceMember(
-        workspace_id=invite_info["created_by"], # Use inviter's UUID
-        user_id=user_id,
-        role="Viewer" # Default role for invite links
+    target_user = user_res.scalar_one_or_none()
+    
+    if not target_user:
+        return {"success": True, "message": "Member removed."}
+        
+    mem_stmt = select(WorkspaceMember).filter(
+        WorkspaceMember.workspace_id == user_id,
+        WorkspaceMember.user_id == target_user.id
     )
-    db.add(new_member)
-    await db.commit()
-    
-    # Optional: Log activity
-    await _log_activity_db(db, user_id, "System", "join", "Joined workspace via invite link")
-    
-    return {"success": True, "message": "Successfully joined the workspace!"}
+    mem_res = await db.execute(mem_stmt)
+    member = mem_res.scalar_one_or_none()
+    if member:
+        await db.delete(member)
+        await db.commit()
+        await _log_activity_db(db, user_id, "System", "remove", f"Removed {req.email} from workspace")
+        
+    return {"success": True, "message": f"Successfully removed {req.email}"}
 
 
 # ── MEMBERS ──

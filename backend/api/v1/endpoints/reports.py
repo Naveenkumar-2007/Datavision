@@ -2660,44 +2660,43 @@ async def list_reports(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/story")
 async def generate_data_story(
     request: dict,
     user_id: str = Depends(get_current_user_id)
 ):
-    """
-    Generates an AI-powered narrative data story from a dataset.
-    """
+    """Generates an AI-powered narrative data story from a dataset."""
     try:
         from core.data_storyteller import DataStoryteller
-        import os
-        
+        import pandas as pd
+
         filename = request.get("filename")
         topic = request.get("topic")
-        
+
         paths = get_user_paths(user_id)
         if filename:
             file_path = paths["files"] / filename
         else:
-            # Fallback to the most recent file
             try:
                 from utils.paths import get_most_recent_file
                 file_path = get_most_recent_file(user_id)
             except Exception:
                 file_path = None
-                
+
         if not file_path or not file_path.exists():
             raise HTTPException(status_code=404, detail="Dataset not found")
-            
-        import pandas as pd
+
         df = pd.read_csv(file_path)
-        
         story = DataStoryteller.generate_story(df, file_path.name, topic)
         return story
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 from database.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -2711,14 +2710,30 @@ async def save_data_story(
     db: AsyncSession = Depends(get_db)
 ):
     try:
+        from database.db import ensure_user_exists
+        uid = _parse_uid(user_id)
+        await ensure_user_exists(db, uid)
         new_story = DataStory(
-            user_id=user_id,
+            user_id=uid,
             title=story_data.get('title', 'Saved Story'),
             content=story_data.get('content', ''),
             dataset_name=story_data.get('dataset_name', '')
         )
         db.add(new_story)
         await db.commit()
+        return {"success": True, "message": "Story saved successfully", "id": str(new_story.id)}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/generate")
+async def generate_report(
+    request: ReportRequest,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Generate INTELLIGENT report with LLM insights and ML charts - works with ANY dataset."""
+    try:
         # Ignore request.userId from body, use secure header
         # user_id = request.userId 
         report_type = request.reportType
