@@ -1,8 +1,11 @@
 import os
 import uuid
+import logging
 from typing import Any
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
+
+logger = logging.getLogger(__name__)
 
 # Database configuration
 # Requires format: postgresql+asyncpg://user:password@localhost/dbname
@@ -80,18 +83,24 @@ async def ensure_user_exists(db: AsyncSession, user_id: Any) -> uuid.UUID:
     email = f"user_{email_hash}@datavision.local"
     
     try:
-        await db.execute(
-            text("""
-                INSERT INTO users (id, email, full_name, is_active, created_at, updated_at)
-                VALUES (:id, :email, :full_name, true, NOW(), NOW())
-                ON CONFLICT (id) DO NOTHING
-            """),
-            {"id": str(uid), "email": email, "full_name": "DataVision User"}
-        )
-        await db.flush()
+        # Check if user already exists
+        check_res = await db.execute(text("SELECT 1 FROM users WHERE id = :id"), {"id": str(uid)})
+        if check_res.scalar():
+            return uid
+
+        # Insert inside a savepoint so failure never aborts outer transaction
+        async with db.begin_nested():
+            await db.execute(
+                text("""
+                    INSERT INTO users (id, email, full_name, is_active, created_at, updated_at)
+                    VALUES (:id, :email, :full_name, true, NOW(), NOW())
+                    ON CONFLICT (id) DO NOTHING
+                """),
+                {"id": str(uid), "email": email, "full_name": "DataVision User"}
+            )
+            await db.flush()
     except Exception as e:
-        # Ignore conflict or race condition
-        pass
+        logger.warning(f"Could not auto-create user {uid}: {e}")
         
     return uid
 

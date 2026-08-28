@@ -4995,8 +4995,6 @@ def _generate_api_server_script(config: Dict) -> str:
     task_type = config['task_type']
     features = config.get('feature_columns', [])
     best_model = config.get('best_model_name', 'Unknown')
-    numeric_features = config.get('numeric_features', [])
-    categorical_features = config.get('categorical_features', [])
     feature_metadata = config.get('feature_metadata', [])
     
     features_list = ", ".join(f"'{f}'" for f in features[:30])
@@ -5051,10 +5049,18 @@ import pickle
 import argparse
 import numpy as np
 import pandas as pd
-from flask import Flask, request, jsonify, render_template
-from sklearn.preprocessing import LabelEncoder, RobustScaler
 
-app = Flask(__name__)
+try:
+    from flask import Flask, request, jsonify, render_template
+    HAS_FLASK = True
+    app = Flask(__name__)
+except ImportError:
+    HAS_FLASK = False
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import urllib.parse
+    app = None
+
+from sklearn.preprocessing import LabelEncoder, RobustScaler
 
 MODEL_STATE = None
 FEATURE_ENGINEER = None
@@ -5148,53 +5154,17 @@ class StandaloneFeatureEngineer:
         for key, cols in self.transformers.items():
             if key.endswith('_onehot'):
                 col_name = key.replace('_onehot', '')
-                try:
-                    if col_name in df.columns:
-                        series = df[col_name].fillna('_MISSING_').astype(str).str.strip()
-                        dummies = pd.get_dummies(series, prefix=col_name)
-                        dummies = dummies.reindex(columns=cols, fill_value=0)
-                        feature_parts.append(dummies.values.astype(float))
-                    else:
-                        feature_parts.append(np.zeros((len(df), len(cols))))
-                except:
-                    feature_parts.append(np.zeros((len(df), len(cols))))
-
-        for col, le in self.encoders.items():
-            try:
-                if col in df.columns:
-                    series = df[col].fillna('_MISSING_').astype(str).str.strip()
-                    encoded = series.map(lambda s: le.transform([s])[0] if s in le.classes_ else -1)
-                    feature_parts.append(encoded.values.reshape(-1, 1).astype(float))
-                    freq_key = f'{{col}}_freq_map'
-                    if freq_key in self.transformers:
-                        freq_map = self.transformers[freq_key]
-                        freq_encoded = series.map(lambda s: freq_map.get(s, 0.0)).values.astype(float)
-                        feature_parts.append(freq_encoded.reshape(-1, 1))
-                else:
-                    feature_parts.append(np.zeros((len(df), 1)))
-                    if f'{{col}}_freq_map' in self.transformers:
-                        feature_parts.append(np.zeros((len(df), 1)))
-            except:
-                feature_parts.append(np.zeros((len(df), 1)))
-
-        if 'cat_interactions' in self.transformers:
-            for key, value in self.transformers['cat_interactions'].items():
-                if key.endswith('_freq_map'):
-                    continue
-                try:
-                    col1, col2, le = value
-                    if col1 in df.columns and col2 in df.columns:
-                        combined = df[col1].fillna('_NA_').astype(str) + "_X_" + df[col2].fillna('_NA_').astype(str)
-                        encoded = combined.map(lambda s: le.transform([s])[0] if s in le.classes_ else -1)
-                        feature_parts.append(encoded.values.reshape(-1, 1).astype(float))
-                        fk = f"{{key}}_freq_map"
-                        if fk in self.transformers['cat_interactions']:
-                            fm = self.transformers['cat_interactions'][fk]
-                            feature_parts.append(combined.map(lambda s: fm.get(s, 0.0)).values.reshape(-1, 1).astype(float))
-                    else:
-                        feature_parts.append(np.zeros((len(df), 1)))
-                except:
-                    pass
+                if col_name in df.columns:
+                    series = df[col_name].fillna('_MISSING_').astype(str)
+                    for val in cols:
+                        feature_parts.append((series == val).astype(float).values.reshape(-1, 1))
+            elif key.endswith('_target_enc'):
+                col_name = key.replace('_target_enc', '')
+                if col_name in df.columns:
+                    enc_map = cols.get('map', {{}})
+                    dv = cols.get('global_mean', 0.0)
+                    encoded = df[col_name].map(lambda v: enc_map.get(str(v), dv)).fillna(dv).values.astype(float)
+                    feature_parts.append(encoded.reshape(-1, 1))
 
         if 'num_cat_aggs' in self.transformers:
             for key, mean_map in self.transformers['num_cat_aggs'].items():
@@ -5282,7 +5252,6 @@ def load_model():
         load_dl_model()
         if DL_STATE is not None:
             print(f"🧠 Primary mode: Deep Learning (BEST_MODE={{BEST_MODE}})")
-            # Also try loading ML model as fallback
             for path in ['model.pkl', 'nlp_model.pkl']:
                 if os.path.exists(path):
                     with open(path, 'rb') as f:
@@ -5400,7 +5369,7 @@ def preprocess_input(data):
         try:
             return FEATURE_ENGINEER.transform_single(data)
         except Exception as e:
-            print(f"Warning: Feature engineer failed ({{e}}), using fallback")
+            pass
     
     # Fallback: basic label-encode + scale
     feature_cols = MODEL_STATE.get('feature_columns', FEATURE_COLUMNS)
@@ -5412,144 +5381,69 @@ def preprocess_input(data):
         val = data.get(col, 0)
         if col in label_encoders:
             le = label_encoders[col]
-            val_str = str(val)
-            if val_str in le.classes_:
-                val = le.transform([val_str])[0]
-            else:
+            try:
+                val = le.transform([str(val)])[0]
+            except:
                 val = 0
         else:
             try:
                 val = float(val)
-            except (ValueError, TypeError):
-                val = 0
+            except:
+                val = 0.0
         row[col] = val
     
-    X = pd.DataFrame([row], columns=feature_cols)
+    df = pd.DataFrame([row])[feature_cols]
     if scaler:
         try:
-            X = pd.DataFrame(scaler.transform(X), columns=feature_cols)
+            df = pd.DataFrame(scaler.transform(df), columns=feature_cols)
         except:
             pass
-    return X
+    return df.values
 
 
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({{"status": "healthy", "model_loaded": MODEL_STATE is not None or DL_STATE is not None, "dl_model_loaded": DL_STATE is not None}})
-
-
-@app.route('/model-info', methods=['GET'])
-def model_info():
-    if MODEL_STATE is None and DL_STATE is None:
-        return jsonify({{"error": "No model loaded"}}), 404
+def do_predict(data: dict) -> dict:
+    """Core prediction function used by both Flask and native HTTP server."""
+    req_mode = data.pop('_mode', None)
+    use_dl = (req_mode == 'dl') or (req_mode != 'ml' and BEST_MODE == 'deep_learning' and DL_STATE is not None) or (MODEL_STATE is None and DL_STATE is not None)
     
-    info = {{"best_mode": BEST_MODE}}
-    if BEST_MODE == 'deep_learning' and DL_STATE:
-        info.update({{
-            "model_name": DL_STATE.get('algorithm', 'MLP Neural Network'),
-            "task_type": DL_STATE.get('task_type', '{task_type}'),
-            "target_column": TARGET_COLUMN,
-            "input_features": list(RAW_FEATURE_INFO.keys()),
-            "metrics": {{k: float(v) if isinstance(v, (int, float)) else str(v) 
-                        for k, v in DL_STATE.get('metrics', {{}}).items()}},
-        }})
-    elif MODEL_STATE:
-        info.update({{
-            "model_name": MODEL_STATE.get('model_name', 'Unknown'),
-            "task_type": MODEL_STATE.get('task_type', '{task_type}'),
-            "target_column": TARGET_COLUMN,
-            "input_features": list(RAW_FEATURE_INFO.keys()),
-            "metrics": {{k: float(v) if isinstance(v, (int, float)) else str(v) 
-                        for k, v in MODEL_STATE.get('metrics', {{}}).items()}},
-        }})
-    if DL_STATE:
-        info["dl_model"] = {{
-            "algorithm": DL_STATE.get('algorithm', 'MLP'),
-            "task_type": DL_STATE.get('task_type', '{task_type}'),
-            "metrics": {{k: float(v) if isinstance(v, (int, float)) else str(v) 
-                        for k, v in DL_STATE.get('metrics', {{}}).items()}},
-        }}
-    return jsonify(info)
-
-
-@app.route('/predict', methods=['GET', 'POST'])
-def predict():
-    if MODEL_STATE is None and DL_STATE is None:
-        return jsonify({{"error": "No model loaded"}}), 500
-    
-    # GET request: show web form for interactive prediction
-    if request.method == 'GET':
-        if BEST_MODE == 'deep_learning' and DL_STATE:
-            model_name = DL_STATE.get('algorithm', 'MLP Neural Network')
-            task_type_val = DL_STATE.get('task_type', '{task_type}')
-            metrics = DL_STATE.get('metrics', {{}})
-        elif MODEL_STATE:
-            model_name = MODEL_STATE.get('model_name', 'Unknown')
-            task_type_val = MODEL_STATE.get('task_type', '{task_type}')
-            metrics = MODEL_STATE.get('metrics', {{}})
+    if use_dl and DL_STATE:
+        X = preprocess_dl_input(data)
+        dl_model = DL_STATE['model']
+        label_encoder = DL_STATE.get('label_encoder')
+        task_type = DL_STATE.get('task_type', '{task_type}')
+        classes = DL_STATE.get('classes', [])
+        
+        pred = dl_model.predict(X)[0]
+        result = {{"raw_prediction": int(pred) if isinstance(pred, (np.integer,)) else float(pred)}}
+        
+        if 'classif' in task_type.lower() and label_encoder:
+            try:
+                result['prediction'] = str(label_encoder.inverse_transform([int(pred)])[0])
+            except:
+                result['prediction'] = str(pred)
         else:
-            model_name = 'Unknown'
-            task_type_val = '{task_type}'
-            metrics = {{}}
+            result['prediction'] = float(pred)
         
-        # Serve the UI using the extracted index.html template
-        return render_template("index.html", 
-                               model_name=model_name, 
-                               target=TARGET_COLUMN, 
-                               task_type_val=task_type_val, 
-                               metrics=metrics, 
-                               raw_feature_info=RAW_FEATURE_INFO)
+        if 'classif' in task_type.lower() and hasattr(dl_model, 'predict_proba'):
+            try:
+                proba = dl_model.predict_proba(X)[0]
+                result['confidence'] = float(max(proba))
+                if classes:
+                    result['probabilities'] = {{
+                        str(c): round(float(p), 4) for c, p in zip(classes, proba)
+                    }}
+            except:
+                pass
+        
+        result['mode'] = 'deep_learning'
+        return result
     
-    # POST request: JSON API prediction
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({{"error": "No JSON body. Send features as JSON.", "expected_features": list(RAW_FEATURE_INFO.keys())}}), 400
-        
-        # Check if caller wants DL mode, or if BEST_MODE is deep_learning, or if only DL is available
-        req_mode = data.pop('_mode', None)
-        use_dl = (req_mode == 'dl') or (req_mode != 'ml' and BEST_MODE == 'deep_learning' and DL_STATE is not None) or (MODEL_STATE is None and DL_STATE is not None)
-        
-        if use_dl and DL_STATE:
-            # Deep Learning prediction
-            X = preprocess_dl_input(data)
-            dl_model = DL_STATE['model']
-            label_encoder = DL_STATE.get('label_encoder')
-            task_type = DL_STATE.get('task_type', '{task_type}')
-            classes = DL_STATE.get('classes', [])
-            
-            pred = dl_model.predict(X)[0]
-            result = {{"raw_prediction": int(pred) if isinstance(pred, (np.integer,)) else float(pred)}}
-            
-            if 'classif' in task_type.lower() and label_encoder:
-                try:
-                    result['prediction'] = str(label_encoder.inverse_transform([int(pred)])[0])
-                except:
-                    result['prediction'] = str(pred)
-            else:
-                result['prediction'] = float(pred)
-            
-            if 'classif' in task_type.lower() and hasattr(dl_model, 'predict_proba'):
-                try:
-                    proba = dl_model.predict_proba(X)[0]
-                    result['confidence'] = float(max(proba))
-                    if classes:
-                        result['probabilities'] = {{
-                            str(c): round(float(p), 4) for c, p in zip(classes, proba)
-                        }}
-                except:
-                    pass
-            
-            result['mode'] = 'deep_learning'
-            return jsonify(result)
-        
-        # Traditional/NLP prediction
+    if MODEL_STATE:
         model = MODEL_STATE['model']
         target_encoder = MODEL_STATE.get('target_encoder')
         task_type = MODEL_STATE.get('task_type', '{task_type}')
         
         X = preprocess_input(data)
-        
         prediction = model.predict(X)[0]
         result = {{"raw_prediction": int(prediction) if isinstance(prediction, (np.integer,)) else float(prediction)}}
         

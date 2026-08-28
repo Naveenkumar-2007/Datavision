@@ -276,7 +276,7 @@ const Developer: React.FC = () => {
   };
 
   const embedCode = `<iframe
-  src="${window.location.origin}/embed/${embedWidget}?theme=${embedTheme}&token=${(apiKeys[0]?.key || 'dv_live_...').substring(0, 12)}..."
+  src="${window.location.origin}/embed/${embedWidget}?theme=${embedTheme}&token=${apiKeys[0]?.key || 'dv_live_...'}"
   width="100%"
   height="600px"
   frameBorder="0"
