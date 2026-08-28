@@ -61,7 +61,7 @@ BACKEND_ENV = Path(__file__).resolve().parent.parent / ".env"
 FRONTEND_ENV = PROJECT_ROOT / "frontend" / ".env"
 
 env_loaded = False
-for env_file in [ENV_PATH, BACKEND_ENV, FRONTEND_ENV]:
+for env_file in [ENV_PATH, BACKEND_ENV]:
     if env_file.exists():
         load_dotenv(env_file, override=True)
         logger.info(f"Loaded .env from: {env_file}")
@@ -82,11 +82,12 @@ class Settings:
     # API settings
     API_VERSION = "v1"
     
-    # Model settings - GROQ PRIMARY
-    MODEL_NAME = "groq/llama-3.3-70b-versatile"
-    FAST_MODEL = "groq/llama-3.1-8b-instant"
-    REASONING_MODEL = "groq/llama-3.3-70b-versatile"
-    FALLBACK_MODEL = "groq/llama-3.1-8b-instant"
+    # Model settings - GROQ PRIMARY (High-speed active models)
+    MODEL_NAME = "groq/openai/gpt-oss-120b"
+    FAST_MODEL = "groq/openai/gpt-oss-20b"
+    REASONING_MODEL = "groq/openai/gpt-oss-120b"
+    FALLBACK_MODEL = "groq/openai/gpt-oss-20b"
+    NVIDIA_MODEL = "openai/meta/llama-3.2-11b-vision-instruct"
     
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 

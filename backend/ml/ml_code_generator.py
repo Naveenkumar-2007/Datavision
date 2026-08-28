@@ -4560,9 +4560,16 @@ Usage:
 """
 
 import os
+import sys
+import io
 import pickle
 import argparse
 import warnings
+
+# Fix Windows console encoding for emoji output
+if hasattr(sys.stdout, 'buffer'):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split, cross_val_score
@@ -4796,7 +4803,7 @@ def main():
                     X_parts.append(np.full((len(df), 1), meta.get('mean', 0)))
             elif meta.get('type') == 'categorical':
                 if col in df.columns:
-                    encoding = meta.get('encoding', {{}})
+                    encoding = meta.get('encoding', {})
                     X_parts.append(df[col].astype(str).map(lambda v: encoding.get(v, 0)).values.reshape(-1, 1))
                 else:
                     X_parts.append(np.zeros((len(df), 1)))
@@ -4824,11 +4831,11 @@ def main():
         y_pred = model.predict(X_test)
         
         if is_clf:
-            print(f"\\n📊 Deep Learning Classification Metrics (re-evaluated):")
+            print(f"\n📊 Deep Learning Classification Metrics (re-evaluated):")
             print_classification_metrics(y_test, y_pred, model=model, X_test=X_test,
                                        target_encoder=label_encoder)
         else:
-            print(f"\\n📊 Deep Learning Regression Metrics (re-evaluated):")
+            print(f"\n📊 Deep Learning Regression Metrics (re-evaluated):")
             print_regression_metrics(y_test, y_pred)
     else:
         # =====================================================================
@@ -4841,12 +4848,23 @@ def main():
         if is_clf and target_encoder:
             y = pd.Series(target_encoder.transform(y))
         
-        label_encoders = state.get('label_encoders', {{}})
+        # Try to load the feature engineer to reproduce exact pipeline
+        fe_state = None
+        fe_path = os.path.join(os.path.dirname(args.model), 'feature_engineer.pkl')
+        if os.path.exists(fe_path):
+            try:
+                with open(fe_path, 'rb') as f:
+                    fe_state = pickle.load(f)
+                print("   Loaded feature_engineer.pkl for exact pipeline replay.")
+            except Exception:
+                pass
+        
+        label_encoders = state.get('label_encoders', {})
         for col in X.select_dtypes(include=['object', 'category']).columns:
             if col in label_encoders:
                 try:
                     X[col] = label_encoders[col].transform(X[col].astype(str))
-                except:
+                except Exception:
                     le = LabelEncoder()
                     X[col] = le.fit_transform(X[col].astype(str))
             else:
@@ -4855,12 +4873,64 @@ def main():
         
         X = X.fillna(0)
         
+        # Apply scaler ONLY to the columns it was fitted on
         scaler = state.get('scaler')
-        if scaler and feature_cols:
-            avail = [c for c in feature_cols if c in X.columns]
-            if avail:
-                X = X[avail]
-                X = pd.DataFrame(scaler.transform(X), columns=avail)
+        if scaler:
+            scaler_cols = []
+            if hasattr(scaler, 'feature_names_in_'):
+                scaler_cols = [c for c in scaler.feature_names_in_ if c in X.columns]
+            if scaler_cols:
+                X[scaler_cols] = scaler.transform(X[scaler_cols])
+        
+        # Reproduce feature engineering (polynomial + one-hot) if feature_engineer available
+        if fe_state and fe_state.get('transformers'):
+            transformers = fe_state['transformers']
+            
+            # Apply polynomial features if transformer exists
+            poly = transformers.get('polynomial')
+            if poly is not None:
+                try:
+                    # Identify numeric columns that were used for polynomial features
+                    numeric_cols = [c for c in X.columns if X[c].dtype in ['int64', 'float64', 'int32', 'float32']]
+                    top_numeric = numeric_cols[:4]  # Same as training
+                    if top_numeric:
+                        poly_input = X[top_numeric].values
+                        poly_features = poly.transform(poly_input)
+                        poly_names = poly.get_feature_names_out(top_numeric) if hasattr(poly, 'get_feature_names_out') else [f'poly_{i}' for i in range(poly_features.shape[1])]
+                        for i, name in enumerate(poly_names):
+                            clean_name = name.replace(' ', '_x_').replace('^2', '_sq')
+                            if clean_name not in X.columns:
+                                X[clean_name] = poly_features[:, i]
+                except Exception:
+                    pass
+            
+            # Apply one-hot encoding for categorical columns
+            onehot = transformers.get('onehot') or transformers.get('one_hot')
+            if onehot is not None:
+                try:
+                    cat_cols_for_ohe = [c for c in fe_state.get('original_columns', []) if c in df.columns and df[c].dtype == 'object']
+                    if cat_cols_for_ohe:
+                        ohe_input = df[cat_cols_for_ohe].astype(str)
+                        ohe_features = onehot.transform(ohe_input)
+                        if hasattr(ohe_features, 'toarray'):
+                            ohe_features = ohe_features.toarray()
+                        ohe_names = onehot.get_feature_names_out(cat_cols_for_ohe) if hasattr(onehot, 'get_feature_names_out') else [f'ohe_{i}' for i in range(ohe_features.shape[1])]
+                        for i, name in enumerate(ohe_names):
+                            X[name] = ohe_features[:, i]
+                except Exception:
+                    pass
+            
+            # Apply variance threshold if available
+            var_thresh = transformers.get('variance_threshold')
+            if var_thresh is not None:
+                try:
+                    selected = fe_state.get('selected_feature_indices')
+                    if selected is not None:
+                        all_cols = list(X.columns)
+                        keep_cols = [all_cols[i] for i in selected if i < len(all_cols)]
+                        X = X[keep_cols]
+                except Exception:
+                    pass
         
         # Align columns with model's expected features
         if feature_cols:
@@ -4868,6 +4938,11 @@ def main():
                 if col not in X.columns:
                     X[col] = 0
             X = X.reindex(columns=feature_cols, fill_value=0)
+        
+        # Ensure all values are numeric
+        for col in X.columns:
+            X[col] = pd.to_numeric(X[col], errors='coerce').fillna(0)
+        X = X.replace([np.inf, -np.inf], 0)
         
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         

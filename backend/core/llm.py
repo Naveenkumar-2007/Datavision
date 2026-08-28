@@ -274,21 +274,20 @@ def chat(
     # Add all available Groq keys to the fallback chain
     for i, g_key in enumerate(Settings.GROQ_API_KEYS):
         providers.append({
-            "name": f"Groq-Llama3.3 (Key {i})",
-            "model": "groq/llama-3.3-70b-versatile",
+            "name": f"Groq-120B (Key {i})",
+            "model": "groq/openai/gpt-oss-120b",
             "api_key": g_key,
             "api_base": None
         })
         providers.append({
-            "name": f"Groq-Llama3.1-Fast (Key {i})",
-            "model": "groq/llama-3.1-8b-instant",
+            "name": f"Groq-20B-Fast (Key {i})",
+            "model": "groq/openai/gpt-oss-20b",
             "api_key": g_key,
             "api_base": None
         })
-        # Additional Groq model fallbacks per key
         providers.append({
-            "name": f"Groq-Gemma2 (Key {i})",
-            "model": "groq/gemma2-9b-it",
+            "name": f"Groq-Qwen3.6 (Key {i})",
+            "model": "groq/qwen/qwen3.6-27b",
             "api_key": g_key,
             "api_base": None
         })
@@ -296,19 +295,31 @@ def chat(
     # If no keys in settings (fallback), try direct env
     if not Settings.GROQ_API_KEYS and groq_key:
         providers.append({
-            "name": "Groq-Llama3.3",
-            "model": "groq/llama-3.3-70b-versatile",
+            "name": "Groq-120B",
+            "model": "groq/openai/gpt-oss-120b",
             "api_key": groq_key,
             "api_base": None
         })
         providers.append({
-            "name": "Groq-Llama3.1-Fast",
-            "model": "groq/llama-3.1-8b-instant",
+            "name": "Groq-20B-Fast",
+            "model": "groq/openai/gpt-oss-20b",
             "api_key": groq_key,
             "api_base": None
         })
+
+    # --- 2. FALLBACK: NVIDIA NIM (High Quality Enterprise Fallback) ---
+    if nv_key:
         providers.append({
-            "name": "Groq-Gemma2",
+            "name": "NVIDIA-Llama3.2-11B-Vision",
+            "model": "openai/meta/llama-3.2-11b-vision-instruct",
+            "api_key": nv_key,
+            "api_base": "https://integrate.api.nvidia.com/v1"
+        })
+
+    # --- 3. FALLBACK: HuggingFace ---
+    if hf_key:
+        providers.append({
+            "name": "HuggingFace-Llama3-8B",
             "model": "huggingface/meta-llama/Meta-Llama-3-8B-Instruct",
             "api_key": hf_key,
             "api_base": None
