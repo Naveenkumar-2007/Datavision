@@ -387,9 +387,98 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
             except Exception:
                 insight_content = "Your latest DataVision analysis completed successfully!"
             
-            # High-value Enterprise / Fintech Webhook Payload
-            from datetime import datetime as _dt
+            # Dynamic Multi-Domain Enterprise Webhook Payload Generator
+            ds_lower = dataset_name.lower()
             event_id = f"evt_{_uuid.uuid4().hex[:12]}"
+            session_id = f"ses_{_uuid.uuid4().hex[:8]}"
+            summary_text = insight_content if len(insight_content) < 300 else insight_content[:300] + "..."
+            records_count = 32416
+            
+            # Domain 1: Fintech / Credit / Banking
+            if any(k in ds_lower for k in ["loan", "credit", "risk", "bank", "fraud", "default", "fintech", "finance", "money"]):
+                domain_name = "Fintech & Credit Risk Intelligence"
+                domain_metrics = {
+                    "portfolio_exposure_usd": 142580000.0,
+                    "projected_default_rate": "14.2%",
+                    "high_risk_borrowers_flagged": 142,
+                    "approved_prime_borrowers": 2890,
+                    "anomalies_detected": 4,
+                    "fraud_risk_level": "LOW",
+                    "model_confidence": 94.2
+                }
+                actionable_triggers = [
+                    "Automated risk scoring completed for all active borrower profiles",
+                    "High-risk profiles routed to compliance & manual underwriting queue",
+                    "Real-time prediction API endpoint synchronized with latest model weights"
+                ]
+            # Domain 2: E-Commerce / Retail / Sales
+            elif any(k in ds_lower for k in ["sale", "ecom", "retail", "store", "order", "shop", "product", "inventory"]):
+                domain_name = "E-Commerce & Retail Revenue Optimization"
+                domain_metrics = {
+                    "gross_merchandise_value_usd": 4850000.0,
+                    "projected_quarterly_growth": "+18.4%",
+                    "top_revenue_driver": "Cross-category bundling & flash deals",
+                    "customer_churn_risk_rate": "5.2%",
+                    "demand_forecast_variance": "±2.1%",
+                    "inventory_stockout_risk_items": 18,
+                    "model_confidence": 96.1
+                }
+                actionable_triggers = [
+                    "Inventory reorder triggers dispatched to ERP for 18 high-velocity SKU items",
+                    "Personalized retention campaign queued for at-risk churn cohorts",
+                    "Dynamic pricing recommendations published to storefront catalog"
+                ]
+            # Domain 3: Healthcare / Medical / Life Sciences
+            elif any(k in ds_lower for k in ["health", "patient", "med", "clinic", "hospital", "disease", "drug", "cancer", "heart"]):
+                domain_name = "Healthcare & Clinical Outcomes Intelligence"
+                domain_metrics = {
+                    "patient_cohort_size": records_count,
+                    "high_risk_readmission_flagged": 86,
+                    "early_intervention_signals": 124,
+                    "diagnostic_prediction_accuracy": "97.4%",
+                    "clinical_anomaly_rate": "1.8%",
+                    "hipaa_compliance_status": "VERIFIED_SECURE",
+                    "model_confidence": 97.4
+                }
+                actionable_triggers = [
+                    "Clinical decision support alerts generated for attending medical team",
+                    "High-readmission patient follow-ups scheduled automatically",
+                    "De-identified clinical insights exported to hospital intelligence dashboard"
+                ]
+            # Domain 4: SaaS / Marketing / Subscriptions
+            elif any(k in ds_lower for k in ["churn", "saas", "sub", "mrr", "arr", "lead", "market", "campaign", "user", "telecom"]):
+                domain_name = "SaaS & Subscription Retention Analytics"
+                domain_metrics = {
+                    "mrr_at_risk_usd": 38400.0,
+                    "net_revenue_retention_forecast": "114.2%",
+                    "lead_to_paying_conversion_rate": "8.7%",
+                    "identified_churn_cohort_size": 240,
+                    "expansion_opportunity_accounts": 95,
+                    "model_confidence": 93.8
+                }
+                actionable_triggers = [
+                    "Automated churn prevention email sequence activated in CRM",
+                    "Account Executive expansion notifications sent to Slack / Salesforce",
+                    "Predictive customer health score synchronized to billing platform"
+                ]
+            # Domain 5: Universal Enterprise / Data Science
+            else:
+                domain_name = "Enterprise Data Intelligence & Predictive Modeling"
+                domain_metrics = {
+                    "total_records_processed": records_count,
+                    "overall_data_health_score": "98.4%",
+                    "anomalies_detected": 6,
+                    "key_trend_direction": "POSITIVE_GROWTH",
+                    "predictive_power_score": 92.5,
+                    "model_confidence": 94.0
+                }
+                actionable_triggers = [
+                    "DataVision automated intelligence analysis completed with high statistical significance",
+                    "Executive story and KPI summaries dispatched to subscribed stakeholders",
+                    "Production REST API endpoint refreshed with newly tuned model weights"
+                ]
+
+            from datetime import datetime as _dt
             mock_payload = {
                 "event": "autopilot.analysis_completed",
                 "event_id": event_id,
@@ -397,23 +486,15 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
                 "environment": "production",
                 "api_version": "2026-08-01",
                 "data": {
-                    "session_id": f"ses_{_uuid.uuid4().hex[:8]}",
-                    "business_domain": "Fintech & Enterprise Risk Intelligence",
+                    "session_id": session_id,
+                    "business_domain": domain_name,
                     "dataset": {
                         "name": dataset_name,
-                        "records_analyzed": 32416,
+                        "records_analyzed": records_count,
                         "features_count": 12,
                         "data_quality_score": 98.4
                     },
-                    "risk_analysis": {
-                        "portfolio_exposure_usd": 142580000.0,
-                        "projected_default_rate": "14.2%",
-                        "high_risk_borrowers_flagged": 142,
-                        "approved_prime_borrowers": 2890,
-                        "anomalies_detected": 4,
-                        "fraud_risk_level": "LOW",
-                        "model_confidence": 94.2
-                    },
+                    "domain_metrics": domain_metrics,
                     "winning_model": {
                         "algorithm": "StackingEnsemble (XGBoost + LightGBM + CatBoost)",
                         "accuracy": 0.8842,
@@ -421,12 +502,8 @@ async def test_webhook(webhook_id: str, x_user_id: Optional[str] = Header(None, 
                         "f1_score": 0.8670,
                         "inference_latency_ms": 1.4
                     },
-                    "executive_summary": insight_content if len(insight_content) < 300 else insight_content[:300] + "...",
-                    "actionable_triggers": [
-                        "Automated risk scoring completed for all active borrower profiles",
-                        "High-risk profiles routed to compliance & manual underwriting queue",
-                        "Real-time prediction API endpoint synchronized with latest model weights"
-                    ]
+                    "executive_summary": summary_text,
+                    "actionable_triggers": actionable_triggers
                 },
                 "audit": {
                     "triggered_by": "DataVision Enterprise Webhook Gateway",
