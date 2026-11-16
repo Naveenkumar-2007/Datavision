@@ -56,7 +56,10 @@ asyncio.run(heal_alembic())
 " 2>/dev/null || true
 
     # Run migrations to create any missing tables
-    alembic upgrade head || echo "⚠️ Migration warning: check DB logs"
+    if ! alembic upgrade head; then
+        echo "Database migration failed; refusing to start with a partial schema."
+        exit 1
+    fi
 
     echo "🌱 [2/2] Seeding fresh system roles, permissions, and super admin user..."
     python -m app.database.seed || echo "⚠️ Seed warning: check DB logs"

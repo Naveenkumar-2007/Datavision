@@ -71,6 +71,12 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
+
+@app.get("/health", include_in_schema=False)
+async def health_check():
+    """Liveness probe used by the container platform."""
+    return {"status": "healthy"}
+
 @app.on_event("startup")
 async def verify_tables():
     from database.db import engine
