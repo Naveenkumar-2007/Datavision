@@ -20,45 +20,53 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # create chat_channels
-    op.create_table(
-        'chat_channels',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-        sa.Column('name', sa.String(length=255), nullable=False),
-        sa.Column('description', sa.Text(), nullable=True),
-        sa.PrimaryKeyConstraint('id')
-    )
-    
-    # create channel_messages
-    op.create_table(
-        'channel_messages',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-        sa.Column('channel_id', sa.String(length=255), nullable=False),
-        sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('parent_id', sa.String(length=255), nullable=True),
-        sa.Column('content', sa.Text(), nullable=False),
-        sa.Column('is_ai', sa.Boolean(), server_default='false', nullable=False),
-        sa.Column('is_pinned', sa.Boolean(), server_default='false', nullable=False),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
-        sa.PrimaryKeyConstraint('id')
-    )
-    
-    # create message_reactions
-    op.create_table(
-        'message_reactions',
-        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
-        sa.Column('message_id', sa.String(length=255), nullable=False),
-        sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column('emoji', sa.String(length=50), nullable=False),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id')
-    )
+    """Create collaboration tables without replacing tables created earlier.
+
+    Earlier application builds created these tables during startup, but did not
+    advance Alembic's version table.  Preserve those tables and create only
+    the missing ones so the revision can be recorded safely.
+    """
+    inspector = sa.inspect(op.get_bind())
+
+    if not inspector.has_table('chat_channels'):
+        op.create_table(
+            'chat_channels',
+            sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+            sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+            sa.Column('name', sa.String(length=255), nullable=False),
+            sa.Column('description', sa.Text(), nullable=True),
+            sa.PrimaryKeyConstraint('id')
+        )
+
+    if not inspector.has_table('channel_messages'):
+        op.create_table(
+            'channel_messages',
+            sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+            sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+            sa.Column('channel_id', sa.String(length=255), nullable=False),
+            sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=True),
+            sa.Column('parent_id', sa.String(length=255), nullable=True),
+            sa.Column('content', sa.Text(), nullable=False),
+            sa.Column('is_ai', sa.Boolean(), server_default='false', nullable=False),
+            sa.Column('is_pinned', sa.Boolean(), server_default='false', nullable=False),
+            sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
+            sa.PrimaryKeyConstraint('id')
+        )
+
+    if not inspector.has_table('message_reactions'):
+        op.create_table(
+            'message_reactions',
+            sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+            sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
+            sa.Column('message_id', sa.String(length=255), nullable=False),
+            sa.Column('user_id', postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column('emoji', sa.String(length=50), nullable=False),
+            sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+            sa.PrimaryKeyConstraint('id')
+        )
 
 
 def downgrade() -> None:
